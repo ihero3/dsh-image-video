@@ -1,0 +1,6 @@
+node_modules/
+lib/
+outputs/
+*.log
+.DS_Store
+*.tgz

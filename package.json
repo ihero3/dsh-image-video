@@ -1,0 +1,70 @@
+{
+  "name": "dsh-image-video",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 插件：文生图与文生视频工具，支持 Kling / Seedance2.5 服务商切换、异步轮询、对话内嵌预览",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "prepare": "tsdown",
+    "build": "tsdown",
+    "dev": "tsdown --watch"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "image-generation",
+    "video-generation",
+    "kling",
+    "seedance"
+  ],
+  "author": "ihero3",
+  "license": "MIT",
+  "homepage": "https://github.com/ihero3/dsh-image-video#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/ihero3/dsh-image-video.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ihero3/dsh-image-video/issues"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": false },
+    "@deepseek-ai/dsh-tools": { "optional": false }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.0",
+    "@deepseek-ai/dsh-attachment": ">=0.1.0-rc.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.0-rc.0",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^22.19.0",
+    "tsdown": "^0.12.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,42 @@
+# dsh-image-video bundle patch: 在 profile 根之上插入一行插件条目。
+# 后续 bundle 层或用户 profile 的 cordis.patch.yml 可按 id 引用本行，
+# 覆盖 config（如切换 provider、注入 API Key、调整默认尺寸/时长）。
+#
+# patch 替换目标行的整个 config 而非合并；如需多模式差异化，请在各模式
+# bundle 中重述完整 config。本文件仅声明插件入口与默认配置，不内联凭证。
+#
+# 服务依赖：
+#   - tools（必需）：工具注册表，由 dsh-base 提供。
+#   - attachments（generate_image 必需）：attachment 服务，由 dsh-base 的
+#     attachment-local 行提供。generate_image 通过 ctx.inject 声明依赖，
+#     服务未挂载时 generate_image 不注册；generate_video 不依赖此服务。
+# 本插件用 - insert 新增 image-video 行，不覆盖任何现有插件行。
+
+- insert:
+    - id: image-video
+      name: 'dsh-image-video'
+      config:
+        # 激活的生成服务商，kling | seedance
+        provider: kling
+        # Kling（阿里云百炼）凭证；provider=kling 时使用
+        kling:
+          apiKey: ''
+          baseURL: ''
+        # Seedance2.5（火山引擎）凭证；provider=seedance 时使用
+        seedance:
+          apiKey: ''
+          baseURL: ''
+        # 默认图片尺寸
+        defaultImageSize: '1024x1024'
+        # 默认视频时长（秒），上限 10
+        defaultVideoDuration: 5
+        # 单次 HTTP 请求超时（毫秒）
+        timeoutMs: 60000
+        # 视频任务轮询间隔（毫秒）
+        pollIntervalMs: 5000
+        # 视频任务整体超时（毫秒），超时后中止轮询
+        pollTimeoutMs: 300000
+        # 可重试错误的最大重试次数
+        retryTimes: 3
+        # 生成媒体落地目录（相对路径基于进程 cwd 解析）
+        outputsDir: './outputs'
