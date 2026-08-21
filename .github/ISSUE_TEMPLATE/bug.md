@@ -17,7 +17,7 @@ assignees: ihero3
 ## 环境
 - dsh-image-video 版本：`pnpm list dsh-image-video` 或 commit sha
 - DSH 版本：`dsh --version`
-- 服务商：kling / seedance
+- 服务商：bxinle / wanx / seedance
 - 操作系统：
 
 ## 配置（脱敏）

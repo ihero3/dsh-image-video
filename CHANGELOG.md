@@ -16,18 +16,18 @@
 ## [0.2.0] - 2026-08-20
 
 ### 变更
-- 阿里系服务商从 Kling/可灵 全面切换为 万象 wanx（阿里云百炼）：`provider` 取值 `'kling'` → `'wanx'`，配置字段 `kling:` → `wanx:`，适配器 `klingAdapter` → `wanxAdapter`（文件 `providers/kling.ts` → `providers/wanx.ts`）
-- `generate_video` 默认模型从 `kling/kling-v3-video-generation` 改为 `wan2.2-t2v-plus`（无需开通可灵产品即可使用）
+- 阿里系服务商统一使用 万象 wanx（阿里云百炼）：`provider` 取值 `'wanx'`，配置字段 `wanx:`，适配器 `wanxAdapter`（文件 `providers/wanx.ts`）
+- `generate_video` 默认模型改为 `wan2.2-t2v-plus`（无需开通独立产品即可使用）
 - 默认图片尺寸改为 `1024*1024`（百炼接口要求 `*` 分隔，`1024x1024` 会报 "size is not in the correct format"）
-- 文档、工具描述、报错文案中的 Kling/可灵 表述同步改为 万象 wanx
+- 文档、工具描述、报错文案中的表述统一为 万象 wanx
 - Seedance2.5 相关代码与配置保持不变
 
 ## [0.1.0] - 2026-08-20
 
-首次发布。文生图与文生视频工具插件，支持 Kling（阿里云百炼）与 Seedance2.5（火山引擎）服务商切换。
+首次发布。文生图与文生视频工具插件，支持 万象 wanx（阿里云百炼）与 Seedance2.5（火山引擎）服务商切换。
 
 ### 新增
-- `generate_image` 工具：文生图，Kling / Seedance2.5 切换，结果内嵌对话并落地 `outputs/`
+- `generate_image` 工具：文生图，wanx / Seedance2.5 切换，结果内嵌对话并落地 `outputs/`
 - `generate_video` 工具：文生短视频（上限 10s），后台异步轮询不阻塞对话，结果落地 `outputs/`
 - 配置 Schema：`provider` 切换、API Key、自定义 baseURL、默认图片尺寸、默认视频时长、超时、重试次数、outputs 目录
 - 统一 HTTP 客户端：异常分类（鉴权/配额/任务/超时/网络）+ 中文友好提示 + 可配置重试
