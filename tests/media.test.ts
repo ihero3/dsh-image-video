@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extFromContentType, toImageMediaTypeForTest } from '../src/media.ts'
+import { extFromContentType, toImageMediaTypeForTest, createImageSummaryText } from '../src/media.ts'
 
 describe('media 扩展名与类型推断', () => {
   describe('extFromContentType', () => {
@@ -46,6 +46,36 @@ describe('media 扩展名与类型推断', () => {
     it('未知类型回退到 png', () => {
       expect(toImageMediaTypeForTest('application/octet-stream')).toBe('image/png')
       expect(toImageMediaTypeForTest('')).toBe('image/png')
+    })
+  })
+
+  describe('createImageSummaryText', () => {
+    it('返回纯文本块，包含路径、服务商与尺寸', () => {
+      const blocks = createImageSummaryText({
+        provider: 'wanx',
+        localPath: '/ws/outputs/a.png',
+        bytes: 2048,
+        width: 1024,
+        height: 1024,
+      })
+      expect(blocks).toHaveLength(1)
+      expect(blocks[0]).toMatchObject({ type: 'text' })
+      const text = (blocks[0] as { text: string }).text
+      expect(text).toContain('/ws/outputs/a.png')
+      expect(text).toContain('wanx')
+      expect(text).toContain('1024×1024')
+      expect(text).toContain('2.0 KB')
+      // 模型可见内容必须是纯文本：绝不携带 image 块，防止纯文本模型收到 image_url 报 400
+      expect(blocks.every(block => block.type === 'text')).toBe(true)
+    })
+
+    it('缺失尺寸时显示未知尺寸', () => {
+      const blocks = createImageSummaryText({
+        provider: 'seedance',
+        localPath: '/ws/outputs/b.png',
+        bytes: 512,
+      })
+      expect((blocks[0] as { text: string }).text).toContain('未知尺寸')
     })
   })
 })

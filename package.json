@@ -1,7 +1,7 @@
 {
   "name": "dsh-image-video",
-  "version": "0.2.0",
-  "description": "DeepSeek Harness 插件：文生图与文生视频工具，支持 万象 wanx / Seedance2.5 服务商切换、异步轮询、对话内嵌预览",
+  "version": "0.3.0",
+  "description": "DeepSeek Harness 插件：文生图与文生视频工具，支持 万象 wanx / Seedance2.5 服务商切换、异步轮询、图片 UI-only 预览",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

@@ -1,7 +1,8 @@
 /**
  * generate_image 工具：文生图，支持 万象（wanx）/ Seedance 服务商切换。
  * 提交任务后轮询直到完成（异步服务商）或直接获取结果（同步服务商），
- * 下载图片到 outputs/，通过 attachment 服务内嵌渲染在对话中。
+ * 下载图片到 outputs/，附件字节经 attachment 服务持久化，
+ * 附件引用通过 presentationMeta 走 UI-only 通道，模型只见文本摘要。
  * @module dsh-image-video/tools/generate-image
  */
 
@@ -14,7 +15,7 @@ import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
 import type { ImageGenParams, HttpOpts } from '../providers/types.ts'
-import { downloadAndSave, createImageContent } from '../media.ts'
+import { downloadAndSave, saveImageAttachment, createImageSummaryText } from '../media.ts'
 
 /**
  * 工具依赖：配置、任务管理器、attachment 服务实例。
@@ -38,7 +39,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
     name: 'generate_image',
     description:
       '根据文本提示词生成图片。支持 万象wanx（阿里云百炼）和 Seedance（火山引擎）两种服务商，'
-      + '通过配置切换。生成完成后图片内嵌显示在对话中并保存到本地 outputs/ 目录。'
+      + '通过配置切换。生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
       + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选）。',
 
     parameters: {
@@ -70,7 +71,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           image: {
             type: 'object',
             additionalProperties: false,
-            description: '内嵌图片附件引用，存在时对话中直接渲染图片。',
+            description: '内嵌图片附件引用（经 presentationMeta 持久化为 UI 专用数据，不进入模型上下文）。',
             properties: {
               attachmentId: { type: 'string' },
               mediaType: { type: 'string' },
@@ -82,13 +83,32 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           },
         },
       },
+      // 模型可见内容为纯文本：图片附件引用只经 presentationMeta 走 UI 通道持久化，
+      // 不注入工具结果内容。纯文本模型（如 deepseek-v4-flash）无法接收 image 块——
+      // LLM 适配器会把 image 块序列化成 image_url 发送，不支持图片输入的网关会直接
+      // 400（unknown variant `image_url`），导致生成图片后的下一轮请求失败。
       render: (_args, value): ContentBlock[] => {
         const v = value as GenerateImageOutput
-        if (v.image) {
-          // 构造内嵌图片块，attachment 服务已持久化字节
-          return [{ type: 'image', attachment: v.image as unknown as ImageAttachmentRef }]
+        return createImageSummaryText({
+          provider: v.provider,
+          localPath: v.localPath,
+          bytes: v.bytes,
+          ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },
+        })
+      },
+      // UI-only 通道：持久化到 tool/result 事件的 meta 字段，客户端 ToolResultNode.meta
+      // 可消费它内嵌渲染图片，但绝不进入模型请求上下文（Model-visible ⟺ logged 的反向：
+      // 持久化 ≠ 模型可见）。
+      presentationMeta: (_args, value) => {
+        const v = value as GenerateImageOutput
+        return {
+          provider: v.provider,
+          prompt: v.prompt,
+          localPath: v.localPath,
+          sourceUrl: v.sourceUrl,
+          bytes: v.bytes,
+          ...v.image === undefined ? {} : { image: v.image },
         }
-        return [{ type: 'text', text: `图片已生成并保存到本地：${v.localPath}（服务商：${v.provider}）` }]
       },
     },
 
@@ -134,12 +154,11 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const downloadOpts = { timeoutMs: config.timeoutMs, retryTimes: config.retryTimes, signal: exec.signal }
       const saved = await downloadAndSave(mediaUrl, config.outputsDir, '.png', downloadOpts)
 
-      // 通过 attachment 服务内嵌渲染（复用已下载的字节，避免二次请求）。
+      // 通过 attachment 服务持久化字节（复用已下载的字节，避免二次请求），
+      // 附件引用供 presentationMeta 走 UI-only 通道，不进入模型上下文。
       // attachments 已在工具构造时注入，此处直接使用，不做运行时解析。
       let imageRef: ImageAttachmentRef | undefined
-      const contentBlocks = await createImageContent(attachments, saved.data, saved.contentType, 'generated-image')
-      const imageBlock = contentBlocks.find((b): b is { type: 'image'; attachment: ImageAttachmentRef } => b.type === 'image')
-      if (imageBlock) imageRef = imageBlock.attachment
+      imageRef = await saveImageAttachment(attachments, saved.data, saved.contentType, 'generated-image')
 
       const output: GenerateImageOutput = {
         provider,

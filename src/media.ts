@@ -1,6 +1,7 @@
 /**
- * 媒体渲染与输出模块：下载生成结果到 outputs/ 目录，
- * 图片通过 attachment 服务内嵌渲染在对话中，视频返回本地文件链接。
+ * 媒体渲染与输出模块：下载生成结果到 outputs/ 目录。
+ * 图片字节经 attachment 服务持久化，附件引用走 presentationMeta（UI-only 通道），
+ * 模型只接收文本摘要；视频返回本地文件链接。
  * @module dsh-image-video/media
  */
 
@@ -78,24 +79,51 @@ export function extFromContentType(contentType: string, fallback: string): strin
 }
 
 /**
- * 创建内嵌图片渲染块：通过 attachment 服务持久化字节，返回对话内嵌预览块。
+ * 保存图片字节到 attachment 服务，返回可被 presentationMeta 引用的附件引用。
  * `attachments` 由调用方保证非 undefined（generate_image 工具经 `ctx.inject` 注入），
  * 此处不做运行时回退——依赖关系在调用栈上游即已明确。
+ *
+ * 图片不再作为模型可见的 image ContentBlock 注入工具结果：纯文本模型无法接收
+ * image 块（llm 适配器会序列化成 image_url，网关不支持时 400）。附件引用改为
+ * 经 `output.presentationMeta` 走 UI-only 通道持久化，对模型不可见。
  * @param attachments - attachment 服务实例。
  * @param data - 图片字节。
  * @param contentType - 图片 Content-Type。
  * @param name - 显示名称。
- * @returns 模型可见的 ContentBlock 数组。
+ * @returns 持久化后的图片附件引用。
  */
-export async function createImageContent(
+export async function saveImageAttachment(
   attachments: AttachmentStore,
   data: Uint8Array,
   contentType: string,
   name: string,
-): Promise<ContentBlock[]> {
+): Promise<ImageAttachmentRef> {
   const mediaType = toImageMediaType(contentType)
-  const ref: ImageAttachmentRef = await attachments.saveImage({ data, mediaType, name })
-  return [{ type: 'image', attachment: ref }]
+  return attachments.saveImage({ data, mediaType, name })
+}
+
+/** 模型可见的图片摘要文本所需的输出字段。 */
+export interface ImageSummaryFields {
+  provider: string
+  localPath: string
+  bytes: number
+  width?: number
+  height?: number
+}
+
+/**
+ * 构造模型可见的图片生成摘要文本（纯文本，不含图片字节）。
+ * @param fields - 生成输出中的展示字段。
+ * @returns 供工具结果 render 返回的文本块。
+ */
+export function createImageSummaryText(fields: ImageSummaryFields): ContentBlock[] {
+  const size = fields.width !== undefined && fields.height !== undefined
+    ? `${fields.width}×${fields.height}`
+    : '未知尺寸'
+  return [{
+    type: 'text',
+    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）`,
+  }]
 }
 
 /**

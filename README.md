@@ -1,12 +1,12 @@
 # dsh-image-video
 
-DeepSeek Harness 插件：为对话模型注册 `generate_image` / `generate_video` 两个工具，支持在 **万象 wanx（阿里云百炼）** 与 **Seedance2.5（火山引擎）** 之间切换，生成结果自动下载到本地 `outputs/` 目录，图片内嵌渲染在对话中，视频返回本地文件链接。
+DeepSeek Harness 插件：为对话模型注册 `generate_image` / `generate_video` 两个工具，支持在 **万象 wanx（阿里云百炼）** 与 **Seedance2.5（火山引擎）** 之间切换，生成结果自动下载到本地 `outputs/` 目录，图片附件经 attachment 服务持久化并通过 `presentationMeta` 走 UI-only 通道展示，视频返回本地文件链接。
 
 ## 能力概览
 
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
-| `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 内嵌图片（attachment 服务） |
+| `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 模型只见文本摘要；图片附件经 `presentationMeta`（UI-only 通道）展示 |
 | `generate_video` | 文生短视频（上限 10s） | 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 视频生成耗时较长（1-5 分钟），任务提交后由 `TaskManager` 在后台按配置间隔轮询状态，轮询过程不产生中间输出，仅最终结果返回模型，**不会卡死对话上下文**。插件卸载时通过 `ctx.effect()` 注册的清理函数自动取消所有排队任务、清理轮询定时器，杜绝内存泄漏。
@@ -36,7 +36,7 @@ dsh-image-video/
     ├── config.ts             # 配置 Schema（Schemastery）
     ├── http-client.ts        # 统一 HTTP 客户端 + 异常分类 + 可配置重试
     ├── task-manager.ts       # 异步任务管理器（ctx.effect 托管轮询生命周期）
-    ├── media.ts              # 媒体下载 / 落地 / 内嵌渲染
+    ├── media.ts              # 媒体下载 / 落地 / 摘要文本 / UI-only 元数据
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
     │   ├── wanx.ts          # 万象（wanx）API 适配器
@@ -145,7 +145,9 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
   prompt: "赛博朋克风格的猫"
   size: "1080*1080"
 
-→ 图片内嵌显示在对话中，并保存到 outputs/<时间戳>-<随机>.png
+→ 图片保存到 outputs/<时间戳>-<随机>.png，模型收到文本摘要
+  （路径 / 服务商 / 尺寸 / 大小），图片附件引用经 presentationMeta
+  持久化为 UI 专用数据，不进入模型上下文
 ```
 
 **文生视频：**
@@ -165,6 +167,18 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 
 - `generate_image`：`prompt`（必填）、`size`（可选，默认 `defaultImageSize`）、`model`（可选）
 - `generate_video`：`prompt`（必填）、`duration`（可选，1-10 秒）、`model`（可选）、`aspectRatio`（可选，如 `16:9`）
+
+## 图片渲染设计说明（v0.3.0）
+
+`generate_image` 的工具结果**只向模型返回文本摘要**（本地路径、服务商、尺寸、大小），不再把图片作为 `image` 内容块注入工具结果。原因：`image` 内容块会被 LLM 适配器序列化为 OpenAI 兼容的 `image_url` 请求体，纯文本模型或网关（如 threerouter、部分公司代理）不支持图片输入时，生成图片后的下一轮请求会直接 400（`unknown variant 'image_url', expected 'text'`）。
+
+图片字节仍通过 attachment 服务持久化，附件引用（`attachmentId`、尺寸、类型等）经 `output.presentationMeta` 写入 `tool/result` 事件的 `meta` 字段——**持久化但对模型不可见**，客户端 `ToolResultNode.meta` 可消费它做内嵌渲染。即：
+
+- **模型可见**：文本摘要（`render` 产物）
+- **UI 可见**：`meta` 中的图片附件信息（`presentationMeta` 产物）
+- 图片文件始终落地 `outputs/` 目录
+
+这一设计让 `generate_image` 在任何纯文本模型下都能安全使用，生成图片后会话照常继续。
 
 ## 异常处理
 
@@ -189,7 +203,7 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 
 - `@deepseek-ai/cordis`（peer）：插件框架
 - `@deepseek-ai/dsh-tools`（peer）：`defineTool` 工具注册
-- `@deepseek-ai/dsh-attachment`（peer，可选）：图片内嵌渲染服务
+- `@deepseek-ai/dsh-attachment`（peer，可选）：图片附件持久化服务（字节存储，供 UI-only 通道消费）
 - `@deepseek-ai/dsh-llm`（peer）：ContentBlock 类型
 - `@deepseek-ai/schemastery`：配置 Schema
 
@@ -273,7 +287,7 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 用户：帮我画一只戴墨镜的猫，1024*1024
 ```
 
-预期模型会**调用** `generate_image`，完成后对话内嵌显示图片，且 `outputs/` 目录下新增一个 PNG 文件。
+预期模型会**调用** `generate_image`，完成后模型收到图片文本摘要，且 `outputs/` 目录下新增一个 PNG 文件。
 
 ### 4. 真实 API 冒烟（可选，需 Key）
 
@@ -304,7 +318,8 @@ DASHSCOPE_KEY=sk-xxx pnpm exec tsx /tmp/smoke.mjs
 | `vitest` 里 fetch 没被拦截、真实请求外发 | 用了 `globalThis.fetch = fn` 而非 `vi.stubGlobal` | 统一用 `vi.stubGlobal('fetch', ...)`，`afterEach` 里 `vi.unstubAllGlobals()` |
 | provider 测试报 "Authorization header 缺失" 但明明传了 key | mock `_url` 和断言写死的 key 不匹配 | 检查 mock 里断言的 `Bearer` 字符串和构造 `opts.apiKey` 是否一致 |
 | DSH 启动报 `cannot find module dsh-image-video` | 只 add 了路径但 profile 没 `pnpm install`，或构建产物缺失 | 重新 `dsh plugin add <path>` 或在 dsh-image-video 先跑 `pnpm run build` |
-| 生成图片但对话没有内嵌 | attachments 服务未加载 | 确认 profile 的 cordis 配置包含 `attachment-local`；本插件通过 `ctx.inject(['attachments'])` 延迟注册 `generate_image`，服务挂载即生效 |
+| 生成图片后下一轮对话报 `unknown variant 'image_url', expected 'text'`（400） | 旧版本把图片作为 `image` 内容块注入工具结果，纯文本模型无法接收（LLM 适配器序列化成 `image_url` 被网关拒绝） | 升级到 0.3.0+：工具结果只含文本摘要，图片附件走 `presentationMeta` UI-only 通道；**已受污染的会话请新建会话**，历史里的旧图片块不会自行消失 |
+| 生成图片但对话没有展示图片 | attachments 服务未加载，或当前客户端未消费 `presentationMeta` | 确认 profile 的 cordis 配置包含 `attachment-local`；图片文件始终可在 `outputs/` 目录查看 |
 
 ## License
 

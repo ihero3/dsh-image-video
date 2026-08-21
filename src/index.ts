@@ -2,7 +2,7 @@
  * dsh-image-video — DeepSeek Harness 插件：文生图与文生视频工具。
  *
  * 注册两个模型可调用工具：
- *   - `generate_image`：文生图，支持 万象（wanx）/ Seedance2.5 切换，结果内嵌对话并落地 outputs/
+ *   - `generate_image`：文生图，支持 万象（wanx）/ Seedance2.5 切换，模型只见文本摘要，附件走 UI-only 通道，落地 outputs/
  *   - `generate_video`：文生短视频（上限 10s），后台异步轮询，不阻塞对话，结果落地 outputs/
  *
  * 生命周期遵循 Cordis 规范：`TaskManager` 在构造时通过 `ctx.effect()` 注册卸载清理函数，
