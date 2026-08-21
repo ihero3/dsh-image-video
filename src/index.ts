@@ -2,7 +2,7 @@
  * dsh-image-video — DeepSeek Harness 插件：文生图与文生视频工具。
  *
  * 注册两个模型可调用工具：
- *   - `generate_image`：文生图，支持 Kling / Seedance2.5 切换，结果内嵌对话并落地 outputs/
+ *   - `generate_image`：文生图，支持 万象（wanx）/ Seedance2.5 切换，结果内嵌对话并落地 outputs/
  *   - `generate_video`：文生短视频（上限 10s），后台异步轮询，不阻塞对话，结果落地 outputs/
  *
  * 生命周期遵循 Cordis 规范：`TaskManager` 在构造时通过 `ctx.effect()` 注册卸载清理函数，
@@ -34,7 +34,7 @@ export type { Config as ConfigType, Provider, ProviderCredentials } from './conf
 export { TaskManager } from './task-manager.ts'
 export { GenerationError } from './http-client.ts'
 export type { ErrorKind, RequestOptions, RequestResult } from './http-client.ts'
-export { klingAdapter } from './providers/kling.ts'
+export { wanxAdapter } from './providers/wanx.ts'
 export { seedanceAdapter } from './providers/seedance.ts'
 export type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult } from './providers/types.ts'
 export { createGenerateImageTool } from './tools/generate-image.ts'

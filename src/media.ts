@@ -52,6 +52,11 @@ export async function downloadAndSave(
 
 /** 从 Content-Type 推断图片媒体类型（attachment 服务要求精确类型）。 */
 export function toImageMediaType(contentType: string): ImageMediaType {
+  return toImageMediaTypeForTest(contentType)
+}
+
+/** 单元测试导出：实现与 toImageMediaType 相同，测试直接调用避免类型依赖循环。 */
+export function toImageMediaTypeForTest(contentType: string): ImageMediaType {
   const ct = contentType.toLowerCase().split(';')[0]?.trim() ?? ''
   if (ct.includes('png')) return 'image/png'
   if (ct.includes('jpeg') || ct.includes('jpg')) return 'image/jpeg'

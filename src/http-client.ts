@@ -98,7 +98,7 @@ async function parseBody(res: Response): Promise<unknown> {
 
 /**
  * 分类 HTTP 响应错误，生成友好中文提示。
- * @throws {GenerationError} 鉴权失败 / 配额耗尽 / 任务报错。
+ * 内部实现，不在 execute 外部直接调用。通过 `classifyErrorForTest` 导出用于单元测试。
  */
 function classifyHttpError(status: number, data: unknown, url: string): GenerationError {
   const errMsg = extractErrorMessage(data)
@@ -131,6 +131,12 @@ function extractErrorMessage(data: unknown): string {
   if (typeof obj.code === 'string') return `错误码: ${obj.code}`
   return ''
 }
+
+/**
+ * 测试辅助：直接调用内部 `classifyHttpError`。
+ * 仅用于单元测试验证异常分类逻辑，生产代码不要使用。
+ */
+export const classifyErrorForTest: (status: number, data: unknown, url: string) => GenerationError = classifyHttpError
 
 /**
  * 统一 HTTP 请求入口：执行请求，分类异常，对可重试错误按指数退避重试。

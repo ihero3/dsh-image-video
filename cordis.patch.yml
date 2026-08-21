@@ -16,18 +16,18 @@
     - id: image-video
       name: 'dsh-image-video'
       config:
-        # 激活的生成服务商，kling | seedance
-        provider: kling
-        # Kling（阿里云百炼）凭证；provider=kling 时使用
-        kling:
+        # 激活的生成服务商，wanx | seedance
+        provider: wanx
+        # 万象（阿里云百炼）凭证；provider=wanx 时使用
+        wanx:
           apiKey: ''
           baseURL: ''
         # Seedance2.5（火山引擎）凭证；provider=seedance 时使用
         seedance:
           apiKey: ''
           baseURL: ''
-        # 默认图片尺寸
-        defaultImageSize: '1024x1024'
+        # 默认图片尺寸（百炼接口要求 * 分隔，如 1024*1024）
+        defaultImageSize: '1024*1024'
         # 默认视频时长（秒），上限 10
         defaultVideoDuration: 5
         # 单次 HTTP 请求超时（毫秒）

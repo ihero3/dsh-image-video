@@ -1,7 +1,7 @@
 {
   "name": "dsh-image-video",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness 插件：文生图与文生视频工具，支持 Kling / Seedance2.5 服务商切换、异步轮询、对话内嵌预览",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness 插件：文生图与文生视频工具，支持 万象 wanx / Seedance2.5 服务商切换、异步轮询、对话内嵌预览",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -20,7 +20,11 @@
   "scripts": {
     "prepare": "tsdown",
     "build": "tsdown",
-    "dev": "tsdown --watch"
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json && echo OK"
   },
   "dsh": {
     "bundle": {
@@ -33,7 +37,7 @@
     "cordis",
     "image-generation",
     "video-generation",
-    "kling",
+    "wanx",
     "seedance"
   ],
   "author": "ihero3",
@@ -65,6 +69,7 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^22.19.0",
     "tsdown": "^0.12.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.1.0"
   }
 }

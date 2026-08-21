@@ -1,5 +1,5 @@
 /**
- * generate_image 工具：文生图，支持 Kling / Seedance 服务商切换。
+ * generate_image 工具：文生图，支持 万象（wanx）/ Seedance 服务商切换。
  * 提交任务后轮询直到完成（异步服务商）或直接获取结果（同步服务商），
  * 下载图片到 outputs/，通过 attachment 服务内嵌渲染在对话中。
  * @module dsh-image-video/tools/generate-image
@@ -11,7 +11,7 @@ import type { ImageAttachmentRef, AttachmentStore } from '@deepseek-ai/dsh-attac
 import type { Config } from '../config.ts'
 import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
-import { klingAdapter } from '../providers/kling.ts'
+import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
 import type { ImageGenParams, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, createImageContent } from '../media.ts'
@@ -37,9 +37,9 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片。支持 Kling（阿里云百炼）和 Seedance（火山引擎）两种服务商，'
+      '根据文本提示词生成图片。支持 万象wanx（阿里云百炼）和 Seedance（火山引擎）两种服务商，'
       + '通过配置切换。生成完成后图片内嵌显示在对话中并保存到本地 outputs/ 目录。'
-      + '参数：prompt（提示词，必填）、size（尺寸如 1024x1024，可选）、model（模型名，可选）。',
+      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选）。',
 
     parameters: {
       prompt: {
@@ -49,7 +49,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       },
       size: {
         type: 'string',
-        description: '图片尺寸，如 1024x1024、1280x720。留空使用配置默认值。',
+        description: '图片尺寸，如 1024*1024、1280*720。留空使用配置默认值。',
       },
       model: {
         type: 'string',
@@ -95,7 +95,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
     async execute(args, exec) {
       const typedArgs = args as { prompt: string; size?: string; model?: string }
       const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'kling' ? klingAdapter : seedanceAdapter
+      const adapter = provider === 'wanx' ? wanxAdapter : seedanceAdapter
 
       const imageParams: ImageGenParams = {
         prompt: typedArgs.prompt,

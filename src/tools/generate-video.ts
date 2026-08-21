@@ -1,5 +1,5 @@
 /**
- * generate_video 工具：文生视频，支持 Kling / Seedance 服务商切换。
+ * generate_video 工具：文生视频，支持 万象（wanx）/ Seedance 服务商切换。
  * 提交任务后后台轮询直到完成，下载视频到 outputs/ 目录。
  * 视频生成耗时较长（1-5 分钟），轮询过程不产生中间输出，仅最终结果返回模型，
  * 不阻塞对话上下文。时长上限 10 秒，由 schema 与运行时双重校验。
@@ -11,7 +11,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config } from '../config.ts'
 import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
-import { klingAdapter } from '../providers/kling.ts'
+import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
 import type { VideoGenParams, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, createVideoContent } from '../media.ts'
@@ -35,7 +35,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
   return defineTool({
     name: 'generate_video',
     description:
-      '根据文本提示词生成短视频。支持 Kling 和 Seedance 两种服务商，通过配置切换。'
+      '根据文本提示词生成短视频。支持 万象wanx 和 Seedance 两种服务商，通过配置切换。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒。生成完成后视频保存到本地 outputs/ 目录。`
       + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选）、aspectRatio（宽高比，可选）。',
 
@@ -89,7 +89,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       }
 
       const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'kling' ? klingAdapter : seedanceAdapter
+      const adapter = provider === 'wanx' ? wanxAdapter : seedanceAdapter
 
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,

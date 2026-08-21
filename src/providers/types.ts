@@ -1,5 +1,5 @@
 /**
- * 服务商适配器通用类型。Kling 与 Seedance 均实现此接口，
+ * 服务商适配器通用类型。万象（wanx）与 Seedance 均实现此接口，
  * 工具层按 provider 字段分发，无需感知具体 API 差异。
  * @module dsh-image-video/providers/types
  */

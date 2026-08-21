@@ -1,18 +1,18 @@
 /**
- * Kling 适配器：基于阿里云百炼 DashScope 异步 API。
+ * 万象（wanx）适配器：基于阿里云百炼 DashScope 异步 API。
  * 文生图与文生视频均采用「提交任务 → 轮询查询 → 下载结果」异步模式。
  * 鉴权统一 Bearer Token，X-DashScope-Async: enable 标记异步调用。
- * @module dsh-image-video/providers/kling
+ * @module dsh-image-video/providers/wanx
  */
 
 import { request, downloadMedia } from '../http-client.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
 import { toRequestOpts } from './types.ts'
 
-/** Kling 默认文生图模型（通义万相）。 */
+/** 万象默认文生图模型（通义万相）。 */
 const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
-/** Kling 默认文生视频模型。 */
-const DEFAULT_VIDEO_MODEL = 'kling/kling-v3-video-generation'
+/** 万象默认文生视频模型。 */
+const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
 
 /** DashScope 请求头。 */
 function dashscopeHeaders(apiKey: string): Record<string, string> {
@@ -38,9 +38,9 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
     input: { prompt: params.prompt },
     parameters: { size: params.size, n: 1 },
   }
-  const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as KlingTaskResponse
+  const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id
-  if (!taskId) throw new Error('Kling 文生图：未返回 task_id')
+  if (!taskId) throw new Error('万象 文生图：未返回 task_id')
   return { taskId, async: true, mediaType: 'image' }
 }
 
@@ -56,18 +56,18 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
       audio: false,
     },
   }
-  const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as KlingTaskResponse
+  const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id
-  if (!taskId) throw new Error('Kling 文生视频：未返回 task_id')
+  if (!taskId) throw new Error('万象 文生视频：未返回 task_id')
   return { taskId, async: true, mediaType: 'video' }
 }
 
 /** 查询任务状态。 */
 async function queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResult> {
   const url = `${opts.baseURL}/tasks/${taskId}`
-  const data = await request(toRequestOpts('GET', url, queryHeaders(opts.apiKey), undefined, opts)) as KlingQueryResponse
+  const data = await request(toRequestOpts('GET', url, queryHeaders(opts.apiKey), undefined, opts)) as WanxQueryResponse
   const output = data?.output
-  if (!output) return { status: 'failed', error: 'Kling 查询返回为空' }
+  if (!output) return { status: 'failed', error: '万象 查询返回为空' }
   switch (output.task_status) {
     case 'PENDING':
     case 'RUNNING':
@@ -77,28 +77,28 @@ async function queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResul
       const imageUrl = output.results?.[0]?.url
       const videoUrl = output.video_url
       const mediaUrl = videoUrl ?? imageUrl
-      if (!mediaUrl) return { status: 'failed', error: 'Kling 任务成功但未返回媒体 URL' }
+      if (!mediaUrl) return { status: 'failed', error: '万象 任务成功但未返回媒体 URL' }
       return { status: 'succeeded', mediaUrl }
     }
     case 'FAILED':
-      return { status: 'failed', error: output.message ?? 'Kling 任务执行失败' }
+      return { status: 'failed', error: output.message ?? '万象 任务执行失败' }
     case 'CANCELED':
-      return { status: 'failed', error: 'Kling 任务已取消' }
+      return { status: 'failed', error: '万象 任务已取消' }
     case 'UNKNOWN':
-      return { status: 'failed', error: 'Kling 任务不存在或已过期' }
+      return { status: 'failed', error: '万象 任务不存在或已过期' }
     default:
-      return { status: 'failed', error: `Kling 未知任务状态: ${output.task_status}` }
+      return { status: 'failed', error: `万象 未知任务状态: ${output.task_status}` }
   }
 }
 
-/** Kling 任务提交响应。 */
-interface KlingTaskResponse {
+/** 万象任务提交响应。 */
+interface WanxTaskResponse {
   output?: { task_id?: string; task_status?: string }
   request_id?: string
 }
 
-/** Kling 任务查询响应。 */
-interface KlingQueryResponse {
+/** 万象任务查询响应。 */
+interface WanxQueryResponse {
   output?: {
     task_status?: string
     video_url?: string
@@ -108,17 +108,17 @@ interface KlingQueryResponse {
   request_id?: string
 }
 
-/** Kling 适配器实例。 */
-export const klingAdapter: ProviderAdapter = {
+/** 万象适配器实例。 */
+export const wanxAdapter: ProviderAdapter = {
   submitImage,
   submitVideo,
   queryTask,
 }
 
-/** 从配置解析 Kling HttpOpts（已由 config.resolveActiveProvider 解析凭证）。 */
-export function klingHttpOpts(apiKey: string, baseURL: string, timeoutMs: number, retryTimes: number, signal?: AbortSignal): HttpOpts {
+/** 从配置解析万象 HttpOpts（已由 config.resolveActiveProvider 解析凭证）。 */
+export function wanxHttpOpts(apiKey: string, baseURL: string, timeoutMs: number, retryTimes: number, signal?: AbortSignal): HttpOpts {
   return { apiKey, baseURL, timeoutMs, retryTimes, signal }
 }
 
-/** 复用 downloadMedia 供任务管理器下载 Kling 生成的媒体。 */
+/** 复用 downloadMedia 供任务管理器下载万象生成的媒体。 */
 export { downloadMedia }

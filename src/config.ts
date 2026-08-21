@@ -7,7 +7,7 @@
 import z from '@deepseek-ai/schemastery'
 
 /** 支持的生成服务商。 */
-export type Provider = 'kling' | 'seedance'
+export type Provider = 'wanx' | 'seedance'
 
 /** 单个服务商的凭证与自定义接口地址。 */
 export interface ProviderCredentials {
@@ -21,11 +21,11 @@ export interface ProviderCredentials {
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
-  /** Kling 凭证；provider=kling 时使用。 */
-  kling: ProviderCredentials
+  /** 万象（wanx）凭证；provider=wanx 时使用。 */
+  wanx: ProviderCredentials
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
   seedance: ProviderCredentials
-  /** 默认图片尺寸，形如 "1024x1024"。 */
+  /** 默认图片尺寸，形如 "1024*1024"。 */
   defaultImageSize: string
   /** 默认视频时长（秒），上限 10。 */
   defaultVideoDuration: number
@@ -41,18 +41,18 @@ export interface Config {
   outputsDir: string
 }
 
-/** 服务商凭证 schema，复用于 kling 与 seedance。 */
+/** 服务商凭证 schema，复用于 wanx 与 seedance。 */
 const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
   apiKey: z.string().required().description('服务商 API Key'),
   baseURL: z.string().description('自定义接口地址，留空使用默认端点'),
 })
 
-/** 插件配置 schema，默认值贴近 Kling / Seedance 常用参数。 */
+/** 插件配置 schema，默认值贴近 万象（wanx）/ Seedance 常用参数。 */
 export const Config: z<Config> = z.object({
-  provider: z.union(['kling', 'seedance']).default('kling').description('激活的生成服务商'),
-  kling: ProviderCredentialsSchema.default({ apiKey: '' }).description('Kling 凭证'),
+  provider: z.union(['wanx', 'seedance']).default('wanx').description('激活的生成服务商'),
+  wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
-  defaultImageSize: z.string().default('1024x1024').description('默认图片尺寸，如 1024x1024'),
+  defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
   defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),
   pollIntervalMs: z.number().default(5_000).min(1_000).description('视频任务轮询间隔（毫秒）'),
@@ -68,7 +68,7 @@ export const Config: z<Config> = z.object({
  * @throws 当激活服务商未配置 API Key 时。
  */
 export function resolveActiveProvider(config: Config): { provider: Provider; apiKey: string; baseURL: string } {
-  const creds = config.provider === 'kling' ? config.kling : config.seedance
+  const creds = config.provider === 'wanx' ? config.wanx : config.seedance
   if (!creds.apiKey || creds.apiKey.trim().length === 0) {
     throw new Error(`dsh-image-video: 服务商 ${config.provider} 未配置 API Key，请在配置中设置 ${config.provider}.apiKey`)
   }
@@ -82,7 +82,7 @@ export function resolveActiveProvider(config: Config): { provider: Provider; api
 /** 服务商默认接口地址。 */
 function defaultBaseURL(provider: Provider): string {
   switch (provider) {
-    case 'kling': return 'https://dashscope.aliyuncs.com/api/v1'
+    case 'wanx': return 'https://dashscope.aliyuncs.com/api/v1'
     case 'seedance': return 'https://ark.cn-beijing.volces.com/api/v3'
   }
 }

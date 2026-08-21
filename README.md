@@ -1,13 +1,13 @@
 # dsh-image-video
 
-DeepSeek Harness 插件：为对话模型注册 `generate_image` / `generate_video` 两个工具，支持在 **Kling（阿里云百炼）** 与 **Seedance2.5（火山引擎）** 之间切换，生成结果自动下载到本地 `outputs/` 目录，图片内嵌渲染在对话中，视频返回本地文件链接。
+DeepSeek Harness 插件：为对话模型注册 `generate_image` / `generate_video` 两个工具，支持在 **万象 wanx（阿里云百炼）** 与 **Seedance2.5（火山引擎）** 之间切换，生成结果自动下载到本地 `outputs/` 目录，图片内嵌渲染在对话中，视频返回本地文件链接。
 
 ## 能力概览
 
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
-| `generate_image` | 文生图 | Kling / Seedance2.5 | 同步或异步（自动适配） | 内嵌图片（attachment 服务） |
-| `generate_video` | 文生短视频（上限 10s） | Kling / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 内嵌图片（attachment 服务） |
+| `generate_video` | 文生短视频（上限 10s） | 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 视频生成耗时较长（1-5 分钟），任务提交后由 `TaskManager` 在后台按配置间隔轮询状态，轮询过程不产生中间输出，仅最终结果返回模型，**不会卡死对话上下文**。插件卸载时通过 `ctx.effect()` 注册的清理函数自动取消所有排队任务、清理轮询定时器，杜绝内存泄漏。
 
@@ -39,7 +39,7 @@ dsh-image-video/
     ├── media.ts              # 媒体下载 / 落地 / 内嵌渲染
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
-    │   ├── kling.ts          # Kling API 适配器
+    │   ├── wanx.ts          # 万象（wanx）API 适配器
     │   └── seedance.ts       # Seedance2.5 API 适配器
     └── tools/
         ├── generate-image.ts # generate_image 工具注册
@@ -94,12 +94,12 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `provider` | `'kling' \| 'seedance'` | `kling` | 激活的服务商，切换后立即生效（HMR） |
-| `kling.apiKey` | `string` | `''` | Kling API Key；`provider=kling` 时必填 |
-| `kling.baseURL` | `string` | `''` | Kling 自定义接口地址，留空用默认端点 |
+| `provider` | `'wanx' \| 'seedance'` | `wanx` | 激活的服务商，切换后立即生效（HMR） |
+| `wanx.apiKey` | `string` | `''` | 万象（wanx）API Key；`provider=wanx` 时必填 |
+| `wanx.baseURL` | `string` | `''` | 万象自定义接口地址，留空用默认端点 |
 | `seedance.apiKey` | `string` | `''` | Seedance2.5 API Key；`provider=seedance` 时必填 |
 | `seedance.baseURL` | `string` | `''` | Seedance2.5 自定义接口地址，留空用默认端点 |
-| `defaultImageSize` | `string` | `'1024x1024'` | 默认图片尺寸，形如 `宽x高` |
+| `defaultImageSize` | `string` | `'1024*1024'` | 默认图片尺寸，形如 `宽*高`（百炼接口要求 `*` 分隔） |
 | `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1-10 |
 | `timeoutMs` | `number` | `60000` | 单次 HTTP 请求超时（毫秒） |
 | `pollIntervalMs` | `number` | `5000` | 视频任务轮询间隔（毫秒） |
@@ -115,13 +115,13 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 - id: image-video
   config:
     provider: seedance
-    kling:
+    wanx:
       apiKey: ''
       baseURL: ''
     seedance:
       apiKey: 'your-volcengine-ark-api-key'
       baseURL: ''
-    defaultImageSize: '1280x720'
+    defaultImageSize: '1280*720'
     defaultVideoDuration: 5
     timeoutMs: 60000
     pollIntervalMs: 5000
@@ -139,11 +139,11 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 **文生图：**
 
 ```
-用户：帮我画一只赛博朋克风格的猫，1080x1080
+用户：帮我画一只赛博朋克风格的猫，1080*1080
 
 模型（调用 generate_image）：
   prompt: "赛博朋克风格的猫"
-  size: "1080x1080"
+  size: "1080*1080"
 
 → 图片内嵌显示在对话中，并保存到 outputs/<时间戳>-<随机>.png
 ```
@@ -182,7 +182,7 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 
 ## 服务商 API 参考
 
-- **Kling（阿里云百炼 DashScope）**：文生图、文生视频，[API 文档](https://help.aliyun.com/zh/model-studio/kling-video-generation-api-reference)
+- **万象 wanx（阿里云百炼 DashScope）**：文生图、文生视频，[API 文档](https://help.aliyun.com/zh/model-studio/text-to-video-guide)
 - **Seedance2.5（火山引擎 Ark）**：文生图（即梦 3.0）、文生视频，[视频 API](https://docs.volcengine.com/docs/82379/1520757) / [文生图 API](https://docs.volcengine.com/docs/85621/1616429)
 
 ## 依赖
@@ -193,13 +193,118 @@ Git 安装拉取的是**源码而非构建产物**，需要两步配合：
 - `@deepseek-ai/dsh-llm`（peer）：ContentBlock 类型
 - `@deepseek-ai/schemastery`：配置 Schema
 
-## 开发
+## 开发 & 测试运行
+
+本地有两种运行模式：**免 DSH 的纯逻辑测试**（最快、最常用，开发时循环跑）和 **DSH profile 安装验证**（确认 Harness 能识别并加载插件）。**真实 API 冒烟测试**建议配合你自己的 Key 做一次，其他时候用 mock 即可。
+
+### 0. 前置
 
 ```sh
-pnpm install --ignore-workspace   # 独立安装依赖
-pnpm run build                    # tsdown 构建 lib/
-pnpm exec tsc --noEmit            # 类型检查
+cd dsh-image-video
+# 使用 --ignore-workspace 让 dsh-image-video 脱离 deepseek-harness monorepo，
+# 模拟独立仓库的依赖解析方式；--no-frozen-lockfile 允许新建/更新 pnpm-lock.yaml
+pnpm install --ignore-workspace --no-frozen-lockfile
 ```
+
+> 如果你之前在 workspace 根运行过 `pnpm install`，本目录可能出现 `Cannot resolve @deepseek-ai/cordis` 等 peer 错误——那是因为子包 `peerDependencies` 在根 workspace 能解析、但作为独立仓库时缺失。此时只要跑上面这条 `--ignore-workspace` 即可解决。
+
+### 1. 纯逻辑单元测试（推荐每次提交前都跑）
+
+```sh
+pnpm run test
+```
+
+**预期输出**：
+
+```
+Test Files  4 passed (4)
+     Tests  34 passed (34)
+```
+
+四个测试文件覆盖：
+
+| 文件 | 覆盖 |
+|---|---|
+| `tests/config.test.ts` | 配置 schema 默认值校验、provider 凭证解析、非法 size / duration 输入拒绝 |
+| `tests/http-client.test.ts` | HTTP 状态码 → `GenerationError` 分类映射（401→auth / 403→auth / 429→quota / 400→task / 500→network） |
+| `tests/media.test.ts` | `Content-Type` → 扩展名推断、JPEG/PNG/WEBP/MP4 映射、图片 mediaType 转换 |
+| `tests/providers.test.ts` | **适配器集成测试**：mock `fetch`（`vi.stubGlobal`），覆盖 万象wanx/Seedance 的 submit→query 成功路径 + PENDING/RUNNING 状态 + 500/401/429 异常分类 |
+
+单文件调试：`pnpm exec vitest run tests/providers.test.ts`。`test:watch` 模式（开发时）：`pnpm run test:watch`。
+
+### 2. 类型检查 + 构建
+
+```sh
+pnpm run typecheck   # tsc --noEmit
+pnpm run build       # tsdown 输出 lib/index.js + 类型
+```
+
+Build 成功会看到 `Build complete in xxxms`，且生成 `lib/index.js` 与 `lib/index-xxx.d.ts`（发布到 npm 或 git 安装后 `prepare` 会自动执行）。
+
+### 3. DSH 安装验证（推荐首次跑一次）
+
+把本目录作为本地 bundle 安装到你的某个 DSH profile：
+
+```sh
+# 用你实际的 profile 名替换 <profile>
+dsh plugin --profile <profile> add /absolute/path/to/dsh-image-video
+```
+
+然后用 `--dump-config` 确认插件层被识别：
+
+```sh
+dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
+```
+
+**预期输出**里出现 `# == dsh-image-video` 分层，并且有 `image-video` 插件行。如果想快速切换服务商，不需要改安装：
+
+```yaml
+# <profile>/cordis.patch.yml
+- id: image-video
+  config:
+    provider: seedance
+    seedance: { apiKey: '${SEEDANCE_API_KEY}', baseURL: '' }
+    # ...其他字段参考 README 配置示例
+```
+
+启动后用一段自然语言触发工具：
+
+```
+用户：帮我画一只戴墨镜的猫，1024*1024
+```
+
+预期模型会**调用** `generate_image`，完成后对话内嵌显示图片，且 `outputs/` 目录下新增一个 PNG 文件。
+
+### 4. 真实 API 冒烟（可选，需 Key）
+
+`tests/providers.test.ts` 里的 fetch 是 mock。要验证对接真实服务商，最快的方式是写一个 10 行小脚本（不要提交到 git）：
+
+```sh
+# 临时脚本（自己手建一个，别 commit）
+cat > /tmp/smoke.mjs << 'EOF'
+import { wanxAdapter } from '/path/to/dsh-image-video/src/providers/wanx.ts'
+const r = await wanxAdapter.submitImage(
+  { prompt: 'a cat', size: '1024*1024' },
+  { apiKey: process.env.DASHSCOPE_KEY, baseURL: '', timeoutMs: 60_000, retryTimes: 2 },
+)
+console.log(r)
+EOF
+DASHSCOPE_KEY=sk-xxx pnpm exec tsx /tmp/smoke.mjs
+```
+
+**注意**：
+- 这一步会产生真实费用，建议只跑一次最小尺寸
+- 万象 wanx / Seedance 的 Key 分别放在环境变量，不要硬编码进源码
+
+### 5. 常见排错
+
+| 症状 | 原因 | 解决 |
+|---|---|---|
+| `pnpm run test` 报 lockfile out of date | 升级 package.json 后没重生成 lockfile | 重新执行 `pnpm install --ignore-workspace --no-frozen-lockfile` |
+| `vitest` 里 fetch 没被拦截、真实请求外发 | 用了 `globalThis.fetch = fn` 而非 `vi.stubGlobal` | 统一用 `vi.stubGlobal('fetch', ...)`，`afterEach` 里 `vi.unstubAllGlobals()` |
+| provider 测试报 "Authorization header 缺失" 但明明传了 key | mock `_url` 和断言写死的 key 不匹配 | 检查 mock 里断言的 `Bearer` 字符串和构造 `opts.apiKey` 是否一致 |
+| DSH 启动报 `cannot find module dsh-image-video` | 只 add 了路径但 profile 没 `pnpm install`，或构建产物缺失 | 重新 `dsh plugin add <path>` 或在 dsh-image-video 先跑 `pnpm run build` |
+| 生成图片但对话没有内嵌 | attachments 服务未加载 | 确认 profile 的 cordis 配置包含 `attachment-local`；本插件通过 `ctx.inject(['attachments'])` 延迟注册 `generate_image`，服务挂载即生效 |
 
 ## License
 

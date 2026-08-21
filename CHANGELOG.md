@@ -2,6 +2,15 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-08-20
+
+### 变更
+- 阿里系服务商从 Kling/可灵 全面切换为 万象 wanx（阿里云百炼）：`provider` 取值 `'kling'` → `'wanx'`，配置字段 `kling:` → `wanx:`，适配器 `klingAdapter` → `wanxAdapter`（文件 `providers/kling.ts` → `providers/wanx.ts`）
+- `generate_video` 默认模型从 `kling/kling-v3-video-generation` 改为 `wan2.2-t2v-plus`（无需开通可灵产品即可使用）
+- 默认图片尺寸改为 `1024*1024`（百炼接口要求 `*` 分隔，`1024x1024` 会报 "size is not in the correct format"）
+- 文档、工具描述、报错文案中的 Kling/可灵 表述同步改为 万象 wanx
+- Seedance2.5 相关代码与配置保持不变
+
 ## [0.1.0] - 2026-08-20
 
 首次发布。文生图与文生视频工具插件，支持 Kling（阿里云百炼）与 Seedance2.5（火山引擎）服务商切换。
