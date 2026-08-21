@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { wanxAdapter } from '../src/providers/wanx.ts'
 import { seedanceAdapter } from '../src/providers/seedance.ts'
+import { bxinleAdapter } from '../src/providers/bxinle.ts'
 import type { ImageGenParams, VideoGenParams, HttpOpts } from '../src/providers/types.ts'
 
 // Seedance 图片是同步接口 `/images/generations`，视频走 `/contents/generations/tasks`
@@ -202,5 +203,116 @@ describe('Seedance adapter', () => {
     await expect(() => seedanceAdapter.submitImage(imageParams, seedanceOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'auth' && e.retryable === false)
+  })
+})
+
+// ============================
+// bxinle 适配器测试
+// ============================
+
+const bxinleOpts = (): HttpOpts => ({
+  apiKey: 'sk-bxinle-test',
+  baseURL: 'https://bxinle.com/v1',
+  timeoutMs: 60000,
+  retryTimes: 0,
+})
+
+describe('bxinle 适配器', () => {
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn()) })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('submitImage → 明确拒绝（bxinle 不支持文生图）', async () => {
+    await expect(() => bxinleAdapter.submitImage(imageParams, bxinleOpts())).rejects
+      .toThrow(/不支持文生图/)
+  })
+
+  it('submitVideo → POST /videos 返回 id，async=true', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'bx-task-1', object: 'video', status: 'queued', progress: 0 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await bxinleAdapter.submitVideo(videoParams, bxinleOpts())
+    expect(r.taskId).toBe('bx-task-1')
+    expect(r.async).toBe(true)
+    expect(r.mediaType).toBe('video')
+    // 验证请求 URL 和 body
+    const call = fetchMock.mock.calls[0]
+    const reqUrl = String(call[0])
+    const req = call[1] as RequestInit
+    expect(reqUrl).toContain('/videos')
+    expect(req.method).toBe('POST')
+    const body = JSON.parse(req.body as string)
+    expect(body.prompt).toBe('海浪拍沙滩')
+    expect(body.duration).toBe(5)
+    expect(body.model).toBe('doubao-seedance-2.0')
+  })
+
+  it('queryTask: queued → pending', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 't', status: 'queued', progress: 0 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    expect(r.status).toBe('pending')
+  })
+
+  it('queryTask: in_progress → running', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 't', status: 'in_progress', progress: 50 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    expect(r.status).toBe('running')
+  })
+
+  it('queryTask: completed + metadata.url → succeeded + mediaUrl', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 't', status: 'completed', progress: 100, metadata: { url: 'https://cdn/result.mp4' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    expect(r.status).toBe('succeeded')
+    if (r.status === 'succeeded') expect(r.mediaUrl).toBe('https://cdn/result.mp4')
+  })
+
+  it('queryTask: completed 无 metadata.url → succeeded + content 端点', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 't', status: 'completed', progress: 100 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    expect(r.status).toBe('succeeded')
+    if (r.status === 'succeeded') expect(r.mediaUrl).toContain('/content')
+  })
+
+  it('queryTask: failed → failed + error message', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 't', status: 'failed', error: { message: '上游超时' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    expect(r.status).toBe('failed')
+    if (r.status === 'failed') expect(r.error).toContain('上游超时')
+  })
+
+  it('submitVideo 401 → auth 不可重试', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ message: 'Invalid API Key' }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    ))
+    await expect(() => bxinleAdapter.submitVideo(videoParams, bxinleOpts())).rejects
+      .toSatisfy((e: { kind: string; retryable: boolean }) =>
+        e.kind === 'auth' && e.retryable === false)
+  })
+
+  it('submitVideo 500 → network 可重试', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ message: 'boom' }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    ))
+    await expect(() => bxinleAdapter.submitVideo(videoParams, bxinleOpts())).rejects
+      .toSatisfy((e: { kind: string; retryable: boolean }) =>
+        e.kind === 'network' && e.retryable === true)
   })
 })

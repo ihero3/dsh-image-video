@@ -13,6 +13,7 @@ import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
+import { bxinleAdapter } from '../providers/bxinle.ts'
 import type { VideoGenParams, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, createVideoContent } from '../media.ts'
 
@@ -89,7 +90,9 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       }
 
       const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'wanx' ? wanxAdapter : seedanceAdapter
+      const adapter = provider === 'bxinle' ? bxinleAdapter
+        : provider === 'wanx' ? wanxAdapter
+        : seedanceAdapter
 
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,

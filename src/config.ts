@@ -7,7 +7,7 @@
 import z from '@deepseek-ai/schemastery'
 
 /** 支持的生成服务商。 */
-export type Provider = 'wanx' | 'seedance'
+export type Provider = 'bxinle' | 'wanx' | 'seedance'
 
 /** 单个服务商的凭证与自定义接口地址。 */
 export interface ProviderCredentials {
@@ -21,6 +21,8 @@ export interface ProviderCredentials {
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
+  /** bxinle 凭证；provider=bxinle 时使用（仅支持视频）。 */
+  bxinle: ProviderCredentials
   /** 万象（wanx）凭证；provider=wanx 时使用。 */
   wanx: ProviderCredentials
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
@@ -47,9 +49,10 @@ const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
   baseURL: z.string().description('自定义接口地址，留空使用默认端点'),
 })
 
-/** 插件配置 schema，默认值贴近 万象（wanx）/ Seedance 常用参数。 */
+/** 插件配置 schema，默认服务商为 bxinle（视频生成），wanx/seedance 可选。 */
 export const Config: z<Config> = z.object({
-  provider: z.union(['wanx', 'seedance']).default('wanx').description('激活的生成服务商'),
+  provider: z.union(['bxinle', 'wanx', 'seedance']).default('bxinle').description('激活的生成服务商'),
+  bxinle: ProviderCredentialsSchema.default({ apiKey: '' }).description('bxinle 凭证（默认视频服务商）'),
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
   defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
@@ -68,7 +71,9 @@ export const Config: z<Config> = z.object({
  * @throws 当激活服务商未配置 API Key 时。
  */
 export function resolveActiveProvider(config: Config): { provider: Provider; apiKey: string; baseURL: string } {
-  const creds = config.provider === 'wanx' ? config.wanx : config.seedance
+  const creds = config.provider === 'bxinle' ? config.bxinle
+    : config.provider === 'wanx' ? config.wanx
+    : config.seedance
   if (!creds.apiKey || creds.apiKey.trim().length === 0) {
     throw new Error(`dsh-image-video: 服务商 ${config.provider} 未配置 API Key，请在配置中设置 ${config.provider}.apiKey`)
   }
@@ -82,6 +87,7 @@ export function resolveActiveProvider(config: Config): { provider: Provider; api
 /** 服务商默认接口地址。 */
 function defaultBaseURL(provider: Provider): string {
   switch (provider) {
+    case 'bxinle': return 'https://bxinle.com/v1'
     case 'wanx': return 'https://dashscope.aliyuncs.com/api/v1'
     case 'seedance': return 'https://ark.cn-beijing.volces.com/api/v3'
   }

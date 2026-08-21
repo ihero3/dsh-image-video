@@ -16,8 +16,12 @@
     - id: image-video
       name: 'dsh-image-video'
       config:
-        # 激活的生成服务商，wanx | seedance
-        provider: wanx
+        # 激活的生成服务商，bxinle（默认，仅视频） | wanx | seedance
+        provider: bxinle
+        # bxinle 凭证；provider=bxinle 时使用（仅支持视频生成）
+        bxinle:
+          apiKey: ''
+          baseURL: ''
         # 万象（阿里云百炼）凭证；provider=wanx 时使用
         wanx:
           apiKey: ''

@@ -18,12 +18,13 @@
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
 | `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
-| `generate_video` | 文生短视频（上限 10s） | 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_video` | 文生短视频（上限 10s） | **bxinle**（默认）/ 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
 | 服务商 | 渠道 | 文生图 | 文生视频 | 备注 |
 |---|---|---|---|---|
+| **bxinle**（默认） | bxinle.com Bearer Key | ❌ 不支持 | ✅ 适配器已实现（doubao-seedance-2.0） | 统一 `/v1/videos` 端点；`provider=bxinle` 时图片回退到 wanx |
 | **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ 已验证（wan2.2-t2v-plus） | 图片同步/异步自适应；视频始终异步 |
 | **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ 适配器已实现 | 图片同步返回 URL；视频走异步任务 |
 
@@ -46,7 +47,10 @@ dsh plugin --profile <profile> add github:<owner>/dsh-image-video
 ```yaml
 - id: image-video
   config:
-    provider: wanx                    # wanx | seedance
+    provider: bxinle                  # bxinle（默认，仅视频） | wanx | seedance
+    bxinle:
+      apiKey: !!js process.env.BXINLE_API_KEY
+      baseURL: ''
     wanx:
       apiKey: !!js process.env.DASHSCOPE_API_KEY
       baseURL: ''
@@ -119,6 +123,7 @@ dsh-image-video/
     ├── media.ts              # 媒体下载 / 落地 / 摘要文本 / presentationMeta
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
+    │   ├── bxinle.ts         # bxinle API 适配器（默认视频服务商）
     │   ├── wanx.ts           # 万象（wanx）API 适配器
     │   └── seedance.ts       # Seedance2.5 API 适配器
     └── tools/
@@ -132,7 +137,9 @@ dsh-image-video/
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `provider` | `'wanx' \| 'seedance'` | `wanx` | 激活的服务商，切换后立即生效（HMR） |
+| `provider` | `'bxinle' \| 'wanx' \| 'seedance'` | `bxinle` | 激活的服务商，切换后立即生效（HMR） |
+| `bxinle.apiKey` | `string` | `''` | bxinle API Key；`provider=bxinle` 时必填 |
+| `bxinle.baseURL` | `string` | `''` | bxinle 自定义接口地址，留空用默认端点 |
 | `wanx.apiKey` | `string` | `''` | 万象 API Key；`provider=wanx` 时必填 |
 | `wanx.baseURL` | `string` | `''` | 万象自定义接口地址，留空用默认端点 |
 | `seedance.apiKey` | `string` | `''` | Seedance2.5 API Key；`provider=seedance` 时必填 |
@@ -232,6 +239,7 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 
 ## 服务商 API 参考
 
+- **bxinle**：[视频生成文档](https://bxinle.com/zh/docs/video/) / [模型广场](https://bxinle.com/zh/models/)
 - **万象 wanx（阿里云百炼 DashScope）**：[文生图](https://help.aliyun.com/zh/model-studio/text-to-image-guide) / [文生视频](https://help.aliyun.com/zh/model-studio/video-generation)
 - **Seedance2.5（火山引擎 Ark）**：[文生图](https://docs.volcengine.com/docs/85621/1616429) / [文生视频](https://docs.volcengine.com/docs/82379/1520757)
 

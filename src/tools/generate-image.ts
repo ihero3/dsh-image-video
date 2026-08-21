@@ -114,8 +114,14 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
 
     async execute(args, exec) {
       const typedArgs = args as { prompt: string; size?: string; model?: string }
-      const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'wanx' ? wanxAdapter : seedanceAdapter
+      // bxinle 仅支持视频；图片生成回退到 wanx，需用 wanx 凭证
+      const resolved = resolveActiveProvider(config)
+      const imageProvider = resolved.provider === 'bxinle' ? 'wanx' : resolved.provider
+      const apiKey = imageProvider === 'wanx' ? config.wanx.apiKey : config.seedance.apiKey
+      const baseURL = imageProvider === 'wanx'
+        ? (config.wanx.baseURL?.trim() || 'https://dashscope.aliyuncs.com/api/v1')
+        : (config.seedance.baseURL?.trim() || 'https://ark.cn-beijing.volces.com/api/v3')
+      const adapter = imageProvider === 'wanx' ? wanxAdapter : seedanceAdapter
 
       const imageParams: ImageGenParams = {
         prompt: typedArgs.prompt,
@@ -161,7 +167,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       imageRef = await saveImageAttachment(attachments, saved.data, saved.contentType, 'generated-image')
 
       const output: GenerateImageOutput = {
-        provider,
+        provider: imageProvider,
         prompt: typedArgs.prompt,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
