@@ -2,7 +2,8 @@
  * dsh-image-video — DeepSeek Harness 插件：文生图与文生视频工具。
  *
  * 注册两个模型可调用工具：
- *   - `generate_image`：文生图，支持 万象（wanx）/ Seedance2.5 切换，模型只见文本摘要，附件走 UI-only 通道，落地 outputs/
+ *   - `generate_image`：文生图，支持 万象（wanx）/ Seedance2.5 切换。路由支持图片输入时，工具结果
+ *     携带 image 块经现有消息图片渲染内嵌显示；否则回退纯文本摘要。附件字节走 attachment 服务，落地 outputs/
  *   - `generate_video`：文生短视频（上限 10s），后台异步轮询，不阻塞对话，结果落地 outputs/
  *
  * 生命周期遵循 Cordis 规范：`TaskManager` 在构造时通过 `ctx.effect()` 注册卸载清理函数，
@@ -76,7 +77,8 @@ export function apply(ctx: Context, config: Config): void {
     const attachments = imageCtx.get('attachments')
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
-    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments }))
+    // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
+    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx }))
   })
 
   // generate_video：不依赖 attachments，始终注册。

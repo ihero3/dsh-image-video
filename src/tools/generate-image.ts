@@ -6,9 +6,13 @@
  * @module dsh-image-video/tools/generate-image
  */
 
+import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { ImageAttachmentRef, AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { ToolExecution } from '@deepseek-ai/dsh-tools'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Config } from '../config.ts'
 import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
@@ -26,6 +30,44 @@ export interface GenerateImageDeps {
   config: Config
   taskManager: TaskManager
   attachments: AttachmentStore
+  ctx: Context
+}
+
+/**
+ * 判断当前调用路由是否声明支持图片输入，与官方 read_image 的能力门一致：
+ * 解析会话当前 provider/model 后经 llm 服务读取输入模态。任何环节缺服务或
+ * 解析失败都视为「不支持」，从而回退纯文本摘要——绝不向纯文本模型注入 image
+ * 块触发网关 400。@param ctx 插件上下文。@param exec 工具执行上下文。
+ * @returns 路由是否声明了 image 输入模态。
+ */
+async function routeAcceptsImages(ctx: Context, exec: ToolExecution): Promise<boolean> {
+  const routed = exec.agent?.session.requestHeader()?.config
+  const provider = routed?.provider ?? exec.agent?.options.provider
+  const model = routed?.model ?? exec.agent?.options.model
+  const llm = ctx.get('llm')
+  if (provider === undefined || model === undefined || llm === undefined) return false
+  try {
+    const info = await llm.resolveModelInfo(provider, model, exec.signal)
+    return info.inputModalities?.includes('image') === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 把工具输出里的 image 字段重建为 attachment 持久化引用，供 `image` 内容块携带。
+ * execute 返回的是 schema 校验后的明文对象（attachmentId 为字符串），此处补上品牌化 ID
+ * 并还原为 durable 引用，与官方 read_image 的 imageRefFromValue 保持一致。
+ */
+function imageAttachmentRef(image: NonNullable<GenerateImageOutput['image']>): ImageAttachmentRef {
+  return {
+    attachmentId: AttachmentId(image.attachmentId),
+    mediaType: image.mediaType,
+    bytes: image.bytes,
+    width: image.width,
+    height: image.height,
+    ...image.name === undefined ? {} : { name: image.name },
+  }
 }
 
 /**
@@ -33,7 +75,7 @@ export interface GenerateImageDeps {
  * 工具参数：prompt（必填）、size（可选）、model（可选）。
  */
 export function createGenerateImageTool(deps: GenerateImageDeps) {
-  const { config, taskManager, attachments } = deps
+  const { config, taskManager, attachments, ctx } = deps
 
   return defineTool({
     name: 'generate_image',
@@ -71,30 +113,34 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           image: {
             type: 'object',
             additionalProperties: false,
-            description: '内嵌图片附件引用（经 presentationMeta 持久化为 UI 专用数据，不进入模型上下文）。',
+            description: '内嵌图片附件引用。路由支持图片输入时 render 一并注入 image 块使对话内嵌显示；否则仅返回文本摘要。',
             properties: {
-              attachmentId: { type: 'string' },
-              mediaType: { type: 'string' },
-              bytes: { type: 'integer' },
-              width: { type: 'integer' },
-              height: { type: 'integer' },
+              attachmentId: { type: 'string', required: true },
+              mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
+              bytes: { type: 'integer', required: true },
+              width: { type: 'integer', required: true },
+              height: { type: 'integer', required: true },
               name: { type: 'string' },
             },
           },
         },
       },
-      // 模型可见内容为纯文本：图片附件引用只经 presentationMeta 走 UI 通道持久化，
-      // 不注入工具结果内容。纯文本模型（如 deepseek-v4-flash）无法接收 image 块——
-      // LLM 适配器会把 image 块序列化成 image_url 发送，不支持图片输入的网关会直接
-      // 400（unknown variant `image_url`），导致生成图片后的下一轮请求失败。
+      // 模型可见内容：文本摘要 +（当 execute 判定路由支持图片输入时）一个 image 块。
+      // image 块携带 attachment 持久化引用，前端经现有消息图片渲染内嵌显示，与官方
+      // read_image 一致；纯文本模型（如 deepseek-v4-flash）不注入 image 块，避免 LLM
+      // 适配器序列化成 image_url 后网关 400（unknown variant `image_url`）。
       render: (_args, value): ContentBlock[] => {
         const v = value as GenerateImageOutput
-        return createImageSummaryText({
+        const content = createImageSummaryText({
           provider: v.provider,
           localPath: v.localPath,
           bytes: v.bytes,
           ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },
         })
+        if (v.image !== undefined) {
+          content.push({ type: 'image', attachment: imageAttachmentRef(v.image) })
+        }
+        return content
       },
       // UI-only 通道：持久化到 tool/result 事件的 meta 字段，客户端 ToolResultNode.meta
       // 可消费它内嵌渲染图片，但绝不进入模型请求上下文（Model-visible ⟺ logged 的反向：
@@ -166,13 +212,15 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       let imageRef: ImageAttachmentRef | undefined
       imageRef = await saveImageAttachment(attachments, saved.data, saved.contentType, 'generated-image')
 
+      // 判定调用路由是否声明图片输入：支持才注入 image 块（前端内嵌显示），否则仅文本摘要。
+      const imageInline = await routeAcceptsImages(ctx, exec)
       const output: GenerateImageOutput = {
         provider: imageProvider,
         prompt: typedArgs.prompt,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
-        image: imageRef as GenerateImageOutput['image'],
+        ...imageInline && imageRef !== undefined ? { image: imageRef as GenerateImageOutput['image'] } : {},
       }
       return output
     },
@@ -197,7 +245,7 @@ interface GenerateImageOutput {
   bytes: number
   image?: {
     attachmentId: string
-    mediaType: string
+    mediaType: ImageMediaType
     bytes: number
     width: number
     height: number
