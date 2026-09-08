@@ -30,6 +30,10 @@
         seedance:
           apiKey: ''
           baseURL: ''
+        # 默认图片模型名；留空使用 adapter 内置默认
+        defaultImageModel: ''
+        # 默认视频模型名；留空使用 adapter 内置默认
+        defaultVideoModel: ''
         # 默认图片尺寸（百炼接口要求 * 分隔，如 1024*1024）
         defaultImageSize: '1024*1024'
         # 默认视频时长（秒），上限 10
