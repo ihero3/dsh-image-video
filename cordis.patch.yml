@@ -16,10 +16,10 @@
     - id: image-video
       name: 'dsh-image-video'
       config:
-        # 激活的生成服务商，bxinle（默认，仅视频） | wanx | seedance
-        provider: bxinle
-        # bxinle 凭证；provider=bxinle 时使用（仅支持视频生成）
-        bxinle:
+        # 激活的生成服务商，threerouter（默认，图片+视频） | wanx | seedance
+        provider: threerouter
+        # Threerouter 凭证；provider=threerouter 时使用（图片+视频统一入口）
+        threerouter:
           apiKey: ''
           baseURL: ''
         # 万象（阿里云百炼）凭证；provider=wanx 时使用

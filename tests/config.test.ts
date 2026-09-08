@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { Config, resolveActiveProvider } from '../src/config.ts'
 
 describe('Config Schema', () => {
-  it('空对象 → 全部使用默认值（默认 provider=bxinle）', () => {
+  it('空对象 → 全部使用默认值（默认 provider=threerouter）', () => {
     const cfg = Config({})
-    expect(cfg.provider).toBe('bxinle')
+    expect(cfg.provider).toBe('threerouter')
     expect(cfg.defaultImageSize).toBe('1024*1024')
     expect(cfg.defaultVideoDuration).toBe(5)
     expect(cfg.timeoutMs).toBe(60_000)
@@ -12,13 +12,13 @@ describe('Config Schema', () => {
     expect(cfg.pollTimeoutMs).toBe(300_000)
     expect(cfg.retryTimes).toBe(3)
     expect(cfg.outputsDir).toBe('./outputs')
-    expect(cfg.bxinle.apiKey).toBe('')
+    expect(cfg.threerouter.apiKey).toBe('')
     expect(cfg.wanx.apiKey).toBe('')
     expect(cfg.seedance.apiKey).toBe('')
   })
 
-  it('provider 仅接受 bxinle / wanx / seedance，非法值报错', () => {
-    expect(() => Config({ provider: 'bxinle' })).not.toThrow()
+  it('provider 仅接受 threerouter / wanx / seedance，非法值报错', () => {
+    expect(() => Config({ provider: 'threerouter' })).not.toThrow()
     expect(() => Config({ provider: 'wanx' })).not.toThrow()
     expect(() => Config({ provider: 'seedance' })).not.toThrow()
     expect(() => Config({ provider: 'other' })).toThrow()
@@ -56,12 +56,12 @@ describe('Config Schema', () => {
 })
 
 describe('resolveActiveProvider 凭证解析', () => {
-  it('provider=bxinle → 使用 bxinle 凭证 + 默认 baseURL', () => {
-    const cfg = Config({ provider: 'bxinle', bxinle: { apiKey: 'sk-bxinle' } })
+  it('provider=threerouter → 使用 threerouter 凭证 + 默认 baseURL', () => {
+    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-threerouter' } })
     const r = resolveActiveProvider(cfg)
-    expect(r.provider).toBe('bxinle')
-    expect(r.apiKey).toBe('sk-bxinle')
-    expect(r.baseURL).toBe('https://bxinle.com/v1')
+    expect(r.provider).toBe('threerouter')
+    expect(r.apiKey).toBe('sk-threerouter')
+    expect(r.baseURL).toBe('https://api.threerouter.com/v1')
   })
 
   it('provider=wanx → 使用 wanx 凭证 + 默认 baseURL', () => {
@@ -85,8 +85,8 @@ describe('resolveActiveProvider 凭证解析', () => {
   })
 
   it('未配置 API Key 时抛错，含中文友好提示', () => {
-    const cfgB = Config({ provider: 'bxinle', bxinle: { apiKey: '' } })
-    expect(() => resolveActiveProvider(cfgB)).toThrow(/bxinle.*未配置 API Key/)
+    const cfgT = Config({ provider: 'threerouter', threerouter: { apiKey: '' } })
+    expect(() => resolveActiveProvider(cfgT)).toThrow(/threerouter.*未配置 API Key/)
     const cfgW = Config({ provider: 'wanx', wanx: { apiKey: '' } })
     expect(() => resolveActiveProvider(cfgW)).toThrow(/wanx.*未配置 API Key/)
     const cfgS = Config({ provider: 'seedance', seedance: { apiKey: '   ' } })

@@ -18,6 +18,7 @@ import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
+import { threerouterAdapter } from '../providers/threerouter.ts'
 import type { ImageGenParams, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, saveImageAttachment, createImageSummaryText } from '../media.ts'
 
@@ -160,14 +161,11 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
 
     async execute(args, exec) {
       const typedArgs = args as { prompt: string; size?: string; model?: string }
-      // bxinle 仅支持视频；图片生成回退到 wanx，需用 wanx 凭证
-      const resolved = resolveActiveProvider(config)
-      const imageProvider = resolved.provider === 'bxinle' ? 'wanx' : resolved.provider
-      const apiKey = imageProvider === 'wanx' ? config.wanx.apiKey : config.seedance.apiKey
-      const baseURL = imageProvider === 'wanx'
-        ? (config.wanx.baseURL?.trim() || 'https://dashscope.aliyuncs.com/api/v1')
-        : (config.seedance.baseURL?.trim() || 'https://ark.cn-beijing.volces.com/api/v3')
-      const adapter = imageProvider === 'wanx' ? wanxAdapter : seedanceAdapter
+      // 三个服务商均支持文生图，直接使用激活服务商的凭证与适配器
+      const { provider, apiKey, baseURL } = resolveActiveProvider(config)
+      const adapter = provider === 'threerouter' ? threerouterAdapter
+        : provider === 'wanx' ? wanxAdapter
+        : seedanceAdapter
 
       const imageParams: ImageGenParams = {
         prompt: typedArgs.prompt,
@@ -215,7 +213,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       // 判定调用路由是否声明图片输入：支持才注入 image 块（前端内嵌显示），否则仅文本摘要。
       const imageInline = await routeAcceptsImages(ctx, exec)
       const output: GenerateImageOutput = {
-        provider: imageProvider,
+        provider,
         prompt: typedArgs.prompt,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,

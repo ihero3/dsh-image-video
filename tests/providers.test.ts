@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { wanxAdapter } from '../src/providers/wanx.ts'
 import { seedanceAdapter } from '../src/providers/seedance.ts'
-import { bxinleAdapter } from '../src/providers/bxinle.ts'
+import { threerouterAdapter } from '../src/providers/threerouter.ts'
 import type { ImageGenParams, VideoGenParams, HttpOpts } from '../src/providers/types.ts'
 
 // Seedance 图片是同步接口 `/images/generations`，视频走 `/contents/generations/tasks`
@@ -207,101 +207,130 @@ describe('Seedance adapter', () => {
 })
 
 // ============================
-// bxinle 适配器测试
+// threerouter 适配器测试
 // ============================
 
-const bxinleOpts = (): HttpOpts => ({
-  apiKey: 'sk-bxinle-test',
-  baseURL: 'https://bxinle.com/v1',
+const threerouterOpts = (): HttpOpts => ({
+  apiKey: 'sk-threerouter-test',
+  baseURL: 'https://api.threerouter.com/v1',
   timeoutMs: 60000,
   retryTimes: 0,
 })
 
-describe('bxinle 适配器', () => {
+describe('threerouter 适配器', () => {
   beforeEach(() => { vi.stubGlobal('fetch', vi.fn()) })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('submitImage → 明确拒绝（bxinle 不支持文生图）', async () => {
-    await expect(() => bxinleAdapter.submitImage(imageParams, bxinleOpts())).rejects
-      .toThrow(/不支持文生图/)
-  })
-
-  it('submitVideo → POST /videos 返回 id，async=true', async () => {
+  it('submitImage → POST /media/generations，media_kind=image，async=true', async () => {
     const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ id: 'bx-task-1', object: 'video', status: 'queued', progress: 0 }),
+      JSON.stringify({ id: 'mt-img-1', status: 'processing', model: 'wan2.1-image' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    const r = await bxinleAdapter.submitVideo(videoParams, bxinleOpts())
-    expect(r.taskId).toBe('bx-task-1')
+    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    expect(r.taskId).toBe('mt-img-1')
     expect(r.async).toBe(true)
-    expect(r.mediaType).toBe('video')
+    expect(r.mediaType).toBe('image')
     // 验证请求 URL 和 body
     const call = fetchMock.mock.calls[0]
     const reqUrl = String(call[0])
     const req = call[1] as RequestInit
-    expect(reqUrl).toContain('/videos')
+    expect(reqUrl).toContain('/media/generations')
+    expect(req.method).toBe('POST')
+    const body = JSON.parse(req.body as string)
+    expect(body.prompt).toBe('赛博朋克猫')
+    expect(body.media_kind).toBe('image')
+    expect(body.model).toBe('wan2.1-image')
+    expect(body.duration).toBeUndefined()
+  })
+
+  it('submitVideo → POST /media/generations，media_kind=video + duration + ratio', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'mt-vid-1', status: 'processing', model: 'seedance-2.5' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await threerouterAdapter.submitVideo(videoParams, threerouterOpts())
+    expect(r.taskId).toBe('mt-vid-1')
+    expect(r.async).toBe(true)
+    expect(r.mediaType).toBe('video')
+    const call = fetchMock.mock.calls[0]
+    const reqUrl = String(call[0])
+    const req = call[1] as RequestInit
+    expect(reqUrl).toContain('/media/generations')
     expect(req.method).toBe('POST')
     const body = JSON.parse(req.body as string)
     expect(body.prompt).toBe('海浪拍沙滩')
+    expect(body.media_kind).toBe('video')
     expect(body.duration).toBe(5)
-    expect(body.model).toBe('doubao-seedance-2.0')
+    expect(body.ratio).toBe('16:9')
+    expect(body.model).toBe('seedance-2.5')
   })
 
-  it('queryTask: queued → pending', async () => {
+  it('queryTask: processing → running', async () => {
     vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ id: 't', status: 'queued', progress: 0 }),
+      JSON.stringify({ id: 'mt_t', status: 'processing' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
-    expect(r.status).toBe('pending')
-  })
-
-  it('queryTask: in_progress → running', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ id: 't', status: 'in_progress', progress: 50 }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ))
-    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
     expect(r.status).toBe('running')
   })
 
-  it('queryTask: completed + metadata.url → succeeded + mediaUrl', async () => {
+  it('queryTask: succeeded + url → succeeded + mediaUrl', async () => {
     vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ id: 't', status: 'completed', progress: 100, metadata: { url: 'https://cdn/result.mp4' } }),
+      JSON.stringify({ id: 'mt_t', status: 'succeeded', url: 'https://cdn/result.mp4' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
     expect(r.status).toBe('succeeded')
     if (r.status === 'succeeded') expect(r.mediaUrl).toBe('https://cdn/result.mp4')
   })
 
-  it('queryTask: completed 无 metadata.url → succeeded + content 端点', async () => {
+  it('queryTask: succeeded 无 url → succeeded + /content 302 端点', async () => {
     vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ id: 't', status: 'completed', progress: 100 }),
+      JSON.stringify({ id: 'mt_t', status: 'succeeded' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
     expect(r.status).toBe('succeeded')
-    if (r.status === 'succeeded') expect(r.mediaUrl).toContain('/content')
+    if (r.status === 'succeeded') expect(r.mediaUrl).toContain('/media/mt_t/content')
   })
 
-  it('queryTask: failed → failed + error message', async () => {
+  it('queryTask: failed（error 为对象）→ failed + error message', async () => {
     vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ id: 't', status: 'failed', error: { message: '上游超时' } }),
+      JSON.stringify({ id: 'mt_t', status: 'failed', error: { message: '上游超时' } }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await bxinleAdapter.queryTask('t', bxinleOpts())
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
     expect(r.status).toBe('failed')
     if (r.status === 'failed') expect(r.error).toContain('上游超时')
   })
 
+  it('queryTask: failed（error 为字符串）→ failed + 错误文本', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 'mt_t', status: 'failed', error: '内容审核未通过' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    expect(r.status).toBe('failed')
+    if (r.status === 'failed') expect(r.error).toContain('内容审核未通过')
+  })
+
+  it('queryTask: cancelled → failed', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ id: 'mt_t', status: 'cancelled' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    expect(r.status).toBe('failed')
+  })
+
   it('submitVideo 401 → auth 不可重试', async () => {
     vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ message: 'Invalid API Key' }),
+      JSON.stringify({ code: 'API_KEY_REQUIRED', message: 'API key is required' }),
       { status: 401, headers: { 'content-type': 'application/json' } },
     ))
-    await expect(() => bxinleAdapter.submitVideo(videoParams, bxinleOpts())).rejects
+    await expect(() => threerouterAdapter.submitVideo(videoParams, threerouterOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'auth' && e.retryable === false)
   })
@@ -311,7 +340,7 @@ describe('bxinle 适配器', () => {
       JSON.stringify({ message: 'boom' }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     ))
-    await expect(() => bxinleAdapter.submitVideo(videoParams, bxinleOpts())).rejects
+    await expect(() => threerouterAdapter.submitVideo(videoParams, threerouterOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'network' && e.retryable === true)
   })

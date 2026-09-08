@@ -13,7 +13,7 @@ import { resolveActiveProvider } from '../config.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
-import { bxinleAdapter } from '../providers/bxinle.ts'
+import { threerouterAdapter } from '../providers/threerouter.ts'
 import type { VideoGenParams, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, createVideoContent } from '../media.ts'
 
@@ -90,7 +90,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       }
 
       const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'bxinle' ? bxinleAdapter
+      const adapter = provider === 'threerouter' ? threerouterAdapter
         : provider === 'wanx' ? wanxAdapter
         : seedanceAdapter
 
