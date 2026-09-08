@@ -47,10 +47,10 @@ export interface Config {
   outputsDir: string
 }
 
-/** 服务商凭证 schema，复用于 wanx 与 seedance。 */
+/** 服务商凭证 schema，复用于 threerouter/wanx/seedance。apiKey 可空（未激活的 provider 留空）。 */
 const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
-  apiKey: z.string().required().description('服务商 API Key'),
-  baseURL: z.string().description('自定义接口地址，留空使用默认端点'),
+  apiKey: z.string().default('').description('服务商 API Key；未激活的 provider 可留空'),
+  baseURL: z.string().default('').description('自定义接口地址，留空使用默认端点'),
 })
 
 /** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
