@@ -81,9 +81,10 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片。支持 万象wanx（阿里云百炼）和 Seedance（火山引擎）两种服务商，'
-      + '通过配置切换。生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
-      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选）。',
+      '根据文本提示词生成图片。服务商由配置 provider 决定（默认 threerouter 路由，图片+视频统一入口），'
+      + '不要自行编写脚本或直接调用服务商 API。'
+      + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
+      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用配置默认模型）。',
 
     parameters: {
       prompt: {
@@ -170,7 +171,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const imageParams: ImageGenParams = {
         prompt: typedArgs.prompt,
         size: typedArgs.size ?? config.defaultImageSize,
-        model: typedArgs.model,
+        model: typedArgs.model || config.defaultImageModel || undefined,
       }
 
       const httpOpts: HttpOpts = {

@@ -17,7 +17,7 @@ export interface ProviderCredentials {
   baseURL?: string
 }
 
-/** 插件配置：服务商选择、凭证、生成默认值、轮询与重试策略。 */
+/** 插件配置：服务商选择、凭证、模型、生成默认值、轮询与重试策略。 */
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
@@ -27,6 +27,10 @@ export interface Config {
   wanx: ProviderCredentials
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
   seedance: ProviderCredentials
+  /** 默认图片模型名；留空使用 adapter 内置默认。 */
+  defaultImageModel: string
+  /** 默认视频模型名；留空使用 adapter 内置默认。 */
+  defaultVideoModel: string
   /** 默认图片尺寸，形如 "1024*1024"。 */
   defaultImageSize: string
   /** 默认视频时长（秒），上限 10。 */
@@ -55,6 +59,8 @@ export const Config: z<Config> = z.object({
   threerouter: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threerouter 凭证（默认服务商）'),
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
+  defaultImageModel: z.string().default('').description('默认图片模型名，留空使用 adapter 内置默认'),
+  defaultVideoModel: z.string().default('').description('默认视频模型名，留空使用 adapter 内置默认'),
   defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
   defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),

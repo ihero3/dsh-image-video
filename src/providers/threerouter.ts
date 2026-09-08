@@ -12,8 +12,8 @@ import { toRequestOpts } from './types.ts'
 
 /** Threerouter 默认文生图模型。 */
 const DEFAULT_IMAGE_MODEL = 'wan2.1-image'
-/** Threerouter 默认文生视频模型（官方文档示例模型）。 */
-const DEFAULT_VIDEO_MODEL = 'seedance-2.5'
+/** Threerouter 默认文生视频模型。账号可用模型见 threerouter.com 控制台。 */
+const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
 
 /** Threerouter API 请求头。 */
 function threerouterHeaders(apiKey: string): Record<string, string> {
