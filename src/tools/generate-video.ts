@@ -79,6 +79,19 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         const v = value as GenerateVideoOutput
         return createVideoContent(v.localPath, v.bytes, v.sourceUrl)
       },
+      // UI-only 通道：与 generate_image 一致，把展示字段经 tool/result 事件持久化到
+      // ToolResultNode.meta，桌面客户端 keyed toolview 据此内嵌视频播放器；对模型不可见。
+      presentationMeta: (_args, value) => {
+        const v = value as GenerateVideoOutput
+        return {
+          provider: v.provider,
+          prompt: v.prompt,
+          duration: v.duration,
+          localPath: v.localPath,
+          sourceUrl: v.sourceUrl,
+          bytes: v.bytes,
+        }
+      },
     },
 
     async execute(args, exec) {

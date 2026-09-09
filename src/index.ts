@@ -14,6 +14,9 @@
  *   - `attachments`（generate_image 必需）：通过 `ctx.inject(['attachments'], cb)` 显式声明，
  *     当 attachment 服务挂载时注册 generate_image；服务撤销时 fiber dispose 自动注销工具。
  *     不在工具执行体内部运行时 `ctx.get` 读取未声明的服务。
+ *   - `webServer`（可选，桌面环境提供）：通过 `ctx.inject(['webServer'], cb)` 显式声明，
+ *     挂载时注册 outputs/ 只读媒体路由（仅 127.0.0.1 回环），供桌面客户端内嵌
+ *     播放器加载生成结果；服务缺失（纯 CLI 会话）时跳过，不影响工具注册。
  *   - generate_video 不依赖 attachments，始终注册。
  *
  * 组合兼容：`cordis.patch.yml` 用 `- insert:` 新增 `image-video` 行，不覆盖任何现有插件行；
@@ -26,6 +29,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Config } from './config.ts'
+import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -84,4 +88,15 @@ export function apply(ctx: Context, config: Config): void {
 
   // generate_video：不依赖 attachments，始终注册。
   ctx.tools.register(createGenerateVideoTool({ config, taskManager }))
+
+  // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
+  // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
+  // 视频/图片；仅回环地址注册，非 127.0.0.1 不暴露。路由注销随 fiber 卸载。
+  ctx.inject(['webServer'], (mediaCtx) => {
+    const webServer = mediaCtx.get('webServer') as MediaWebServer | undefined
+    if (!webServer) return
+    const disposeRoute = registerOutputsRoute(webServer, config.outputsDir)
+    // host 非 127.0.0.1 时不注册，无路由可注销
+    if (disposeRoute) mediaCtx.effect(() => disposeRoute, 'dsh-image-video: outputs media route')
+  })
 }
