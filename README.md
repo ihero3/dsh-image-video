@@ -33,11 +33,8 @@
 ### 1. 安装
 
 ```sh
-# 本地安装（开发推荐）
-dsh plugin --profile <profile> add ./dsh-image-video
-
 # GitHub 远程安装
-dsh plugin --profile <profile> add github:<owner>/dsh-image-video
+dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 ```
 
 ### 2. 配置 API Key
