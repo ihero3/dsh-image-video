@@ -8,8 +8,8 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { Config } from '../config.ts'
-import { resolveActiveProvider, resolveProviderCredentials } from '../config.ts'
+import type { Config, Provider } from '../config.ts'
+import { resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
 import { resolveModelProvider } from '../runtime-defaults.ts'
 import type { TaskManager } from '../task-manager.ts'
@@ -40,11 +40,12 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
   return defineTool({
     name: 'generate_video',
     description:
-      '根据文本提示词生成短视频。服务商自动路由：指定模型属于某服务商分组时用该服务商（其凭证直连），'
-      + '否则由配置 provider 决定（默认 threerouter 统一路由入口）。'
+      '根据文本提示词生成短视频。服务商选择：指定模型属于某服务商映射时用该服务商（其凭证直连），'
+      + '否则依次取 composer 会话选定的服务商、配置默认服务商、激活服务商（默认 threerouter），'
+      + '由所选服务商的内置默认模型出片。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒。生成完成后视频保存到本地 outputs/ 目录。`
-      + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用配置默认模型）、aspectRatio（宽高比，可选）。',
+      + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用服务商内置默认模型）、aspectRatio（宽高比，可选）。',
 
     parameters: {
       prompt: {
@@ -110,14 +111,15 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间，当前为 ${duration}`)
       }
 
-      const model = typedArgs.model || runtime.videoModel || config.defaultVideoModel || undefined
+      const model = typedArgs.model
 
-      // 服务商路由：模型 id 命中 composer 分组映射 → 自动路由到该服务商（用其
-      // 凭证直连）；自定义模型 / 未选模型 → 跟随 settings 激活服务商。
+      // 服务商选择：显式 model 参数命中模型映射 → 按模型路由（用其凭证直连）；
+      // 否则依次跟随 composer 运行时覆盖的服务商、settings 默认服务商、激活
+      // 服务商，由所选 adapter 使用其内置默认模型出片。
       const routed = model !== undefined ? resolveModelProvider('video', model) : undefined
-      const { provider, apiKey, baseURL } = routed !== undefined
-        ? resolveProviderCredentials(config, routed)
-        : resolveActiveProvider(config)
+      const preferred: Provider | undefined = runtime.videoProvider
+        ?? (config.defaultVideoProvider === '' ? undefined : config.defaultVideoProvider)
+      const { provider, apiKey, baseURL } = resolveProviderCredentials(config, routed ?? preferred ?? config.provider)
       const adapter = provider === 'threerouter' ? threerouterAdapter
         : provider === 'wanx' ? wanxAdapter
         : seedanceAdapter

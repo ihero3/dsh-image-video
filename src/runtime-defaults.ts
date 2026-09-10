@@ -1,6 +1,6 @@
 /**
  * 运行时生成默认值（runtime defaults）：桌面 composer 的「文本/图片/视频」tab
- * 会在会话中途切换模型/比例/风格/时长，这些覆盖值只存内存、不落盘——
+ * 会在会话中途切换服务商/比例/风格/时长，这些覆盖值只存内存、不落盘——
  * 设置页（cordis.patch.yml 持久 config）仍是持久层，插件重载后覆盖值清空、
  * 回落 settings 持久值。这样避免任何配置写入触发宿主 scheduleRestart 重启
  * 整个应用，实现「切换立即生效」。
@@ -23,20 +23,20 @@ import type { MediaWebServer } from './media-route.ts'
 import type { Config, Provider } from './config.ts'
 
 /**
- * 运行时覆盖值集合。字段语义与 generate_image / generate_video 工具参数一一对应：
- * `undefined` = 未覆盖，工具回落 settings（config）持久值。
+ * 运行时覆盖值集合。字段语义与 generate_image / generate_video 工具的
+ * 服务商/参数选择一一对应：`undefined` = 未覆盖，工具回落 settings（config）持久值。
  * `imageSize` 为映射后的尺寸串（如 '1024*1024'），`videoAspectRatio` 为比例串
  * （如 '16:9'），`imageStyle` 为风格 id（见 {@link IMAGE_STYLE_OPTIONS}）。
  */
 export interface RuntimeDefaults {
-  /** 图片模型覆盖；undefined 跟随 settings。 */
-  imageModel?: string
+  /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'）；undefined 跟随 settings。 */
+  imageProvider?: Provider
   /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
   imageSize?: string
   /** 图片风格 id 覆盖；undefined 跟随 settings（不拼接风格后缀）。 */
   imageStyle?: string
-  /** 视频模型覆盖；undefined 跟随 settings。 */
-  videoModel?: string
+  /** 视频服务商覆盖；undefined 跟随 settings。 */
+  videoProvider?: Provider
   /** 视频宽高比覆盖（如 '16:9'）；undefined 跟随 settings。 */
   videoAspectRatio?: string
   /** 视频时长覆盖（秒，1-10）；undefined 跟随 settings。 */
@@ -133,18 +133,18 @@ const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as co
 const MIN_VIDEO_DURATION = 1
 const MAX_VIDEO_DURATION = 10
 
-/**
- * 模型 id 的长度上限（防御性：模型 id 是发给服务商 API 的自由字符串，仅限长度）。
- * 白名单内最长 id 为 35 字符（doubao-seedance-1-0-lite-t2v-250428），取 3 倍
- * 余量收紧上限；settings 手填的自定义模型不受白名单限制，仅限长度。
- */
-const MAX_MODEL_ID_LENGTH = 100
+/** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验。 */
+const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'seedance'] as const
+
+/** 值是否为合法服务商（'' / 未知值均拒绝）。 */
+function isProvider(value: string): value is Provider {
+  return (PROVIDERS as ReadonlyArray<string>).includes(value)
+}
 
 /**
- * 桌面 composer 模型下拉的图像模型 → 服务商映射。键与 dsh-plugin-desktop
- * composer-media-tabs.tsx 的 IMAGE_MODEL_OPTIONS 分组选项一一对应（两仓同步）。
- * 映射命中的模型生成时自动路由到对应服务商（使用其凭证），未命中的自定义
- * 模型跟随 settings 激活服务商。
+ * 图像模型 id → 服务商映射，供 generate_image 工具的显式 model 参数路由：
+ * 映射命中的模型用该服务商凭证直连，未命中的自定义模型跟随服务商选择链
+ * （composer 覆盖 → settings 默认服务商 → 激活服务商）。
  */
 export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
   'wan2.1-image': 'threerouter',
@@ -154,7 +154,7 @@ export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
 } as const
 
 /**
- * 视频模型 → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。wan2.2-t2v-plus
+ * 视频模型 id → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。wan2.2-t2v-plus
  * 固定路由 Threerouter 统一入口（万象直连内置默认亦为同款，避免同 id 双组歧义）；
  * wanx2.1-t2v-turbo 走阿里云百炼直连（与图片侧 wanx2.1-t2i-turbo 对称）。
  */
@@ -166,10 +166,10 @@ export const VIDEO_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
 } as const
 
 /**
- * 解析模型应路由到的服务商。wan2.2-t2v-plus 是 Threerouter 的内置默认视频
+ * 解析显式模型参数应路由到的服务商。wan2.2-t2v-plus 是 Threerouter 的内置默认视频
  * 模型（万象直连默认亦为同款），为避免歧义固定路由 Threerouter 统一入口。
  * @param kind - 图像或视频模型。
- * @param model - 模型 id（运行时覆盖值 / settings 持久值 / 工具显式参数）。
+ * @param model - 模型 id（工具显式参数）。
  * @returns 映射命中的服务商；未命中（自定义模型）返回 undefined。
  */
 export function resolveModelProvider(kind: 'image' | 'video', model: string): Provider | undefined {
@@ -191,22 +191,22 @@ export type PersistedDefaultsView = Partial<RuntimeDefaults>
 
 /**
  * 从插件持久 config 提取 settings 默认值，作为 defaults 路由合并视图的回落层。
- * 白名单/范围守卫：模型 id 须命中 IMAGE/VIDEO_MODEL_PROVIDER 映射（与 composer
- * 下拉预设一致）、imageSize 须命中 IMAGE_SIZE_OPTIONS 白名单、videoDuration 须
- * 1-10 整数；settings 手填的遗留越界值一律忽略（composer 显示「自动」，工具用
- * 内置默认），避免把非法持久值经合并视图当作生效值回显。
+ * 白名单/范围守卫：服务商须命中 PROVIDERS 白名单（空串 = 跟随激活服务商，不
+ * 提取）、imageSize 须命中 IMAGE_SIZE_OPTIONS 白名单、videoDuration 须 1-10 整数；
+ * settings 手填的遗留越界值一律忽略（composer 显示「自动」，工具用内置默认），
+ * 避免把非法持久值经合并视图当作生效值回显。
  * @param config - 已由 Schemastery 填充默认值的插件配置。
  */
 export function extractPersistedDefaults(config: Config): PersistedDefaultsView {
   const persisted: PersistedDefaultsView = {}
-  if (resolveModelProvider('image', config.defaultImageModel) !== undefined) {
-    persisted.imageModel = config.defaultImageModel
+  if (isProvider(config.defaultImageProvider)) {
+    persisted.imageProvider = config.defaultImageProvider
   }
   if (IMAGE_SIZE_OPTIONS.some((option) => option.size === config.defaultImageSize)) {
     persisted.imageSize = config.defaultImageSize
   }
-  if (resolveModelProvider('video', config.defaultVideoModel) !== undefined) {
-    persisted.videoModel = config.defaultVideoModel
+  if (isProvider(config.defaultVideoProvider)) {
+    persisted.videoProvider = config.defaultVideoProvider
   }
   if (
     Number.isInteger(config.defaultVideoDuration) &&
@@ -224,10 +224,10 @@ export function extractPersistedDefaults(config: Config): PersistedDefaultsView 
  */
 function toView(defaults: Readonly<RuntimeDefaults>, persisted: PersistedDefaultsView): RuntimeDefaultsView {
   return {
-    imageModel: defaults.imageModel ?? persisted.imageModel ?? null,
+    imageProvider: defaults.imageProvider ?? persisted.imageProvider ?? null,
     imageSize: defaults.imageSize ?? persisted.imageSize ?? null,
     imageStyle: defaults.imageStyle ?? null,
-    videoModel: defaults.videoModel ?? persisted.videoModel ?? null,
+    videoProvider: defaults.videoProvider ?? persisted.videoProvider ?? null,
     videoAspectRatio: defaults.videoAspectRatio ?? null,
     videoDuration: defaults.videoDuration ?? persisted.videoDuration ?? null,
   }
@@ -244,7 +244,7 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
     return { ok: false, error: '请求体必须是 JSON 对象' }
   }
   const record = body as Record<string, unknown>
-  const KNOWN_KEYS: ReadonlyArray<keyof RuntimeDefaults> = ['imageModel', 'imageSize', 'imageStyle', 'videoModel', 'videoAspectRatio', 'videoDuration']
+  const KNOWN_KEYS: ReadonlyArray<keyof RuntimeDefaults> = ['imageProvider', 'imageSize', 'imageStyle', 'videoProvider', 'videoAspectRatio', 'videoDuration']
   for (const key of Object.keys(record)) {
     if (!KNOWN_KEYS.includes(key as keyof RuntimeDefaults)) {
       return { ok: false, error: `未知字段: ${key}` }
@@ -259,9 +259,9 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
       patch[key] = null
       continue
     }
-    if (key === 'imageModel' || key === 'videoModel') {
-      if (typeof value !== 'string' || value.trim().length === 0 || value.length > MAX_MODEL_ID_LENGTH) {
-        return { ok: false, error: `${key} 必须是 1-${MAX_MODEL_ID_LENGTH} 字符的模型名` }
+    if (key === 'imageProvider' || key === 'videoProvider') {
+      if (typeof value !== 'string' || !isProvider(value)) {
+        return { ok: false, error: `${key} 必须是 ${PROVIDERS.join(' / ')} 之一` }
       }
       patch[key] = value
       continue

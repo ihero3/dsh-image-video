@@ -29,15 +29,15 @@ describe('运行时默认值存储', () => {
     const store = createRuntimeDefaultsStore()
     expect(store.get()).toEqual({})
     const snapshot = store.get()
-    snapshot.imageModel = 'tampered'
+    ;(snapshot as Record<string, unknown>).imageProvider = 'tampered'
     expect(store.get()).toEqual({})
   })
 
   it('patch 合并写入，null 清除对应字段，其余字段保留', () => {
     const store = createRuntimeDefaultsStore()
-    store.patch({ imageModel: 'wan2.1-image', videoDuration: 6 })
-    expect(store.get()).toEqual({ imageModel: 'wan2.1-image', videoDuration: 6 })
-    store.patch({ imageModel: null })
+    store.patch({ imageProvider: 'wanx', videoDuration: 6 })
+    expect(store.get()).toEqual({ imageProvider: 'wanx', videoDuration: 6 })
+    store.patch({ imageProvider: null })
     expect(store.get()).toEqual({ videoDuration: 6 })
   })
 
@@ -102,8 +102,8 @@ describe('settings 持久默认提取（extractPersistedDefaults）', () => {
       threerouter: { apiKey: 'test-key' },
       wanx: { apiKey: '' },
       seedance: { apiKey: '' },
-      defaultImageModel: '',
-      defaultVideoModel: '',
+      defaultImageProvider: '',
+      defaultVideoProvider: '',
       defaultImageSize: '1024*1024',
       defaultVideoDuration: 5,
       timeoutMs: 60_000,
@@ -115,28 +115,28 @@ describe('settings 持久默认提取（extractPersistedDefaults）', () => {
     }
   }
 
-  it('schema 默认 config：仅提取合法尺寸与时长，空模型名不提取', () => {
+  it('schema 默认 config：仅提取合法尺寸与时长，空服务商不提取', () => {
     expect(extractPersistedDefaults(makeConfig())).toEqual({
       imageSize: '1024*1024',
       videoDuration: 5,
     })
   })
 
-  it('命中模型映射的持久默认被提取', () => {
-    const view = extractPersistedDefaults(makeConfig({ defaultImageModel: 'wan2.1-image', defaultVideoModel: 'wan2.2-t2v-plus' }))
-    expect(view.imageModel).toBe('wan2.1-image')
-    expect(view.videoModel).toBe('wan2.2-t2v-plus')
+  it('合法服务商的持久默认被提取', () => {
+    const view = extractPersistedDefaults(makeConfig({ defaultImageProvider: 'wanx', defaultVideoProvider: 'seedance' }))
+    expect(view.imageProvider).toBe('wanx')
+    expect(view.videoProvider).toBe('seedance')
   })
 
-  it('越界遗留值整体忽略：自定义模型 / 非白名单尺寸 / 时长越界', () => {
+  it('越界遗留值整体忽略：未知服务商 / 非白名单尺寸 / 时长越界', () => {
     const view = extractPersistedDefaults(makeConfig({
-      defaultImageModel: 'my-custom-model',
-      defaultVideoModel: 'also-custom',
+      defaultImageProvider: 'bogus' as unknown as Config['defaultImageProvider'],
+      defaultVideoProvider: 'also-bogus' as unknown as Config['defaultVideoProvider'],
       defaultImageSize: '999*999',
       defaultVideoDuration: 11,
     }))
-    expect(view.imageModel).toBeUndefined()
-    expect(view.videoModel).toBeUndefined()
+    expect(view.imageProvider).toBeUndefined()
+    expect(view.videoProvider).toBeUndefined()
     expect(view.imageSize).toBeUndefined()
     expect(view.videoDuration).toBeUndefined()
   })
@@ -156,10 +156,10 @@ describe('POST 协议校验', () => {
   })
 
   it('合法写入并归一化：空串视为 null（自动）', () => {
-    const result = parseDefaultsPatch({ imageModel: 'wan2.1-image', imageSize: '', videoDuration: null })
+    const result = parseDefaultsPatch({ imageProvider: 'wanx', imageSize: '', videoDuration: null })
     expect(result).toEqual({
       ok: true,
-      patch: { imageModel: 'wan2.1-image', imageSize: null, videoDuration: null },
+      patch: { imageProvider: 'wanx', imageSize: null, videoDuration: null },
     })
   })
 
@@ -193,10 +193,10 @@ describe('POST 协议校验', () => {
     expect(parseDefaultsPatch({ videoDuration: '5' }).ok).toBe(false)
   })
 
-  it('模型字段拒绝空串与超长', () => {
-    expect(parseDefaultsPatch({ videoModel: '  ' }).ok).toBe(false)
-    expect(parseDefaultsPatch({ imageModel: 'x'.repeat(101) }).ok).toBe(false)
-    expect(parseDefaultsPatch({ imageModel: 'wan2.1-image' }).ok).toBe(true)
+  it('服务商字段仅接受白名单值，空串归一化为自动（清除）', () => {
+    expect(parseDefaultsPatch({ videoProvider: 'no-such' }).ok).toBe(false)
+    expect(parseDefaultsPatch({ imageProvider: 'wanx' }).ok).toBe(true)
+    expect(parseDefaultsPatch({ imageProvider: '' }).ok).toBe(true)
   })
 })
 
@@ -226,10 +226,10 @@ describe('defaults 路由 handler', () => {
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      imageModel: null,
+      imageProvider: null,
       imageSize: null,
       imageStyle: null,
-      videoModel: null,
+      videoProvider: null,
       videoAspectRatio: null,
       videoDuration: null,
     })
@@ -243,10 +243,10 @@ describe('defaults 路由 handler', () => {
     })
     expect(post.status).toBe(200)
     expect(await post.json()).toEqual({
-      imageModel: null,
+      imageProvider: null,
       imageSize: null,
       imageStyle: 'anime',
-      videoModel: null,
+      videoProvider: null,
       videoAspectRatio: null,
       videoDuration: 8,
     })
@@ -295,7 +295,7 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
   let server: Server
   let base: string
   const store = createRuntimeDefaultsStore()
-  const persisted = { imageModel: 'wan2.1-image', videoDuration: 6 }
+  const persisted = { imageProvider: 'wanx', videoDuration: 6 }
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -318,10 +318,10 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      imageModel: 'wan2.1-image',
+      imageProvider: 'wanx',
       imageSize: null,
       imageStyle: null,
-      videoModel: null,
+      videoProvider: null,
       videoAspectRatio: null,
       videoDuration: 6,
     })
@@ -331,10 +331,10 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
     await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageModel: 'wanx2.1-t2i-turbo' }),
+      body: JSON.stringify({ imageProvider: 'seedance' }),
     })
     const view = await (await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)).json() as Record<string, unknown>
-    expect(view.imageModel).toBe('wanx2.1-t2i-turbo')
+    expect(view.imageProvider).toBe('seedance')
     expect(view.videoDuration).toBe(6)
   })
 
@@ -342,10 +342,10 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
     await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageModel: '' }),
+      body: JSON.stringify({ imageProvider: '' }),
     })
     const view = await (await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)).json() as Record<string, unknown>
-    expect(view.imageModel).toBe('wan2.1-image')
+    expect(view.imageProvider).toBe('wanx')
   })
 })
 
