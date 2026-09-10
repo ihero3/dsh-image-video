@@ -10,16 +10,17 @@
  * 仅当 webServer 绑定 127.0.0.1 时注册，非本机回环一律不暴露。
  *
  * 请求协议（JSON）：
- *   - GET  → 200，六个字段齐全，`null` 表示未覆盖（跟随 settings 持久值）。
+ *   - GET  → 200，六个字段齐全，值为「运行时覆盖 ?? settings 持久默认」的
+ *     合并视图，`null` 表示两者皆未设置（工具使用内置默认）。
  *   - POST → body 为对象，仅接受六个已知键；值为 `null`（清除覆盖，回落
- *     settings）或合法值；含未知键 / 非法值 / 不可解析 JSON → 400。
+ *     settings 持久默认）或合法值；含未知键 / 非法值 / 不可解析 JSON → 400。
  *   - 其他方法 → 405。
  *
  * @module dsh-image-video/runtime-defaults
  */
 
 import type { MediaWebServer } from './media-route.ts'
-import type { Provider } from './config.ts'
+import type { Config, Provider } from './config.ts'
 
 /**
  * 运行时覆盖值集合。字段语义与 generate_image / generate_video 工具参数一一对应：
@@ -174,18 +175,56 @@ export function resolveModelProvider(kind: 'image' | 'video', model: string): Pr
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 export const DEFAULTS_ROUTE_PATH = '/image-video/defaults'
 
-/** GET / POST 响应体：六字段齐全，null = 未覆盖（跟随 settings）。 */
+/** GET / POST 响应体：六字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
 export type RuntimeDefaultsView = RuntimeDefaultsPatch
 
-/** 把存储快照序列化为响应视图（undefined → null）。 */
-function toView(defaults: Readonly<RuntimeDefaults>): RuntimeDefaultsView {
+/**
+ * settings 持久默认值视图：{@link extractPersistedDefaults} 从 config 提取出的
+ * 合法默认值子集，未提取的字段不出现在对象上（undefined → 合并时跳过）。
+ */
+export type PersistedDefaultsView = Partial<RuntimeDefaults>
+
+/**
+ * 从插件持久 config 提取 settings 默认值，作为 defaults 路由合并视图的回落层。
+ * 白名单/范围守卫：模型 id 须命中 IMAGE/VIDEO_MODEL_PROVIDER 映射（与 composer
+ * 下拉预设一致）、imageSize 须命中 IMAGE_SIZE_OPTIONS 白名单、videoDuration 须
+ * 1-10 整数；settings 手填的遗留越界值一律忽略（composer 显示「自动」，工具用
+ * 内置默认），避免把非法持久值经合并视图当作生效值回显。
+ * @param config - 已由 Schemastery 填充默认值的插件配置。
+ */
+export function extractPersistedDefaults(config: Config): PersistedDefaultsView {
+  const persisted: PersistedDefaultsView = {}
+  if (resolveModelProvider('image', config.defaultImageModel) !== undefined) {
+    persisted.imageModel = config.defaultImageModel
+  }
+  if (IMAGE_SIZE_OPTIONS.some((option) => option.size === config.defaultImageSize)) {
+    persisted.imageSize = config.defaultImageSize
+  }
+  if (resolveModelProvider('video', config.defaultVideoModel) !== undefined) {
+    persisted.videoModel = config.defaultVideoModel
+  }
+  if (
+    Number.isInteger(config.defaultVideoDuration) &&
+    config.defaultVideoDuration >= MIN_VIDEO_DURATION &&
+    config.defaultVideoDuration <= MAX_VIDEO_DURATION
+  ) {
+    persisted.videoDuration = config.defaultVideoDuration
+  }
+  return persisted
+}
+
+/**
+ * 合并为响应视图：运行时覆盖优先，缺失回落 settings 持久默认，两者皆无 → null。
+ * 风格与视频比例是纯运行时概念（settings 无对应持久字段），始终取覆盖层。
+ */
+function toView(defaults: Readonly<RuntimeDefaults>, persisted: PersistedDefaultsView): RuntimeDefaultsView {
   return {
-    imageModel: defaults.imageModel ?? null,
-    imageSize: defaults.imageSize ?? null,
+    imageModel: defaults.imageModel ?? persisted.imageModel ?? null,
+    imageSize: defaults.imageSize ?? persisted.imageSize ?? null,
     imageStyle: defaults.imageStyle ?? null,
-    videoModel: defaults.videoModel ?? null,
+    videoModel: defaults.videoModel ?? persisted.videoModel ?? null,
     videoAspectRatio: defaults.videoAspectRatio ?? null,
-    videoDuration: defaults.videoDuration ?? null,
+    videoDuration: defaults.videoDuration ?? persisted.videoDuration ?? null,
   }
 }
 
@@ -253,12 +292,16 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
 }
 
 /**
- * 创建 defaults 路由 handler。GET 返回当前覆盖视图；POST 校验写入并返回新视图；
- * 非 GET/POST 405；请求体不可解析或校验失败 400。
+ * 创建 defaults 路由 handler。GET 返回「运行时覆盖 ?? settings 持久默认」合并
+ * 视图；POST 校验写入并返回合并视图；非 GET/POST 405；请求体不可解析或校验
+ * 失败 400。
  * @param store - 运行时默认值存储。
+ * @param persisted - settings 持久默认回落层（{@link extractPersistedDefaults}
+ *   提取；未提供时用空对象，即不回落）。
  */
 export function createDefaultsRouteHandler(
   store: RuntimeDefaultsStore,
+  persisted: PersistedDefaultsView = {},
 ): (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void> {
   return async (req, res) => {
     const sendJson = (status: number, payload: unknown): void => {
@@ -266,7 +309,7 @@ export function createDefaultsRouteHandler(
       res.end(JSON.stringify(payload))
     }
     if (req.method === 'GET') {
-      sendJson(200, toView(store.get()))
+      sendJson(200, toView(store.get(), persisted))
       return
     }
     if (req.method !== 'POST') {
@@ -292,7 +335,7 @@ export function createDefaultsRouteHandler(
       sendJson(400, { error: result.error })
       return
     }
-    sendJson(200, toView(store.patch(result.patch)))
+    sendJson(200, toView(store.patch(result.patch), persisted))
   }
 }
 
@@ -301,13 +344,18 @@ export function createDefaultsRouteHandler(
  * undefined 且不注册——运行时覆盖值属本机会话状态，不暴露到局域网。
  * @param webServer - webServer 服务实例（结构类型，见 media-route.ts）。
  * @param store - 运行时默认值存储。
+ * @param persisted - settings 持久默认回落层（同 {@link createDefaultsRouteHandler}）。
  * @returns 路由注销函数；未注册返回 undefined。
  */
-export function registerDefaultsRoute(webServer: MediaWebServer, store: RuntimeDefaultsStore): (() => void) | undefined {
+export function registerDefaultsRoute(
+  webServer: MediaWebServer,
+  store: RuntimeDefaultsStore,
+  persisted: PersistedDefaultsView = {},
+): (() => void) | undefined {
   if (webServer.host !== '127.0.0.1') return undefined
   return webServer.register({
     kind: 'exact',
     path: DEFAULTS_ROUTE_PATH,
-    handler: createDefaultsRouteHandler(store),
+    handler: createDefaultsRouteHandler(store, persisted),
   })
 }

@@ -14,12 +14,14 @@ import {
   createDefaultsRouteHandler,
   createRuntimeDefaultsStore,
   DEFAULTS_ROUTE_PATH,
+  extractPersistedDefaults,
   IMAGE_SIZE_OPTIONS,
   IMAGE_STYLE_OPTIONS,
   parseDefaultsPatch,
   registerDefaultsRoute,
   resolveModelProvider,
 } from '../src/runtime-defaults.ts'
+import type { Config } from '../src/config.ts'
 import type { MediaWebServer } from '../src/media-route.ts'
 
 describe('运行时默认值存储', () => {
@@ -88,6 +90,54 @@ describe('模型 → 服务商映射', () => {
     expect(resolveModelProvider('video', 'my-custom-model')).toBeUndefined()
     expect(resolveModelProvider('image', '')).toBeUndefined()
     expect(resolveModelProvider('video', 'wan2.1-image')).toBeUndefined()
+  })
+})
+
+describe('settings 持久默认提取（extractPersistedDefaults）', () => {
+  /** 构造测试用插件配置：除显式覆盖字段外全部取 schema 默认值。 */
+  function makeConfig(overrides: Partial<Config> = {}): Config {
+    return {
+      provider: 'threerouter',
+      threerouter: { apiKey: 'test-key' },
+      wanx: { apiKey: '' },
+      seedance: { apiKey: '' },
+      defaultImageModel: '',
+      defaultVideoModel: '',
+      defaultImageSize: '1024*1024',
+      defaultVideoDuration: 5,
+      timeoutMs: 60_000,
+      pollIntervalMs: 5_000,
+      pollTimeoutMs: 300_000,
+      retryTimes: 3,
+      outputsDir: './outputs',
+      ...overrides,
+    }
+  }
+
+  it('schema 默认 config：仅提取合法尺寸与时长，空模型名不提取', () => {
+    expect(extractPersistedDefaults(makeConfig())).toEqual({
+      imageSize: '1024*1024',
+      videoDuration: 5,
+    })
+  })
+
+  it('命中模型映射的持久默认被提取', () => {
+    const view = extractPersistedDefaults(makeConfig({ defaultImageModel: 'wan2.1-image', defaultVideoModel: 'wan2.2-t2v-plus' }))
+    expect(view.imageModel).toBe('wan2.1-image')
+    expect(view.videoModel).toBe('wan2.2-t2v-plus')
+  })
+
+  it('越界遗留值整体忽略：自定义模型 / 非白名单尺寸 / 时长越界', () => {
+    const view = extractPersistedDefaults(makeConfig({
+      defaultImageModel: 'my-custom-model',
+      defaultVideoModel: 'also-custom',
+      defaultImageSize: '999*999',
+      defaultVideoDuration: 11,
+    }))
+    expect(view.imageModel).toBeUndefined()
+    expect(view.videoModel).toBeUndefined()
+    expect(view.imageSize).toBeUndefined()
+    expect(view.videoDuration).toBeUndefined()
   })
 })
 
@@ -237,6 +287,64 @@ describe('defaults 路由 handler', () => {
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, { method: 'PUT' })
     expect(res.status).toBe(405)
     expect(res.headers.get('allow')).toBe('GET, POST')
+  })
+})
+
+describe('defaults 路由合并视图（override ?? settings 持久默认）', () => {
+  let server: Server
+  let base: string
+  const store = createRuntimeDefaultsStore()
+  const persisted = { imageModel: 'wan2.1-image', videoDuration: 6 }
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      void createDefaultsRouteHandler(store, persisted)(req, res)
+    })
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+    })
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      server.closeAllConnections()
+    })
+  })
+
+  it('GET 无覆盖时回落 settings 持久默认', async () => {
+    const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      imageModel: 'wan2.1-image',
+      imageSize: null,
+      imageStyle: null,
+      videoModel: null,
+      videoAspectRatio: null,
+      videoDuration: 6,
+    })
+  })
+
+  it('运行时覆盖优先于持久默认', async () => {
+    await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageModel: 'wanx2.1-t2i-turbo' }),
+    })
+    const view = await (await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)).json() as Record<string, unknown>
+    expect(view.imageModel).toBe('wanx2.1-t2i-turbo')
+    expect(view.videoDuration).toBe(6)
+  })
+
+  it('POST 空串清除覆盖后回落持久默认', async () => {
+    await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageModel: '' }),
+    })
+    const view = await (await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)).json() as Record<string, unknown>
+    expect(view.imageModel).toBe('wan2.1-image')
   })
 })
 

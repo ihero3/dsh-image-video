@@ -30,7 +30,7 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Config } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
-import { registerDefaultsRoute } from './runtime-defaults.ts'
+import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
@@ -52,12 +52,13 @@ export {
   createRuntimeDefaultsStore,
   createDefaultsRouteHandler,
   DEFAULTS_ROUTE_PATH,
+  extractPersistedDefaults,
   IMAGE_SIZE_OPTIONS,
   IMAGE_STYLE_OPTIONS,
   parseDefaultsPatch,
   registerDefaultsRoute,
 } from './runtime-defaults.ts'
-export type { RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
+export type { PersistedDefaultsView, RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
 
 /** Cordis 插件名，用于 loader 诊断。 */
 export const name = 'image-video'
@@ -118,8 +119,9 @@ export function apply(ctx: Context, config: Config): void {
 
     // defaults 热更新路由：桌面渲染进程同源 GET/POST /image-video/defaults，
     // composer 切换模型/比例/风格/时长立即生效（仅内存，不触发重启）；
-    // 同样仅回环注册。路由注销随 fiber 卸载。
-    const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults)
+    // GET/POST 响应为「运行时覆盖 ?? settings 持久默认」合并视图，持久默认经
+    // extractPersistedDefaults 白名单守卫提取。同样仅回环注册，注销随 fiber 卸载。
+    const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults, extractPersistedDefaults(config))
     if (disposeDefaults) mediaCtx.effect(() => disposeDefaults, 'dsh-image-video: runtime defaults route')
   })
 }
