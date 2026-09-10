@@ -14,9 +14,9 @@ import type {} from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Config } from '../config.ts'
-import { resolveActiveProvider } from '../config.ts'
+import { resolveActiveProvider, resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
-import { applyImageStyle } from '../runtime-defaults.ts'
+import { applyImageStyle, resolveModelProvider } from '../runtime-defaults.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
@@ -85,7 +85,8 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片。服务商由配置 provider 决定（默认 threerouter 路由，图片+视频统一入口），'
+      '根据文本提示词生成图片。服务商自动路由：指定模型属于某服务商分组时用该服务商（其凭证直连），'
+      + '否则由配置 provider 决定（默认 threerouter 统一路由入口）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
       + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用配置默认模型）。',
@@ -166,21 +167,28 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
 
     async execute(args, exec) {
       const typedArgs = args as { prompt: string; size?: string; model?: string }
-      // 三个服务商均支持文生图，直接使用激活服务商的凭证与适配器
-      const { provider, apiKey, baseURL } = resolveActiveProvider(config)
-      const adapter = provider === 'threerouter' ? threerouterAdapter
-        : provider === 'wanx' ? wanxAdapter
-        : seedanceAdapter
 
       // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
       // 风格在 host 端拼接为英文提示词后缀，对所有服务商通用（不改 API 参数）。
       const runtime = runtimeDefaults.get()
       const prompt = applyImageStyle(typedArgs.prompt, runtime.imageStyle)
 
+      const model = typedArgs.model || runtime.imageModel || config.defaultImageModel || undefined
+
+      // 服务商路由：模型 id 命中 composer 分组映射 → 自动路由到该服务商（用其
+      // 凭证直连）；自定义模型 / 未选模型 → 跟随 settings 激活服务商。
+      const routed = model !== undefined ? resolveModelProvider('image', model) : undefined
+      const { provider, apiKey, baseURL } = routed !== undefined
+        ? resolveProviderCredentials(config, routed)
+        : resolveActiveProvider(config)
+      const adapter = provider === 'threerouter' ? threerouterAdapter
+        : provider === 'wanx' ? wanxAdapter
+        : seedanceAdapter
+
       const imageParams: ImageGenParams = {
         prompt,
         size: typedArgs.size ?? runtime.imageSize ?? config.defaultImageSize,
-        model: typedArgs.model || runtime.imageModel || config.defaultImageModel || undefined,
+        model,
       }
 
       const httpOpts: HttpOpts = {

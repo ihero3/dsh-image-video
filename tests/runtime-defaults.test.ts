@@ -18,6 +18,7 @@ import {
   IMAGE_STYLE_OPTIONS,
   parseDefaultsPatch,
   registerDefaultsRoute,
+  resolveModelProvider,
 } from '../src/runtime-defaults.ts'
 import type { MediaWebServer } from '../src/media-route.ts'
 
@@ -65,6 +66,28 @@ describe('图片风格提示词后缀', () => {
 
   it('风格清单含自动与五个具体风格', () => {
     expect(IMAGE_STYLE_OPTIONS.map((o) => o.id)).toEqual(['', 'photo', 'illustration', '3d', 'anime', 'ink'])
+  })
+})
+
+describe('模型 → 服务商映射', () => {
+  it('图像模型命中各服务商', () => {
+    expect(resolveModelProvider('image', 'wan2.1-image')).toBe('threerouter')
+    expect(resolveModelProvider('image', 'wanx2.1-t2i-turbo')).toBe('wanx')
+    expect(resolveModelProvider('image', 'doubao-seedream-3-0-t2i-250415')).toBe('seedance')
+    expect(resolveModelProvider('image', 'doubao-seedream-4-0-250828')).toBe('seedance')
+  })
+
+  it('视频模型命中各服务商（wan2.2-t2v-plus 固定路由 Threerouter）', () => {
+    expect(resolveModelProvider('video', 'wan2.2-t2v-plus')).toBe('threerouter')
+    expect(resolveModelProvider('video', 'doubao-seedance-1-0-pro-250428')).toBe('seedance')
+    expect(resolveModelProvider('video', 'doubao-seedance-1-0-lite-t2v-250428')).toBe('seedance')
+  })
+
+  it('自定义模型 / 空串 / 跨类型查询返回 undefined', () => {
+    expect(resolveModelProvider('image', 'my-custom-model')).toBeUndefined()
+    expect(resolveModelProvider('video', 'my-custom-model')).toBeUndefined()
+    expect(resolveModelProvider('image', '')).toBeUndefined()
+    expect(resolveModelProvider('video', 'wan2.1-image')).toBeUndefined()
   })
 })
 
@@ -121,7 +144,7 @@ describe('POST 协议校验', () => {
 
   it('模型字段拒绝空串与超长', () => {
     expect(parseDefaultsPatch({ videoModel: '  ' }).ok).toBe(false)
-    expect(parseDefaultsPatch({ imageModel: 'x'.repeat(201) }).ok).toBe(false)
+    expect(parseDefaultsPatch({ imageModel: 'x'.repeat(101) }).ok).toBe(false)
     expect(parseDefaultsPatch({ imageModel: 'wan2.1-image' }).ok).toBe(true)
   })
 })

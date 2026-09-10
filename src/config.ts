@@ -71,23 +71,35 @@ export const Config: z<Config> = z.object({
 })
 
 /**
+ * 解析指定服务商的凭证，校验非空。供按模型自动路由的生成工具使用：
+ * composer 选中某服务商分组下的模型时，工具以该服务商的凭证直连。
+ * @param config - 已校验的插件配置。
+ * @param provider - 目标服务商。
+ * @returns 服务商凭证与端点。
+ * @throws 当该服务商未配置 API Key 时（报错指明缺 key 的 provider 字段）。
+ */
+export function resolveProviderCredentials(config: Config, provider: Provider): { provider: Provider; apiKey: string; baseURL: string } {
+  const creds = provider === 'threerouter' ? config.threerouter
+    : provider === 'wanx' ? config.wanx
+    : config.seedance
+  if (!creds.apiKey || creds.apiKey.trim().length === 0) {
+    throw new Error(`dsh-image-video: 服务商 ${provider} 未配置 API Key，请在配置中设置 ${provider}.apiKey`)
+  }
+  return {
+    provider,
+    apiKey: creds.apiKey,
+    baseURL: creds.baseURL?.trim() || defaultBaseURL(provider),
+  }
+}
+
+/**
  * 解析当前激活服务商的凭证，校验非空。配置错误在加载或首次调用时响亮失败。
  * @param config - 已校验的插件配置。
  * @returns 激活服务商的凭证与端点。
  * @throws 当激活服务商未配置 API Key 时。
  */
 export function resolveActiveProvider(config: Config): { provider: Provider; apiKey: string; baseURL: string } {
-  const creds = config.provider === 'threerouter' ? config.threerouter
-    : config.provider === 'wanx' ? config.wanx
-    : config.seedance
-  if (!creds.apiKey || creds.apiKey.trim().length === 0) {
-    throw new Error(`dsh-image-video: 服务商 ${config.provider} 未配置 API Key，请在配置中设置 ${config.provider}.apiKey`)
-  }
-  return {
-    provider: config.provider,
-    apiKey: creds.apiKey,
-    baseURL: creds.baseURL?.trim() || defaultBaseURL(config.provider),
-  }
+  return resolveProviderCredentials(config, config.provider)
 }
 
 /** 服务商默认接口地址。 */

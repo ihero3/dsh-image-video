@@ -9,8 +9,9 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config } from '../config.ts'
-import { resolveActiveProvider } from '../config.ts'
+import { resolveActiveProvider, resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
+import { resolveModelProvider } from '../runtime-defaults.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
@@ -39,7 +40,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
   return defineTool({
     name: 'generate_video',
     description:
-      '根据文本提示词生成短视频。服务商由配置 provider 决定（默认 threerouter 路由，图片+视频统一入口），'
+      '根据文本提示词生成短视频。服务商自动路由：指定模型属于某服务商分组时用该服务商（其凭证直连），'
+      + '否则由配置 provider 决定（默认 threerouter 统一路由入口）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒。生成完成后视频保存到本地 outputs/ 目录。`
       + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用配置默认模型）、aspectRatio（宽高比，可选）。',
@@ -108,7 +110,14 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间，当前为 ${duration}`)
       }
 
-      const { provider, apiKey, baseURL } = resolveActiveProvider(config)
+      const model = typedArgs.model || runtime.videoModel || config.defaultVideoModel || undefined
+
+      // 服务商路由：模型 id 命中 composer 分组映射 → 自动路由到该服务商（用其
+      // 凭证直连）；自定义模型 / 未选模型 → 跟随 settings 激活服务商。
+      const routed = model !== undefined ? resolveModelProvider('video', model) : undefined
+      const { provider, apiKey, baseURL } = routed !== undefined
+        ? resolveProviderCredentials(config, routed)
+        : resolveActiveProvider(config)
       const adapter = provider === 'threerouter' ? threerouterAdapter
         : provider === 'wanx' ? wanxAdapter
         : seedanceAdapter
@@ -116,7 +125,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,
         duration,
-        model: typedArgs.model || runtime.videoModel || config.defaultVideoModel || undefined,
+        model,
         aspectRatio: typedArgs.aspectRatio || runtime.videoAspectRatio || undefined,
       }
 

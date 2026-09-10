@@ -19,6 +19,7 @@
  */
 
 import type { MediaWebServer } from './media-route.ts'
+import type { Provider } from './config.ts'
 
 /**
  * 运行时覆盖值集合。字段语义与 generate_image / generate_video 工具参数一一对应：
@@ -131,8 +132,44 @@ const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as co
 const MIN_VIDEO_DURATION = 1
 const MAX_VIDEO_DURATION = 10
 
-/** 模型 id 的长度上限（防御性：模型 id 是发给服务商 API 的自由字符串，仅限长度）。 */
-const MAX_MODEL_ID_LENGTH = 200
+/**
+ * 模型 id 的长度上限（防御性：模型 id 是发给服务商 API 的自由字符串，仅限长度）。
+ * 白名单内最长 id 为 35 字符（doubao-seedance-1-0-lite-t2v-250428），取 3 倍
+ * 余量收紧上限；settings 手填的自定义模型不受白名单限制，仅限长度。
+ */
+const MAX_MODEL_ID_LENGTH = 100
+
+/**
+ * 桌面 composer 模型下拉的图像模型 → 服务商映射。键与 dsh-plugin-desktop
+ * composer-media-tabs.tsx 的 IMAGE_MODEL_OPTIONS 分组选项一一对应（两仓同步）。
+ * 映射命中的模型生成时自动路由到对应服务商（使用其凭证），未命中的自定义
+ * 模型跟随 settings 激活服务商。
+ */
+export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
+  'wan2.1-image': 'threerouter',
+  'wanx2.1-t2i-turbo': 'wanx',
+  'doubao-seedream-3-0-t2i-250415': 'seedance',
+  'doubao-seedream-4-0-250828': 'seedance',
+} as const
+
+/** 视频模型 → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。 */
+export const VIDEO_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
+  'wan2.2-t2v-plus': 'threerouter',
+  'doubao-seedance-1-0-pro-250428': 'seedance',
+  'doubao-seedance-1-0-lite-t2v-250428': 'seedance',
+} as const
+
+/**
+ * 解析模型应路由到的服务商。wan2.2-t2v-plus 是 Threerouter 的内置默认视频
+ * 模型（万象直连默认亦为同款），为避免歧义固定路由 Threerouter 统一入口。
+ * @param kind - 图像或视频模型。
+ * @param model - 模型 id（运行时覆盖值 / settings 持久值 / 工具显式参数）。
+ * @returns 映射命中的服务商；未命中（自定义模型）返回 undefined。
+ */
+export function resolveModelProvider(kind: 'image' | 'video', model: string): Provider | undefined {
+  if (model === '') return undefined
+  return kind === 'image' ? IMAGE_MODEL_PROVIDER[model] : VIDEO_MODEL_PROVIDER[model]
+}
 
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 export const DEFAULTS_ROUTE_PATH = '/image-video/defaults'
