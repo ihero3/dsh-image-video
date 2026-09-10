@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest'
-import { extFromContentType, toImageMediaTypeForTest, createImageSummaryText } from '../src/media.ts'
+import { describe, it, expect, afterAll } from 'vitest'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  extFromContentType,
+  toImageMediaTypeForTest,
+  createImageSummaryText,
+  imageMimeFromPath,
+  resolveImageReference,
+} from '../src/media.ts'
 
 describe('media 扩展名与类型推断', () => {
   describe('extFromContentType', () => {
@@ -76,6 +85,41 @@ describe('media 扩展名与类型推断', () => {
         bytes: 512,
       })
       expect((blocks[0] as { text: string }).text).toContain('未知尺寸')
+    })
+  })
+
+  describe('图生视频 image 引用解析', () => {
+    let tempDir = ''
+    afterAll(async () => {
+      if (tempDir) await rm(tempDir, { recursive: true, force: true })
+    })
+
+    it('imageMimeFromPath：常见扩展名映射，未知回退 png', () => {
+      expect(imageMimeFromPath('a.PNG')).toBe('image/png')
+      expect(imageMimeFromPath('a.jpg')).toBe('image/jpeg')
+      expect(imageMimeFromPath('a.jpeg')).toBe('image/jpeg')
+      expect(imageMimeFromPath('a.webp')).toBe('image/webp')
+      expect(imageMimeFromPath('a.gif')).toBe('image/gif')
+      expect(imageMimeFromPath('a.bmp')).toBe('image/bmp')
+      expect(imageMimeFromPath('a.heic')).toBe('image/png')
+    })
+
+    it('resolveImageReference：http(s) 与 data URL 原样返回', async () => {
+      expect(await resolveImageReference('https://img.example.com/a.png')).toBe('https://img.example.com/a.png')
+      expect(await resolveImageReference('http://img.example.com/a.png')).toBe('http://img.example.com/a.png')
+      expect(await resolveImageReference('data:image/jpeg;base64,QUJD')).toBe('data:image/jpeg;base64,QUJD')
+    })
+
+    it('resolveImageReference：本地文件读取并编码为 data URL，MIME 按扩展名', async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-'))
+      const file = join(tempDir, 'first.png')
+      const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+      await writeFile(file, bytes)
+      expect(await resolveImageReference(file)).toBe(`data:image/png;base64,${bytes.toString('base64')}`)
+    })
+
+    it('resolveImageReference：不存在的本地路径响亮抛出 fs 错误', async () => {
+      await expect(() => resolveImageReference('/nonexistent/dir/first.png')).rejects.toThrow()
     })
   })
 })

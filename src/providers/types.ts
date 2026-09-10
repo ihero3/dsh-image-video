@@ -16,16 +16,23 @@ export interface ImageGenParams {
   model?: string
 }
 
-/** 文生视频请求参数。 */
+/** 视频生成请求参数（文生视频，带 image 时为首帧驱动的图生视频）。 */
 export interface VideoGenParams {
   /** 提示词。 */
   prompt: string
   /** 视频时长（秒），上限 10。 */
   duration: number
-  /** 可选宽高比，如 "16:9"。 */
+  /** 可选宽高比，如 "16:9"。存在 image 时构图由首帧图片决定，适配器不传该字段。 */
   aspectRatio?: string
   /** 可选模型名，留空使用适配器默认模型。 */
   model?: string
+  /**
+   * 可选首帧图片，存在时走图生视频：http(s) URL、data URL 或本地文件路径。
+   * 调用方经 media.resolveImageReference 统一解析后才传入，适配器只负责放到各自字段。
+   */
+  image?: string
+  /** 可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3 支持 480P/768P/2K）；留空用服务商默认。 */
+  resolution?: string
 }
 
 /** 任务提交结果。 */

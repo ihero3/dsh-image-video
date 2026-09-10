@@ -116,6 +116,49 @@ describe('Wanx adapter', () => {
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'quota' && e.retryable === false)
   })
+
+  function captureSubmitBody(): { fetchMock: ReturnType<typeof vi.fn>; body: () => Record<string, unknown> } {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ request_id: 'r', output: { task_id: 'wanx-body-1' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    return {
+      fetchMock,
+      body: () => JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string),
+    }
+  }
+
+  it('图生视频：image → input.img_url + 默认 i2v 模型 + 不传 aspect_ratio/audio', async () => {
+    const { body } = captureSubmitBody()
+    const params: VideoGenParams = { ...videoParams, image: 'data:image/png;base64,QUJD', resolution: '1080P' }
+    await wanxAdapter.submitVideo(params, wanxOpts())
+    const b = body()
+    expect(b.model).toBe('wan2.2-i2v-plus')
+    expect(b.input).toMatchObject({ prompt: '海浪拍沙滩', img_url: 'data:image/png;base64,QUJD' })
+    expect(b.parameters).toMatchObject({ duration: 5, resolution: '1080P' })
+    expect(b.parameters.aspect_ratio).toBeUndefined()
+    expect(b.parameters.audio).toBeUndefined()
+  })
+
+  it('图生视频：显式 model 优先于 i2v 内置默认', async () => {
+    const { body } = captureSubmitBody()
+    const params: VideoGenParams = { ...videoParams, model: 'wan2.5-i2v-preview', image: 'https://img.example.com/f.png' }
+    await wanxAdapter.submitVideo(params, wanxOpts())
+    expect(body().model).toBe('wan2.5-i2v-preview')
+  })
+
+  it('文生视频：resolution 可选透传，未传时不携带该字段', async () => {
+    const { body } = captureSubmitBody()
+    await wanxAdapter.submitVideo(videoParams, wanxOpts())
+    const b = body()
+    expect(b.model).toBe('wan2.2-t2v-plus')
+    expect(b.parameters.aspect_ratio).toBe('16:9')
+    expect(b.parameters.resolution).toBeUndefined()
+    const { body: body2 } = captureSubmitBody()
+    await wanxAdapter.submitVideo({ ...videoParams, resolution: '480P' }, wanxOpts())
+    expect(body2().parameters.resolution).toBe('480P')
+  })
 })
 
 describe('Seedance adapter', () => {
@@ -167,6 +210,24 @@ describe('Seedance adapter', () => {
     const q = await seedanceAdapter.queryTask(s.taskId, seedanceOpts())
     expect(q.status).toBe('succeeded')
     expect(q.status === 'succeeded' ? q.mediaUrl : '').toContain('.mp4')
+  })
+
+  it('图生视频：content 数组追加 image_url 块，resolution 可选透传', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'seedance-i2v-1' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: VideoGenParams = { ...videoParams, image: 'https://img.example.com/first.png', resolution: '720P' }
+    const s = await seedanceAdapter.submitVideo(params, seedanceOpts())
+    expect(s.taskId).toBe('seedance-i2v-1')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.content).toEqual([
+      { type: 'text', text: '海浪拍沙滩' },
+      { type: 'image_url', image_url: { url: 'https://img.example.com/first.png' } },
+    ])
+    expect(body.duration).toBe('5s')
+    expect(body.resolution).toBe('720P')
   })
 
   it('视频 query queued / running → pending / running', async () => {
@@ -246,7 +307,7 @@ describe('threerouter 适配器', () => {
 
   it('submitVideo → POST /media/generations，media_kind=video + duration + ratio', async () => {
     const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ id: 'mt-vid-1', status: 'processing', model: 'seedance-2.5' }),
+      JSON.stringify({ id: 'mt-vid-1', status: 'processing', model: 'wan2.2-t2v-plus' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
@@ -266,6 +327,25 @@ describe('threerouter 适配器', () => {
     expect(body.ratio).toBe('16:9')
     // model 未显式传入时使用 threerouter 默认视频模型（e7a0f68 由 seedance-2.5 切换）
     expect(body.model).toBe('wan2.2-t2v-plus')
+  })
+
+  it('submitVideo 图生视频：body 携带 image + resolution，不再传 ratio', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'mt-vid-2', status: 'processing' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: VideoGenParams = {
+      prompt: '让画面动起来', duration: 5, aspectRatio: undefined,
+      model: undefined, image: 'data:image/png;base64,QUJD', resolution: '768P',
+    }
+    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    expect(r.taskId).toBe('mt-vid-2')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.image).toBe('data:image/png;base64,QUJD')
+    expect(body.resolution).toBe('768P')
+    expect(body.ratio).toBeUndefined()
+    expect(body.media_kind).toBe('video')
   })
 
   it('queryTask: processing → running', async () => {

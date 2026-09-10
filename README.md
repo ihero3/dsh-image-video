@@ -18,7 +18,7 @@
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
 | `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
-| `generate_video` | 文生短视频（上限 10s） | **Threerouter**（默认）/ 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 10s） | **Threerouter**（默认）/ 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
@@ -103,6 +103,23 @@ dsh --profile <profile>
 → 对话返回文件路径
 ```
 
+**图生视频（让图片动起来）：**
+
+```
+用户：参考这张图 /path/photo.png 生成一段视频
+
+模型（调用 generate_video）：
+  prompt: "让画面自然地动起来"
+  image: "/path/photo.png"
+  duration: 5
+
+→ 本地路径自动编码为 data URL（http(s)/data URL 原样透传）
+→ 存在 image 时构图由首帧决定：不传 aspectRatio，模型用服务商内置 i2v 默认模型（图生视频时该参数被忽略）
+→ 完成后视频首帧即该图片
+```
+
+`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认，不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块（Seedance 分支按 Ark 协议实现，未在真实账号验证）。
+
 ## 目录结构
 
 ```
@@ -141,6 +158,8 @@ dsh-image-video/
 | `wanx.baseURL` | `string` | `''` | 万象自定义接口地址，留空用默认端点 |
 | `seedance.apiKey` | `string` | `''` | Seedance2.5 API Key；`provider=seedance` 时必填 |
 | `seedance.baseURL` | `string` | `''` | Seedance2.5 自定义接口地址，留空用默认端点 |
+| `defaultImageProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认图片服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
+| `defaultVideoProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认视频服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
 | `defaultImageSize` | `string` | `'1024*1024'` | 默认图片尺寸，形如 `宽*高`（百炼接口要求 `*` 分隔） |
 | `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1-10 |
 | `timeoutMs` | `number` | `60000` | 单次 HTTP 请求超时（毫秒） |

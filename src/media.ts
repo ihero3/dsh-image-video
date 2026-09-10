@@ -5,8 +5,8 @@
  * @module dsh-image-video/media
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { extname, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
@@ -49,6 +49,33 @@ export async function downloadAndSave(
   const localPath = resolve(dir, filename)
   await writeFile(localPath, data)
   return { localPath, sourceUrl: url, contentType, bytes: data.byteLength, data }
+}
+
+/** 从扩展名推断图片 MIME 类型；未知扩展名回退 image/png，由服务商对无法识别的字节响亮报错。 */
+export function imageMimeFromPath(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case '.png': return 'image/png'
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg'
+    case '.webp': return 'image/webp'
+    case '.gif': return 'image/gif'
+    case '.bmp': return 'image/bmp'
+    default: return 'image/png'
+  }
+}
+
+/**
+ * 解析 generate_video 的 image 入参为服务商可直接消费的图片引用。
+ * http(s) URL 与 data URL 原样返回；其余按本地文件路径读取并编码为 data URL。
+ * @param input - http(s) URL、data URL 或本地文件路径。
+ * @returns 服务商可直接消费的图片引用。
+ * @throws 本地路径不存在或不可读时原样抛出 Node fs 错误。
+ */
+export async function resolveImageReference(input: string): Promise<string> {
+  const ref = input.trim()
+  if (/^(https?|data):/.test(ref)) return ref
+  const data = await readFile(ref)
+  return `data:${imageMimeFromPath(ref)};base64,${data.toString('base64')}`
 }
 
 /** 从 Content-Type 推断图片媒体类型（attachment 服务要求精确类型）。 */
