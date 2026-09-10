@@ -10,6 +10,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config } from '../config.ts'
 import { resolveActiveProvider } from '../config.ts'
+import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
@@ -24,6 +25,8 @@ const MAX_VIDEO_DURATION = 10
 export interface GenerateVideoDeps {
   config: Config
   taskManager: TaskManager
+  /** 运行时默认值存储：composer 热更新覆盖值优先于 settings 持久值。 */
+  runtimeDefaults: RuntimeDefaultsStore
 }
 
 /**
@@ -31,7 +34,7 @@ export interface GenerateVideoDeps {
  * 工具参数：prompt（必填）、duration（可选，1-10秒）、model（可选）、aspectRatio（可选）。
  */
 export function createGenerateVideoTool(deps: GenerateVideoDeps) {
-  const { config, taskManager } = deps
+  const { config, taskManager, runtimeDefaults } = deps
 
   return defineTool({
     name: 'generate_video',
@@ -97,8 +100,10 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
     async execute(args, exec) {
       const typedArgs = args as { prompt: string; duration?: number; model?: string; aspectRatio?: string }
 
+      // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
       // 运行时双重校验时长上限（schema 已约束，此处防御性检查）
-      const duration = typedArgs.duration ?? config.defaultVideoDuration
+      const runtime = runtimeDefaults.get()
+      const duration = typedArgs.duration ?? runtime.videoDuration ?? config.defaultVideoDuration
       if (duration < 1 || duration > MAX_VIDEO_DURATION) {
         throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间，当前为 ${duration}`)
       }
@@ -111,8 +116,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,
         duration,
-        model: typedArgs.model || config.defaultVideoModel || undefined,
-        aspectRatio: typedArgs.aspectRatio,
+        model: typedArgs.model || runtime.videoModel || config.defaultVideoModel || undefined,
+        aspectRatio: typedArgs.aspectRatio || runtime.videoAspectRatio || undefined,
       }
 
       const httpOpts: HttpOpts = {

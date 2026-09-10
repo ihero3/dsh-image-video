@@ -30,6 +30,8 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Config } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
+import { registerDefaultsRoute } from './runtime-defaults.ts'
+import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -45,6 +47,17 @@ export { threerouterAdapter } from './providers/threerouter.ts'
 export type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult } from './providers/types.ts'
 export { createGenerateImageTool } from './tools/generate-image.ts'
 export { createGenerateVideoTool } from './tools/generate-video.ts'
+export {
+  applyImageStyle,
+  createRuntimeDefaultsStore,
+  createDefaultsRouteHandler,
+  DEFAULTS_ROUTE_PATH,
+  IMAGE_SIZE_OPTIONS,
+  IMAGE_STYLE_OPTIONS,
+  parseDefaultsPatch,
+  registerDefaultsRoute,
+} from './runtime-defaults.ts'
+export type { RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
 
 /** Cordis 插件名，用于 loader 诊断。 */
 export const name = 'image-video'
@@ -75,6 +88,10 @@ export function apply(ctx: Context, config: Config): void {
   // 插件卸载时自动取消所有排队任务、清理轮询定时器。
   const taskManager = new TaskManager(ctx, config)
 
+  // 运行时生成默认值：桌面 composer 热更新覆盖值的内存态存储（不落盘，
+  // 重载后回落 settings 持久值，避免任何配置写入触发宿主重启）。
+  const runtimeDefaults = createRuntimeDefaultsStore()
+
   // generate_image：显式声明 attachments 依赖。
   // callback 在 attachments 服务可用时执行，fiber-scoped 注册工具；
   // 服务撤销时 fiber dispose，工具自动注销。对齐官方 read-image 模式。
@@ -83,11 +100,11 @@ export function apply(ctx: Context, config: Config): void {
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
-    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx }))
+    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults }))
   })
 
   // generate_video：不依赖 attachments，始终注册。
-  ctx.tools.register(createGenerateVideoTool({ config, taskManager }))
+  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults }))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -98,5 +115,11 @@ export function apply(ctx: Context, config: Config): void {
     const disposeRoute = registerOutputsRoute(webServer, config.outputsDir)
     // host 非 127.0.0.1 时不注册，无路由可注销
     if (disposeRoute) mediaCtx.effect(() => disposeRoute, 'dsh-image-video: outputs media route')
+
+    // defaults 热更新路由：桌面渲染进程同源 GET/POST /image-video/defaults，
+    // composer 切换模型/比例/风格/时长立即生效（仅内存，不触发重启）；
+    // 同样仅回环注册。路由注销随 fiber 卸载。
+    const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults)
+    if (disposeDefaults) mediaCtx.effect(() => disposeDefaults, 'dsh-image-video: runtime defaults route')
   })
 }

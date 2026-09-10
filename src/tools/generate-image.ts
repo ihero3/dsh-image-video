@@ -15,6 +15,8 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Config } from '../config.ts'
 import { resolveActiveProvider } from '../config.ts'
+import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
+import { applyImageStyle } from '../runtime-defaults.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
@@ -32,6 +34,8 @@ export interface GenerateImageDeps {
   taskManager: TaskManager
   attachments: AttachmentStore
   ctx: Context
+  /** 运行时默认值存储：composer 热更新覆盖值优先于 settings 持久值。 */
+  runtimeDefaults: RuntimeDefaultsStore
 }
 
 /**
@@ -76,7 +80,7 @@ function imageAttachmentRef(image: NonNullable<GenerateImageOutput['image']>): I
  * 工具参数：prompt（必填）、size（可选）、model（可选）。
  */
 export function createGenerateImageTool(deps: GenerateImageDeps) {
-  const { config, taskManager, attachments, ctx } = deps
+  const { config, taskManager, attachments, ctx, runtimeDefaults } = deps
 
   return defineTool({
     name: 'generate_image',
@@ -168,10 +172,15 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         : provider === 'wanx' ? wanxAdapter
         : seedanceAdapter
 
+      // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
+      // 风格在 host 端拼接为英文提示词后缀，对所有服务商通用（不改 API 参数）。
+      const runtime = runtimeDefaults.get()
+      const prompt = applyImageStyle(typedArgs.prompt, runtime.imageStyle)
+
       const imageParams: ImageGenParams = {
-        prompt: typedArgs.prompt,
-        size: typedArgs.size ?? config.defaultImageSize,
-        model: typedArgs.model || config.defaultImageModel || undefined,
+        prompt,
+        size: typedArgs.size ?? runtime.imageSize ?? config.defaultImageSize,
+        model: typedArgs.model || runtime.imageModel || config.defaultImageModel || undefined,
       }
 
       const httpOpts: HttpOpts = {
@@ -215,7 +224,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const imageInline = await routeAcceptsImages(ctx, exec)
       const output: GenerateImageOutput = {
         provider,
-        prompt: typedArgs.prompt,
+        prompt,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,

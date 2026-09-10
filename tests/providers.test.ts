@@ -264,7 +264,8 @@ describe('threerouter 适配器', () => {
     expect(body.media_kind).toBe('video')
     expect(body.duration).toBe(5)
     expect(body.ratio).toBe('16:9')
-    expect(body.model).toBe('seedance-2.5')
+    // model 未显式传入时使用 threerouter 默认视频模型（e7a0f68 由 seedance-2.5 切换）
+    expect(body.model).toBe('wan2.2-t2v-plus')
   })
 
   it('queryTask: processing → running', async () => {
