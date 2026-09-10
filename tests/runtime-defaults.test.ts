@@ -81,6 +81,7 @@ describe('模型 → 服务商映射', () => {
 
   it('视频模型命中各服务商（wan2.2-t2v-plus 固定路由 Threerouter）', () => {
     expect(resolveModelProvider('video', 'wan2.2-t2v-plus')).toBe('threerouter')
+    expect(resolveModelProvider('video', 'wanx2.1-t2v-turbo')).toBe('wanx')
     expect(resolveModelProvider('video', 'doubao-seedance-1-0-pro-250428')).toBe('seedance')
     expect(resolveModelProvider('video', 'doubao-seedance-1-0-lite-t2v-250428')).toBe('seedance')
   })

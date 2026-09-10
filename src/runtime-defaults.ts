@@ -153,9 +153,14 @@ export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
   'doubao-seedream-4-0-250828': 'seedance',
 } as const
 
-/** 视频模型 → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。 */
+/**
+ * 视频模型 → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。wan2.2-t2v-plus
+ * 固定路由 Threerouter 统一入口（万象直连内置默认亦为同款，避免同 id 双组歧义）；
+ * wanx2.1-t2v-turbo 走阿里云百炼直连（与图片侧 wanx2.1-t2i-turbo 对称）。
+ */
 export const VIDEO_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
   'wan2.2-t2v-plus': 'threerouter',
+  'wanx2.1-t2v-turbo': 'wanx',
   'doubao-seedance-1-0-pro-250428': 'seedance',
   'doubao-seedance-1-0-lite-t2v-250428': 'seedance',
 } as const
