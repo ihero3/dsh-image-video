@@ -39,14 +39,22 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
   return { taskId: '', async: false, mediaUrl, mediaType: 'image' }
 }
 
-/** 提交文生视频任务（异步接口，返回任务 ID）。 */
+/**
+ * 提交视频任务（异步接口，返回任务 ID）。存在 image 时为首帧驱动的图生视频，
+ * 按 Ark content 数组协议追加 image_url 块；resolution 为可选分辨率档位，按模型支持透传。
+ */
 async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/contents/generations/tasks`
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: params.prompt }]
+  if (params.image) {
+    content.push({ type: 'image_url', image_url: { url: params.image } })
+  }
   const body = {
     model: params.model ?? DEFAULT_VIDEO_MODEL,
-    content: [{ type: 'text', text: params.prompt }],
+    content,
     // Seedance 视频参数通过可选字段传递
     ...(params.duration ? { duration: `${params.duration}s` } : {}),
+    ...(params.resolution ? { resolution: params.resolution } : {}),
   }
   const data = await request(toRequestOpts('POST', url, arkHeaders(opts.apiKey), body, opts)) as ArkTaskResponse
   const taskId = data?.id

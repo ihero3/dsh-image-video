@@ -46,7 +46,11 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
   return { taskId: data.id, async: true, mediaType: 'image' }
 }
 
-/** 提交文生视频任务（media_kind=video，携带时长与宽高比）。 */
+/**
+ * 提交视频任务（media_kind=video）。存在 image 时为首帧驱动的图生视频，
+ * 请求携带 image 字段（服务端按此字段路由到图生视频通道），此时构图由首帧决定，不再传 ratio；
+ * 纯文生时保持 ratio。resolution 为可选分辨率档位，取值由上游模型决定，缺失时服务端按模型默认处理。
+ */
 async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/media/generations`
   const body: Record<string, unknown> = {
@@ -55,8 +59,13 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
     media_kind: 'video',
     duration: params.duration,
   }
-  if (params.aspectRatio) {
+  if (params.image) {
+    body.image = params.image
+  } else if (params.aspectRatio) {
     body.ratio = params.aspectRatio
+  }
+  if (params.resolution) {
+    body.resolution = params.resolution
   }
   const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
   if (!data?.id) throw new Error('Threerouter 文生视频：未返回任务 ID')

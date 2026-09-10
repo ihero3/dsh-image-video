@@ -31,6 +31,8 @@ export interface Config {
   defaultImageModel: string
   /** 默认视频模型名；留空使用 adapter 内置默认。 */
   defaultVideoModel: string
+  /** 图生视频默认模型名（传了 image 且未显式指定 model 时使用）；留空使用 adapter 内置默认。 */
+  defaultImageToVideoModel: string
   /** 默认图片尺寸，形如 "1024*1024"。 */
   defaultImageSize: string
   /** 默认视频时长（秒），上限 10。 */
@@ -61,6 +63,7 @@ export const Config: z<Config> = z.object({
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
   defaultImageModel: z.string().default('').description('默认图片模型名，留空使用 adapter 内置默认'),
   defaultVideoModel: z.string().default('').description('默认视频模型名，留空使用 adapter 内置默认'),
+  defaultImageToVideoModel: z.string().default('').description('图生视频默认模型名，留空使用 adapter 内置默认'),
   defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
   defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),
