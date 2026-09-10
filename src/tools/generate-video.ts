@@ -139,7 +139,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         prompt: typedArgs.prompt,
         duration,
         model,
-        aspectRatio: typedArgs.aspectRatio,
+        // 文档承诺「留空使用 16:9」在此落地：MiniMax 等上游纯文生场景要求显式 ratio
+        aspectRatio: typedArgs.aspectRatio ?? '16:9',
         image: imageRef,
         resolution: typedArgs.resolution,
       }
