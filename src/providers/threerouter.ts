@@ -7,13 +7,14 @@
  */
 
 import { request, downloadMedia } from '../http-client.ts'
+import { VIDEO_DURATION_UNSUPPORTED, VIDEO_MODEL_DEFAULT_RESOLUTION } from '../runtime-defaults.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
 import { toRequestOpts } from './types.ts'
 
 /** Threerouter 默认文生图模型。 */
 const DEFAULT_IMAGE_MODEL = 'wan2.1-image'
-/** Threerouter 默认文生视频模型。账号可用模型见 threerouter.com 控制台。 */
-const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
+/** Threerouter 默认文生视频模型（MiniMax 系，支持 4-15 秒自定义时长）。账号可用模型见 threerouter.com 控制台。 */
+const DEFAULT_VIDEO_MODEL = 'minimax-h3'
 
 /** Threerouter API 请求头。 */
 function threerouterHeaders(apiKey: string): Record<string, string> {
@@ -49,27 +50,34 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
 /**
  * 提交视频任务（media_kind=video）。存在 image 时为首帧驱动的图生视频，
  * 请求携带 image 字段（服务端按此字段路由到图生视频通道），此时构图由首帧决定，不再传 ratio；
- * 纯文生时保持 ratio。resolution 为可选分辨率档位，取值由上游模型决定，缺失时服务端按模型默认处理。
+ * 纯文生时保持 ratio。resolution 为可选分辨率档位，MiniMax 系要求显式携带（缺失时上游 400），
+ * 未指定时注入模型默认档位；wan 系模型不支持自定义时长，命中能力表时丢弃 duration
+ * （SubmitResult.droppedDuration 标记，结果层在 notes 注明）。
  */
 async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/media/generations`
+  const effectiveModel = params.model ?? DEFAULT_VIDEO_MODEL
   const body: Record<string, unknown> = {
-    model: params.model ?? DEFAULT_VIDEO_MODEL,
+    model: effectiveModel,
     prompt: params.prompt,
     media_kind: 'video',
-    duration: params.duration,
+  }
+  const droppedDuration = VIDEO_DURATION_UNSUPPORTED.has(effectiveModel)
+  if (!droppedDuration) {
+    body.duration = params.duration
   }
   if (params.image) {
     body.image = params.image
   } else if (params.aspectRatio) {
     body.ratio = params.aspectRatio
   }
-  if (params.resolution) {
-    body.resolution = params.resolution
+  const resolution = params.resolution ?? VIDEO_MODEL_DEFAULT_RESOLUTION[effectiveModel]
+  if (resolution) {
+    body.resolution = resolution
   }
   const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
   if (!data?.id) throw new Error('Threerouter 文生视频：未返回任务 ID')
-  return { taskId: data.id, async: true, mediaType: 'video' }
+  return { taskId: data.id, async: true, mediaType: 'video', ...(droppedDuration ? { droppedDuration } : {}) }
 }
 
 /** 查询异步任务状态。完成后优先使用响应 url，缺失时回退 /content 302 端点。 */

@@ -90,7 +90,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       + '由所选服务商的内置默认模型出图。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
-      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用服务商内置默认模型）。',
+      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）。',
 
     parameters: {
       prompt: {
@@ -174,7 +174,8 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const runtime = runtimeDefaults.get()
       const prompt = applyImageStyle(typedArgs.prompt, runtime.imageStyle)
 
-      const model = typedArgs.model
+      // 模型取值链：调用参数 model > 配置 defaultImageModel > adapter 内置默认
+      const model = typedArgs.model || config.defaultImageModel || undefined
 
       // 服务商选择：显式 model 参数命中模型映射 → 按模型路由（用其凭证直连）；
       // 否则依次跟随 composer 运行时覆盖的服务商、settings 默认服务商、激活

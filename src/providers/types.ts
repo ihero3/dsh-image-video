@@ -45,6 +45,8 @@ export interface SubmitResult {
   mediaUrl?: string
   /** 媒体类型，用于区分图片/视频渲染。 */
   mediaType: 'image' | 'video'
+  /** true 表示请求携带的 duration 因模型不支持自定义时长被丢弃（结果层据此在 notes 注明）。 */
+  droppedDuration?: boolean
 }
 
 /** 任务查询结果。 */

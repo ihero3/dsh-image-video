@@ -6,6 +6,7 @@
  */
 
 import { request, downloadMedia } from '../http-client.ts'
+import { VIDEO_DURATION_UNSUPPORTED } from '../runtime-defaults.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
 import { toRequestOpts } from './types.ts'
 
@@ -50,6 +51,8 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
  * 提交视频任务。存在 image 时为首帧驱动的图生视频：img_url 携带首帧引用
  * （公网 URL 或 base64 data URL），模型默认取图生视频模型，构图由首帧决定，
  * 不传 aspect_ratio；纯文生保持原有参数。resolution 为可选分辨率档位，按模型支持透传。
+ * wan 系模型（wan2.2-t2v-plus / wan2.7-t2v 等）不支持自定义时长：命中能力表时
+ * 丢弃 duration（SubmitResult.droppedDuration 标记，结果层在 notes 注明）。
  */
 async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/services/aigc/video-generation/video-synthesis`
@@ -57,7 +60,12 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   if (params.image) {
     input.img_url = params.image
   }
-  const parameters: Record<string, unknown> = { duration: params.duration }
+  const effectiveModel = params.model ?? (params.image ? DEFAULT_IMAGE_TO_VIDEO_MODEL : DEFAULT_VIDEO_MODEL)
+  const droppedDuration = VIDEO_DURATION_UNSUPPORTED.has(effectiveModel)
+  const parameters: Record<string, unknown> = {}
+  if (!droppedDuration) {
+    parameters.duration = params.duration
+  }
   if (params.resolution) {
     parameters.resolution = params.resolution
   }
@@ -66,14 +74,14 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
     parameters.audio = false
   }
   const body = {
-    model: params.model ?? (params.image ? DEFAULT_IMAGE_TO_VIDEO_MODEL : DEFAULT_VIDEO_MODEL),
+    model: effectiveModel,
     input,
     parameters,
   }
   const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id
   if (!taskId) throw new Error('万象 文生视频：未返回 task_id')
-  return { taskId, async: true, mediaType: 'video' }
+  return { taskId, async: true, mediaType: 'video', ...(droppedDuration ? { droppedDuration } : {}) }
 }
 
 /** 查询任务状态。 */

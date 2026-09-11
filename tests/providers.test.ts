@@ -148,16 +148,37 @@ describe('Wanx adapter', () => {
     expect(body().model).toBe('wan2.5-i2v-preview')
   })
 
-  it('文生视频：resolution 可选透传，未传时不携带该字段', async () => {
+  it('文生视频：wan 系默认模型丢弃 duration（能力表），resolution 可选透传', async () => {
     const { body } = captureSubmitBody()
-    await wanxAdapter.submitVideo(videoParams, wanxOpts())
+    const r = await wanxAdapter.submitVideo(videoParams, wanxOpts())
+    expect(r.droppedDuration).toBe(true)
     const b = body()
     expect(b.model).toBe('wan2.2-t2v-plus')
+    expect(b.parameters.duration).toBeUndefined()
     expect(b.parameters.aspect_ratio).toBe('16:9')
     expect(b.parameters.resolution).toBeUndefined()
     const { body: body2 } = captureSubmitBody()
     await wanxAdapter.submitVideo({ ...videoParams, resolution: '480P' }, wanxOpts())
     expect(body2().parameters.resolution).toBe('480P')
+  })
+
+  it('文生视频：显式 wan2.7-t2v 同样命中能力表丢弃 duration', async () => {
+    const { body } = captureSubmitBody()
+    const params: VideoGenParams = { ...videoParams, model: 'wan2.7-t2v' }
+    const r = await wanxAdapter.submitVideo(params, wanxOpts())
+    expect(r.droppedDuration).toBe(true)
+    const b = body()
+    expect(b.model).toBe('wan2.7-t2v')
+    expect(b.parameters.duration).toBeUndefined()
+    expect(b.parameters.aspect_ratio).toBe('16:9')
+  })
+
+  it('文生视频：非 wan 系模型保留 duration', async () => {
+    const { body } = captureSubmitBody()
+    const params: VideoGenParams = { ...videoParams, model: 'wanx2.1-t2v-turbo' }
+    const r = await wanxAdapter.submitVideo(params, wanxOpts())
+    expect(r.droppedDuration).toBeUndefined()
+    expect(body().parameters.duration).toBe(5)
   })
 })
 
@@ -305,9 +326,9 @@ describe('threerouter 适配器', () => {
     expect(body.duration).toBeUndefined()
   })
 
-  it('submitVideo → POST /media/generations，media_kind=video + duration + ratio', async () => {
+  it('submitVideo → POST /media/generations，media_kind=video + duration + ratio + 默认注入 768P', async () => {
     const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ id: 'mt-vid-1', status: 'processing', model: 'wan2.2-t2v-plus' }),
+      JSON.stringify({ id: 'mt-vid-1', status: 'processing', model: 'minimax-h3' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
@@ -323,10 +344,30 @@ describe('threerouter 适配器', () => {
     const body = JSON.parse(req.body as string)
     expect(body.prompt).toBe('海浪拍沙滩')
     expect(body.media_kind).toBe('video')
+    // minimax-h3 支持自定义时长，duration 正常携带
     expect(body.duration).toBe(5)
     expect(body.ratio).toBe('16:9')
-    // model 未显式传入时使用 threerouter 默认视频模型（e7a0f68 由 seedance-2.5 切换）
-    expect(body.model).toBe('wan2.2-t2v-plus')
+    // model 未显式传入时使用 threerouter 默认视频模型（minimax-h3，支持 4-15 秒）
+    expect(body.model).toBe('minimax-h3')
+    // MiniMax 系要求显式 resolution：未指定时注入模型默认档位 768P
+    expect(body.resolution).toBe('768P')
+    expect(r.droppedDuration).toBeUndefined()
+  })
+
+  it('submitVideo 显式 wan 系模型：丢弃 duration，不注入默认 resolution', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'mt-vid-wan', status: 'processing' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: VideoGenParams = { ...videoParams, model: 'wan2.7-t2v', resolution: undefined }
+    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    expect(r.droppedDuration).toBe(true)
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.model).toBe('wan2.7-t2v')
+    expect(body.duration).toBeUndefined()
+    expect(body.resolution).toBeUndefined()
+    expect(body.ratio).toBe('16:9')
   })
 
   it('submitVideo 图生视频：body 携带 image + resolution，不再传 ratio', async () => {
@@ -342,6 +383,7 @@ describe('threerouter 适配器', () => {
     const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
     expect(r.taskId).toBe('mt-vid-2')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.model).toBe('minimax-h3')
     expect(body.image).toBe('data:image/png;base64,QUJD')
     expect(body.resolution).toBe('768P')
     expect(body.ratio).toBeUndefined()

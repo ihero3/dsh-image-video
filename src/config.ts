@@ -31,6 +31,10 @@ export interface Config {
   defaultImageProvider: '' | Provider
   /** 默认视频服务商；留空跟随激活服务商，adapter 使用其内置默认模型。 */
   defaultVideoProvider: '' | Provider
+  /** 默认图片模型；留空使用 adapter 内置默认模型。 */
+  defaultImageModel: string
+  /** 默认视频模型；留空使用 adapter 内置默认模型。 */
+  defaultVideoModel: string
   /** 默认图片尺寸，形如 "1024*1024"。 */
   defaultImageSize: string
   /** 默认视频时长（秒），上限 10。 */
@@ -61,6 +65,8 @@ export const Config: z<Config> = z.object({
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
   defaultImageProvider: z.union(['', 'threerouter', 'wanx', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
   defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
+  defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
+  defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
   defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
   defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),

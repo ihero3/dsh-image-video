@@ -84,6 +84,8 @@ describe('模型 → 服务商映射', () => {
     expect(resolveModelProvider('video', 'wanx2.1-t2v-turbo')).toBe('wanx')
     expect(resolveModelProvider('video', 'doubao-seedance-1-0-pro-250428')).toBe('seedance')
     expect(resolveModelProvider('video', 'doubao-seedance-1-0-lite-t2v-250428')).toBe('seedance')
+    expect(resolveModelProvider('video', 'minimax-h3')).toBe('threerouter')
+    expect(resolveModelProvider('video', 'MiniMax-H3')).toBe('threerouter')
   })
 
   it('自定义模型 / 空串 / 跨类型查询返回 undefined', () => {

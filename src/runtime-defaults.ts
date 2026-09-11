@@ -156,14 +156,39 @@ export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
 /**
  * 视频模型 id → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。wan2.2-t2v-plus
  * 固定路由 Threerouter 统一入口（万象直连内置默认亦为同款，避免同 id 双组歧义）；
- * wanx2.1-t2v-turbo 走阿里云百炼直连（与图片侧 wanx2.1-t2i-turbo 对称）。
+ * wanx2.1-t2v-turbo 走阿里云百炼直连（与图片侧 wanx2.1-t2i-turbo 对称）；
+ * minimax-h3 路由 Threerouter（其目录同时存在 MiniMax-H3 / minimax-h3 两个 id，一并登记）。
  */
 export const VIDEO_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
   'wan2.2-t2v-plus': 'threerouter',
   'wanx2.1-t2v-turbo': 'wanx',
   'doubao-seedance-1-0-pro-250428': 'seedance',
   'doubao-seedance-1-0-lite-t2v-250428': 'seedance',
+  'minimax-h3': 'threerouter',
+  'MiniMax-H3': 'threerouter',
 } as const
+
+/**
+ * 不支持自定义时长的视频模型集合：上游按模型内置档位出片，请求携带 duration 会被
+ * 原样拒绝（"duration customization is not supported"）。工具层对命中模型丢弃
+ * duration，并在结果 notes 中透明注明。列表按上游实测维护（2026-09 实测
+ * wan2.2-t2v-plus 与 wan2.7-t2v 均拒绝；wan3.0-video / wan2.2-i2v-plus 尚未验证，
+ * 暂保持透传，验证后再入表）。
+ */
+export const VIDEO_DURATION_UNSUPPORTED: ReadonlySet<string> = new Set([
+  'wan2.2-t2v-plus',
+  'wan2.7-t2v',
+])
+
+/**
+ * 未显式指定 resolution 时的模型默认档位：Threerouter 的 MiniMax 系要求请求携带
+ * resolution（缺失时上游 400），注入默认档位避免默认路径失败；wan 系上游按模型
+ * 默认处理，无需注入。
+ */
+export const VIDEO_MODEL_DEFAULT_RESOLUTION: Readonly<Record<string, string>> = {
+  'minimax-h3': '768P',
+  'MiniMax-H3': '768P',
+}
 
 /**
  * 解析显式模型参数应路由到的服务商。wan2.2-t2v-plus 是 Threerouter 的内置默认视频

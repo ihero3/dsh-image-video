@@ -118,7 +118,9 @@ dsh --profile <profile>
 → 完成后视频首帧即该图片
 ```
 
-`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认，不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块（Seedance 分支按 Ark 协议实现，未在真实账号验证）。
+`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块（Seedance 分支按 Ark 协议实现，未在真实账号验证）。
+
+**时长与模型能力**：wan 系模型（`wan2.2-t2v-plus`、`wan2.7-t2v`）不支持自定义时长——调用时传入 `duration` 会被插件丢弃（不发给上游，避免 `duration customization is not supported` 报错），并在结果 `notes` 中透明注明，实际时长由上游模型默认决定；MiniMax 系（`minimax-h3`）支持 4–15 秒。能力表见 `src/runtime-defaults.ts` 的 `VIDEO_DURATION_UNSUPPORTED`，按上游实测维护。
 
 ## 目录结构
 
@@ -160,6 +162,8 @@ dsh-image-video/
 | `seedance.baseURL` | `string` | `''` | Seedance2.5 自定义接口地址，留空用默认端点 |
 | `defaultImageProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认图片服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
 | `defaultVideoProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认视频服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
+| `defaultImageModel` | `string` | `''` | 默认图片模型，留空用服务商内置默认（模型取值链：调用参数 > 此配置 > 内置默认） |
+| `defaultVideoModel` | `string` | `''` | 默认视频模型，留空用服务商内置默认（threerouter 内置 `minimax-h3`） |
 | `defaultImageSize` | `string` | `'1024*1024'` | 默认图片尺寸，形如 `宽*高`（百炼接口要求 `*` 分隔） |
 | `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1-10 |
 | `timeoutMs` | `number` | `60000` | 单次 HTTP 请求超时（毫秒） |

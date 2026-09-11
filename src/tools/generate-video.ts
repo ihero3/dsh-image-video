@@ -43,11 +43,12 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
     description:
       '根据文本提示词生成短视频；传入 image（首帧图片）时为图生视频，让图片动起来。'
       + '服务商选择：指定模型属于某服务商映射时用该服务商（其凭证直连），'
-      + '否则依次取 composer 会话选定的服务商、配置默认服务商、激活服务商（默认 threerouter），'
-      + '由所选服务商的内置默认模型出片。'
+      + '否则依次取 composer 会话选定的服务商、配置默认服务商、激活服务商（默认 threerouter）；'
+      + '模型取值：调用参数 model > 配置 defaultVideoModel > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
-      + `视频时长上限 ${MAX_VIDEO_DURATION} 秒。生成完成后视频保存到本地 outputs/ 目录。`
-      + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用服务商内置默认模型）、'
+      + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；wan 系模型不支持自定义时长，传入会被忽略并在结果 notes 注明。`
+      + '生成完成后视频保存到本地 outputs/ 目录。'
+      + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
       + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略）、image（首帧图片：本地路径/URL，可选）、resolution（分辨率档位，可选，取值随模型）。',
 
     parameters: {
@@ -58,7 +59,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       duration: {
         type: 'integer',
-        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}。留空使用配置默认值。`,
+        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}。留空使用配置默认值。wan 系模型（如 wan2.2-t2v-plus）不支持自定义时长，传入将被忽略。`,
       },
       model: {
         type: 'string',
@@ -92,6 +93,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           sourceUrl: { type: 'string', required: true },
           bytes: { type: 'integer', required: true },
           elapsedMs: { type: 'integer', required: true },
+          notes: { type: 'array', items: { type: 'string' } },
         },
       },
       render: (_args, value): ContentBlock[] => {
@@ -144,7 +146,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
 
       // 本地路径在此解析为 data URL，适配器只接收 URL / data URL
       const imageRef = typedArgs.image ? await resolveImageReference(typedArgs.image) : undefined
-      const model = typedArgs.model || undefined
+      // 模型取值链：调用参数 model > 配置 defaultVideoModel > adapter 内置默认
+      const model = typedArgs.model || config.defaultVideoModel || undefined
 
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,
@@ -169,6 +172,10 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       if (!submitResult.taskId) {
         throw new Error('视频任务提交失败：未返回 task_id')
       }
+      // wan 系模型不支持自定义时长：适配器丢弃 duration 时在结果中透明注明，避免静默降级
+      const notes = submitResult.droppedDuration
+        ? [`当前模型${model ? ` ${model}` : '（服务商默认）'}不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`]
+        : undefined
 
       // 后台轮询直到完成——轮询过程不产生中间输出，仅最终结果返回模型
       const pollResult = await taskManager.pollUntilDone(
@@ -192,6 +199,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
         elapsedMs: pollResult.elapsedMs,
+        ...(notes ? { notes } : {}),
       }
       return output
     },
@@ -221,4 +229,6 @@ interface GenerateVideoOutput {
   sourceUrl: string
   bytes: number
   elapsedMs: number
+  /** 透明告知：模型能力导致的参数降级说明（如 wan 系模型丢弃自定义时长）；无降级时缺省。 */
+  notes?: string[]
 }
