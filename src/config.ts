@@ -6,8 +6,8 @@
 
 import z from '@deepseek-ai/schemastery'
 
-/** 支持的生成服务商。 */
-export type Provider = 'threerouter' | 'wanx' | 'seedance'
+/** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threerouter 为聚合器（所有模型）。 */
+export type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance'
 
 /** 单个服务商的凭证与自定义接口地址。 */
 export interface ProviderCredentials {
@@ -25,10 +25,12 @@ export interface Config {
   threerouter: ProviderCredentials
   /** 万象（wanx）凭证；provider=wanx 时使用。 */
   wanx: ProviderCredentials
+  /** MiniMax 官方平台凭证；provider=minimax 时使用（仅视频，按官方 video-generation v2 实现）。 */
+  minimax: ProviderCredentials
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
   seedance: ProviderCredentials
-  /** 默认图片服务商；留空跟随激活服务商，adapter 使用其内置默认模型。 */
-  defaultImageProvider: '' | Provider
+  /** 默认图片服务商；留空跟随激活服务商（minimax 无图片生成能力，不参与图片默认）。 */
+  defaultImageProvider: '' | Exclude<Provider, 'minimax'>
   /** 默认视频服务商；留空跟随激活服务商，adapter 使用其内置默认模型。 */
   defaultVideoProvider: '' | Provider
   /** 默认图片模型；留空使用 adapter 内置默认模型。 */
@@ -59,12 +61,13 @@ const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
 
 /** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
 export const Config: z<Config> = z.object({
-  provider: z.union(['threerouter', 'wanx', 'seedance']).default('threerouter').description('激活的生成服务商'),
-  threerouter: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threerouter 凭证（默认服务商）'),
+  provider: z.union(['threerouter', 'wanx', 'minimax', 'seedance']).default('threerouter').description('激活的生成服务商'),
+  threerouter: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threerouter 凭证（默认服务商，聚合器）'),
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
+  minimax: ProviderCredentialsSchema.default({ apiKey: '' }).description('MiniMax 官方平台凭证（仅视频）'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
   defaultImageProvider: z.union(['', 'threerouter', 'wanx', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
-  defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
+  defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
   defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
   defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
@@ -77,6 +80,17 @@ export const Config: z<Config> = z.object({
 })
 
 /**
+ * 读取指定服务商的凭证，不校验 key 非空。供候选服务商构建时的 key 过滤
+ * （resolveModelCandidates 用它跳过未配置 key 的候选），不抛错。
+ */
+export function peekProviderCredentials(config: Config, provider: Provider): ProviderCredentials {
+  return provider === 'threerouter' ? config.threerouter
+    : provider === 'wanx' ? config.wanx
+    : provider === 'minimax' ? config.minimax
+    : config.seedance
+}
+
+/**
  * 解析指定服务商的凭证，校验非空。供按模型自动路由的生成工具使用：
  * composer 选中某服务商分组下的模型时，工具以该服务商的凭证直连。
  * @param config - 已校验的插件配置。
@@ -85,9 +99,7 @@ export const Config: z<Config> = z.object({
  * @throws 当该服务商未配置 API Key 时（报错指明缺 key 的 provider 字段）。
  */
 export function resolveProviderCredentials(config: Config, provider: Provider): { provider: Provider; apiKey: string; baseURL: string } {
-  const creds = provider === 'threerouter' ? config.threerouter
-    : provider === 'wanx' ? config.wanx
-    : config.seedance
+  const creds = peekProviderCredentials(config, provider)
   if (!creds.apiKey || creds.apiKey.trim().length === 0) {
     throw new Error(`dsh-image-video: 服务商 ${provider} 未配置 API Key，请在配置中设置 ${provider}.apiKey`)
   }
@@ -113,6 +125,7 @@ function defaultBaseURL(provider: Provider): string {
   switch (provider) {
     case 'threerouter': return 'https://api.threerouter.com/v1'
     case 'wanx': return 'https://dashscope.aliyuncs.com/api/v1'
+    case 'minimax': return 'https://api.minimaxi.com/v1'
     case 'seedance': return 'https://ark.cn-beijing.volces.com/api/v3'
   }
 }

@@ -2,12 +2,12 @@
 
 **为 DeepSeek Harness 对话模型注册 `generate_image` / `generate_video` 两个工具。模型在对话中自主决策调用，生成结果自动下载到本地 `outputs/`，图片经 attachment 服务内嵌渲染——对话即创作，无需离开终端。**
 
-> DSH 生态有丰富的工具插件，但缺少一个轻量、即装即用的文生图/文生视频入口。dsh-image-video 填补这个空白：两个工具、两个服务商、零外部依赖，热插拔即用。
+> DSH 生态有丰富的工具插件，但缺少一个轻量、即装即用的文生图/文生视频入口。dsh-image-video 填补这个空白：两个工具、四家服务商、零外部依赖，热插拔即用。
 
 ## 核心特性
 
 - **两个工具，自然语言触发** — 模型在对话中自主决策何时调用 `generate_image` / `generate_video`，无需手动指令
-- **双服务商热切换** — 万象 wanx（阿里云百炼）与 Seedance2.5（火山引擎），配置 `provider` 字段一键切换，HMR 即时生效
+- **四家服务商 + 按模型家族自动路由** — Threerouter（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threerouter 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
 - **图片内嵌渲染** — 图片字节经 attachment 服务持久化，附件引用走 `presentationMeta` UI-only 通道，模型只见文本摘要，纯文本模型照常工作
 - **统一异常分类** — `GenerationError` 五类错误（auth / quota / task / timeout / network），可重试错误指数退避，不可重试错误即时中止
@@ -17,16 +17,37 @@
 
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
-| `generate_image` | 文生图 | 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
-| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 10s） | **Threerouter**（默认）/ 万象 wanx / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_image` | 文生图 | **Threerouter**（默认）/ 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
+| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 10s） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
 | 服务商 | 渠道 | 文生图 | 文生视频 | 备注 |
 |---|---|---|---|---|
-| **Threerouter**（默认） | threerouter.com Bearer Key | ✅ 适配器已实现 | ✅ 适配器已实现（seedance-2.5） | 统一 `/v1/media/generations` 入口，`media_kind` 显式指定类型 |
+| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ 已验证 | ✅ 已验证（MiniMax-H3 / wan 系） | 出所有家族的模型，统一 `/v1/media/generations` 入口，`media_kind` 显式指定类型 |
 | **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ 已验证（wan2.2-t2v-plus） | 图片同步/异步自适应；视频始终异步 |
-| **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ 适配器已实现 | 图片同步返回 URL；视频走异步任务 |
+| **MiniMax 官方平台** | platform.minimaxi.com Key | ❌ 无图片生成能力 | ✅ 适配器已实现（video-generation v2，待 key 实测） | Hailuo 系；`first_frame_image` 图生视频；缺省注入 `768P` |
+| **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ 适配器已实现 | 图片同步返回 URL；视频走异步任务（未在真实账号验证） |
+
+## 模型家族路由
+
+显式指定 `model` 参数时，插件按厂商关键词（小写包含匹配，一条规则覆盖一个家族）构建候选服务商序列，按序尝试提交：
+
+| model 含关键词 | 家族 | 候选服务商（有序） |
+|---|---|---|
+| `minimax` / `hailuo` | MiniMax | `minimax`（官方直连）→ `threerouter` |
+| `doubao` / `seedance` / `seedream` | 火山方舟 | `seedance`（直连）→ `threerouter` |
+| `wan`（覆盖 `wan*` 与 `wanx*`） | 通义万相 | `wanx`（百炼直连）→ `threerouter` |
+| 无命中（自定义模型） | 未知 | 仅配置链 + `threerouter` |
+
+候选序列 = **配置链服务商**（composer 会话选定 > 配置默认 > 激活服务商，配置优先）→ 家族直连商 → **threerouter 聚合器兜底**（其目录覆盖所有家族的模型）。回退规则：
+
+- 仅在提交阶段的「模型不被该服务商接受」类错误（模型不存在 / 能力缺失，判定见 `isModelNotAcceptedError`）时回退下一候选；
+- 鉴权（401/403）、配额（429）、网络/超时错误**响亮失败不回退**，不掩盖配置错误；
+- 拿到任务 ID 之后的任何失败**不回退**，绝不重复生成、双重扣费；
+- 回退链写入结果 `notes` 透明告知。
+
+新模型（wan3.0、qwen-video、minimax 新版本等）无需逐个登记即自动命中家族规则，维护点只按厂商关键词。
 
 ## 快速开始
 
@@ -44,12 +65,15 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 ```yaml
 - id: image-video
   config:
-    provider: threerouter             # threerouter（默认，图片+视频） | wanx | seedance
+    provider: threerouter             # threerouter（默认，聚合器） | wanx | minimax（仅视频） | seedance
     threerouter:
       apiKey: !!js process.env.THREEROUTER_API_KEY
       baseURL: ''
     wanx:
       apiKey: !!js process.env.DASHSCOPE_API_KEY
+      baseURL: ''
+    minimax:
+      apiKey: !!js process.env.MINIMAX_API_KEY   # 官方平台 key，可选（无则自动跳过该候选）
       baseURL: ''
     seedance:
       apiKey: ''
@@ -118,7 +142,7 @@ dsh --profile <profile>
 → 完成后视频首帧即该图片
 ```
 
-`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块（Seedance 分支按 Ark 协议实现，未在真实账号验证）。
+`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
 
 **时长与模型能力**：wan 系模型（`wan2.2-t2v-plus`、`wan2.7-t2v`）不支持自定义时长——调用时传入 `duration` 会被插件丢弃（不发给上游，避免 `duration customization is not supported` 报错），并在结果 `notes` 中透明注明，实际时长由上游模型默认决定；MiniMax 系（`minimax-h3`）支持 4–15 秒。能力表见 `src/runtime-defaults.ts` 的 `VIDEO_DURATION_UNSUPPORTED`，按上游实测维护。
 
@@ -139,8 +163,9 @@ dsh-image-video/
     ├── media.ts              # 媒体下载 / 落地 / 摘要文本 / presentationMeta
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
-    │   ├── threerouter.ts    # Threerouter API 适配器（默认服务商，图片+视频）
+    │   ├── threerouter.ts    # Threerouter API 适配器（默认服务商，聚合器：图片+视频）
     │   ├── wanx.ts           # 万象（wanx）API 适配器
+    │   ├── minimax.ts        # MiniMax 官方平台适配器（仅视频，video-generation v2）
     │   └── seedance.ts       # Seedance2.5 API 适配器
     └── tools/
         ├── generate-image.ts # generate_image 工具注册
@@ -153,10 +178,11 @@ dsh-image-video/
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `provider` | `'threerouter' \| 'wanx' \| 'seedance'` | `threerouter` | 激活的服务商，切换后立即生效（HMR） |
+| `provider` | `'threerouter' \| 'wanx' \| 'minimax' \| 'seedance'` | `threerouter` | 激活的服务商，切换后立即生效（HMR） |
 | `threerouter.apiKey` | `string` | `''` | Threerouter API Key；`provider=threerouter` 时必填 |
 | `threerouter.baseURL` | `string` | `''` | Threerouter 自定义接口地址，留空用默认端点 |
 | `wanx.apiKey` | `string` | `''` | 万象 API Key；`provider=wanx` 时必填 |
+| `minimax.apiKey` | `string` | `''` | MiniMax 官方平台 API Key；`provider=minimax` 或模型家族路由命中时使用，留空自动跳过该候选 |
 | `wanx.baseURL` | `string` | `''` | 万象自定义接口地址，留空用默认端点 |
 | `seedance.apiKey` | `string` | `''` | Seedance2.5 API Key；`provider=seedance` 时必填 |
 | `seedance.baseURL` | `string` | `''` | Seedance2.5 自定义接口地址，留空用默认端点 |

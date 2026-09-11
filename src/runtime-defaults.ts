@@ -29,7 +29,7 @@ import type { Config, Provider } from './config.ts'
  * （如 '16:9'），`imageStyle` 为风格 id（见 {@link IMAGE_STYLE_OPTIONS}）。
  */
 export interface RuntimeDefaults {
-  /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'）；undefined 跟随 settings。 */
+  /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
   imageProvider?: Provider
   /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
   imageSize?: string
@@ -134,7 +134,7 @@ const MIN_VIDEO_DURATION = 1
 const MAX_VIDEO_DURATION = 10
 
 /** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验。 */
-const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'seedance'] as const
+const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'minimax', 'seedance'] as const
 
 /** 值是否为合法服务商（'' / 未知值均拒绝）。 */
 function isProvider(value: string): value is Provider {
@@ -142,31 +142,29 @@ function isProvider(value: string): value is Provider {
 }
 
 /**
- * 图像模型 id → 服务商映射，供 generate_image 工具的显式 model 参数路由：
- * 映射命中的模型用该服务商凭证直连，未命中的自定义模型跟随服务商选择链
- * （composer 覆盖 → settings 默认服务商 → 激活服务商）。
+ * 模型家族规则：按厂商关键词对显式 model 参数做小写包含匹配，得到该模型的家族
+ * 候选服务商。维护点按「厂商」而非「模型 id」——新模型（wan3.0、qwen-video、
+ * minimax 新版本等）自动命中家族规则，无需逐个登记。
+ *
+ * 家族事实（2026-09）：threerouter 是聚合器，出所有家族的模型（wan/minimax/seedance
+ * 及文本/图片模型）；wanx（阿里百炼）、minimax（官方平台，仅视频）、seedance（火山方舟）
+ * 是家族直连商。规则数组顺序即匹配优先级（更具体的家族在前）。
  */
-export const IMAGE_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
-  'wan2.1-image': 'threerouter',
-  'wanx2.1-t2i-turbo': 'wanx',
-  'doubao-seedream-3-0-t2i-250415': 'seedance',
-  'doubao-seedream-4-0-250828': 'seedance',
-} as const
-
-/**
- * 视频模型 id → 服务商映射（语义同 {@link IMAGE_MODEL_PROVIDER}）。wan2.2-t2v-plus
- * 固定路由 Threerouter 统一入口（万象直连内置默认亦为同款，避免同 id 双组歧义）；
- * wanx2.1-t2v-turbo 走阿里云百炼直连（与图片侧 wanx2.1-t2i-turbo 对称）；
- * minimax-h3 路由 Threerouter（其目录同时存在 MiniMax-H3 / minimax-h3 两个 id，一并登记）。
- */
-export const VIDEO_MODEL_PROVIDER: Readonly<Record<string, Provider>> = {
-  'wan2.2-t2v-plus': 'threerouter',
-  'wanx2.1-t2v-turbo': 'wanx',
-  'doubao-seedance-1-0-pro-250428': 'seedance',
-  'doubao-seedance-1-0-lite-t2v-250428': 'seedance',
-  'minimax-h3': 'threerouter',
-  'MiniMax-H3': 'threerouter',
-} as const
+export const MODEL_FAMILY_RULES: ReadonlyArray<{
+  /** 家族名（厂商体系）。 */
+  family: string
+  /** 小写包含匹配的关键词，任一命中即视为该家族。 */
+  keywords: readonly string[]
+  /** 家族候选服务商（有序）：家族直连商在前，聚合器兜底在后。 */
+  providers: readonly Provider[]
+  /** 适用生成类型；minimax 官方平台无图片生成能力，仅在视频侧作为候选。 */
+  kinds: ReadonlyArray<'image' | 'video'>
+}> = [
+  { family: 'minimax', keywords: ['minimax', 'hailuo'], providers: ['minimax', 'threerouter'], kinds: ['video'] },
+  { family: 'seedance', keywords: ['doubao', 'seedance', 'seedream'], providers: ['seedance', 'threerouter'], kinds: ['image', 'video'] },
+  // 一条 wan 规则覆盖 wan* 与 wanx*（"wanx2.1-t2i-turbo" 同样包含 "wan"）。
+  { family: 'wan', keywords: ['wan'], providers: ['wanx', 'threerouter'], kinds: ['image', 'video'] },
+] as const
 
 /**
  * 不支持自定义时长的视频模型集合：上游按模型内置档位出片，请求携带 duration 会被
@@ -191,15 +189,40 @@ export const VIDEO_MODEL_DEFAULT_RESOLUTION: Readonly<Record<string, string>> = 
 }
 
 /**
- * 解析显式模型参数应路由到的服务商。wan2.2-t2v-plus 是 Threerouter 的内置默认视频
- * 模型（万象直连默认亦为同款），为避免歧义固定路由 Threerouter 统一入口。
- * @param kind - 图像或视频模型。
- * @param model - 模型 id（工具显式参数）。
- * @returns 映射命中的服务商；未命中（自定义模型）返回 undefined。
+ * 构建候选服务商序列（工具层按序尝试提交，回退语义见工具实现）：
+ * ① 配置链服务商（会话选定 > settings 默认 > 激活服务商）——配置优先原则；
+ * ② 显式 model 参数命中 {@link MODEL_FAMILY_RULES} 时的家族候选（直连商在前）；
+ * ③ threerouter 聚合器兜底——其目录覆盖所有家族的模型，永远作为最后候选。
+ * 未配置 key 的候选一律跳过（不会在提交阶段撞「未配置 API Key」）。
+ * @param kind - 生成类型（minimax 家族仅参与视频候选）。
+ * @param explicitModel - 工具显式 model 参数；undefined / 空串表示未指定（无家族匹配）。
+ * @param configChain - 配置链解析出的服务商（可为 undefined）。
+ * @param hasKey - 判断服务商是否已配置 key（工具层以 peekProviderCredentials 实现）。
+ * @returns 去重后的候选服务商有序列表；可能为空 = 没有任何已配置凭证（工具层响亮报错）。
  */
-export function resolveModelProvider(kind: 'image' | 'video', model: string): Provider | undefined {
-  if (model === '') return undefined
-  return kind === 'image' ? IMAGE_MODEL_PROVIDER[model] : VIDEO_MODEL_PROVIDER[model]
+export function resolveModelCandidates(
+  kind: 'image' | 'video',
+  explicitModel: string | undefined,
+  configChain: Provider | undefined,
+  hasKey: (provider: Provider) => boolean,
+): Provider[] {
+  const candidates: Provider[] = []
+  const push = (provider: Provider): void => {
+    if (!candidates.includes(provider) && hasKey(provider)) candidates.push(provider)
+  }
+  if (configChain) push(configChain)
+  if (explicitModel) {
+    const lower = explicitModel.toLowerCase()
+    for (const rule of MODEL_FAMILY_RULES) {
+      if (!rule.kinds.includes(kind)) continue
+      if (rule.keywords.some((keyword) => lower.includes(keyword))) {
+        for (const provider of rule.providers) push(provider)
+        break
+      }
+    }
+  }
+  push('threerouter')
+  return candidates
 }
 
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */

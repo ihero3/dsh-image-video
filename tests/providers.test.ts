@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { wanxAdapter } from '../src/providers/wanx.ts'
 import { seedanceAdapter } from '../src/providers/seedance.ts'
 import { threerouterAdapter } from '../src/providers/threerouter.ts'
+import { minimaxAdapter } from '../src/providers/minimax.ts'
 import type { ImageGenParams, VideoGenParams, HttpOpts } from '../src/providers/types.ts'
 
 // Seedance 图片是同步接口 `/images/generations`，视频走 `/contents/generations/tasks`
@@ -466,5 +467,115 @@ describe('threerouter 适配器', () => {
     await expect(() => threerouterAdapter.submitVideo(videoParams, threerouterOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'network' && e.retryable === true)
+  })
+})
+
+describe('MiniMax adapter（官方平台 video-generation v2，按文档实现待实测）', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const minimaxOpts = (retryTimes = 0): HttpOpts => ({
+    apiKey: 'sk-minimax-mock',
+    baseURL: 'https://api.minimaxi.com/v1',
+    timeoutMs: 10_000, retryTimes, signal,
+  })
+
+  it('submitVideo：缺省注入 resolution=768P，返回 task_id', async () => {
+    vi.stubGlobal('fetch', async (_url: URL | string, init: RequestInit = {}) => {
+      const h = init.headers as Record<string, string> || {}
+      expect(h.Authorization).toBe('Bearer sk-minimax-mock')
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      expect(body.model).toBe('MiniMax-Hailuo-02')
+      expect(body.resolution).toBe('768P')
+      expect(body.duration).toBe(5)
+      expect(body.first_frame_image).toBeUndefined()
+      return new Response(
+        JSON.stringify({ task_id: 'mm-1', base_resp: { status_code: 0, status_msg: 'success' } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const s = await minimaxAdapter.submitVideo(videoParams, minimaxOpts())
+    expect(s.async).toBe(true)
+    expect(s.taskId).toBe('mm-1')
+    expect(s.mediaType).toBe('video')
+  })
+
+  it('submitVideo：显式 resolution / 首帧图透传', async () => {
+    vi.stubGlobal('fetch', async (_url: URL | string, init: RequestInit = {}) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      expect(body.resolution).toBe('1080P')
+      expect(body.first_frame_image).toBe('data:image/png;base64,AAA')
+      expect(body.model).toBe('MiniMax-Hailuo-2.3')
+      return new Response(
+        JSON.stringify({ task_id: 'mm-2', base_resp: { status_code: 0 } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    await minimaxAdapter.submitVideo(
+      { ...videoParams, duration: 6, resolution: '1080P', image: 'data:image/png;base64,AAA', model: 'MiniMax-Hailuo-2.3' },
+      minimaxOpts(),
+    )
+  })
+
+  it('submitVideo：base_resp 非零状态码 → task 错误（含 status_msg 供分类）', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ base_resp: { status_code: 2013, status_msg: 'invalid params: model not found' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    await expect(() => minimaxAdapter.submitVideo(videoParams, minimaxOpts())).rejects
+      .toSatisfy((e: { kind: string; message: string }) =>
+        e.kind === 'task' && e.message.includes('model not found'))
+  })
+
+  it('queryTask：Queueing/Processing/Success（download_url）状态映射', async () => {
+    for (const [status, expected] of [['Queueing', 'pending'], ['Processing', 'running']] as const) {
+      vi.stubGlobal('fetch', async () => new Response(
+        JSON.stringify({ task_id: 'mm-1', status, base_resp: { status_code: 0 } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ))
+      const r = await minimaxAdapter.queryTask('mm-1', minimaxOpts())
+      expect(r.status).toBe(expected)
+    }
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ task_id: 'mm-1', status: 'Success', file: { download_url: 'https://mm.example.com/v.mp4' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const done = await minimaxAdapter.queryTask('mm-1', minimaxOpts())
+    expect(done).toEqual({ status: 'succeeded', mediaUrl: 'https://mm.example.com/v.mp4' })
+  })
+
+  it('queryTask：Success 仅带 file_id 时经 files/retrieve 二次换取', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', async (url: URL | string) => {
+      calls++
+      if (calls === 1) {
+        expect(String(url)).toContain('/query/video_generation?task_id=mm-3')
+        return new Response(
+          JSON.stringify({ task_id: 'mm-3', status: 'Success', file_id: 9001 }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      expect(String(url)).toContain('/files/retrieve?file_id=9001')
+      return new Response(
+        JSON.stringify({ file: { download_url: 'https://mm.example.com/v2.mp4' }, base_resp: { status_code: 0 } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const r = await minimaxAdapter.queryTask('mm-3', minimaxOpts())
+    expect(r).toEqual({ status: 'succeeded', mediaUrl: 'https://mm.example.com/v2.mp4' })
+  })
+
+  it('queryTask：Fail → failed（取 base_resp.status_msg）', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ task_id: 'mm-4', status: 'Fail', base_resp: { status_code: 1027, status_msg: 'content violation' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const r = await minimaxAdapter.queryTask('mm-4', minimaxOpts())
+    expect(r).toEqual({ status: 'failed', error: 'content violation' })
+  })
+
+  it('submitImage：明确报不支持（工具层据此回退聚合器）', async () => {
+    await expect(() => minimaxAdapter.submitImage(imageParams, minimaxOpts())).rejects
+      .toSatisfy((e: { kind: string; message: string }) =>
+        e.kind === 'task' && e.message.includes('不支持图片生成'))
   })
 })

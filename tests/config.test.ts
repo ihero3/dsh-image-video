@@ -79,6 +79,17 @@ describe('resolveActiveProvider 凭证解析', () => {
     expect(r.baseURL).toBe('https://ark.cn-beijing.volces.com/api/v3')
   })
 
+  it('provider=minimax → 使用 minimax 凭证 + 官方平台默认 baseURL；defaultVideoProvider 联合含 minimax', () => {
+    const cfg = Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultVideoProvider: 'minimax' })
+    const r = resolveActiveProvider(cfg)
+    expect(r.provider).toBe('minimax')
+    expect(r.baseURL).toBe('https://api.minimaxi.com/v1')
+    expect(cfg.defaultVideoProvider).toBe('minimax')
+    expect(cfg.minimax.apiKey).toBe('sk-mm')
+    // minimax 无图片能力：defaultImageProvider 联合不含 minimax
+    expect(() => Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultImageProvider: 'minimax' as never })).toThrow()
+  })
+
   it('自定义 baseURL 覆盖默认端点', () => {
     const cfg = Config({ provider: 'wanx', wanx: { apiKey: 'sk', baseURL: 'https://proxy/wanx' } })
     expect(resolveActiveProvider(cfg).baseURL).toBe('https://proxy/wanx')

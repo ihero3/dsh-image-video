@@ -24,6 +24,30 @@ export class GenerationError extends Error {
   }
 }
 
+/**
+ * 判定错误是否为「模型不被该服务商接受」类，供工具层在候选服务商间回退。
+ * 实测形态（2026-09）：
+ * - threerouter：目录中无可用渠道的模型 → HTTP 503 capacity_error
+ *   "No available media generation channels"（网关按模型找渠道，未知模型即无渠道）；
+ * - 部分服务商：HTTP 400/404 + 模型不存在类消息（"model not found" / "模型不存在"）；
+ * - 能力缺失：如「不支持图片生成」。
+ * 注意区分语义相近的参数级 400——如 "model X does not support duration 1s"
+ * （时长档位问题，模型本身可用），该类消息不命中本判定，不触发换家。
+ * 其余 5xx（无 capacity_error 语义）、鉴权（401/403）、配额（429）、超时一律不成立：
+ * 响亮失败，避免用别家的 key 静默掩盖本服务商的配置问题。
+ */
+export function isModelNotAcceptedError(err: unknown): boolean {
+  if (!(err instanceof GenerationError)) return false
+  const message = err.message ?? ''
+  const modelMissing = /not\s*found|not\s*exist|does\s*not\s*exist|unknown\s*model|invalid\s*model|不存在|未找到|未开通|无效的?模型/i.test(message)
+  const capabilityMissing = message.includes('不支持')
+  if (err.kind === 'task') return modelMissing || capabilityMissing
+  // threerouter 网关的「无可用渠道」503 同样意味着无法为此模型服务，纳入回退；
+  // 其余 network/timeout 错误（瞬时故障）不回退。
+  if (err.kind === 'network') return /no available media generation channels|capacity_error/i.test(message)
+  return false
+}
+
 /** 请求选项。 */
 export interface RequestOptions {
   method: 'GET' | 'POST'

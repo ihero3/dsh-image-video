@@ -14,14 +14,16 @@ import type {} from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { Config, Provider } from '../config.ts'
-import { resolveProviderCredentials } from '../config.ts'
+import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
-import { applyImageStyle, resolveModelProvider } from '../runtime-defaults.ts'
+import { applyImageStyle, resolveModelCandidates } from '../runtime-defaults.ts'
+import { isModelNotAcceptedError } from '../http-client.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
 import { threerouterAdapter } from '../providers/threerouter.ts'
-import type { ImageGenParams, HttpOpts } from '../providers/types.ts'
+import { minimaxAdapter } from '../providers/minimax.ts'
+import type { ProviderAdapter, ImageGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, saveImageAttachment, createImageSummaryText } from '../media.ts'
 
 /**
@@ -85,9 +87,9 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片。服务商选择：指定模型属于某服务商映射时用该服务商（其凭证直连），'
-      + '否则依次取 composer 会话选定的服务商、配置默认服务商、激活服务商（默认 threerouter），'
-      + '由所选服务商的内置默认模型出图。'
+      '根据文本提示词生成图片。服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
+      + '显式指定模型时按模型家族自动路由（wan/wanx→百炼直连，doubao/seedream/seedance→火山方舟；MiniMax 无图片生成能力），'
+      + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
       + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）。',
@@ -118,6 +120,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           localPath: { type: 'string', required: true },
           sourceUrl: { type: 'string', required: true },
           bytes: { type: 'integer', required: true },
+          notes: { type: 'array', items: { type: 'string' } },
           image: {
             type: 'object',
             additionalProperties: false,
@@ -177,15 +180,23 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       // 模型取值链：调用参数 model > 配置 defaultImageModel > adapter 内置默认
       const model = typedArgs.model || config.defaultImageModel || undefined
 
-      // 服务商选择：显式 model 参数命中模型映射 → 按模型路由（用其凭证直连）；
-      // 否则依次跟随 composer 运行时覆盖的服务商、settings 默认服务商、激活
-      // 服务商，由所选 adapter 使用其内置默认模型出图。
-      const routed = model !== undefined ? resolveModelProvider('image', model) : undefined
+      // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
+      // 服务商）→ 显式 model 命中家族规则的直连商 → threerouter 聚合器兜底；
+      // minimax 家族无图片生成能力，仅在视频侧作为候选。未配置 key 的候选自动跳过。
       const preferred: Provider | undefined = runtime.imageProvider
         ?? (config.defaultImageProvider === '' ? undefined : config.defaultImageProvider)
-      const { provider, apiKey, baseURL } = resolveProviderCredentials(config, routed ?? preferred ?? config.provider)
-      const adapter = provider === 'threerouter' ? threerouterAdapter
-        : provider === 'wanx' ? wanxAdapter
+      const candidates = resolveModelCandidates(
+        'image',
+        model,
+        preferred ?? config.provider,
+        (p) => peekProviderCredentials(config, p).apiKey.trim().length > 0,
+      )
+      if (candidates.length === 0) {
+        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey')
+      }
+      const adapterFor = (p: Provider): ProviderAdapter => p === 'threerouter' ? threerouterAdapter
+        : p === 'wanx' ? wanxAdapter
+        : p === 'minimax' ? minimaxAdapter
         : seedanceAdapter
 
       const imageParams: ImageGenParams = {
@@ -194,16 +205,43 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         model,
       }
 
-      const httpOpts: HttpOpts = {
-        apiKey,
-        baseURL,
-        timeoutMs: config.timeoutMs,
-        retryTimes: config.retryTimes,
-        signal: exec.signal,
+      // 按候选序提交：仅在「模型不被该服务商接受」类提交错误（含「不支持图片生成」）
+      // 时回退下一候选；鉴权/配额/网络/超时立即响亮失败。回退链经 notes 透明告知。
+      let provider: Provider | undefined
+      let adapter: ProviderAdapter | undefined
+      let httpOpts: HttpOpts | undefined
+      let submitResult: SubmitResult | undefined
+      const fallbackNotes: string[] = []
+      let lastError: unknown
+      for (const candidate of candidates) {
+        const creds = resolveProviderCredentials(config, candidate)
+        const candidateAdapter = adapterFor(candidate)
+        const candidateOpts: HttpOpts = {
+          apiKey: creds.apiKey,
+          baseURL: creds.baseURL,
+          timeoutMs: config.timeoutMs,
+          retryTimes: config.retryTimes,
+          signal: exec.signal,
+        }
+        try {
+          submitResult = await candidateAdapter.submitImage(imageParams, candidateOpts)
+          provider = candidate
+          adapter = candidateAdapter
+          httpOpts = candidateOpts
+          break
+        } catch (err) {
+          if (!isModelNotAcceptedError(err)) throw err
+          lastError = err
+          fallbackNotes.push(`${candidate} 不接受该模型（${err instanceof Error ? err.message.slice(0, 120) : String(err)}）`)
+        }
+      }
+      if (!submitResult || !provider || !adapter || !httpOpts) {
+        throw lastError instanceof Error ? lastError : new Error(`图片提交失败：所有候选服务商均不接受模型 ${model ?? '（服务商默认）'}`)
       }
 
-      // 提交任务
-      const submitResult = await adapter.submitImage(imageParams, httpOpts)
+      const notes = fallbackNotes.length > 0
+        ? [`模型自动路由回退：${fallbackNotes.join('；')}；最终由 ${provider} 提交`]
+        : undefined
 
       let mediaUrl: string
       if (submitResult.async && submitResult.taskId) {
@@ -239,6 +277,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
+        ...(notes ? { notes } : {}),
         ...imageInline && imageRef !== undefined ? { image: imageRef as GenerateImageOutput['image'] } : {},
       }
       return output
@@ -262,6 +301,8 @@ interface GenerateImageOutput {
   localPath: string
   sourceUrl: string
   bytes: number
+  /** 透明告知：候选服务商回退链说明；无回退时缺省。 */
+  notes?: string[]
   image?: {
     attachmentId: string
     mediaType: ImageMediaType

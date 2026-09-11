@@ -1,5 +1,6 @@
 /**
- * generate_video 工具：文生视频 + 图生视频（image 首帧驱动），支持 threerouter / 万象（wanx）/ Seedance 切换。
+ * generate_video 工具：文生视频 + 图生视频（image 首帧驱动），支持 threerouter（聚合器）/
+ * 万象（wanx，百炼直连）/ MiniMax 官方平台 / Seedance（火山方舟），按模型家族自动路由。
  * 提交任务后后台轮询直到完成，下载视频到 outputs/ 目录。
  * 视频生成耗时较长（1-5 分钟），轮询过程不产生中间输出，仅最终结果返回模型，
  * 不阻塞对话上下文。时长上限 10 秒，由 schema 与运行时双重校验。
@@ -9,14 +10,16 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config, Provider } from '../config.ts'
-import { resolveProviderCredentials } from '../config.ts'
+import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
-import { resolveModelProvider } from '../runtime-defaults.ts'
+import { resolveModelCandidates } from '../runtime-defaults.ts'
+import { isModelNotAcceptedError } from '../http-client.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
 import { threerouterAdapter } from '../providers/threerouter.ts'
-import type { VideoGenParams, HttpOpts } from '../providers/types.ts'
+import { minimaxAdapter } from '../providers/minimax.ts'
+import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
 import { downloadAndSave, createVideoContent, resolveImageReference } from '../media.ts'
 
 /** 视频时长上限（秒），强制规范。 */
@@ -42,8 +45,9 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
     name: 'generate_video',
     description:
       '根据文本提示词生成短视频；传入 image（首帧图片）时为图生视频，让图片动起来。'
-      + '服务商选择：指定模型属于某服务商映射时用该服务商（其凭证直连），'
-      + '否则依次取 composer 会话选定的服务商、配置默认服务商、激活服务商（默认 threerouter）；'
+      + '服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
+      + '显式指定模型时按模型家族自动路由（minimax/hailuo→MiniMax 官方直连，wan/wanx→百炼直连，doubao/seedance/seedream→火山方舟），'
+      + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
       + '模型取值：调用参数 model > 配置 defaultVideoModel > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；wan 系模型不支持自定义时长，传入会被忽略并在结果 notes 注明。`
@@ -133,15 +137,23 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间，当前为 ${duration}`)
       }
 
-      // 服务商选择：显式 model 参数命中模型映射 → 按模型路由（用其凭证直连）；
-      // 否则依次跟随 composer 运行时覆盖的服务商、settings 默认服务商、激活
-      // 服务商，由所选 adapter 使用其内置默认模型出片。
-      const routed = typedArgs.model !== undefined ? resolveModelProvider('video', typedArgs.model) : undefined
+      // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
+      // 服务商）→ 显式 model 命中家族规则的直连商 → threerouter 聚合器兜底；
+      // 未配置 key 的候选自动跳过，全部候选均无凭证时响亮报错。
       const preferred: Provider | undefined = runtime.videoProvider
         ?? (config.defaultVideoProvider === '' ? undefined : config.defaultVideoProvider)
-      const { provider, apiKey, baseURL } = resolveProviderCredentials(config, routed ?? preferred ?? config.provider)
-      const adapter = provider === 'threerouter' ? threerouterAdapter
-        : provider === 'wanx' ? wanxAdapter
+      const candidates = resolveModelCandidates(
+        'video',
+        typedArgs.model,
+        preferred ?? config.provider,
+        (p) => peekProviderCredentials(config, p).apiKey.trim().length > 0,
+      )
+      if (candidates.length === 0) {
+        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey')
+      }
+      const adapterFor = (p: Provider): ProviderAdapter => p === 'threerouter' ? threerouterAdapter
+        : p === 'wanx' ? wanxAdapter
+        : p === 'minimax' ? minimaxAdapter
         : seedanceAdapter
 
       // 本地路径在此解析为 data URL，适配器只接收 URL / data URL
@@ -159,23 +171,52 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         resolution: typedArgs.resolution,
       }
 
-      const httpOpts: HttpOpts = {
-        apiKey,
-        baseURL,
-        timeoutMs: config.timeoutMs,
-        retryTimes: config.retryTimes,
-        signal: exec.signal,
+      // 按候选序提交：仅在「模型不被该服务商接受」类提交错误时回退下一候选
+      // （鉴权/配额/网络/超时立即响亮失败，不掩盖配置错误；拿到 taskId 之后的
+      // 任何失败一律不回退，绝不重复生成、双重扣费）。回退链写入 notes 透明告知。
+      let provider: Provider | undefined
+      let adapter: ProviderAdapter | undefined
+      let httpOpts: HttpOpts | undefined
+      let submitResult: SubmitResult | undefined
+      const fallbackNotes: string[] = []
+      let lastError: unknown
+      for (const candidate of candidates) {
+        const creds = resolveProviderCredentials(config, candidate)
+        const candidateAdapter = adapterFor(candidate)
+        const candidateOpts: HttpOpts = {
+          apiKey: creds.apiKey,
+          baseURL: creds.baseURL,
+          timeoutMs: config.timeoutMs,
+          retryTimes: config.retryTimes,
+          signal: exec.signal,
+        }
+        try {
+          submitResult = await candidateAdapter.submitVideo(videoParams, candidateOpts)
+          provider = candidate
+          adapter = candidateAdapter
+          httpOpts = candidateOpts
+          break
+        } catch (err) {
+          if (!isModelNotAcceptedError(err)) throw err
+          lastError = err
+          fallbackNotes.push(`${candidate} 不接受该模型（${err instanceof Error ? err.message.slice(0, 120) : String(err)}）`)
+        }
       }
-
-      // 提交视频生成任务（视频始终为异步）
-      const submitResult = await adapter.submitVideo(videoParams, httpOpts)
+      if (!submitResult || !provider || !adapter || !httpOpts) {
+        throw lastError instanceof Error ? lastError : new Error(`视频提交失败：所有候选服务商均不接受模型 ${model ?? '（服务商默认）'}`)
+      }
       if (!submitResult.taskId) {
         throw new Error('视频任务提交失败：未返回 task_id')
       }
-      // wan 系模型不支持自定义时长：适配器丢弃 duration 时在结果中透明注明，避免静默降级
-      const notes = submitResult.droppedDuration
-        ? [`当前模型${model ? ` ${model}` : '（服务商默认）'}不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`]
-        : undefined
+
+      // 透明告知 notes：wan 系 duration 丢弃 + 候选回退链（无降级时为空数组，不输出）
+      const notes: string[] = []
+      if (submitResult.droppedDuration) {
+        notes.push(`当前模型${model ? ` ${model}` : '（服务商默认）'}不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`)
+      }
+      if (fallbackNotes.length > 0) {
+        notes.push(`模型自动路由回退：${fallbackNotes.join('；')}；最终由 ${provider} 提交`)
+      }
 
       // 后台轮询直到完成——轮询过程不产生中间输出，仅最终结果返回模型
       const pollResult = await taskManager.pollUntilDone(
@@ -199,7 +240,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
         elapsedMs: pollResult.elapsedMs,
-        ...(notes ? { notes } : {}),
+        ...(notes.length > 0 ? { notes } : {}),
       }
       return output
     },
