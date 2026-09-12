@@ -51,7 +51,7 @@
 
 ## 结果透明与配置自证
 
-- **每次调用自报身份**：`generate_video` / `generate_image` 的可见文本包含**服务商**与**实际发给上游的模型名**（未指定模型时显示服务商内置默认的实际值），以及生成模式、时长参数、分辨率与 `notes`（时长被丢弃、候选回退链）。「这次用了哪个服务商、哪个模型、有没有降级」直接看结果即可，不必去服务商后台对账，也不必从配置推断。
+- **每次调用自报身份（固定标准输出）**：`generate_video` / `generate_image` 的可见文本固定包含**提示词、服务商、实际发给上游的模型名**（未指定模型时显示服务商内置默认的实际值）、生成模式、时长参数、分辨率与 `notes`（时长被丢弃、候选回退链）。「这次用了哪个服务商、哪个模型、有没有降级」直接看结果即可，不必去服务商后台对账，也不必从配置推断。配合桌面客户端 keyed toolview（消费 `presentationMeta` 的 `localPath`/`prompt` 渲染内嵌播放器），构成「**提示词 + 播放器 + 结果块**」的固定标准输出：任何人安装本插件即自动获得，无需任何配置。
 - **启动即打印生效配置**：插件 `apply()` 向宿主日志写一行生效配置摘要（`provider` / `defaultVideoProvider` / `defaultImageProvider` / `defaultVideoModel` / `defaultImageModel` / `defaultVideoDuration` / `outputsDir` / 各服务商 key 是否已配置），**绝不包含 key 明文**。多 profile（web / desktop）场景可直接从日志确认哪个 patch 层生效。
 
 ## 快速开始

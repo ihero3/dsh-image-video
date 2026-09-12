@@ -147,6 +147,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           provider: v.provider,
           localPath: v.localPath,
           bytes: v.bytes,
+          prompt: v.prompt,
           model: v.model,
           ...(v.notes ? { notes: v.notes } : {}),
           ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },

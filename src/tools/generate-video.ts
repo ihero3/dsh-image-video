@@ -104,6 +104,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       render: (_args, value): ContentBlock[] => {
         const v = value as GenerateVideoOutput
         return createVideoContent(v.localPath, v.bytes, v.sourceUrl, {
+          prompt: v.prompt,
           provider: v.provider,
           model: v.model,
           mode: v.mode,

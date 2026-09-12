@@ -136,6 +136,8 @@ export interface ImageSummaryFields {
   bytes: number
   width?: number
   height?: number
+  /** 实际使用的提示词；标准输出的一部分，让结果自证「这张图是怎么来的」。 */
+  prompt?: string
   /** 实际使用的模型名（含适配器内置默认）；留空则显示「服务商内置默认」。 */
   model?: string
   /** 透明告知条目（路由回退等）；无则省略。 */
@@ -144,7 +146,8 @@ export interface ImageSummaryFields {
 
 /**
  * 构造模型可见的图片生成摘要文本（纯文本，不含图片字节）。
- * 含服务商与**实际使用的模型**——避免「用了哪个模型」只能靠配置推断。
+ * 标准输出固定包含：提示词、服务商、**实际使用的模型**、尺寸与透明告知——
+ * 「这张图怎么来的、用了谁」直接看结果即可，无需查配置或服务商后台。
  * @param fields - 生成输出中的展示字段。
  * @returns 供工具结果 render 返回的文本块。
  */
@@ -153,17 +156,20 @@ export function createImageSummaryText(fields: ImageSummaryFields): ContentBlock
     ? `${fields.width}×${fields.height}`
     : '未知尺寸'
   const model = fields.model && fields.model.length > 0 ? fields.model : '服务商内置默认'
+  const promptBlock = fields.prompt && fields.prompt.length > 0 ? `\n提示词：${fields.prompt}` : ''
   const notesBlock = fields.notes && fields.notes.length > 0
     ? `\n透明告知：\n${fields.notes.map((note) => `- ${note}`).join('\n')}`
     : ''
   return [{
     type: 'text',
-    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）${notesBlock}`,
+    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）${promptBlock}${notesBlock}`,
   }]
 }
 
 /** 视频摘要文本的展示字段（全部可选，缺省即省略对应行）。 */
 export interface VideoSummaryDetails {
+  /** 实际使用的提示词；标准输出的一部分，让结果自证「这条视频是怎么来的」。 */
+  prompt?: string
   /** 实际命中并提交的服务商。 */
   provider?: string
   /** 实际发给上游的模型名（含适配器内置默认）。 */
@@ -180,13 +186,14 @@ export interface VideoSummaryDetails {
 
 /**
  * 创建视频渲染块。DSH 无原生视频内容块，
- * 返回文本块含本地文件路径，供用户点击打开；同时把**服务商、实际模型、
- * 透明告知**写进可见文本，让「这次用了谁、用了哪个模型、有无降级」在交互区
- * 直接可见，无需查服务商后台。
+ * 返回文本块含本地文件路径，供用户点击打开；同时把**提示词、服务商、实际模型、
+ * 透明告知**写进可见文本，与客户端 keyed toolview 的内嵌播放器（消费
+ * presentationMeta.localPath/prompt）共同构成固定标准输出：
+ * 「提示词 + 播放器 + 结果块」，任何人安装插件即可见，无需任何配置。
  * @param localPath - 落地文件路径。
  * @param bytes - 文件字节数。
  * @param sourceUrl - 上游源地址。
- * @param details - 展示字段（服务商/模型/模式/时长/分辨率/透明告知）。
+ * @param details - 展示字段（提示词/服务商/模型/模式/时长/分辨率/透明告知）。
  */
 export function createVideoContent(
   localPath: string,
@@ -200,6 +207,7 @@ export function createVideoContent(
     '视频已生成并保存到本地：',
     `- 文件路径：${localPath}`,
     `- 文件大小：${sizeKb} KB`,
+    ...(details.prompt && details.prompt.length > 0 ? [`- 提示词：${details.prompt}`] : []),
     ...(details.provider ? [`- 服务商：${details.provider}`] : []),
     `- 模型：${model}`,
     ...(details.mode ? [`- 生成模式：${details.mode}`] : []),

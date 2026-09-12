@@ -106,15 +106,29 @@ describe('media 扩展名与类型推断', () => {
       const blocks = createImageSummaryText({ provider: 'threerouter', localPath: '/x.png', bytes: 1 })
       expect((blocks[0] as { text: string }).text).toContain('模型：服务商内置默认')
     })
+
+    it('标准输出含提示词（结果自证「这张图是怎么来的」）', () => {
+      const blocks = createImageSummaryText({
+        provider: 'threerouter',
+        localPath: '/ws/outputs/d.png',
+        bytes: 1024,
+        prompt: '夕阳下的帆船，水彩风格',
+        model: 'wan2.1-image',
+      })
+      const text = (blocks[0] as { text: string }).text
+      expect(text).toContain('提示词：夕阳下的帆船，水彩风格')
+      expect(text).toContain('模型：wan2.1-image')
+    })
   })
 
   describe('createVideoContent', () => {
-    it('可见文本含服务商、实际模型、模式与透明告知（含时长被丢弃说明）', () => {
+    it('可见文本含提示词、服务商、实际模型、模式与透明告知（含时长被丢弃说明）', () => {
       const blocks = createVideoContent(
         '/ws/outputs/v.mp4',
         754_500,
         'https://cdn.example.com/v.mp4',
         {
+          prompt: '女子腾空飞向高空，穿越蓝天白云',
           provider: 'threerouter',
           model: 'wan2.7-t2v',
           mode: 'image-to-video',
@@ -125,6 +139,7 @@ describe('media 扩展名与类型推断', () => {
       )
       expect(blocks).toHaveLength(1)
       const text = (blocks[0] as { text: string }).text
+      expect(text).toContain('- 提示词：女子腾空飞向高空，穿越蓝天白云')
       expect(text).toContain('- 服务商：threerouter')
       expect(text).toContain('- 模型：wan2.7-t2v')
       expect(text).toContain('- 生成模式：image-to-video')
