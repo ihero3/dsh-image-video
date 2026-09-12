@@ -37,14 +37,15 @@ function extractTaskError(error: unknown): string {
 /** 提交文生图任务（media_kind=image 显式指定，不依赖模型名推断）。 */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/media/generations`
+  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
   const body: Record<string, unknown> = {
-    model: params.model ?? DEFAULT_IMAGE_MODEL,
+    model: effectiveModel,
     prompt: params.prompt,
     media_kind: 'image',
   }
   const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
   if (!data?.id) throw new Error('Threerouter 文生图：未返回任务 ID')
-  return { taskId: data.id, async: true, mediaType: 'image' }
+  return { taskId: data.id, async: true, mediaType: 'image', model: effectiveModel }
 }
 
 /**
@@ -77,7 +78,7 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   }
   const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
   if (!data?.id) throw new Error('Threerouter 文生视频：未返回任务 ID')
-  return { taskId: data.id, async: true, mediaType: 'video', ...(droppedDuration ? { droppedDuration } : {}) }
+  return { taskId: data.id, async: true, mediaType: 'video', model: effectiveModel, ...(droppedDuration ? { droppedDuration } : {}) }
 }
 
 /** 查询异步任务状态。完成后优先使用响应 url，缺失时回退 /content 302 端点。 */

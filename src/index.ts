@@ -28,7 +28,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config } from './config.ts'
+import { Config, peekProviderCredentials } from './config.ts'
+import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
@@ -85,6 +86,22 @@ export const inject = ['tools']
  * @param config - 已由 Schemastery 填充默认值的插件配置。
  */
 export function apply(ctx: Context, config: Config): void {
+  // 生效配置摘要（不含 key 明文）：把「哪个 profile/patch 生效、默认服务商与默认模型
+  // 究竟是什么、哪些服务商配了 key」一次性写进宿主日志，便于在 web/desktop 多 profile
+  // 场景定位配置来源，消除「用了哪个服务商/模型」只能靠推断的问题。
+  const keyState = (provider: Provider): string =>
+    peekProviderCredentials(config, provider).apiKey.trim().length > 0 ? '已配置' : '未配置'
+  ctx.logger.info(
+    `dsh-image-video 生效配置：provider=${config.provider}`
+    + ` defaultVideoProvider=${config.defaultVideoProvider || '(跟随激活服务商)'}`
+    + ` defaultImageProvider=${config.defaultImageProvider || '(跟随激活服务商)'}`
+    + ` defaultVideoModel=${config.defaultVideoModel || '(服务商内置默认)'}`
+    + ` defaultImageModel=${config.defaultImageModel || '(服务商内置默认)'}`
+    + ` defaultVideoDuration=${config.defaultVideoDuration}`
+    + ` outputsDir=${config.outputsDir}`
+    + ` keys{threerouter=${keyState('threerouter')}, wanx=${keyState('wanx')}, minimax=${keyState('minimax')}, seedance=${keyState('seedance')}}`,
+  )
+
   // 任务管理器：构造时通过 ctx.effect() 注册卸载清理函数，
   // 插件卸载时自动取消所有排队任务、清理轮询定时器。
   const taskManager = new TaskManager(ctx, config)

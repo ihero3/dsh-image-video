@@ -97,12 +97,20 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           sourceUrl: { type: 'string', required: true },
           bytes: { type: 'integer', required: true },
           elapsedMs: { type: 'integer', required: true },
+          model: { type: 'string', description: '实际发给上游的模型名（含服务商内置默认），供用户核对本次到底用了哪个模型。' },
           notes: { type: 'array', items: { type: 'string' } },
         },
       },
       render: (_args, value): ContentBlock[] => {
         const v = value as GenerateVideoOutput
-        return createVideoContent(v.localPath, v.bytes, v.sourceUrl)
+        return createVideoContent(v.localPath, v.bytes, v.sourceUrl, {
+          provider: v.provider,
+          model: v.model,
+          mode: v.mode,
+          duration: v.duration,
+          resolution: v.resolution,
+          ...(v.notes ? { notes: v.notes } : {}),
+        })
       },
       // UI-only 通道：与 generate_image 一致，把展示字段经 tool/result 事件持久化到
       // ToolResultNode.meta，桌面客户端 keyed toolview 据此内嵌视频播放器；对模型不可见。
@@ -110,11 +118,13 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         const v = value as GenerateVideoOutput
         return {
           provider: v.provider,
+          model: v.model,
           prompt: v.prompt,
           duration: v.duration,
           localPath: v.localPath,
           sourceUrl: v.sourceUrl,
           bytes: v.bytes,
+          ...(v.notes ? { notes: v.notes } : {}),
         }
       },
     },
@@ -210,9 +220,11 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       }
 
       // 透明告知 notes：wan 系 duration 丢弃 + 候选回退链（无降级时为空数组，不输出）
+      // 实际模型以适配器回报为准（含服务商内置默认兜底），避免用配置推断模型。
+      const actualModel = submitResult.model ?? model ?? ''
       const notes: string[] = []
       if (submitResult.droppedDuration) {
-        notes.push(`当前模型${model ? ` ${model}` : '（服务商默认）'}不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`)
+        notes.push(`当前模型 ${actualModel || '（服务商内置默认）'} 不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`)
       }
       if (fallbackNotes.length > 0) {
         notes.push(`模型自动路由回退：${fallbackNotes.join('；')}；最终由 ${provider} 提交`)
@@ -236,6 +248,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         duration,
         mode: imageRef ? 'image-to-video' : 'text-to-video',
         resolution: typedArgs.resolution ?? '',
+        model: actualModel,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
@@ -266,6 +279,8 @@ interface GenerateVideoOutput {
   mode: 'image-to-video' | 'text-to-video'
   /** 请求携带的分辨率档位；未指定为空字符串。 */
   resolution: string
+  /** 实际发给上游的模型名（含服务商内置默认），逐次调用如实回报。 */
+  model: string
   localPath: string
   sourceUrl: string
   bytes: number

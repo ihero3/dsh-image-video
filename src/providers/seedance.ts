@@ -26,8 +26,9 @@ function arkHeaders(apiKey: string): Record<string, string> {
 /** 提交文生图任务（同步接口，直接返回图片 URL）。 */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/images/generations`
+  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
   const body = {
-    model: params.model ?? DEFAULT_IMAGE_MODEL,
+    model: effectiveModel,
     prompt: params.prompt,
     size: params.size,
     n: 1,
@@ -36,7 +37,7 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
   const data = await request(toRequestOpts('POST', url, arkHeaders(opts.apiKey), body, opts)) as ArkImageResponse
   const mediaUrl = data?.data?.[0]?.url
   if (!mediaUrl) throw new Error('Seedance 文生图：未返回图片 URL')
-  return { taskId: '', async: false, mediaUrl, mediaType: 'image' }
+  return { taskId: '', async: false, mediaUrl, mediaType: 'image', model: effectiveModel }
 }
 
 /**
@@ -49,8 +50,9 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   if (params.image) {
     content.push({ type: 'image_url', image_url: { url: params.image } })
   }
+  const effectiveModel = params.model ?? DEFAULT_VIDEO_MODEL
   const body = {
-    model: params.model ?? DEFAULT_VIDEO_MODEL,
+    model: effectiveModel,
     content,
     // Seedance 视频参数通过可选字段传递
     ...(params.duration ? { duration: `${params.duration}s` } : {}),
@@ -59,7 +61,7 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   const data = await request(toRequestOpts('POST', url, arkHeaders(opts.apiKey), body, opts)) as ArkTaskResponse
   const taskId = data?.id
   if (!taskId) throw new Error('Seedance 文生视频：未返回 task_id')
-  return { taskId, async: true, mediaType: 'video' }
+  return { taskId, async: true, mediaType: 'video', model: effectiveModel }
 }
 
 /** 查询异步任务状态。 */

@@ -120,6 +120,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           localPath: { type: 'string', required: true },
           sourceUrl: { type: 'string', required: true },
           bytes: { type: 'integer', required: true },
+          model: { type: 'string', description: '实际发给上游的模型名（含服务商内置默认），供用户核对本次到底用了哪个模型。' },
           notes: { type: 'array', items: { type: 'string' } },
           image: {
             type: 'object',
@@ -146,6 +147,8 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           provider: v.provider,
           localPath: v.localPath,
           bytes: v.bytes,
+          model: v.model,
+          ...(v.notes ? { notes: v.notes } : {}),
           ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },
         })
         if (v.image !== undefined) {
@@ -271,12 +274,15 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
 
       // 判定调用路由是否声明图片输入：支持才注入 image 块（前端内嵌显示），否则仅文本摘要。
       const imageInline = await routeAcceptsImages(ctx, exec)
+      // 实际模型以适配器回报为准（含服务商内置默认兜底），避免用配置推断模型。
+      const actualModel = submitResult.model ?? model ?? ''
       const output: GenerateImageOutput = {
         provider,
         prompt,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
+        model: actualModel,
         ...(notes ? { notes } : {}),
         ...imageInline && imageRef !== undefined ? { image: imageRef as GenerateImageOutput['image'] } : {},
       }
@@ -301,6 +307,8 @@ interface GenerateImageOutput {
   localPath: string
   sourceUrl: string
   bytes: number
+  /** 实际发给上游的模型名（含服务商内置默认），逐次调用如实回报。 */
+  model: string
   /** 透明告知：候选服务商回退链说明；无回退时缺省。 */
   notes?: string[]
   image?: {

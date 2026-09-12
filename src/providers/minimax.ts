@@ -57,8 +57,9 @@ async function submitImage(_params: ImageGenParams, _opts: HttpOpts): Promise<Su
  */
 async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/video_generation`
+  const effectiveModel = params.model ?? DEFAULT_VIDEO_MODEL
   const body: Record<string, unknown> = {
-    model: params.model ?? DEFAULT_VIDEO_MODEL,
+    model: effectiveModel,
     prompt: params.prompt,
     ...(params.image ? { first_frame_image: params.image } : {}),
     ...(params.duration ? { duration: params.duration } : {}),
@@ -68,7 +69,7 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   assertBaseResp(data?.base_resp, 'video_generation')
   const taskId = data?.task_id
   if (!taskId) throw new Error('MiniMax 文生视频：未返回 task_id')
-  return { taskId, async: true, mediaType: 'video' }
+  return { taskId, async: true, mediaType: 'video', model: effectiveModel }
 }
 
 /** 查询异步任务状态；Success 时解析下载地址，必要时经 files/retrieve 二次换取。 */

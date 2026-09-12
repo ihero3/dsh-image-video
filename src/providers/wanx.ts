@@ -36,15 +36,16 @@ function queryHeaders(apiKey: string): Record<string, string> {
 /** 提交文生图任务。 */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/services/aigc/text2image/image-synthesis`
+  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
   const body = {
-    model: params.model ?? DEFAULT_IMAGE_MODEL,
+    model: effectiveModel,
     input: { prompt: params.prompt },
     parameters: { size: params.size, n: 1 },
   }
   const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id
   if (!taskId) throw new Error('万象 文生图：未返回 task_id')
-  return { taskId, async: true, mediaType: 'image' }
+  return { taskId, async: true, mediaType: 'image', model: effectiveModel }
 }
 
 /**
@@ -81,7 +82,7 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id
   if (!taskId) throw new Error('万象 文生视频：未返回 task_id')
-  return { taskId, async: true, mediaType: 'video', ...(droppedDuration ? { droppedDuration } : {}) }
+  return { taskId, async: true, mediaType: 'video', model: effectiveModel, ...(droppedDuration ? { droppedDuration } : {}) }
 }
 
 /** 查询任务状态。 */

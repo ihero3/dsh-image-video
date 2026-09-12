@@ -47,6 +47,11 @@ export interface SubmitResult {
   mediaType: 'image' | 'video'
   /** true 表示请求携带的 duration 因模型不支持自定义时长被丢弃（结果层据此在 notes 注明）。 */
   droppedDuration?: boolean
+  /**
+   * 实际发给上游的模型名（含适配器内置默认的兜底结果）。结果层据此向用户
+   * 透明报告「这次到底用了哪个模型」，无需再靠配置推断。
+   */
+  model?: string
 }
 
 /** 任务查询结果。 */

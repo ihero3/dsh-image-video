@@ -353,6 +353,8 @@ describe('threerouter 适配器', () => {
     // MiniMax 系要求显式 resolution：未指定时注入模型默认档位 768P
     expect(body.resolution).toBe('768P')
     expect(r.droppedDuration).toBeUndefined()
+    // 适配器如实回报实际使用的模型，结果层据此透明展示（不再靠配置推断）
+    expect(r.model).toBe('minimax-h3')
   })
 
   it('submitVideo 显式 wan 系模型：丢弃 duration，不注入默认 resolution', async () => {
@@ -364,6 +366,7 @@ describe('threerouter 适配器', () => {
     const params: VideoGenParams = { ...videoParams, model: 'wan2.7-t2v', resolution: undefined }
     const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
     expect(r.droppedDuration).toBe(true)
+    expect(r.model).toBe('wan2.7-t2v')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
     expect(body.model).toBe('wan2.7-t2v')
     expect(body.duration).toBeUndefined()
@@ -497,6 +500,8 @@ describe('MiniMax adapter（官方平台 video-generation v2，按文档实现�
     expect(s.async).toBe(true)
     expect(s.taskId).toBe('mm-1')
     expect(s.mediaType).toBe('video')
+    // 未显式传 model 时如实回报官方内置默认模型
+    expect(s.model).toBe('MiniMax-Hailuo-02')
   })
 
   it('submitVideo：显式 resolution / 首帧图透传', async () => {
