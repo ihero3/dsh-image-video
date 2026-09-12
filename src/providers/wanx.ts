@@ -44,9 +44,11 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
   const effectiveModel = params.model ?? (params.image ? DEFAULT_IMAGE_EDIT_MODEL : DEFAULT_IMAGE_MODEL)
   if (params.image) {
     const editUrl = `${opts.baseURL}/services/aigc/image2image/image-synthesis`
+    // 实测（2026-09-12，DashScope 真实账号）：参考图字段为 base_image_url（非 image_url），
+    // 且图片宽度须在 512–4096px 之间，否则任务 FAILED（InvalidParameter 响亮报错）。
     const editBody = {
       model: effectiveModel,
-      input: { function: 'description_edit', prompt: params.prompt, image_url: params.image },
+      input: { function: 'description_edit', prompt: params.prompt, base_image_url: params.image },
     }
     const data = await request(toRequestOpts('POST', editUrl, dashscopeHeaders(opts.apiKey), editBody, opts)) as WanxTaskResponse
     const taskId = data?.output?.task_id

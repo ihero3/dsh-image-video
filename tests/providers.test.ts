@@ -79,7 +79,8 @@ describe('Wanx adapter', () => {
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.model).toBe('wanx2.1-imageedit')
     expect(body.input.function).toBe('description_edit')
-    expect(body.input.image_url).toBe('data:image/png;base64,QUJD')
+    // 实测确认：百炼图编辑的参考图字段为 base_image_url
+    expect(body.input.base_image_url).toBe('data:image/png;base64,QUJD')
     // 显式指定模型时以用户为准
     const explicit = await wanxAdapter.submitImage({ ...params, model: 'wanx-x-prompt' }, wanxOpts())
     expect(explicit.model).toBe('wanx-x-prompt')
