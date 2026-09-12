@@ -157,10 +157,10 @@ export const MODEL_FAMILY_RULES: ReadonlyArray<{
   keywords: readonly string[]
   /** 家族候选服务商（有序）：家族直连商在前，聚合器兜底在后。 */
   providers: readonly Provider[]
-  /** 适用生成类型；minimax 官方平台无图片生成能力，仅在视频侧作为候选。 */
+  /** 适用生成类型；minimax 官方平台 image_generation 支持图片（t2i + 主体一致性 i2i）。 */
   kinds: ReadonlyArray<'image' | 'video'>
 }> = [
-  { family: 'minimax', keywords: ['minimax', 'hailuo'], providers: ['minimax', 'threerouter'], kinds: ['video'] },
+  { family: 'minimax', keywords: ['minimax', 'hailuo'], providers: ['minimax', 'threerouter'], kinds: ['video', 'image'] },
   { family: 'seedance', keywords: ['doubao', 'seedance', 'seedream'], providers: ['seedance', 'threerouter'], kinds: ['image', 'video'] },
   // 一条 wan 规则覆盖 wan* 与 wanx*（"wanx2.1-t2i-turbo" 同样包含 "wan"）。
   { family: 'wan', keywords: ['wan'], providers: ['wanx', 'threerouter'], kinds: ['image', 'video'] },

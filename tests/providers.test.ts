@@ -63,6 +63,38 @@ describe('Wanx adapter', () => {
     expect(q.status === 'succeeded' ? q.mediaUrl : '').toContain('.png')
   })
 
+  it('图生图 submit → POST image2image 端点（wanx2.1-imageedit + description_edit），异步轮询', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ request_id: 'r', output: { task_id: 'wanx-edit-1', task_status: 'PENDING' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD' }
+    const s = await wanxAdapter.submitImage(params, wanxOpts())
+    expect(s.async).toBe(true)
+    expect(s.taskId).toBe('wanx-edit-1')
+    expect(s.model).toBe('wanx2.1-imageedit')
+    const call = fetchMock.mock.calls[0]
+    expect(String(call[0])).toContain('/services/aigc/image2image/image-synthesis')
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.model).toBe('wanx2.1-imageedit')
+    expect(body.input.function).toBe('description_edit')
+    expect(body.input.image_url).toBe('data:image/png;base64,QUJD')
+    // 显式指定模型时以用户为准
+    const explicit = await wanxAdapter.submitImage({ ...params, model: 'wanx-x-prompt' }, wanxOpts())
+    expect(explicit.model).toBe('wanx-x-prompt')
+  })
+
+  it('图生图 query：兼容顶层 image_url 结果形态', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      JSON.stringify({ output: { task_status: 'SUCCEEDED', image_url: 'https://dashscope-result.oss.com/edited.png' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    const q = await wanxAdapter.queryTask('wanx-edit-2', wanxOpts())
+    expect(q.status).toBe('succeeded')
+    expect(q.status === 'succeeded' ? q.mediaUrl : '').toContain('edited.png')
+  })
+
   it('文生视频 submit → query 成功路径', async () => {
     installHappy({ isVideo: true })
     const s = await wanxAdapter.submitVideo(videoParams, wanxOpts())
@@ -224,6 +256,36 @@ describe('Seedance adapter', () => {
     expect(s.mediaUrl).toContain('.png')
   })
 
+  it('文生图：size 分隔符归一化为方舟要求的 x，watermark 显式关闭', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [{ url: 'https://ark-result.example.com/a.png' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    await seedanceAdapter.submitImage({ ...imageParams, size: '1024*1024' }, seedanceOpts())
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.size).toBe('1024x1024')
+    expect(body.watermark).toBe(false)
+    expect(body.sequential_image_generation).toBeUndefined()
+  })
+
+  it('图生图：image 入参 + 默认切换 Seedream 4.0 + 显式关组图', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [{ url: 'https://ark-result.example.com/edited.png' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD', size: '1024*1024' }
+    const s = await seedanceAdapter.submitImage(params, seedanceOpts())
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.model).toBe('doubao-seedream-4-0-250828')
+    expect(body.image).toBe('data:image/png;base64,QUJD')
+    expect(body.sequential_image_generation).toBe('disabled')
+    expect(body.watermark).toBe(false)
+    expect(body.size).toBe('1024x1024')
+    expect(s.model).toBe('doubao-seedream-4-0-250828')
+  })
+
   it('文生视频 submit → query 成功路径', async () => {
     installHappy()
     const s = await seedanceAdapter.submitVideo(videoParams, seedanceOpts())
@@ -325,6 +387,41 @@ describe('threerouter 适配器', () => {
     expect(body.media_kind).toBe('image')
     expect(body.model).toBe('wan2.1-image')
     expect(body.duration).toBeUndefined()
+  })
+
+  it('submitImage 图生图 → POST /images/edits（images[].image_url + 尺寸归一化 + 默认 gpt-image-2）', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [{ url: 'https://cdn.example.com/edited.png' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD', size: '1024*1024' }
+    const r = await threerouterAdapter.submitImage(params, threerouterOpts())
+    const call = fetchMock.mock.calls[0]
+    expect(String(call[0])).toContain('/images/edits')
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.model).toBe('gpt-image-2')
+    expect(body.prompt).toBe('赛博朋克猫')
+    expect(body.images).toEqual([{ image_url: 'data:image/png;base64,QUJD' }])
+    expect(body.size).toBe('1024x1024')
+    expect(body.response_format).toBe('url')
+    // 同步返回：mediaUrl 直取，无 taskId
+    expect(r.async).toBe(false)
+    expect(r.mediaUrl).toBe('https://cdn.example.com/edited.png')
+    expect(r.model).toBe('gpt-image-2')
+  })
+
+  it('submitImage 图生图：b64_json 响应形态经 mediaBase64 带回', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [{ b64_json: 'aGVsbG8=' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, image: 'https://example.com/ref.png' }
+    const r = await threerouterAdapter.submitImage(params, threerouterOpts())
+    expect(r.mediaUrl).toBeUndefined()
+    expect(r.mediaBase64?.data).toBe('aGVsbG8=')
+    expect(r.mediaBase64?.mediaType).toBe('image/png')
   })
 
   it('submitVideo → POST /media/generations，media_kind=video + duration + ratio + 默认注入 768P', async () => {
@@ -578,9 +675,48 @@ describe('MiniMax adapter（官方平台 video-generation v2，按文档实现�
     expect(r).toEqual({ status: 'failed', error: 'content violation' })
   })
 
-  it('submitImage：明确报不支持（工具层据此回退聚合器）', async () => {
+  it('submitImage 文生图：POST /image_generation，base64 响应直接带回', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: { image_base64: ['aGVsbG8='] }, base_resp: { status_code: 0 } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, size: '1024*1024' }
+    const s = await minimaxAdapter.submitImage(params, minimaxOpts())
+    const call = fetchMock.mock.calls[0]
+    expect(String(call[0])).toContain('/image_generation')
+    const body = JSON.parse(call[1].body as string)
+    expect(body.model).toBe('image-01')
+    expect(body.aspect_ratio).toBe('1:1')
+    expect(body.response_format).toBe('base64')
+    expect(body.subject_reference).toBeUndefined()
+    expect(s.async).toBe(false)
+    expect(s.mediaBase64?.data).toBe('aGVsbG8=')
+    expect(s.mediaBase64?.mediaType).toBe('image/jpeg')
+    expect(s.model).toBe('image-01')
+  })
+
+  it('submitImage 图生图：subject_reference 主体一致性 + aspect_ratio 按尺寸约分', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: { image_base64: ['aGVsbG8='] }, base_resp: { status_code: 0 } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD', size: '1920*1080' }
+    const s = await minimaxAdapter.submitImage(params, minimaxOpts())
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.subject_reference).toEqual([{ type: 'character', image_file: 'data:image/png;base64,QUJD' }])
+    expect(body.aspect_ratio).toBe('16:9')
+    expect(s.mediaBase64).toBeDefined()
+  })
+
+  it('submitImage：base_resp 业务错误响亮抛出', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ base_resp: { status_code: 1004, status_msg: 'invalid api key' } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
     await expect(() => minimaxAdapter.submitImage(imageParams, minimaxOpts())).rejects
-      .toSatisfy((e: { kind: string; message: string }) =>
-        e.kind === 'task' && e.message.includes('不支持图片生成'))
+      .toSatisfy((e: { kind: string; message: string }) => e.kind === 'task' && e.message.includes('1004'))
   })
 })

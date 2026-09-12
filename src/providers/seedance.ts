@@ -1,17 +1,20 @@
 /**
  * Seedance2.5 适配器：基于火山引擎方舟 Ark API。
- * 文生图走同步 /images/generations 接口（即时返回 URL）；
- * 文生视频走异步 /contents/generations/tasks 接口（提交 → 轮询 → 下载）。
- * 鉴权统一 Bearer Token。
+ * 文生图/图生图走同步 /images/generations 接口（即时返回 URL，24h 有效需立即下载；
+ * Seedream 4.0 起支持 image 参考图入参做图生图，3.0 不支持——带参考图时默认模型
+ * 切换为 Seedream 4.0）；文生视频走异步 /contents/generations/tasks 接口
+ * （提交 → 轮询 → 下载）。鉴权统一 Bearer Token。
  * @module dsh-image-video/providers/seedance
  */
 
 import { request, downloadMedia } from '../http-client.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
-import { toRequestOpts } from './types.ts'
+import { toRequestOpts, normalizeImageSize } from './types.ts'
 
 /** Seedance 默认文生图模型（即梦/Seedream）。 */
 const DEFAULT_IMAGE_MODEL = 'doubao-seedream-3-0-t2i-250415'
+/** Seedance 图生图默认模型（Seedream 3.0 不支持 image 入参，4.0 起支持单图生图）。 */
+const DEFAULT_IMAGE_EDIT_MODEL = 'doubao-seedream-4-0-250828'
 /** Seedance 默认文生视频模型。 */
 const DEFAULT_VIDEO_MODEL = 'doubao-seedance-1-0-pro-250428'
 
@@ -23,20 +26,25 @@ function arkHeaders(apiKey: string): Record<string, string> {
   }
 }
 
-/** 提交文生图任务（同步接口，直接返回图片 URL）。 */
+/**
+ * 提交图片任务（同步接口，直接返回图片 URL）。带参考图走图生图：Seedream 4.0+ 的
+ * image 入参（URL 或 data URL），显式关闭组图与水印；尺寸分隔符归一化为方舟要求的
+ * `宽x高`（配置默认值为百炼风格的 `*`）。不带参考图为文生图。
+ */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/images/generations`
-  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
-  const body = {
+  const effectiveModel = params.model ?? (params.image ? DEFAULT_IMAGE_EDIT_MODEL : DEFAULT_IMAGE_MODEL)
+  const body: Record<string, unknown> = {
     model: effectiveModel,
     prompt: params.prompt,
-    size: params.size,
+    ...(params.image ? { image: params.image, sequential_image_generation: 'disabled', watermark: false } : { watermark: false }),
+    ...(params.size ? { size: normalizeImageSize(params.size) } : {}),
     n: 1,
     response_format: 'url',
   }
   const data = await request(toRequestOpts('POST', url, arkHeaders(opts.apiKey), body, opts)) as ArkImageResponse
   const mediaUrl = data?.data?.[0]?.url
-  if (!mediaUrl) throw new Error('Seedance 文生图：未返回图片 URL')
+  if (!mediaUrl) throw new Error('Seedance 图片生成：未返回图片 URL')
   return { taskId: '', async: false, mediaUrl, mediaType: 'image', model: effectiveModel }
 }
 

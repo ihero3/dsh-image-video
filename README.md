@@ -17,17 +17,17 @@
 
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
-| `generate_image` | 文生图 | **Threerouter**（默认）/ 万象 wanx / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
+| `generate_image` | 文生图 + **图生图**（可选 `image` 参考图入参） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
 | `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 10s） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
-| 服务商 | 渠道 | 文生图 | 文生视频 | 备注 |
-|---|---|---|---|---|
-| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ 已验证 | ✅ 已验证（MiniMax-H3 / wan 系） | 出所有家族的模型，统一 `/v1/media/generations` 入口，`media_kind` 显式指定类型 |
-| **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ 已验证（wan2.2-t2v-plus） | 图片同步/异步自适应；视频始终异步 |
-| **MiniMax 官方平台** | platform.minimaxi.com Key | ❌ 无图片生成能力 | ✅ 适配器已实现（video-generation v2，待 key 实测） | Hailuo 系；`first_frame_image` 图生视频；缺省注入 `768P` |
-| **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ 适配器已实现 | 图片同步返回 URL；视频走异步任务（未在真实账号验证） |
+| 服务商 | 渠道 | 文生图 | 图生图 | 文生视频 | 备注 |
+|---|---|---|---|---|---|
+| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ 已验证 | ✅ `/images/edits`（待实测） | ✅ 已验证（MiniMax-H3 / wan 系） | i2i 走 OpenAI Images 风格专用端点（`images[].image_url` + 默认 `gpt-image-2`）；t2i/视频走 `/v1/media/generations` |
+| **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ `wanx2.1-imageedit`（待 key 实测） | ✅ 已验证（wan2.2-t2v-plus） | i2i 为 description_edit 异步任务；图片同步/异步自适应；视频始终异步 |
+| **MiniMax 官方平台** | platform.minimaxi.com Key | ✅ `image-01`（待 key 实测） | ✅ `subject_reference` 主体一致性（待 key 实测） | ✅ 适配器已实现（video-generation v2，待 key 实测） | 图片同步返回 **base64**（无 URL），插件直接落盘；i2i 语义为「保留主体换场景」，每次仅 1 张参考图；Hailuo 系视频；缺省注入 `768P` |
+| **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ Seedream 4.0 `image` 入参（待 key 实测） | ✅ 适配器已实现 | 图片同步返回 URL（24h 有效立即下载）；i2i 默认模型自动切换 Seedream 4.0（3.0 不支持参考图）；显式关组图与水印；视频走异步任务 |
 
 ## 模型家族路由
 
@@ -35,7 +35,7 @@
 
 | model 含关键词 | 家族 | 候选服务商（有序） |
 |---|---|---|
-| `minimax` / `hailuo` | MiniMax | `minimax`（官方直连）→ `threerouter` |
+| `minimax` / `hailuo` | MiniMax | `minimax`（官方直连）→ `threerouter`（图片+视频） |
 | `doubao` / `seedance` / `seedream` | 火山方舟 | `seedance`（直连）→ `threerouter` |
 | `wan`（覆盖 `wan*` 与 `wanx*`） | 通义万相 | `wanx`（百炼直连）→ `threerouter` |
 | 无命中（自定义模型） | 未知 | 仅配置链 + `threerouter` |
@@ -70,7 +70,7 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 ```yaml
 - id: image-video
   config:
-    provider: threerouter             # threerouter（默认，聚合器） | wanx | minimax（仅视频） | seedance
+    provider: threerouter             # threerouter（默认，聚合器） | wanx | minimax | seedance
     threerouter:
       apiKey: !!js process.env.THREEROUTER_API_KEY
       baseURL: ''
@@ -149,6 +149,8 @@ dsh --profile <profile>
 
 `resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
 
+**图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threerouter `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸分隔符 `*` 会按服务商要求自动归一化为 `x`（threerouter / 方舟）。
+
 **时长与模型能力**：wan 系模型（`wan2.2-t2v-plus`、`wan2.7-t2v`）不支持自定义时长——调用时传入 `duration` 会被插件丢弃（不发给上游，避免 `duration customization is not supported` 报错），并在结果 `notes` 中透明注明，实际时长由上游模型默认决定；MiniMax 系（`minimax-h3`）支持 4–15 秒。能力表见 `src/runtime-defaults.ts` 的 `VIDEO_DURATION_UNSUPPORTED`，按上游实测维护。
 
 ## 目录结构
@@ -170,7 +172,7 @@ dsh-image-video/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
     │   ├── threerouter.ts    # Threerouter API 适配器（默认服务商，聚合器：图片+视频）
     │   ├── wanx.ts           # 万象（wanx）API 适配器
-    │   ├── minimax.ts        # MiniMax 官方平台适配器（仅视频，video-generation v2）
+    │   ├── minimax.ts        # MiniMax 官方平台适配器（video-generation v2 + image_generation）
     │   └── seedance.ts       # Seedance2.5 API 适配器
     └── tools/
         ├── generate-image.ts # generate_image 工具注册

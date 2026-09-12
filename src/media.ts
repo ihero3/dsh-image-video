@@ -51,6 +51,25 @@ export async function downloadAndSave(
   return { localPath, sourceUrl: url, contentType, bytes: data.byteLength, data }
 }
 
+/**
+ * 保存服务商直接返回的 base64 图片字节（MiniMax image_generation 等同步接口
+ * 无 URL 可下载，响应体即 base64）。文件命名与 downloadAndSave 对齐。
+ * @param base64 - 裸 base64 字符串（不带 data: 前缀）。
+ * @param mediaType - 图片 MIME 类型（image/png / image/jpeg 等）。
+ * @param outputsDir - 配置的输出目录。
+ * @returns 保存结果（sourceUrl 为空字符串——无下载来源）。
+ */
+export async function saveBase64Image(base64: string, mediaType: string, outputsDir: string): Promise<MediaSaveResult> {
+  const data = Buffer.from(base64, 'base64')
+  const dir = resolve(outputsDir)
+  await mkdir(dir, { recursive: true })
+  const ext = extFromContentType(mediaType, '.png')
+  const filename = `${Date.now()}-${randomBytes(4).toString('hex')}${ext}`
+  const localPath = resolve(dir, filename)
+  await writeFile(localPath, data)
+  return { localPath, sourceUrl: '', contentType: mediaType, bytes: data.byteLength, data }
+}
+
 /** 从扩展名推断图片 MIME 类型；未知扩展名回退 image/png，由服务商对无法识别的字节响亮报错。 */
 export function imageMimeFromPath(path: string): string {
   switch (extname(path).toLowerCase()) {
@@ -138,6 +157,8 @@ export interface ImageSummaryFields {
   height?: number
   /** 实际使用的提示词；标准输出的一部分，让结果自证「这张图是怎么来的」。 */
   prompt?: string
+  /** 生成模式：text-to-image / image-to-image。 */
+  mode?: string
   /** 实际使用的模型名（含适配器内置默认）；留空则显示「服务商内置默认」。 */
   model?: string
   /** 透明告知条目（路由回退等）；无则省略。 */
@@ -156,13 +177,14 @@ export function createImageSummaryText(fields: ImageSummaryFields): ContentBlock
     ? `${fields.width}×${fields.height}`
     : '未知尺寸'
   const model = fields.model && fields.model.length > 0 ? fields.model : '服务商内置默认'
+  const mode = fields.mode ? `，模式：${fields.mode === 'image-to-image' ? '图生图' : '文生图'}` : ''
   const promptBlock = fields.prompt && fields.prompt.length > 0 ? `\n提示词：${fields.prompt}` : ''
   const notesBlock = fields.notes && fields.notes.length > 0
     ? `\n透明告知：\n${fields.notes.map((note) => `- ${note}`).join('\n')}`
     : ''
   return [{
     type: 'text',
-    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）${promptBlock}${notesBlock}`,
+    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}${mode}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）${promptBlock}${notesBlock}`,
   }]
 }
 

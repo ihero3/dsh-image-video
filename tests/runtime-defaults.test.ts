@@ -96,9 +96,13 @@ describe('模型家族候选构建（resolveModelCandidates）', () => {
     expect(resolveModelCandidates('image', 'wan2.1-image', 'threerouter', allKeys)).toEqual(['threerouter', 'wanx'])
   })
 
-  it('minimax 家族仅参与视频候选（官方平台无图片生成能力）', () => {
-    expect(resolveModelCandidates('image', 'minimax-h3', 'threerouter', allKeys)).toEqual(['threerouter'])
+  it('minimax 家族参与视频与图片候选（image_generation 支持 t2i + 主体一致性 i2i）', () => {
+    // 家族路由按模型名关键词（minimax/hailuo）命中；threerouter 的 minimax 图模型名含 "minimax"
+    expect(resolveModelCandidates('image', 'minimax-image-01', 'threerouter', allKeys)).toEqual(['threerouter', 'minimax'])
+    expect(resolveModelCandidates('image', 'minimax-image-01', 'wanx', allKeys)).toEqual(['wanx', 'minimax', 'threerouter'])
     expect(resolveModelCandidates('video', 'MiniMax-Hailuo-02', 'wanx', allKeys)).toEqual(['wanx', 'minimax', 'threerouter'])
+    // minimax 官方原生模型名 "image-01" 不含家族关键词 → 仅配置链 + 兜底（如实反映，不硬编码特例）
+    expect(resolveModelCandidates('image', 'image-01', 'wanx', allKeys)).toEqual(['wanx', 'threerouter'])
   })
 
   it('未配置 key 的候选自动跳过', () => {
@@ -123,10 +127,10 @@ describe('模型家族候选构建（resolveModelCandidates）', () => {
     expect(resolveModelCandidates('video', undefined, 'wanx', keysOf())).toEqual([])
   })
 
-  it('家族规则清单符合当前厂商事实（wan 一条规则 + minimax 仅视频）', () => {
+  it('家族规则清单符合当前厂商事实（wan 一条规则 + minimax 图片视频双能力）', () => {
     expect(MODEL_FAMILY_RULES.map((r) => r.family)).toEqual(['minimax', 'seedance', 'wan'])
     expect(MODEL_FAMILY_RULES.find((r) => r.family === 'wan')?.keywords).toEqual(['wan'])
-    expect(MODEL_FAMILY_RULES.find((r) => r.family === 'minimax')?.kinds).toEqual(['video'])
+    expect(MODEL_FAMILY_RULES.find((r) => r.family === 'minimax')?.kinds).toEqual(['video', 'image'])
   })
 })
 

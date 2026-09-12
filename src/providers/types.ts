@@ -6,14 +6,21 @@
 
 import type { RequestOptions } from '../http-client.ts'
 
-/** 文生图请求参数。 */
+/** 图片生成请求参数（不传 image 为文生图，传入 image 为图生图/参考图编辑）。 */
 export interface ImageGenParams {
   /** 提示词。 */
   prompt: string
-  /** 图片尺寸，如 "1024x1024"。 */
+  /** 图片尺寸，如 "1024x1024"（分隔符可能为 `*`，适配器经 normalizeImageSize 归一化）。 */
   size: string
   /** 可选模型名，留空使用适配器默认模型。 */
   model?: string
+  /**
+   * 可选参考图，存在时走图生图：http(s) URL、data URL（本地路径已由调用方经
+   * media.resolveImageReference 统一解析），适配器只负责放到各自协议字段。
+   * 各家语义不同：threerouter /images/edits 按提示词编辑、方舟 Seedream 参考编辑、
+   * MiniMax 主体一致性（保留主体换场景）。
+   */
+  image?: string
 }
 
 /** 视频生成请求参数（文生视频，带 image 时为首帧驱动的图生视频）。 */
@@ -52,6 +59,11 @@ export interface SubmitResult {
    * 透明报告「这次到底用了哪个模型」，无需再靠配置推断。
    */
   model?: string
+  /**
+   * 同步接口直接返回的 base64 图片字节（MiniMax image_generation 等）。
+   * 有值时结果层直接落盘，跳过 downloadAndSave 下载步骤。
+   */
+  mediaBase64?: { data: string; mediaType: string }
 }
 
 /** 任务查询结果。 */
@@ -99,4 +111,13 @@ export function parseSize(size: string): { width: number; height: number } {
     return { width: 1024, height: 1024 }
   }
   return { width: Number(match[1]), height: Number(match[2]) }
+}
+
+/**
+ * 尺寸分隔符归一化：配置默认值沿用百炼风格 "1024*1024"（星号），
+ * 而 threerouter（OpenAI 风格）与火山方舟均要求 "1024x1024"（字母 x）。
+ * 非 `宽x高` 形态（如 "1K"/"2K"/"auto"）原样返回。
+ */
+export function normalizeImageSize(size: string): string {
+  return /^\d+\*\d+$/.test(size.trim()) ? size.trim().replace(/\*/g, 'x') : size.trim()
 }

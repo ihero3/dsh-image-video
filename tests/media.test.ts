@@ -9,6 +9,7 @@ import {
   createVideoContent,
   imageMimeFromPath,
   resolveImageReference,
+  saveBase64Image,
 } from '../src/media.ts'
 
 describe('media 扩展名与类型推断', () => {
@@ -118,6 +119,34 @@ describe('media 扩展名与类型推断', () => {
       const text = (blocks[0] as { text: string }).text
       expect(text).toContain('提示词：夕阳下的帆船，水彩风格')
       expect(text).toContain('模型：wan2.1-image')
+    })
+  })
+
+  describe('saveBase64Image', () => {
+    it('base64 落盘：文件名带正确扩展名、字节与解码内容一致', async () => {
+      const { mkdtemp } = await import('node:fs/promises')
+      const { tmpdir } = await import('node:os')
+      const { join } = await import('node:path')
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-i2i-'))
+      const base64 = Buffer.from('fake-png-bytes').toString('base64')
+      const saved = await saveBase64Image(base64, 'image/png', dir)
+      expect(saved.contentType).toBe('image/png')
+      expect(saved.sourceUrl).toBe('')
+      expect(saved.bytes).toBe(14)
+      expect(new TextDecoder().decode(saved.data)).toBe('fake-png-bytes')
+      expect(saved.localPath.endsWith('.png')).toBe(true)
+      const { readFile } = await import('node:fs/promises')
+      const onDisk = await readFile(saved.localPath)
+      expect(new TextDecoder().decode(onDisk)).toBe('fake-png-bytes')
+    })
+
+    it('jpeg 类型映射 .jpg 扩展名', async () => {
+      const { mkdtemp } = await import('node:fs/promises')
+      const { tmpdir } = await import('node:os')
+      const { join } = await import('node:path')
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-i2i-'))
+      const saved = await saveBase64Image(Buffer.from('x').toString('base64'), 'image/jpeg', dir)
+      expect(saved.localPath.endsWith('.jpg')).toBe(true)
     })
   })
 

@@ -12,6 +12,8 @@ import { toRequestOpts } from './types.ts'
 
 /** 万象默认文生图模型（通义万相）。 */
 const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
+/** 万象图生图默认模型（image2image 图编辑：按 prompt 描述编辑参考图）。 */
+const DEFAULT_IMAGE_EDIT_MODEL = 'wanx2.1-imageedit'
 /** 万象默认文生视频模型。 */
 const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
 /** 万象默认图生视频模型（首帧驱动）。 */
@@ -33,10 +35,25 @@ function queryHeaders(apiKey: string): Record<string, string> {
   }
 }
 
-/** 提交文生图任务。 */
+/**
+ * 提交图片任务：带参考图走 image2image 图编辑（wanx2.1-imageedit，description_edit：
+ * 按 prompt 描述编辑参考图，异步任务），否则走文生图（wanx2.1-t2i-turbo，异步任务）。
+ * 两者同为「提交任务 → 轮询 → 下载」模式，复用同一 queryTask。
+ */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
+  const effectiveModel = params.model ?? (params.image ? DEFAULT_IMAGE_EDIT_MODEL : DEFAULT_IMAGE_MODEL)
+  if (params.image) {
+    const editUrl = `${opts.baseURL}/services/aigc/image2image/image-synthesis`
+    const editBody = {
+      model: effectiveModel,
+      input: { function: 'description_edit', prompt: params.prompt, image_url: params.image },
+    }
+    const data = await request(toRequestOpts('POST', editUrl, dashscopeHeaders(opts.apiKey), editBody, opts)) as WanxTaskResponse
+    const taskId = data?.output?.task_id
+    if (!taskId) throw new Error('万象 图生图：未返回 task_id')
+    return { taskId, async: true, mediaType: 'image', model: effectiveModel }
+  }
   const url = `${opts.baseURL}/services/aigc/text2image/image-synthesis`
-  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
   const body = {
     model: effectiveModel,
     input: { prompt: params.prompt },
@@ -96,8 +113,8 @@ async function queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResul
     case 'RUNNING':
       return { status: output.task_status === 'PENDING' ? 'pending' : 'running' }
     case 'SUCCEEDED': {
-      // 文生图返回 results 数组，文生视频返回 video_url
-      const imageUrl = output.results?.[0]?.url
+      // 文生图/图生图返回 results 数组（图编辑兼容顶层 image_url），文生视频返回 video_url
+      const imageUrl = output.results?.[0]?.url ?? output.image_url
       const videoUrl = output.video_url
       const mediaUrl = videoUrl ?? imageUrl
       if (!mediaUrl) return { status: 'failed', error: '万象 任务成功但未返回媒体 URL' }
@@ -125,6 +142,7 @@ interface WanxQueryResponse {
   output?: {
     task_status?: string
     video_url?: string
+    image_url?: string
     results?: Array<{ url: string }>
     message?: string
   }

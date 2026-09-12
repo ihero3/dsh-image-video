@@ -24,7 +24,8 @@ import { seedanceAdapter } from '../providers/seedance.ts'
 import { threerouterAdapter } from '../providers/threerouter.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, ImageGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
-import { downloadAndSave, saveImageAttachment, createImageSummaryText } from '../media.ts'
+import { downloadAndSave, saveBase64Image, saveImageAttachment, createImageSummaryText, resolveImageReference } from '../media.ts'
+import type { MediaSaveResult } from '../media.ts'
 
 /**
  * 工具依赖：配置、任务管理器、attachment 服务实例。
@@ -87,18 +88,25 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片。服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
-      + '显式指定模型时按模型家族自动路由（wan/wanx→百炼直连，doubao/seedream/seedance→火山方舟；MiniMax 无图片生成能力），'
+      '根据文本提示词生成图片；传入 image 参考图即为图生图（threerouter /images/edits 按提示词编辑、'
+      + 'Seedream 参考编辑、MiniMax 保留主体特征换场景——主体一致性）。服务商选择：配置链服务商优先'
+      + '（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
+      + '显式指定模型时按模型家族自动路由（wan/wanx→百炼直连，doubao/seedream/seedance→火山方舟，minimax→MiniMax 官方），'
       + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
-      + '参数：prompt（提示词，必填）、size（尺寸如 1024*1024，可选）、model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）。',
+      + '参数：prompt（提示词，必填）、image（参考图本地路径/URL，可选，传入即图生图）、size（尺寸如 1024*1024，可选）、'
+      + 'model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）。',
 
     parameters: {
       prompt: {
         type: 'string',
         required: true,
         description: '描述要生成的图片内容，支持中英文。',
+      },
+      image: {
+        type: 'string',
+        description: '可选参考图（本地文件路径或 http(s) URL）。传入即走图生图：结合提示词编辑或保留主体生成新图。',
       },
       size: {
         type: 'string',
@@ -117,6 +125,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         properties: {
           provider: { type: 'string', required: true },
           prompt: { type: 'string', required: true },
+          mode: { type: 'string', enum: ['text-to-image', 'image-to-image'], required: true },
           localPath: { type: 'string', required: true },
           sourceUrl: { type: 'string', required: true },
           bytes: { type: 'integer', required: true },
@@ -148,6 +157,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           localPath: v.localPath,
           bytes: v.bytes,
           prompt: v.prompt,
+          mode: v.mode,
           model: v.model,
           ...(v.notes ? { notes: v.notes } : {}),
           ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },
@@ -164,29 +174,35 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         const v = value as GenerateImageOutput
         return {
           provider: v.provider,
+          model: v.model,
+          mode: v.mode,
           prompt: v.prompt,
           localPath: v.localPath,
           sourceUrl: v.sourceUrl,
           bytes: v.bytes,
+          ...(v.notes ? { notes: v.notes } : {}),
           ...v.image === undefined ? {} : { image: v.image },
         }
       },
     },
 
     async execute(args, exec) {
-      const typedArgs = args as { prompt: string; size?: string; model?: string }
+      const typedArgs = args as { prompt: string; image?: string; size?: string; model?: string }
 
       // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
       // 风格在 host 端拼接为英文提示词后缀，对所有服务商通用（不改 API 参数）。
       const runtime = runtimeDefaults.get()
       const prompt = applyImageStyle(typedArgs.prompt, runtime.imageStyle)
 
+      // 参考图解析：本地路径 → data URL，URL/data URL 原样透传（图生图入参）
+      const imageReference = typedArgs.image ? await resolveImageReference(typedArgs.image) : undefined
+
       // 模型取值链：调用参数 model > 配置 defaultImageModel > adapter 内置默认
       const model = typedArgs.model || config.defaultImageModel || undefined
 
       // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
       // 服务商）→ 显式 model 命中家族规则的直连商 → threerouter 聚合器兜底；
-      // minimax 家族无图片生成能力，仅在视频侧作为候选。未配置 key 的候选自动跳过。
+      // 未配置 key 的候选自动跳过。
       const preferred: Provider | undefined = runtime.imageProvider
         ?? (config.defaultImageProvider === '' ? undefined : config.defaultImageProvider)
       const candidates = resolveModelCandidates(
@@ -207,6 +223,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         prompt,
         size: typedArgs.size ?? runtime.imageSize ?? config.defaultImageSize,
         model,
+        ...(imageReference ? { image: imageReference } : {}),
       }
 
       // 按候选序提交：仅在「模型不被该服务商接受」类提交错误（含「不支持图片生成」）
@@ -247,25 +264,30 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         ? [`模型自动路由回退：${fallbackNotes.join('；')}；最终由 ${provider} 提交`]
         : undefined
 
-      let mediaUrl: string
-      if (submitResult.async && submitResult.taskId) {
-        // 异步：轮询直到完成
-        const pollResult = await taskManager.pollUntilDone(
-          submitResult.taskId,
-          adapter,
-          { ...httpOpts, signal: exec.signal },
-          exec.signal,
-        )
-        mediaUrl = pollResult.mediaUrl
+      let saved: MediaSaveResult
+      if (submitResult.mediaBase64) {
+        // 同步 base64 返回（MiniMax image_generation）：直接落盘，无下载步骤
+        saved = await saveBase64Image(submitResult.mediaBase64.data, submitResult.mediaBase64.mediaType, config.outputsDir)
       } else {
-        // 同步：直接使用返回的 URL
-        mediaUrl = submitResult.mediaUrl ?? ''
+        let mediaUrl: string
+        if (submitResult.async && submitResult.taskId) {
+          // 异步：轮询直到完成
+          const pollResult = await taskManager.pollUntilDone(
+            submitResult.taskId,
+            adapter,
+            { ...httpOpts, signal: exec.signal },
+            exec.signal,
+          )
+          mediaUrl = pollResult.mediaUrl
+        } else {
+          // 同步：直接使用返回的 URL
+          mediaUrl = submitResult.mediaUrl ?? ''
+        }
+        if (!mediaUrl) throw new Error('生成失败：未获取到图片 URL')
+        // 下载并保存到 outputs/，扩展名由下载返回的 Content-Type 自动推断
+        const downloadOpts = { timeoutMs: config.timeoutMs, retryTimes: config.retryTimes, signal: exec.signal }
+        saved = await downloadAndSave(mediaUrl, config.outputsDir, '.png', downloadOpts)
       }
-      if (!mediaUrl) throw new Error('生成失败：未获取到图片 URL')
-
-      // 下载并保存到 outputs/，扩展名由下载返回的 Content-Type 自动推断
-      const downloadOpts = { timeoutMs: config.timeoutMs, retryTimes: config.retryTimes, signal: exec.signal }
-      const saved = await downloadAndSave(mediaUrl, config.outputsDir, '.png', downloadOpts)
 
       // 通过 attachment 服务持久化字节（复用已下载的字节，避免二次请求），
       // 附件引用供 presentationMeta 走 UI-only 通道，不进入模型上下文。
@@ -280,6 +302,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const output: GenerateImageOutput = {
         provider,
         prompt,
+        mode: imageReference ? 'image-to-image' : 'text-to-image',
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
@@ -305,6 +328,8 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
 interface GenerateImageOutput {
   provider: string
   prompt: string
+  /** 生成模式：text-to-image（文生图）/ image-to-image（图生图，带参考图）。 */
+  mode: 'text-to-image' | 'image-to-image'
   localPath: string
   sourceUrl: string
   bytes: number
