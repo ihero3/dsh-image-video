@@ -79,11 +79,24 @@ describe('isModelNotAcceptedError（候选回退判定）', () => {
     expect(isModelNotAcceptedError(duration)).toBe(false)
   })
 
-  it('鉴权 / 配额 / 网络 / 超时错误 → false（响亮失败，不回退）', () => {
+  it('鉴权（Key 无效）/ 配额 / 网络 / 超时错误 → false（响亮失败，不回退）', () => {
     expect(isModelNotAcceptedError(classifyErrorForTest(401, { message: 'bad key' }, '/x'))).toBe(false)
+    expect(isModelNotAcceptedError(classifyErrorForTest(403, { message: 'forbidden' }, '/x'))).toBe(false)
     expect(isModelNotAcceptedError(classifyErrorForTest(429, { message: 'rate limit' }, '/x'))).toBe(false)
     expect(isModelNotAcceptedError(classifyErrorForTest(500, { message: 'boom' }, '/x'))).toBe(false)
     expect(isModelNotAcceptedError(new GenerationError('timeout', '请求超时', true))).toBe(false)
+  })
+
+  it('403 分组未开通生图 → true（2026-09 实测：threerouter permission_error，文档语义 403=无分组/模型权限）', () => {
+    // www/api 两 host 一致的真实响应形态
+    const notEnabled = classifyErrorForTest(403, {
+      error: { message: 'Image generation is not enabled for this group', type: 'permission_error' },
+    }, '/x')
+    expect(notEnabled.kind).toBe('auth')
+    expect(isModelNotAcceptedError(notEnabled)).toBe(true)
+    // 中文同义形态（未开通生图 / 无该分组）同样命中
+    const chinese = classifyErrorForTest(403, { message: '该分组未开通生图（allow_image_generation）' }, '/x')
+    expect(isModelNotAcceptedError(chinese)).toBe(true)
   })
 
   it('threerouter「无可用渠道」503 capacity_error → true（2026-09 实测：未知模型返回此形态）', () => {

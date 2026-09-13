@@ -29,11 +29,15 @@ export class GenerationError extends Error {
  * 实测形态（2026-09）：
  * - threerouter：目录中无可用渠道的模型 → HTTP 503 capacity_error
  *   "No available media generation channels"（网关按模型找渠道，未知模型即无渠道）；
+ * - threerouter：分组未开通生图 → HTTP 403 permission_error
+ *   "Image generation is not enabled for this group"（文档语义：401=Key 无效，
+ *   403=无该分组/模型权限或未开通生图 allow_image_generation——属于「该候选
+ *   无法服务此请求」，应换下一候选，而非响亮终止）；
  * - 部分服务商：HTTP 400/404 + 模型不存在类消息（"model not found" / "模型不存在"）；
  * - 能力缺失：如「不支持图片生成」。
  * 注意区分语义相近的参数级 400——如 "model X does not support duration 1s"
  * （时长档位问题，模型本身可用），该类消息不命中本判定，不触发换家。
- * 其余 5xx（无 capacity_error 语义）、鉴权（401/403）、配额（429）、超时一律不成立：
+ * 其余 5xx（无 capacity_error 语义）、Key 无效（401）、配额（429）、超时一律不成立：
  * 响亮失败，避免用别家的 key 静默掩盖本服务商的配置问题。
  */
 export function isModelNotAcceptedError(err: unknown): boolean {
@@ -45,6 +49,11 @@ export function isModelNotAcceptedError(err: unknown): boolean {
   // threerouter 网关的「无可用渠道」503 同样意味着无法为此模型服务，纳入回退；
   // 其余 network/timeout 错误（瞬时故障）不回退。
   if (err.kind === 'network') return /no available media generation channels|capacity_error/i.test(message)
+  // 403 权限类：仅当消息明确为「分组/模型未开通该能力」时回退（试下一候选）；
+  // 纯 Key 无效（401）或无任何权限语义的 403 仍响亮失败。
+  if (err.kind === 'auth') {
+    return /image generation is not enabled|not enabled for this group|allow_image_generation|未开通生图|无该分组|无该模型权限/i.test(message)
+  }
   return false
 }
 
