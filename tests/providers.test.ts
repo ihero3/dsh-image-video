@@ -367,30 +367,27 @@ describe('threerouter 适配器', () => {
   beforeEach(() => { vi.stubGlobal('fetch', vi.fn()) })
   afterEach(() => { vi.unstubAllGlobals() })
 
-  it('submitImage → POST /media/generations，media_kind=image，async=true', async () => {
+  it('submitImage 文生图 → POST /images/generations 同步返回（2026-09 文档：生图统一端点，默认 qwen-image-3.0）', async () => {
     const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ id: 'mt-img-1', status: 'processing', model: 'wan2.1-image' }),
+      JSON.stringify({ created: 1726100000, data: [{ url: 'https://cdn.example.com/generated.png' }] }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
     const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
-    expect(r.taskId).toBe('mt-img-1')
-    expect(r.async).toBe(true)
-    expect(r.mediaType).toBe('image')
-    // 验证请求 URL 和 body
     const call = fetchMock.mock.calls[0]
-    const reqUrl = String(call[0])
-    const req = call[1] as RequestInit
-    expect(reqUrl).toContain('/media/generations')
-    expect(req.method).toBe('POST')
-    const body = JSON.parse(req.body as string)
+    expect(String(call[0])).toContain('/images/generations')
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.model).toBe('qwen-image-3.0')
     expect(body.prompt).toBe('赛博朋克猫')
-    expect(body.media_kind).toBe('image')
-    expect(body.model).toBe('wan2.1-image')
-    expect(body.duration).toBeUndefined()
+    expect(body.image).toBeUndefined()
+    expect(body.n).toBe(1)
+    // 同步返回：mediaUrl 直取，无 taskId
+    expect(r.async).toBe(false)
+    expect(r.mediaUrl).toBe('https://cdn.example.com/generated.png')
+    expect(r.model).toBe('qwen-image-3.0')
   })
 
-  it('submitImage 图生图 → POST /images/edits（images[].image_url + 尺寸归一化 + 默认 gpt-image-2）', async () => {
+  it('submitImage 图生图 → /images/generations + image 参考图字段（尺寸归一化 + 默认 qwen-image-3.0-pro）', async () => {
     const fetchMock = vi.fn(async () => new Response(
       JSON.stringify({ data: [{ url: 'https://cdn.example.com/edited.png' }] }),
       { status: 200, headers: { 'content-type': 'application/json' } },
@@ -399,17 +396,17 @@ describe('threerouter 适配器', () => {
     const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD', size: '1024*1024' }
     const r = await threerouterAdapter.submitImage(params, threerouterOpts())
     const call = fetchMock.mock.calls[0]
-    expect(String(call[0])).toContain('/images/edits')
+    expect(String(call[0])).toContain('/images/generations')
     const body = JSON.parse((call[1] as RequestInit).body as string)
-    expect(body.model).toBe('gpt-image-2')
+    expect(body.model).toBe('qwen-image-3.0-pro')
     expect(body.prompt).toBe('赛博朋克猫')
-    expect(body.images).toEqual([{ image_url: 'data:image/png;base64,QUJD' }])
+    expect(body.image).toBe('data:image/png;base64,QUJD')
     expect(body.size).toBe('1024x1024')
     expect(body.response_format).toBe('url')
     // 同步返回：mediaUrl 直取，无 taskId
     expect(r.async).toBe(false)
     expect(r.mediaUrl).toBe('https://cdn.example.com/edited.png')
-    expect(r.model).toBe('gpt-image-2')
+    expect(r.model).toBe('qwen-image-3.0-pro')
   })
 
   it('submitImage 图生图：b64_json 响应形态经 mediaBase64 带回', async () => {
@@ -423,6 +420,16 @@ describe('threerouter 适配器', () => {
     expect(r.mediaUrl).toBeUndefined()
     expect(r.mediaBase64?.data).toBe('aGVsbG8=')
     expect(r.mediaBase64?.mediaType).toBe('image/png')
+  })
+
+  it('submitImage：顶层 url / urls 统一入口响应形态兼容', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'img_1', status: 'succeeded', url: 'https://cdn.example.com/top-level.png' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    expect(r.mediaUrl).toBe('https://cdn.example.com/top-level.png')
   })
 
   it('submitVideo → POST /media/generations，media_kind=video + duration + ratio + 默认注入 768P', async () => {

@@ -1,9 +1,10 @@
 /**
  * Threerouter 适配器：基于 threerouter.com 统一媒体生成 API。
- * 文生图与视频统一走 POST /media/generations 创建 → GET /media/{id} 轮询 → GET /media/{id}/content 下载，
- * 请求显式携带 media_kind（image/video），不依赖模型名推断；图生图走
- * OpenAI Images 风格的专用端点 POST /images/edits（JSON images[].image_url，
- * 支持 data URL / 公网 URL，不支持 file_id）。鉴权统一 Bearer Token。
+ * 生图（文生图 + 图生图）统一走 POST /images/generations（服务端 2026-09 更新：
+ * /images/edits 已从端点表移除，参考图经 `image` 字段传入，同步返回 OpenAI 标准结构
+ * data[0].url / b64_json，同时兼容统一入口的顶层 url / urls 形态）；
+ * 视频走 POST /media/generations 创建 → GET /media/{id} 轮询 → GET /media/{id}/content 下载，
+ * 请求显式携带 media_kind=video。鉴权统一 Bearer Token。
  * @module dsh-image-video/providers/threerouter
  */
 
@@ -12,16 +13,18 @@ import { VIDEO_DURATION_UNSUPPORTED, VIDEO_MODEL_DEFAULT_RESOLUTION } from '../r
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
 import { toRequestOpts, normalizeImageSize } from './types.ts'
 
-/** Threerouter 默认文生图模型。 */
-const DEFAULT_IMAGE_MODEL = 'wan2.1-image'
-/** Threerouter 图生图默认模型（/images/edits 端点，官方文档标注支持文生图 + 图生图的默认模型）。 */
-const DEFAULT_IMAGE_EDIT_MODEL = 'gpt-image-2'
+/** Threerouter 默认文生图模型（千问图像 3.0，服务端模态注册表收录；旧默认 wan2.1-image 未收录会按文本派发）。 */
+const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0'
+/** Threerouter 图生图默认模型（千问图像 3.0 Pro，支持 image 参考图入参，文档快速上手示例同款）。 */
+const DEFAULT_IMAGE_EDIT_MODEL = 'qwen-image-3.0-pro'
 /** Threerouter 默认文生视频模型（MiniMax 系，支持 4-15 秒自定义时长）。账号可用模型见 threerouter.com 控制台。 */
 const DEFAULT_VIDEO_MODEL = 'minimax-h3'
 
-/** Threerouter /images/edits（OpenAI Images 风格）响应：url 或 b64_json 二选一。 */
+/** Threerouter /images/generations 响应：OpenAI 标准结构（data[0]），兼容统一入口顶层 url / urls 形态。 */
 interface ThreerouterImagesResponse {
   data?: Array<{ url?: string; b64_json?: string }>
+  url?: string
+  urls?: string[]
 }
 
 /** Threerouter API 请求头。 */
@@ -43,44 +46,31 @@ function extractTaskError(error: unknown): string {
 }
 
 /**
- * 提交图片任务：带参考图走 /images/edits（图生图/编辑），否则走 /media/generations（文生图，
- * media_kind=image 显式指定，不依赖模型名推断）。
+ * 提交图片任务（文生图 + 图生图统一端点 /images/generations，同步返回）。
+ * 参考图经 `image` 字段传入（data URL 或公网 URL，服务端亦接受 image_url / image_urls
+ * 数组形态，此处用最简的单字符串形态）；尺寸分隔符归一化为 `宽x高`（配置默认值为
+ * 百炼风格的 `*`，`1:1` 等比例写法原样透传）；响应 url / b64_json 双形态兼容，
+ * 另兼容统一入口的顶层 url / urls。
  */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
-  if (params.image) return submitImageEdit(params, opts)
-  const url = `${opts.baseURL}/media/generations`
-  const effectiveModel = params.model ?? DEFAULT_IMAGE_MODEL
+  const url = `${opts.baseURL}/images/generations`
+  const effectiveModel = params.model ?? (params.image ? DEFAULT_IMAGE_EDIT_MODEL : DEFAULT_IMAGE_MODEL)
   const body: Record<string, unknown> = {
     model: effectiveModel,
     prompt: params.prompt,
-    media_kind: 'image',
-  }
-  const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
-  if (!data?.id) throw new Error('Threerouter 文生图：未返回任务 ID')
-  return { taskId: data.id, async: true, mediaType: 'image', model: effectiveModel }
-}
-
-/**
- * 提交图生图/编辑任务（OpenAI Images 风格 /images/edits，同步返回）。
- * 参考图经 images[].image_url 传入（data URL 或公网 URL）；尺寸分隔符归一化为
- * `宽x高`（配置默认值为百炼风格的 `*`）；响应 url / b64_json 双形态兼容。
- */
-async function submitImageEdit(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
-  const url = `${opts.baseURL}/images/edits`
-  const effectiveModel = params.model ?? DEFAULT_IMAGE_EDIT_MODEL
-  const body: Record<string, unknown> = {
-    model: effectiveModel,
-    prompt: params.prompt,
-    images: [{ image_url: params.image }],
-    size: normalizeImageSize(params.size),
+    n: 1,
     response_format: 'url',
+    ...(params.image ? { image: params.image } : {}),
+    ...(params.size ? { size: normalizeImageSize(params.size) } : {}),
   }
   const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterImagesResponse
   const first = data?.data?.[0]
+  const topLevelUrl = data?.url ?? (Array.isArray(data?.urls) ? data.urls[0] : undefined)
+  const mediaUrl = first?.url ?? (typeof topLevelUrl === 'string' && topLevelUrl !== '' ? topLevelUrl : undefined)
   const base = { taskId: '', async: false, mediaType: 'image' as const, model: effectiveModel }
-  if (first?.url) return { ...base, mediaUrl: first.url }
+  if (mediaUrl) return { ...base, mediaUrl }
   if (first?.b64_json) return { ...base, mediaBase64: { data: first.b64_json, mediaType: 'image/png' } }
-  throw new Error('Threerouter 图生图：响应未包含图片数据')
+  throw new Error(params.image ? 'Threerouter 图生图：响应未包含图片数据' : 'Threerouter 文生图：响应未包含图片数据')
 }
 
 /**
