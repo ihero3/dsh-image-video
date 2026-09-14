@@ -130,7 +130,11 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   if (resolution) {
     body.resolution = resolution
   }
-  const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterTaskResponse
+  const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)
+  // 2026-09-14 实测：网关高峰期提交响应可超过 1 分钟（60s 超时连续两次），
+  // 提交（非轮询）超时抬到 ≥300s，避免排队慢时误报失败。
+  reqOpts.timeoutMs = Math.max(reqOpts.timeoutMs, 300_000)
+  const data = await request(reqOpts) as ThreerouterTaskResponse
   if (!data?.id) throw new Error('Threerouter 文生视频：未返回任务 ID')
   return { taskId: data.id, async: true, mediaType: 'video', model: effectiveModel, ...(droppedDuration ? { droppedDuration } : {}) }
 }
