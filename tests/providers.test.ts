@@ -106,9 +106,11 @@ describe('Wanx adapter', () => {
     expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).parameters.size).toBe('1152*1536')
     await wanxAdapter.submitImage({ ...imageParams, size: '16:9' }, wanxOpts())
     expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).parameters.size).toBe('1536*864')
+    await wanxAdapter.submitImage({ ...imageParams, size: '9:16' }, wanxOpts())
+    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).parameters.size).toBe('864*1536')
     // 已是 宽*高 形态的原样保留
     await wanxAdapter.submitImage({ ...imageParams, size: '1024*1024' }, wanxOpts())
-    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).parameters.size).toBe('1024*1024')
+    expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string).parameters.size).toBe('1024*1024')
   })
 
   it('文生视频 submit → query 成功路径', async () => {
@@ -442,6 +444,8 @@ describe('threerouter 适配器', () => {
     // wan 系同样命中阿里原生 宽*高 格式
     await threerouterAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '3:4' }, threerouterOpts())
     expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).size).toBe('1152*1536')
+    await threerouterAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '9:16' }, threerouterOpts())
+    expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string).size).toBe('864*1536')
   })
 
   it('submitImage：统一入口失败形态（status=failed + error）响亮抛出上游原因', async () => {
