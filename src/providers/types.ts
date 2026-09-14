@@ -121,3 +121,25 @@ export function parseSize(size: string): { width: number; height: number } {
 export function normalizeImageSize(size: string): string {
   return /^\d+\*\d+$/.test(size.trim()) ? size.trim().replace(/\*/g, 'x') : size.trim()
 }
+
+/**
+ * 阿里系（千问 qwen-image-* / 万相 wan*-image 等，DashScope 与经 threerouter 透传皆同）
+ * 原生尺寸归一化：上游要求 `宽*高` 且不接受比例写法（2026-09-14 实测：`3:4` 原样
+ * 透传被 400 "Expected format: '<width>*<height>'"）。比例写法按长边 1536、32 对齐
+ * 换算（3:4 → 1152*1536；16:9 → 1536*864；1:1 → 1024*1024）；WxH / W*H 统一 `*` 分隔。
+ */
+export function aliImageSize(size: string): string {
+  const ratio = /^(\d+):(\d+)$/.exec(size.trim())
+  if (ratio) {
+    const a = Number(ratio[1])
+    const b = Number(ratio[2])
+    if (a > 0 && b > 0) {
+      if (a === b) return '1024*1024'
+      const long = 1536
+      const w = a > b ? long : Math.round((long * a) / b / 32) * 32
+      const h = a > b ? Math.round((long * b) / a / 32) * 32 : long
+      return `${w}*${h}`
+    }
+  }
+  return size.trim().replace(/[xX]/g, '*')
+}

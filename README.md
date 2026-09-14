@@ -150,7 +150,7 @@ dsh --profile <profile>
 
 `resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
 
-**图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threerouter `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸分隔符 `*` 会按服务商要求自动归一化为 `x`（threerouter / 方舟）。**实测约束**：百炼 `wanx2.1-imageedit` 参考图宽度须 512–4096px（过小先放大再调用）；其文字渲染弱（拼写易错），需要精准文字时建议生成后本地合成（如 ffmpeg drawtext）。
+**图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threerouter `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸默认 **3:4**（`config.defaultImageSize`，接受比例写法 `3:4`/`16:9`/`1:1`）：qwen/wan 系自动换算为上游要求的 `宽*高`（长边 1536、32 对齐，如 3:4→1152*1536，实测 `3:4` 原样透传会被千问 400）；threerouter（OpenAI 系）/ 方舟系换算为 `宽x高`；MiniMax 比例写法原样透传。**实测约束**：百炼 `wanx2.1-imageedit` 参考图宽度须 512–4096px（过小先放大再调用）；其文字渲染弱（拼写易错），需要精准文字时建议生成后本地合成（如 ffmpeg drawtext）；千问图像默认开启 prompt_extend+思考模式，出图约 1–5 分钟，超时已按官方建议抬到 600s。
 
 **时长与模型能力**：wan 系模型（`wan2.2-t2v-plus`、`wan2.7-t2v`）不支持自定义时长——调用时传入 `duration` 会被插件丢弃（不发给上游，避免 `duration customization is not supported` 报错），并在结果 `notes` 中透明注明，实际时长由上游模型默认决定；MiniMax 系（`minimax-h3`）支持 4–15 秒。能力表见 `src/runtime-defaults.ts` 的 `VIDEO_DURATION_UNSUPPORTED`，按上游实测维护。
 

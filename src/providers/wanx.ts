@@ -8,7 +8,7 @@
 import { request, downloadMedia } from '../http-client.ts'
 import { VIDEO_DURATION_UNSUPPORTED } from '../runtime-defaults.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
-import { toRequestOpts } from './types.ts'
+import { toRequestOpts, aliImageSize } from './types.ts'
 
 /** 万象默认文生图模型（通义万相）。 */
 const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
@@ -59,7 +59,8 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
   const body = {
     model: effectiveModel,
     input: { prompt: params.prompt },
-    parameters: { size: params.size, n: 1 },
+    // DashScope 原生要求 `宽*高`，比例写法（如 3:4）客户端换算（长边 1536、32 对齐）
+    parameters: { size: params.size ? aliImageSize(params.size) : undefined, n: 1 },
   }
   const data = await request(toRequestOpts('POST', url, dashscopeHeaders(opts.apiKey), body, opts)) as WanxTaskResponse
   const taskId = data?.output?.task_id

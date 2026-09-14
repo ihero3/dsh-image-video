@@ -95,7 +95,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + '生成完成后图片保存到本地 outputs/ 目录（对话内附图片附件）。'
-      + '参数：prompt（提示词，必填）、image（参考图本地路径/URL，可选，传入即图生图）、size（尺寸如 1024*1024，可选）、'
+      + '参数：prompt（提示词，必填）、image（参考图本地路径/URL，可选，传入即图生图）、size（尺寸或比例，可选，默认 3:4；qwen/wan 系自动换算为宽*高）、'
       + 'model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）。',
 
     parameters: {

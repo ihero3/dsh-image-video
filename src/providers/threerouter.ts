@@ -11,7 +11,7 @@
 import { request, downloadMedia } from '../http-client.ts'
 import { VIDEO_DURATION_UNSUPPORTED, VIDEO_MODEL_DEFAULT_RESOLUTION } from '../runtime-defaults.ts'
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts } from './types.ts'
-import { toRequestOpts, normalizeImageSize } from './types.ts'
+import { toRequestOpts, normalizeImageSize, aliImageSize } from './types.ts'
 
 /** Threerouter 默认文生图模型（千问图像 3.0，服务端模态注册表收录；旧默认 wan2.1-image 未收录会按文本派发）。 */
 const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0'
@@ -31,25 +31,11 @@ interface ThreerouterImagesResponse {
 }
 
 /**
- * 千问图像 size 归一化：上游要求 `宽*高` 原生格式且 threerouter 原样透传 size
- * （2026-09-14 实测：传 `3:4` 上游 400 "Expected format: '<width>*<height>'"）。
- * 比例写法按长边 1536、32 对齐换算（3:4 → 1152*1536；16:9 → 1536*864；1:1 → 1024*1024）；
- * WxH / W*H 统一为 `*` 分隔。
+ * 阿里系（千问/万相）模型判定：这些上游要求 `宽*高` 原生格式，比例写法需在
+ * 客户端换算（共享 aliImageSize，见 types.ts）；其余模型保持 `*`→`x` 归一化。
  */
-function qwenImageSize(size: string): string {
-  const ratio = /^(\d+):(\d+)$/.exec(size.trim())
-  if (ratio) {
-    const a = Number(ratio[1])
-    const b = Number(ratio[2])
-    if (a > 0 && b > 0) {
-      if (a === b) return '1024*1024'
-      const long = 1536
-      const w = a > b ? long : Math.round((long * a) / b / 32) * 32
-      const h = a > b ? Math.round((long * b) / a / 32) * 32 : long
-      return `${w}*${h}`
-    }
-  }
-  return size.trim().replace(/[xX]/g, '*')
+function isAliNativeImageModel(model: string): boolean {
+  return /qwen|wan/i.test(model)
 }
 
 /** Threerouter API 请求头。 */
@@ -90,7 +76,7 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
     response_format: 'url',
     ...(params.image ? { image: params.image } : {}),
     ...(params.size
-      ? { size: effectiveModel.includes('qwen') ? qwenImageSize(params.size) : normalizeImageSize(params.size) }
+      ? { size: isAliNativeImageModel(effectiveModel) ? aliImageSize(params.size) : normalizeImageSize(params.size) }
       : {}),
   }
   const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)

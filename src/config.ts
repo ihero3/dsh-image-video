@@ -70,7 +70,7 @@ export const Config: z<Config> = z.object({
   defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
   defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
-  defaultImageSize: z.string().default('1024*1024').description('默认图片尺寸，如 1024*1024'),
+  defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threerouter/方舟换算为宽x高）'),
   defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),
   pollIntervalMs: z.number().default(5_000).min(1_000).description('视频任务轮询间隔（毫秒）'),

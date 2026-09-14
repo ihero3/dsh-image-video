@@ -5,7 +5,7 @@ describe('Config Schema', () => {
   it('空对象 → 全部使用默认值（默认 provider=threerouter）', () => {
     const cfg = Config({})
     expect(cfg.provider).toBe('threerouter')
-    expect(cfg.defaultImageSize).toBe('1024*1024')
+    expect(cfg.defaultImageSize).toBe('3:4')
     expect(cfg.defaultVideoDuration).toBe(5)
     expect(cfg.timeoutMs).toBe(60_000)
     expect(cfg.pollIntervalMs).toBe(5_000)

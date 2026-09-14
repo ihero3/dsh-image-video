@@ -121,7 +121,7 @@ export function applyImageStyle(prompt: string, style: string | undefined): stri
 export const IMAGE_SIZE_OPTIONS: ReadonlyArray<{ id: string; label: string; size: string }> = [
   { id: '1:1', label: '1:1', size: '1024*1024' },
   { id: '4:3', label: '4:3', size: '1152*864' },
-  { id: '3:4', label: '3:4', size: '864*1152' },
+  { id: '3:4', label: '3:4', size: '1152*1536' },
   { id: '16:9', label: '16:9', size: '1280*720' },
   { id: '9:16', label: '9:16', size: '720*1280' },
 ] as const
