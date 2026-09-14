@@ -24,7 +24,7 @@
 
 | 服务商 | 渠道 | 文生图 | 图生图 | 文生视频 | 备注 |
 |---|---|---|---|---|---|
-| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ 已验证 | ⚠️ `/images/edits` 已实现，**待分组开通**（实测 403「Image generation is not enabled for this group」；`/media/generations`+image 各模型均无通道） | ✅ 已验证（MiniMax-H3 / wan 系） | i2i 走 OpenAI Images 风格专用端点（`images[].image_url` + 默认 `gpt-image-2`）；t2i/视频走 `/v1/media/generations` |
+| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ `/images/generations` 同步（默认 `qwen-image-3.0`） | ✅ 同端点 `image` 参考图字段（默认 `qwen-image-3.0-pro`；2026-09 文档：/images/edits 已移除） | ✅ 已验证（MiniMax-H3 / wan 系） | 生图走 OpenAI Images 标准结构（url/b64_json 双形态 + 顶层 url 兼容）；视频走 `/v1/media/generations` + 轮询 |
 | **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ **已实测**（wanx2.1-imageedit，`base_image_url` 字段，参考图宽度须 512–4096px） | ✅ 已验证（wan2.2-t2v-plus） | i2i 为 description_edit 异步任务；图片同步/异步自适应；视频始终异步 |
 | **MiniMax 官方平台** | platform.minimaxi.com Key | ✅ `image-01`（待 key 实测） | ✅ `subject_reference` 主体一致性（待 key 实测） | ✅ 适配器已实现（video-generation v2，待 key 实测） | 图片同步返回 **base64**（无 URL），插件直接落盘；i2i 语义为「保留主体换场景」，每次仅 1 张参考图；Hailuo 系视频；缺省注入 `768P` |
 | **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ Seedream 4.0 `image` 入参（待 key 实测） | ✅ 适配器已实现 | 图片同步返回 URL（24h 有效立即下载）；i2i 默认模型自动切换 Seedream 4.0（3.0 不支持参考图）；显式关组图与水印；视频走异步任务 |
