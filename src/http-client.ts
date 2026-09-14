@@ -135,8 +135,12 @@ async function parseBody(res: Response): Promise<unknown> {
  */
 function classifyHttpError(status: number, data: unknown, url: string): GenerationError {
   const errMsg = extractErrorMessage(data)
-  if (status === 401 || status === 403) {
-    return new GenerationError('auth', `鉴权失败（HTTP ${status}）：API Key 无效或无权限。${errMsg}`, false, status)
+  if (status === 401) {
+    return new GenerationError('auth', `鉴权失败（HTTP 401）：API Key 无效。${errMsg}`, false, status)
+  }
+  if (status === 403) {
+    // threerouter 文档语义：403=分组未开通该能力（permission_error），401 才是 Key 无效
+    return new GenerationError('auth', `权限失败（HTTP 403）：分组/模型未开通该能力，请联系服务方开通。${errMsg}`, false, status)
   }
   if (status === 429) {
     return new GenerationError('quota', `配额耗尽（HTTP 429）：请求频率或额度超限，请稍后重试或检查账户余额。${errMsg}`, false, status)
