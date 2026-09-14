@@ -401,12 +401,51 @@ describe('threerouter 适配器', () => {
     expect(body.model).toBe('qwen-image-3.0-pro')
     expect(body.prompt).toBe('赛博朋克猫')
     expect(body.image).toBe('data:image/png;base64,QUJD')
-    expect(body.size).toBe('1024x1024')
+    // qwen 系按上游要求归一化为 `宽*高`（threerouter 原样透传 size，实测 `3:4` 会被 400）
+    expect(body.size).toBe('1024*1024')
     expect(body.response_format).toBe('url')
     // 同步返回：mediaUrl 直取，无 taskId
     expect(r.async).toBe(false)
     expect(r.mediaUrl).toBe('https://cdn.example.com/edited.png')
     expect(r.model).toBe('qwen-image-3.0-pro')
+  })
+
+  it('submitImage：qwen 比例写法换算为宽*高（长边 1536、32 对齐），非 qwen 保持 x 分隔', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ data: [{ url: 'https://cdn.example.com/a.png' }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    await threerouterAdapter.submitImage({ ...imageParams, size: '3:4' }, threerouterOpts())
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).size).toBe('1152*1536')
+    await threerouterAdapter.submitImage({ ...imageParams, size: '1:1' }, threerouterOpts())
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).size).toBe('1024*1024')
+    await threerouterAdapter.submitImage({ ...imageParams, size: '16:9' }, threerouterOpts())
+    expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).size).toBe('1536*864')
+    await threerouterAdapter.submitImage({ ...imageParams, model: 'gpt-image-2', size: '1024*1024' }, threerouterOpts())
+    expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string).size).toBe('1024x1024')
+  })
+
+  it('submitImage：统一入口失败形态（status=failed + error）响亮抛出上游原因', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'img_x', status: 'failed', model: 'minimax-image-01', error: 'minimax 1026: input new_sensitive' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: ImageGenParams = { ...imageParams, model: 'minimax-image-01', image: 'data:image/png;base64,QUJD' }
+    await expect(() => threerouterAdapter.submitImage(params, threerouterOpts())).rejects
+      .toSatisfy((e: { message: string }) => e.message.includes('上游失败') && e.message.includes('1026'))
+  })
+
+  it('submitImage：异步任务形态（status=processing + id）→ 转交工具层轮询', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'img_123', status: 'processing', model: 'qwen-image-3.0' }),
+      { status: 202, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    expect(r.async).toBe(true)
+    expect(r.taskId).toBe('img_123')
   })
 
   it('submitImage 图生图：b64_json 响应形态经 mediaBase64 带回', async () => {

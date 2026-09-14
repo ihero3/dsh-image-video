@@ -25,6 +25,31 @@ interface ThreerouterImagesResponse {
   data?: Array<{ url?: string; b64_json?: string }>
   url?: string
   urls?: string[]
+  id?: string
+  status?: string
+  error?: unknown
+}
+
+/**
+ * 千问图像 size 归一化：上游要求 `宽*高` 原生格式且 threerouter 原样透传 size
+ * （2026-09-14 实测：传 `3:4` 上游 400 "Expected format: '<width>*<height>'"）。
+ * 比例写法按长边 1536、32 对齐换算（3:4 → 1152*1536；16:9 → 1536*864；1:1 → 1024*1024）；
+ * WxH / W*H 统一为 `*` 分隔。
+ */
+function qwenImageSize(size: string): string {
+  const ratio = /^(\d+):(\d+)$/.exec(size.trim())
+  if (ratio) {
+    const a = Number(ratio[1])
+    const b = Number(ratio[2])
+    if (a > 0 && b > 0) {
+      if (a === b) return '1024*1024'
+      const long = 1536
+      const w = a > b ? long : Math.round((long * a) / b / 32) * 32
+      const h = a > b ? Math.round((long * b) / a / 32) * 32 : long
+      return `${w}*${h}`
+    }
+  }
+  return size.trim().replace(/[xX]/g, '*')
 }
 
 /** Threerouter API 请求头。 */
@@ -48,9 +73,12 @@ function extractTaskError(error: unknown): string {
 /**
  * 提交图片任务（文生图 + 图生图统一端点 /images/generations，同步返回）。
  * 参考图经 `image` 字段传入（data URL 或公网 URL，服务端亦接受 image_url / image_urls
- * 数组形态，此处用最简的单字符串形态）；尺寸分隔符归一化为 `宽x高`（配置默认值为
- * 百炼风格的 `*`，`1:1` 等比例写法原样透传）；响应 url / b64_json 双形态兼容，
- * 另兼容统一入口的顶层 url / urls。
+ * 数组形态，此处用最简的单字符串形态）；响应兼容 OpenAI 标准结构（data[0].url /
+ * b64_json）、统一入口顶层 url / urls、失败形态（status:'failed' + error）与异步
+ * 任务形态（status:'processing' + id，交由工具层轮询 GET /media/{id}）。
+ * size：qwen 系按上游要求归一化为 `宽*高`（实测 `3:4` 原样透传会被 400），
+ * 其余模型 `*`→`x`（配置默认值为百炼风格）；超时对齐官方建议抬到 ≥600s
+ * （千问图像 prompt_extend + 思考模式实测约 5 分钟出图）。
  */
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/images/generations`
@@ -61,15 +89,30 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
     n: 1,
     response_format: 'url',
     ...(params.image ? { image: params.image } : {}),
-    ...(params.size ? { size: normalizeImageSize(params.size) } : {}),
+    ...(params.size
+      ? { size: effectiveModel.includes('qwen') ? qwenImageSize(params.size) : normalizeImageSize(params.size) }
+      : {}),
   }
-  const data = await request(toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)) as ThreerouterImagesResponse
+  const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)
+  reqOpts.timeoutMs = Math.max(reqOpts.timeoutMs, 600_000)
+  const data = await request(reqOpts) as ThreerouterImagesResponse
   const first = data?.data?.[0]
   const topLevelUrl = data?.url ?? (Array.isArray(data?.urls) ? data.urls[0] : undefined)
   const mediaUrl = first?.url ?? (typeof topLevelUrl === 'string' && topLevelUrl !== '' ? topLevelUrl : undefined)
   const base = { taskId: '', async: false, mediaType: 'image' as const, model: effectiveModel }
   if (mediaUrl) return { ...base, mediaUrl }
   if (first?.b64_json) return { ...base, mediaBase64: { data: first.b64_json, mediaType: 'image/png' } }
+  const errMsg = typeof data?.error === 'string'
+    ? data.error
+    : data?.error !== null && typeof data?.error === 'object' && typeof (data.error as { message?: unknown }).message === 'string'
+      ? (data.error as { message: string }).message
+      : ''
+  // 统一入口失败形态（2026-09-14 实测）：{id, status:'failed', error:'minimax 1026: input new_sensitive'}
+  if (data?.status === 'failed') throw new Error(`Threerouter 生图：上游失败。${errMsg}`)
+  // 异步任务形态：{id, status:'processing'} → 交由工具层轮询 GET /media/{id}
+  if (data?.id && (!data.status || data.status === 'processing' || data.status === 'pending')) {
+    return { taskId: data.id, async: true, mediaType: 'image', model: effectiveModel }
+  }
   throw new Error(params.image ? 'Threerouter 图生图：响应未包含图片数据' : 'Threerouter 文生图：响应未包含图片数据')
 }
 
