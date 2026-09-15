@@ -38,6 +38,12 @@ export interface VideoGenParams {
    * 调用方经 media.resolveImageReference 统一解析后才传入，适配器只负责放到各自字段。
    */
   image?: string
+  /**
+   * wan3.0-video 多关键帧：按时间点排列的参考图序列（如 position '0s' / '1s'…）。
+   * 调用方经 media.resolveVideoMedia 统一解析（压缩 + 转 data URL），
+   * 适配器按 position 字段原样透传；存在时 image 字段忽略。
+   */
+  media?: Array<{ url: string; position?: string }>
   /** 可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3 支持 480P/768P/2K）；留空用服务商默认。 */
   resolution?: string
 }

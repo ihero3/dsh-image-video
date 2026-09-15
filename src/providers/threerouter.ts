@@ -121,7 +121,10 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   if (!droppedDuration) {
     body.duration = params.duration
   }
-  if (params.image) {
+  if (params.media) {
+    // wan3.0-video 多关键帧：媒体数组原样透传（每个条目含 url + position）
+    body.media = params.media
+  } else if (params.image) {
     body.image = params.image
   } else if (params.aspectRatio) {
     body.ratio = params.aspectRatio

@@ -20,7 +20,7 @@ import { seedanceAdapter } from '../providers/seedance.ts'
 import { threerouterAdapter } from '../providers/threerouter.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
-import { downloadAndSave, createVideoContent, resolveImageReference } from '../media.ts'
+import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia } from '../media.ts'
 
 /** 视频时长上限（秒），强制规范。 */
 const MAX_VIDEO_DURATION = 10
@@ -53,7 +53,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；wan 系模型不支持自定义时长，传入会被忽略并在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
       + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
-      + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略）、image（首帧图片：本地路径/URL，可选）、resolution（分辨率档位，可选，取值随模型）。',
+      + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略）、image（首帧图片：本地路径/URL，可选，单图时用）、'
+      + 'media（多关键帧序列：数组，每项含 image 路径/URL 和 position 时间点如 "0s""1s"；适用于 wan3.0-video、此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
 
     parameters: {
       prompt: {
@@ -75,7 +76,19 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       image: {
         type: 'string',
-        description: '首帧图片，用于图生视频（让图片动起来）：本地文件路径、http(s) URL 或 data URL。',
+        description: '首帧图片，用于图生视频（让图片动起来）：本地文件路径、http(s) URL 或 data URL。单图时用，与 media 二选一。',
+      },
+      media: {
+        type: 'array',
+        description: '多关键帧序列（wan3.0-video 专属）：逐秒参考图。每项为 {image, position}。位置 @ 时间点如 "0s" "1s"。存在时 image 字段忽略。',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            image: { type: 'string', description: '本地路径或 http(s) URL / data URL' },
+            position: { type: 'string', description: "参考图对应时间点，如 '0s' / '1s' / 'first_frame' / 'last_frame'" },
+          },
+        },
       },
       resolution: {
         type: 'string',
@@ -137,6 +150,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         model?: string
         aspectRatio?: string
         image?: string
+        media?: Array<{ image: string; position?: string }>
         resolution?: string
       }
 
@@ -167,18 +181,29 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         : p === 'minimax' ? minimaxAdapter
         : seedanceAdapter
 
-      // 本地路径在此解析为 data URL，适配器只接收 URL / data URL
-      const imageRef = typedArgs.image ? await resolveImageReference(typedArgs.image) : undefined
+      // 本地路径在此解析为 data URL，适配器只接收 URL / data URL；
+      // 超大首帧先压缩（实测 ~3MB data URL 提交会被网关拖到超时，压缩后秒收）
+      const imageRef = typedArgs.image
+        ? await compressVideoFirstFrame(await resolveImageReference(typedArgs.image))
+        : undefined
+      // 多关键帧（wan3.0-video）：media 存在时解析并覆盖 image
+      const mediaRef = typedArgs.media
+        ? await resolveVideoMedia(typedArgs.media)
+        : undefined
       // 模型取值链：调用参数 model > 配置 defaultVideoModel > adapter 内置默认
       const model = typedArgs.model || config.defaultVideoModel || undefined
 
+      const hasMedia = !!mediaRef
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,
         duration,
         model,
-        // 文档承诺「留空使用 16:9」在此落地：MiniMax 等上游纯文生场景要求显式 ratio
-        aspectRatio: typedArgs.aspectRatio || runtime.videoAspectRatio || '16:9',
-        image: imageRef,
+        // 文档承诺「留空使用 16:9」在此落地：MiniMax 等上游纯文生场景要求显式 ratio；
+        // 多关键帧时构图由 media 数组决定，不传 ratio
+        aspectRatio: hasMedia ? undefined : (typedArgs.aspectRatio || runtime.videoAspectRatio || '16:9'),
+        // media 存在时 image 忽略（适配器以 media 为准）
+        image: hasMedia ? undefined : imageRef,
+        media: mediaRef,
         resolution: typedArgs.resolution,
       }
 

@@ -560,6 +560,34 @@ describe('threerouter 适配器', () => {
     expect(body.media_kind).toBe('video')
   })
 
+  it('submitVideo wan3.0-video 多关键帧：body.media 数组透传，image / ratio 忽略', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ id: 'mt-vid-multi', status: 'processing' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const params: VideoGenParams = {
+      prompt: '多关键帧测试', duration: 4, model: 'wan3.0-video',
+      image: 'data:image/png;base64,UV9JQUdF',
+      media: [
+        { url: 'data:image/png;base64,QUJD', position: '0s' },
+        { url: 'data:image/png;base64,UV9J', position: '1s' },
+        { url: 'data:image/png;base64,RUVZRW9Z', position: '2s' },
+      ],
+    }
+    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    expect(r.taskId).toBe('mt-vid-multi')
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.model).toBe('wan3.0-video')
+    expect(body.media).toBeDefined()
+    expect(body.media).toHaveLength(3)
+    expect(body.media[0]).toEqual({ url: 'data:image/png;base64,QUJD', position: '0s' })
+    expect(body.media[2]).toEqual({ url: 'data:image/png;base64,RUVZRW9Z', position: '2s' })
+    // media 存在时 image 不应出现在 body 中
+    expect(body.image).toBeUndefined()
+    expect(body.ratio).toBeUndefined()
+  })
+
   it('queryTask: processing → running', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       JSON.stringify({ id: 'mt_t', status: 'processing' }),

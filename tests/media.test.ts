@@ -9,6 +9,8 @@ import {
   createVideoContent,
   imageMimeFromPath,
   resolveImageReference,
+  compressVideoFirstFrame,
+  resolveVideoMedia,
   saveBase64Image,
 } from '../src/media.ts'
 
@@ -220,6 +222,37 @@ describe('media 扩展名与类型推断', () => {
 
     it('resolveImageReference：不存在的本地路径响亮抛出 fs 错误', async () => {
       await expect(() => resolveImageReference('/nonexistent/dir/first.png')).rejects.toThrow()
+    })
+
+    it('compressVideoFirstFrame：小图 / URL 原样返回，大图经 ffmpeg 压成 JPEG', async () => {
+      // 小 data URL：低于阈值直接返回
+      const small = 'data:image/png;base64,QUJD'
+      expect(await compressVideoFirstFrame(small)).toBe(small)
+      // URL 形态不处理
+      expect(await compressVideoFirstFrame('https://img.example.com/big.png')).toBe('https://img.example.com/big.png')
+      // 大 data URL：有 ffmpeg 的环境压成更小的 JPEG；无 ffmpeg 时原样返回（不阻塞提交）
+      const big = Buffer.alloc(2_000_000, 7)
+      const bigRef = `data:image/png;base64,${big.toString('base64')}`
+      const out = await compressVideoFirstFrame(bigRef)
+      expect(out.startsWith('data:image/')).toBe(true)
+      if (out !== bigRef) {
+        expect(out.startsWith('data:image/jpeg;base64,')).toBe(true)
+        expect(out.length).toBeLessThan(bigRef.length)
+      }
+    })
+
+    it('resolveVideoMedia：数组每个条目解析为 url（跳过压缩）并保留 position', async () => {
+      const ms = [
+        { image: 'data:image/png;base64,QUJD', position: '0s' },
+        { image: 'data:image/png;base64,U1lM', position: '1s' },
+        { image: 'data:image/png;base64,SEVMTE8=', position: '2s' },
+      ]
+      const out = await resolveVideoMedia(ms)
+      expect(out).toHaveLength(3)
+      expect(out[0]).toEqual({ url: 'data:image/png;base64,QUJD', position: '0s' })
+      expect(out[1].position).toBe('1s')
+      expect(out[2].position).toBe('2s')
+      expect(out[0].url.startsWith('data:image/')).toBe(true)
     })
   })
 })

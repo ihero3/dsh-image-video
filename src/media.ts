@@ -5,9 +5,12 @@
  * @module dsh-image-video/media
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { extname, resolve } from 'node:path'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { extname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import { downloadMedia } from './http-client.ts'
@@ -95,6 +98,66 @@ export async function resolveImageReference(input: string): Promise<string> {
   if (/^(https?|data):/.test(ref)) return ref
   const data = await readFile(ref)
   return `data:${imageMimeFromPath(ref)};base64,${data.toString('base64')}`
+}
+
+const execFileAsync = promisify(execFile)
+/** 首帧压缩阈值：data URL 解码后字节数超过该值才压缩（小图直接提交）。 */
+const FIRST_FRAME_COMPRESS_THRESHOLD = 1_500_000
+/** 压缩后长边上限：视频输出最高 768P~2K，长边 1600 绰绰有余。 */
+const FIRST_FRAME_LONG_EDGE = 1600
+
+/**
+ * 视频首帧压缩：超大的本地图片 data URL 在提交前经 ffmpeg 缩放转 JPEG。
+ * 实测（2026-09-14）：~3MB 原图转 data URL 提交会被网关长时间消化直至提交超时，
+ * 压到 ~150KB 后秒收；视频输出本就 ≤768P/1080P，压图不损观感。
+ * 仅处理 data:image/ 形态且解码后超过阈值的引用；ffmpeg 不可用或执行失败时
+ * 原样返回（不阻塞提交，只是慢），http(s) URL 不处理。
+ */
+export async function compressVideoFirstFrame(ref: string): Promise<string> {
+  if (!ref.startsWith('data:image/')) return ref
+  const commaIdx = ref.indexOf(',')
+  if (commaIdx < 0) return ref
+  const header = ref.slice(0, commaIdx)
+  const b64 = ref.slice(commaIdx + 1)
+  if (Math.floor(b64.length * 3 / 4) <= FIRST_FRAME_COMPRESS_THRESHOLD) return ref
+  const inExt = header.includes('jpeg') || header.includes('jpg') ? '.jpg'
+    : header.includes('webp') ? '.webp' : '.png'
+  const dir = tmpdir()
+  const inPath = join(dir, `dsh-frame-${randomBytes(6).toString('hex')}${inExt}`)
+  const outPath = join(dir, `dsh-frame-${randomBytes(6).toString('hex')}.jpg`)
+  try {
+    await writeFile(inPath, Buffer.from(b64, 'base64'))
+    await execFileAsync('ffmpeg', [
+      '-y', '-v', 'error', '-i', inPath,
+      '-vf', `scale='min(${FIRST_FRAME_LONG_EDGE},iw)':-2`,
+      '-q:v', '3', outPath,
+    ])
+    const out = await readFile(outPath)
+    if (out.byteLength === 0) return ref
+    return `data:image/jpeg;base64,${out.toString('base64')}`
+  } catch {
+    // ffmpeg 缺失或执行失败：原样返回，交由上层按原尺寸提交
+    return ref
+  } finally {
+    await unlink(inPath).catch(() => {})
+    await unlink(outPath).catch(() => {})
+  }
+}
+
+/**
+ * wan3.0-video 多关键帧媒体解析：把 `{image, position}` 原始参数数组解析为
+ * 适配器可直接消费的 `{url: dataURL, position}` 形态，每个图先压缩再编码。
+ * 已有 data URL 的条目跳过压缩。
+ * @param ms - 原始媒体数组，image 为本地路径/URL/data URL，position 可选。
+ * @returns 适配器可直接消费的媒体数组。
+ */
+export async function resolveVideoMedia(
+  ms: Array<{ image: string; position?: string }>,
+): Promise<Array<{ url: string; position?: string }>> {
+  return await Promise.all(ms.map(async (m) => {
+    const url = await resolveImageReference(m.image)
+    return { url: await compressVideoFirstFrame(url), position: m.position }
+  }))
 }
 
 /** 从 Content-Type 推断图片媒体类型（attachment 服务要求精确类型）。 */
