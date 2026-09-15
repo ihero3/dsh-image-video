@@ -18,6 +18,7 @@ import {
   IMAGE_SIZE_OPTIONS,
   IMAGE_STYLE_OPTIONS,
   MODEL_FAMILY_RULES,
+  MULTI_FRAME_CAPABLE_MODELS,
   parseDefaultsPatch,
   registerDefaultsRoute,
   resolveModelCandidates,
@@ -213,6 +214,11 @@ describe('POST 协议校验', () => {
 
   it('imageSize 白名单覆盖五个比例（3:4 按实测规格 1152*1536）', () => {
     expect(IMAGE_SIZE_OPTIONS.map((o) => o.size)).toEqual(['1024*1024', '1152*864', '1152*1536', '1280*720', '720*1280'])
+  })
+
+  it('MULTI_FRAME_CAPABLE_MODELS 首项为 wan3.0-video', () => {
+    expect(MULTI_FRAME_CAPABLE_MODELS[0]).toBe('wan3.0-video')
+    expect(MULTI_FRAME_CAPABLE_MODELS.length).toBeGreaterThanOrEqual(1)
   })
 
   it('imageStyle 仅接受白名单风格', () => {

@@ -189,6 +189,13 @@ export const VIDEO_MODEL_DEFAULT_RESOLUTION: Readonly<Record<string, string>> = 
 }
 
 /**
+ * 支持多关键帧（media[]）的视频模型列表，按优先序排列。
+ * media 存在且未显式指定模型时自动选择首项；当前只有 wan3.0-video。
+ * 后续新增模型（如 seedance 多帧支持）直接追加即可。
+ */
+export const MULTI_FRAME_CAPABLE_MODELS: ReadonlyArray<string> = ['wan3.0-video']
+
+/**
  * 构建候选服务商序列（工具层按序尝试提交，回退语义见工具实现）：
  * ① 配置链服务商（会话选定 > settings 默认 > 激活服务商）——配置优先原则；
  * ② 显式 model 参数命中 {@link MODEL_FAMILY_RULES} 时的家族候选（直连商在前）；

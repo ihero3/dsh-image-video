@@ -12,7 +12,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config, Provider } from '../config.ts'
 import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
-import { resolveModelCandidates } from '../runtime-defaults.ts'
+import { resolveModelCandidates, MULTI_FRAME_CAPABLE_MODELS } from '../runtime-defaults.ts'
 import { isModelNotAcceptedError } from '../http-client.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
@@ -48,7 +48,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + '服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
       + '显式指定模型时按模型家族自动路由（minimax/hailuo→MiniMax 官方直连，wan/wanx→百炼直连，doubao/seedance/seedream→火山方舟），'
       + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
-      + '模型取值：调用参数 model > 配置 defaultVideoModel > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
+      + '模型取值：调用参数 model > 配置 defaultVideoModel > 多关键帧自动路由 > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；wan 系模型不支持自定义时长，传入会被忽略并在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
@@ -191,9 +191,20 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         ? await resolveVideoMedia(typedArgs.media)
         : undefined
       // 模型取值链：调用参数 model > 配置 defaultVideoModel > adapter 内置默认
-      const model = typedArgs.model || config.defaultVideoModel || undefined
+      let model = typedArgs.model || config.defaultVideoModel || undefined
 
       const hasMedia = !!mediaRef
+
+      // 多关键帧（media[]）自动路由：未指定模型时自动选首支持多帧的模型；
+      // 指定了但不支持多帧时报清晰错误，不静默失败。
+      if (hasMedia) {
+        if (model && !MULTI_FRAME_CAPABLE_MODELS.includes(model)) {
+          throw new Error(`模型「${model}」不支持多关键帧。请使用支持多帧的模型：${MULTI_FRAME_CAPABLE_MODELS.join('、')}`)
+        }
+        if (!model) {
+          model = MULTI_FRAME_CAPABLE_MODELS[0]
+        }
+      }
       const videoParams: VideoGenParams = {
         prompt: typedArgs.prompt,
         duration,
