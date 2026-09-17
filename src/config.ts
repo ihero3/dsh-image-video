@@ -25,12 +25,12 @@ export interface Config {
   threerouter: ProviderCredentials
   /** 万象（wanx）凭证；provider=wanx 时使用。 */
   wanx: ProviderCredentials
-  /** MiniMax 官方平台凭证；provider=minimax 时使用（仅视频，按官方 video-generation v2 实现）。 */
+  /** MiniMax 官方平台凭证；provider=minimax 时使用（图片与视频）。 */
   minimax: ProviderCredentials
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
   seedance: ProviderCredentials
-  /** 默认图片服务商；留空跟随激活服务商（minimax 无图片生成能力，不参与图片默认）。 */
-  defaultImageProvider: '' | Exclude<Provider, 'minimax'>
+  /** 默认图片服务商；留空跟随激活服务商。 */
+  defaultImageProvider: '' | Provider
   /** 默认视频服务商；留空跟随激活服务商，adapter 使用其内置默认模型。 */
   defaultVideoProvider: '' | Provider
   /** 默认图片模型；留空使用 adapter 内置默认模型。 */
@@ -39,7 +39,7 @@ export interface Config {
   defaultVideoModel: string
   /** 默认图片尺寸，形如 "1024*1024"。 */
   defaultImageSize: string
-  /** 默认视频时长（秒），上限 10。 */
+  /** 默认视频时长（秒），上限 30；具体模型能力由上游校验。 */
   defaultVideoDuration: number
   /** 单次 HTTP 请求超时（毫秒）。 */
   timeoutMs: number
@@ -66,15 +66,15 @@ export const Config: z<Config> = z.object({
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   minimax: ProviderCredentialsSchema.default({ apiKey: '' }).description('MiniMax 官方平台凭证（仅视频）'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
-  defaultImageProvider: z.union(['', 'threerouter', 'wanx', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
+  defaultImageProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
   defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
   defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
   defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threerouter/方舟换算为宽x高）'),
-  defaultVideoDuration: z.number().default(5).min(1).max(10).description('默认视频时长（秒），上限 10'),
+  defaultVideoDuration: z.number().default(5).min(1).max(30).description('默认视频时长（秒），上限 30，由上游模型校验具体能力'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),
   pollIntervalMs: z.number().default(5_000).min(1_000).description('视频任务轮询间隔（毫秒）'),
-  pollTimeoutMs: z.number().default(300_000).min(10_000).description('视频任务整体超时（毫秒）'),
+  pollTimeoutMs: z.number().default(600_000).min(10_000).description('视频任务整体超时（毫秒）'),
   retryTimes: z.number().default(3).min(0).max(10).description('可重试错误的最大重试次数'),
   outputsDir: z.string().default('./outputs').description('生成媒体落地目录'),
 })

@@ -153,10 +153,14 @@ export async function compressVideoFirstFrame(ref: string): Promise<string> {
  */
 export async function resolveVideoMedia(
   ms: Array<{ image: string; position?: string }>,
-): Promise<Array<{ url: string; position?: string }>> {
+): Promise<Array<{ url: string; type: string }>> {
   return await Promise.all(ms.map(async (m) => {
     const url = await resolveImageReference(m.image)
-    return { url: await compressVideoFirstFrame(url), position: m.position }
+    const position = m.position?.toLowerCase()
+    const type = position === 'first_frame' || position === '0s'
+      ? 'first_frame'
+      : position === 'last_frame' ? 'last_frame' : 'reference_image'
+    return { url: await compressVideoFirstFrame(url), type }
   }))
 }
 

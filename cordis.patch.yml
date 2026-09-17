@@ -26,6 +26,10 @@
         wanx:
           apiKey: ''
           baseURL: ''
+        # MiniMax 官方平台凭证；provider=minimax 时使用
+        minimax:
+          apiKey: ''
+          baseURL: ''
         # Seedance2.5（火山引擎）凭证；provider=seedance 时使用
         seedance:
           apiKey: ''
@@ -36,14 +40,14 @@
         defaultVideoProvider: ''
         # 默认图片尺寸（百炼接口要求 * 分隔，如 1024*1024）
         defaultImageSize: '1024*1024'
-        # 默认视频时长（秒），上限 10
+        # 默认视频时长（秒），上限 30，由上游模型校验具体能力
         defaultVideoDuration: 5
         # 单次 HTTP 请求超时（毫秒）
         timeoutMs: 60000
         # 视频任务轮询间隔（毫秒）
         pollIntervalMs: 5000
         # 视频任务整体超时（毫秒），超时后中止轮询
-        pollTimeoutMs: 300000
+        pollTimeoutMs: 600000
         # 可重试错误的最大重试次数
         retryTimes: 3
         # 生成媒体落地目录（相对路径基于进程 cwd 解析）

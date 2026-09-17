@@ -83,7 +83,11 @@ export class TaskManager {
         if (controller.signal.aborted) {
           throw new GenerationError('timeout', '生成任务已被取消', false)
         }
-        const httpOptsWithSignal: HttpOpts = { ...httpOpts, signal: controller.signal }
+        const httpOptsWithSignal: HttpOpts = {
+          ...httpOpts,
+          timeoutMs: Math.min(httpOpts.timeoutMs, 30_000),
+          signal: controller.signal,
+        }
         const result: TaskQueryResult = await adapter.queryTask(taskId, httpOptsWithSignal)
         if (result.status === 'succeeded') {
           return { mediaUrl: result.mediaUrl, elapsedMs: Date.now() - startTime }

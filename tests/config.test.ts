@@ -9,7 +9,7 @@ describe('Config Schema', () => {
     expect(cfg.defaultVideoDuration).toBe(5)
     expect(cfg.timeoutMs).toBe(60_000)
     expect(cfg.pollIntervalMs).toBe(5_000)
-    expect(cfg.pollTimeoutMs).toBe(300_000)
+    expect(cfg.pollTimeoutMs).toBe(600_000)
     expect(cfg.retryTimes).toBe(3)
     expect(cfg.outputsDir).toBe('./outputs')
     expect(cfg.threerouter.apiKey).toBe('')
@@ -17,19 +17,21 @@ describe('Config Schema', () => {
     expect(cfg.seedance.apiKey).toBe('')
   })
 
-  it('provider 仅接受 threerouter / wanx / seedance，非法值报错', () => {
+  it('provider 接受四家服务商，非法值报错', () => {
     expect(() => Config({ provider: 'threerouter' })).not.toThrow()
     expect(() => Config({ provider: 'wanx' })).not.toThrow()
     expect(() => Config({ provider: 'seedance' })).not.toThrow()
+    expect(() => Config({ provider: 'minimax' })).not.toThrow()
     expect(() => Config({ provider: 'other' })).toThrow()
     expect(() => Config({ provider: 123 as unknown as string })).toThrow()
   })
 
-  it('defaultVideoDuration 范围校验：1 ≤ x ≤ 10', () => {
+  it('defaultVideoDuration 范围校验：1 ≤ x ≤ 30', () => {
     expect(Config({ defaultVideoDuration: 1 }).defaultVideoDuration).toBe(1)
     expect(Config({ defaultVideoDuration: 10 }).defaultVideoDuration).toBe(10)
     expect(() => Config({ defaultVideoDuration: 0 })).toThrow()
-    expect(() => Config({ defaultVideoDuration: 11 })).toThrow()
+    expect(Config({ defaultVideoDuration: 30 }).defaultVideoDuration).toBe(30)
+    expect(() => Config({ defaultVideoDuration: 31 })).toThrow()
     expect(() => Config({ defaultVideoDuration: '5' as unknown as number })).toThrow()
   })
 
@@ -86,8 +88,7 @@ describe('resolveActiveProvider 凭证解析', () => {
     expect(r.baseURL).toBe('https://api.minimaxi.com/v1')
     expect(cfg.defaultVideoProvider).toBe('minimax')
     expect(cfg.minimax.apiKey).toBe('sk-mm')
-    // minimax 无图片能力：defaultImageProvider 联合不含 minimax
-    expect(() => Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultImageProvider: 'minimax' as never })).toThrow()
+    expect(Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultImageProvider: 'minimax' }).defaultImageProvider).toBe('minimax')
   })
 
   it('自定义 baseURL 覆盖默认端点', () => {

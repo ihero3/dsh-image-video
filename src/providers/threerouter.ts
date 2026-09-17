@@ -122,8 +122,13 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
     body.duration = params.duration
   }
   if (params.media) {
-    // wan3.0-video 多关键帧：媒体数组原样透传（每个条目含 url + position）
-    body.media = params.media
+    // wan 全能系列使用文档协议：每个条目含 type + url。兼容工具层旧 position 输入。
+    body.media = params.media.map(({ url: mediaUrl, type, position }) => ({
+      type: type ?? (position?.toLowerCase() === 'first_frame' || position === '0s'
+        ? 'first_frame'
+        : position?.toLowerCase() === 'last_frame' ? 'last_frame' : 'reference_image'),
+      url: mediaUrl,
+    }))
   } else if (params.image) {
     body.image = params.image
   } else if (params.aspectRatio) {

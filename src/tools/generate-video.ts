@@ -3,7 +3,7 @@
  * 万象（wanx，百炼直连）/ MiniMax 官方平台 / Seedance（火山方舟），按模型家族自动路由。
  * 提交任务后后台轮询直到完成，下载视频到 outputs/ 目录。
  * 视频生成耗时较长（1-5 分钟），轮询过程不产生中间输出，仅最终结果返回模型，
- * 不阻塞对话上下文。时长上限 10 秒，由 schema 与运行时双重校验。
+ * 不阻塞对话上下文。时长上限 30 秒，由 schema 与运行时双重校验。
  * @module dsh-image-video/tools/generate-video
  */
 
@@ -23,7 +23,7 @@ import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '..
 import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia } from '../media.ts'
 
 /** 视频时长上限（秒），强制规范。 */
-const MAX_VIDEO_DURATION = 10
+const MAX_VIDEO_DURATION = 30
 
 /** 工具依赖。 */
 export interface GenerateVideoDeps {
@@ -50,9 +50,9 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
       + '模型取值：调用参数 model > 配置 defaultVideoModel > 多关键帧自动路由 > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
-      + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；wan 系模型不支持自定义时长，传入会被忽略并在结果 notes 注明。`
+      + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；具体模型能力由上游校验，wan 系模型不支持自定义时长时会在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
-      + '参数：prompt（提示词，必填）、duration（时长秒数，1-10，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
+      + '参数：prompt（提示词，必填）、duration（时长秒数，1-30，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
       + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略）、image（首帧图片：本地路径/URL，可选，单图时用）、'
       + 'media（多关键帧序列：数组，每项含 image 路径/URL 和 position 时间点如 "0s""1s"；适用于 wan3.0-video、此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
 
@@ -64,7 +64,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       duration: {
         type: 'integer',
-        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}。留空使用配置默认值。wan 系模型（如 wan2.2-t2v-plus）不支持自定义时长，传入将被忽略。`,
+        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}。留空使用配置默认值。具体模型能力由上游校验。`,
       },
       model: {
         type: 'string',
@@ -80,7 +80,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       media: {
         type: 'array',
-        description: '多关键帧序列（wan3.0-video 专属）：逐秒参考图。每项为 {image, position}。位置 @ 时间点如 "0s" "1s"。存在时 image 字段忽略。',
+        description: '多关键帧序列（wan3.0-video 专属）：每项为 {image, position}，适配器会转换为服务端要求的 type/url。存在时 image 字段忽略。',
         items: {
           type: 'object',
           additionalProperties: false,

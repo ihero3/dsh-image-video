@@ -131,7 +131,7 @@ const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as co
 
 /** 视频时长上下限（与 generate_video 工具的强制规范一致）。 */
 const MIN_VIDEO_DURATION = 1
-const MAX_VIDEO_DURATION = 10
+const MAX_VIDEO_DURATION = 30
 
 /** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验。 */
 const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'minimax', 'seedance'] as const

@@ -175,7 +175,7 @@ describe('settings 持久默认提取（extractPersistedDefaults）', () => {
       defaultImageProvider: 'bogus' as unknown as Config['defaultImageProvider'],
       defaultVideoProvider: 'also-bogus' as unknown as Config['defaultVideoProvider'],
       defaultImageSize: '999*999',
-      defaultVideoDuration: 11,
+      defaultVideoDuration: 31,
     }))
     expect(view.imageProvider).toBeUndefined()
     expect(view.videoProvider).toBeUndefined()
@@ -232,10 +232,10 @@ describe('POST 协议校验', () => {
     expect(parseDefaultsPatch({ videoAspectRatio: '4:3' }).ok).toBe(false)
   })
 
-  it('videoDuration 仅接受 1-10 整数', () => {
+  it('videoDuration 仅接受 1-30 整数', () => {
     expect(parseDefaultsPatch({ videoDuration: 8 }).ok).toBe(true)
     expect(parseDefaultsPatch({ videoDuration: 0 }).ok).toBe(false)
-    expect(parseDefaultsPatch({ videoDuration: 11 }).ok).toBe(false)
+    expect(parseDefaultsPatch({ videoDuration: 31 }).ok).toBe(false)
     expect(parseDefaultsPatch({ videoDuration: 5.5 }).ok).toBe(false)
     expect(parseDefaultsPatch({ videoDuration: '5' }).ok).toBe(false)
   })

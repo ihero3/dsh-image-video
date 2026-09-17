@@ -14,13 +14,16 @@ export class GenerationError extends Error {
   readonly retryable: boolean
   /** 原始 HTTP 状态码，任务级错误可能为 undefined。 */
   readonly status?: number
+  /** 服务端 Retry-After 建议的等待时间（毫秒）。 */
+  readonly retryAfterMs?: number
 
-  constructor(kind: ErrorKind, message: string, retryable: boolean, status?: number) {
+  constructor(kind: ErrorKind, message: string, retryable: boolean, status?: number, retryAfterMs?: number) {
     super(message)
     this.name = 'GenerationError'
     this.kind = kind
     this.retryable = retryable
     this.status = status
+    if (retryAfterMs !== undefined) this.retryAfterMs = retryAfterMs
   }
 }
 
@@ -80,6 +83,7 @@ export interface RequestResult {
   ok: true
   status: number
   data: unknown
+  headers: Headers
 }
 
 /**
@@ -103,7 +107,7 @@ async function singleRequest(opts: RequestOptions): Promise<RequestResult> {
     }
     const res = await fetch(opts.url, init)
     const data = await parseBody(res)
-    return { ok: true, status: res.status, data }
+    return { ok: true, status: res.status, data, headers: res.headers }
   } catch (err) {
     if (controller.signal.aborted && !opts.signal?.aborted) {
       throw new GenerationError('timeout', `请求超时（${opts.timeoutMs}ms），URL: ${opts.url}`, true)
@@ -133,7 +137,16 @@ async function parseBody(res: Response): Promise<unknown> {
  * 分类 HTTP 响应错误，生成友好中文提示。
  * 内部实现，不在 execute 外部直接调用。通过 `classifyErrorForTest` 导出用于单元测试。
  */
-function classifyHttpError(status: number, data: unknown, url: string): GenerationError {
+function parseRetryAfter(value: string | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined
+  const seconds = Number(value.trim())
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1_000, 180_000)
+  const timestamp = Date.parse(value)
+  if (!Number.isNaN(timestamp)) return Math.min(Math.max(0, timestamp - Date.now()), 180_000)
+  return undefined
+}
+
+function classifyHttpError(status: number, data: unknown, url: string, retryAfterHeader?: string | null): GenerationError {
   const errMsg = extractErrorMessage(data)
   if (status === 401) {
     return new GenerationError('auth', `鉴权失败（HTTP 401）：API Key 无效。${errMsg}`, false, status)
@@ -143,7 +156,8 @@ function classifyHttpError(status: number, data: unknown, url: string): Generati
     return new GenerationError('auth', `权限失败（HTTP 403）：分组/模型未开通该能力，请联系服务方开通。${errMsg}`, false, status)
   }
   if (status === 429) {
-    return new GenerationError('quota', `配额耗尽（HTTP 429）：请求频率或额度超限，请稍后重试或检查账户余额。${errMsg}`, false, status)
+    const retryAfterMs = parseRetryAfter(retryAfterHeader)
+    return new GenerationError('quota', `配额耗尽（HTTP 429）：请求频率或额度超限，请稍后重试或检查账户余额。${errMsg}`, true, status, retryAfterMs)
   }
   if (status >= 500) {
     return new GenerationError('network', `服务端错误（HTTP ${status}），将重试。${errMsg}`, true, status)
@@ -177,7 +191,7 @@ export const classifyErrorForTest: (status: number, data: unknown, url: string) 
 
 /**
  * 统一 HTTP 请求入口：执行请求，分类异常，对可重试错误按指数退避重试。
- * 鉴权失败、配额耗尽、任务逻辑错误立即抛出不重试。
+ * 鉴权失败与任务逻辑错误立即抛出；配额错误按 Retry-After 和 retryTimes 有限重试。
  * @returns 解析后的响应数据。
  * @throws {GenerationError} 分类后的生成错误。
  */
@@ -192,7 +206,7 @@ export async function request(opts: RequestOptions): Promise<unknown> {
       if (result.status >= 200 && result.status < 300) {
         return result.data
       }
-      throw classifyHttpError(result.status, result.data, opts.url)
+      throw classifyHttpError(result.status, result.data, opts.url, result.headers.get('retry-after'))
     } catch (err) {
       if (err instanceof GenerationError) {
         // 不可重试错误立即抛出
@@ -200,7 +214,7 @@ export async function request(opts: RequestOptions): Promise<unknown> {
         lastError = err
         // 还有重试机会则退避等待
         if (attempt < opts.retryTimes) {
-          const backoff = RETRY_BACKOFF_MS * Math.pow(2, attempt)
+          const backoff = err.retryAfterMs ?? RETRY_BACKOFF_MS * Math.pow(2, attempt)
           await sleep(backoff, opts.signal)
           continue
         }
@@ -234,7 +248,7 @@ export async function downloadMedia(url: string, opts: Pick<RequestOptions, 'tim
       const res = await fetch(url, { signal: controller.signal })
       if (!res.ok) {
         const data = await parseBody(res)
-        throw classifyHttpError(res.status, data, url)
+        throw classifyHttpError(res.status, data, url, res.headers.get('retry-after'))
       }
       const buffer = await res.arrayBuffer()
       return { data: new Uint8Array(buffer), contentType: res.headers.get('content-type') ?? 'application/octet-stream' }

@@ -158,14 +158,14 @@ describe('Wanx adapter', () => {
         e.kind === 'auth' && e.retryable === false)
   })
 
-  it('429 → quota 不可重试', async () => {
+  it('429 → quota, 可按 Retry-After 有限重试', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       JSON.stringify({ message: 'Rate limit' }),
-      { status: 429, headers: { 'content-type': 'application/json' } },
+      { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '0' } },
     ))
     await expect(() => wanxAdapter.submitVideo(videoParams, wanxOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
-        e.kind === 'quota' && e.retryable === false)
+        e.kind === 'quota' && e.retryable === true)
   })
 
   function captureSubmitBody(): { fetchMock: ReturnType<typeof vi.fn>; body: () => Record<string, unknown> } {
@@ -581,8 +581,8 @@ describe('threerouter 适配器', () => {
     expect(body.model).toBe('wan3.0-video')
     expect(body.media).toBeDefined()
     expect(body.media).toHaveLength(3)
-    expect(body.media[0]).toEqual({ url: 'data:image/png;base64,QUJD', position: '0s' })
-    expect(body.media[2]).toEqual({ url: 'data:image/png;base64,RUVZRW9Z', position: '2s' })
+    expect(body.media[0]).toEqual({ url: 'data:image/png;base64,QUJD', type: 'first_frame' })
+    expect(body.media[2]).toEqual({ url: 'data:image/png;base64,RUVZRW9Z', type: 'reference_image' })
     // media 存在时 image 不应出现在 body 中
     expect(body.image).toBeUndefined()
     expect(body.ratio).toBeUndefined()

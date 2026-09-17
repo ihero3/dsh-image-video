@@ -16,10 +16,10 @@ describe('GenerationError 异常分类', () => {
     expect(e.retryable).toBe(false)
   })
 
-  it('429 → quota, 不可重试', () => {
+  it('429 → quota, 可按 Retry-After 有限重试', () => {
     const e = classifyErrorForTest(429, { error_message: 'rate limit' }, '/x')
     expect(e.kind).toBe('quota')
-    expect(e.retryable).toBe(false)
+    expect(e.retryable).toBe(true)
     expect(e.message).toContain('配额耗尽')
   })
 

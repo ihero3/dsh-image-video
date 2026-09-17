@@ -241,7 +241,7 @@ describe('media 扩展名与类型推断', () => {
       }
     })
 
-    it('resolveVideoMedia：数组每个条目解析为 url（跳过压缩）并保留 position', async () => {
+    it('resolveVideoMedia：数组每个条目解析为文档要求的 type/url', async () => {
       const ms = [
         { image: 'data:image/png;base64,QUJD', position: '0s' },
         { image: 'data:image/png;base64,U1lM', position: '1s' },
@@ -249,9 +249,9 @@ describe('media 扩展名与类型推断', () => {
       ]
       const out = await resolveVideoMedia(ms)
       expect(out).toHaveLength(3)
-      expect(out[0]).toEqual({ url: 'data:image/png;base64,QUJD', position: '0s' })
-      expect(out[1].position).toBe('1s')
-      expect(out[2].position).toBe('2s')
+      expect(out[0]).toEqual({ url: 'data:image/png;base64,QUJD', type: 'first_frame' })
+      expect(out[1].type).toBe('reference_image')
+      expect(out[2].type).toBe('reference_image')
       expect(out[0].url.startsWith('data:image/')).toBe(true)
     })
   })
