@@ -63,7 +63,8 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

@@ -20,14 +20,67 @@ import type { HttpOpts } from './providers/types.ts'
 export interface MediaSaveResult {
   /** outputs/ 下的绝对文件路径。 */
   localPath: string
-  /** 媒体下载 URL。 */
+  /** 媒体下载 URL（服务商直回 base64 时为空串）。 */
   sourceUrl: string
   /** 媒体类型（image/png 等）。 */
   contentType: string
   /** 文件大小（字节）。 */
   bytes: number
-  /** 下载的原始字节，供 attachment 服务复用。 */
+  /** 落盘字节，供 attachment 服务复用。 */
   data: Uint8Array
+}
+
+/**
+ * 把配置里的 outputsDir 解析为**绝对路径**。插件只在 apply() 里调用一次，
+ * 之后所有落盘（生成、下载、水印后处理）与只读 media 路由都使用同一个解析结果，
+ * 从根本上杜绝「模型结果在 A 目录、后处理结果在 B 目录」这类旁路产物。
+ * @param outputsDir - 配置值（可为相对路径）。
+ * @returns 绝对目录路径。
+ */
+export function resolveOutputsDir(outputsDir: string): string {
+  return resolve(outputsDir)
+}
+
+/**
+ * 把最终媒体字节写入 outputsDir（唯一落盘入口）。
+ *
+ * 「唯一入口」是刻意的设计约束：图片生成的后处理（水印）在内存里完成后再调用
+ * 本函数，因此磁盘上只可能出现一份文件、且内容就是最终结果——交互流展示的
+ * 附件与本地文件必然一致。
+ * @param data - 最终字节。
+ * @param contentType - 最终 MIME 类型。
+ * @param outputsDir - 输出目录（绝对路径，见 resolveOutputsDir）。
+ * @param fallbackExt - Content-Type 无法识别时的扩展名。
+ * @param sourceUrl - 上游来源地址（base64 形态留空）。
+ * @returns 保存结果。
+ */
+export async function writeOutputFile(
+  data: Uint8Array,
+  contentType: string,
+  outputsDir: string,
+  fallbackExt: string,
+  sourceUrl = '',
+): Promise<MediaSaveResult> {
+  const dir = resolve(outputsDir)
+  await mkdir(dir, { recursive: true })
+  const ext = extFromContentType(contentType, fallbackExt)
+  const filename = `${Date.now()}-${randomBytes(4).toString('hex')}${ext}`
+  const localPath = resolve(dir, filename)
+  await writeFile(localPath, data)
+  return { localPath, sourceUrl, contentType, bytes: data.byteLength, data }
+}
+
+/** 下载媒体字节到内存（不落盘）。后处理链路的第一步。 */
+export async function fetchMediaBytes(
+  url: string,
+  opts: Pick<HttpOpts, 'timeoutMs' | 'retryTimes' | 'signal'>,
+): Promise<{ data: Uint8Array; contentType: string }> {
+  return await downloadMedia(url, opts)
+}
+
+/** 解码服务商直接返回的 base64 图片为内存字节（不落盘）。 */
+export function decodeBase64Media(base64: string, mediaType: string): { data: Uint8Array; contentType: string } {
+  return { data: new Uint8Array(Buffer.from(base64, 'base64')), contentType: mediaType }
 }
 
 /**
@@ -45,13 +98,7 @@ export async function downloadAndSave(
   opts: Pick<HttpOpts, 'timeoutMs' | 'retryTimes' | 'signal'>,
 ): Promise<MediaSaveResult> {
   const { data, contentType } = await downloadMedia(url, opts)
-  const dir = resolve(outputsDir)
-  await mkdir(dir, { recursive: true })
-  const ext = extFromContentType(contentType, fallbackExt)
-  const filename = `${Date.now()}-${randomBytes(4).toString('hex')}${ext}`
-  const localPath = resolve(dir, filename)
-  await writeFile(localPath, data)
-  return { localPath, sourceUrl: url, contentType, bytes: data.byteLength, data }
+  return await writeOutputFile(data, contentType, outputsDir, fallbackExt, url)
 }
 
 /**
@@ -63,14 +110,8 @@ export async function downloadAndSave(
  * @returns 保存结果（sourceUrl 为空字符串——无下载来源）。
  */
 export async function saveBase64Image(base64: string, mediaType: string, outputsDir: string): Promise<MediaSaveResult> {
-  const data = Buffer.from(base64, 'base64')
-  const dir = resolve(outputsDir)
-  await mkdir(dir, { recursive: true })
-  const ext = extFromContentType(mediaType, '.png')
-  const filename = `${Date.now()}-${randomBytes(4).toString('hex')}${ext}`
-  const localPath = resolve(dir, filename)
-  await writeFile(localPath, data)
-  return { localPath, sourceUrl: '', contentType: mediaType, bytes: data.byteLength, data }
+  const { data, contentType } = decodeBase64Media(base64, mediaType)
+  return await writeOutputFile(data, contentType, outputsDir, '.png')
 }
 
 /** 从扩展名推断图片 MIME 类型；未知扩展名回退 image/png，由服务商对无法识别的字节响亮报错。 */
@@ -228,14 +269,23 @@ export interface ImageSummaryFields {
   mode?: string
   /** 实际使用的模型名（含适配器内置默认）；留空则显示「服务商内置默认」。 */
   model?: string
-  /** 透明告知条目（路由回退等）；无则省略。 */
+  /** 透明告知条目（路由回退、传输降级、找回等）；无则省略。 */
   notes?: string[]
+  /** 后处理链路（如 `品牌水印 Threerouter`）；无后处理时省略。 */
+  postprocess?: string[]
+  /** 本次生成事务的物理提交次数：正常恒为 1，是「没有重复生成」的自证字段。 */
+  submitAttempts?: number
+  /** 提交传输方式（async / sync）。 */
+  transport?: string
+  /** 生成事务幂等键（request_id），超时找回的唯一凭据。 */
+  requestId?: string
 }
 
 /**
  * 构造模型可见的图片生成摘要文本（纯文本，不含图片字节）。
- * 标准输出固定包含：提示词、服务商、**实际使用的模型**、尺寸与透明告知——
- * 「这张图怎么来的、用了谁」直接看结果即可，无需查配置或服务商后台。
+ * 标准输出固定包含：提示词、服务商、**实际使用的模型**、尺寸、提交次数、
+ * 传输方式、后处理与透明告知——「这张图怎么来的、用了谁、提交了几次、
+ * 有没有打水印」直接看结果即可，无需查配置或服务商后台。
  * @param fields - 生成输出中的展示字段。
  * @returns 供工具结果 render 返回的文本块。
  */
@@ -245,13 +295,21 @@ export function createImageSummaryText(fields: ImageSummaryFields): ContentBlock
     : '未知尺寸'
   const model = fields.model && fields.model.length > 0 ? fields.model : '服务商内置默认'
   const mode = fields.mode ? `，模式：${fields.mode === 'image-to-image' ? '图生图' : '文生图'}` : ''
+  const submit = fields.submitAttempts === undefined ? '' : `，提交次数：${fields.submitAttempts}`
+  const transport = fields.transport === undefined ? '' : `，传输：${fields.transport}`
+  const postprocess = fields.postprocess && fields.postprocess.length > 0
+    ? `，后处理：${fields.postprocess.join(' + ')}`
+    : ''
   const promptBlock = fields.prompt && fields.prompt.length > 0 ? `\n提示词：${fields.prompt}` : ''
+  const requestBlock = fields.requestId === undefined ? '' : `\nrequest_id：${fields.requestId}`
   const notesBlock = fields.notes && fields.notes.length > 0
     ? `\n透明告知：\n${fields.notes.map((note) => `- ${note}`).join('\n')}`
     : ''
   return [{
     type: 'text',
-    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}${mode}，尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB）${promptBlock}${notesBlock}`,
+    text: `图片已生成并保存到本地：${fields.localPath}（服务商：${fields.provider}，模型：${model}${mode}，`
+      + `尺寸：${size}，大小：${(fields.bytes / 1024).toFixed(1)} KB${submit}${transport}${postprocess}）`
+      + `${promptBlock}${requestBlock}${notesBlock}`,
   }]
 }
 

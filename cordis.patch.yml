@@ -50,5 +50,21 @@
         pollTimeoutMs: 600000
         # 可重试错误的最大重试次数
         retryTimes: 3
+        # 图片提交传输：auto 优先异步；异步端点未启用时安全降级同步
+        imageTransport: auto
+        # 提交状态未知时默认失败，不盲目再次生成；可选 resubmit-same-key
+        imageUnknownStatePolicy: fail
         # 生成媒体落地目录（相对路径基于进程 cwd 解析）
         outputsDir: './outputs'
+        # 最终图片水印：与模型结果使用同一 outputsDir 和 attachment 流程
+        watermark:
+          enabled: true
+          text: 'Threerouter'
+          opacity: 0.68
+          position: bottom-right
+          fontSizeRatio: 0.032
+          marginXRatio: 0.028
+          marginYRatio: 0.012
+          glowEnabled: true
+          glowColor: '#ffffff'
+          glowBlurRatio: 0.18

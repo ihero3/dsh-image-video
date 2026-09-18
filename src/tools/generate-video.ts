@@ -31,6 +31,11 @@ export interface GenerateVideoDeps {
   taskManager: TaskManager
   /** 运行时默认值存储：composer 热更新覆盖值优先于 settings 持久值。 */
   runtimeDefaults: RuntimeDefaultsStore
+  /**
+   * 已解析为绝对路径的 outputsDir（插件唯一解析点，见 index.apply）。
+   * 与图片链路共用同一个目录，杜绝旁路产物；缺省时回退 config.outputsDir。
+   */
+  outputsDir?: string
 }
 
 /**
@@ -40,6 +45,7 @@ export interface GenerateVideoDeps {
  */
 export function createGenerateVideoTool(deps: GenerateVideoDeps) {
   const { config, taskManager, runtimeDefaults } = deps
+  const outputsDir = deps.outputsDir ?? config.outputsDir
 
   return defineTool({
     name: 'generate_video',
@@ -277,7 +283,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
 
       // 下载视频到 outputs/ 目录
       const downloadOpts = { timeoutMs: config.timeoutMs, retryTimes: config.retryTimes, signal: exec.signal }
-      const saved = await downloadAndSave(pollResult.mediaUrl, config.outputsDir, '.mp4', downloadOpts)
+      const saved = await downloadAndSave(pollResult.mediaUrl, outputsDir, '.mp4', downloadOpts)
 
       const output: GenerateVideoOutput = {
         provider,

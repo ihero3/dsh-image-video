@@ -8,6 +8,8 @@ import type { RequestOptions } from '../http-client.ts'
 
 /** 图片生成请求参数（不传 image 为文生图，传入 image 为图生图/参考图编辑）。 */
 export interface ImageGenParams {
+  /** 客户端生成事务唯一 ID；服务端必须按此字段幂等。 */
+  requestId?: string
   /** 提示词。 */
   prompt: string
   /** 图片尺寸，如 "1024x1024"（分隔符可能为 `*`，适配器经 normalizeImageSize 归一化）。 */
@@ -78,6 +80,38 @@ export type TaskQueryResult =
   | { status: 'succeeded'; mediaUrl: string }
   | { status: 'failed'; error: string }
 
+/**
+ * 异步图片提交结果（202 Accepted 形态）。
+ * 与 {@link SubmitResult} 的区别：这里只有「任务已被接受」这一个事实，
+ * 结果图 URL 必须经轮询端点取得，因此不存在同步返回的 mediaUrl。
+ */
+export interface AsyncImageSubmit {
+  /** 网关任务 ID（`imgtask_…`），轮询与找回的唯一句柄。 */
+  taskId: string
+  /** 本次提交实际使用的模型名（服务商回报或本地推断）。 */
+  model?: string
+  /** 服务端回显的幂等键。 */
+  requestId?: string
+  /** true = 服务端幂等回放（`X-Idempotency-Replayed: true`），本次没有新建任务。 */
+  replayed?: boolean
+  /** 服务端建议的轮询间隔（`Retry-After` 秒）；缺省用配置的轮询间隔。 */
+  retryAfterSec?: number
+}
+
+/**
+ * 异步图片网关能力（可选）：提交立即返回任务句柄、结果经轮询取得，
+ * 并支持「凭幂等键找回任务」——这是提交响应因超时/断连丢失后不重复
+ * 生成的唯一自救通道。只有实现该能力的服务商才允许配置 async 传输。
+ */
+export interface ImageAsyncCapability {
+  /** 提交一次图片生成任务，返回任务句柄（服务端保证同一幂等键只创建一次）。 */
+  submit(params: ImageGenParams, opts: HttpOpts): Promise<AsyncImageSubmit>
+  /** 查询任务状态；图片任务与视频任务的查询端点可能不同。 */
+  query(taskId: string, opts: HttpOpts): Promise<TaskQueryResult>
+  /** 凭幂等键找回原任务；未找到返回 undefined（不抛错，由上层按策略决定）。 */
+  findByRequest(requestId: string, opts: HttpOpts): Promise<{ taskId: string } | undefined>
+}
+
 /** HTTP 请求选项子集，由工具层从 Config 解析后传入。 */
 export interface HttpOpts {
   apiKey: string
@@ -102,12 +136,18 @@ export function toRequestOpts(method: 'GET' | 'POST', url: string, headers: Reco
 
 /** 服务商适配器接口。 */
 export interface ProviderAdapter {
-  /** 提交文生图任务。 */
+  /** 提交文生图任务（同步语义：返回体即结果，或返回可轮询的异步任务句柄）。 */
   submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult>
   /** 提交文生视频任务（始终异步）。 */
   submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<SubmitResult>
   /** 查询异步任务状态。 */
   queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResult>
+  /**
+   * 异步图片网关能力（可选能力声明）。实现它的服务商才能接受 `imageTransport: async`：
+   * 提交即返回任务句柄、结果经 `query` 轮询、响应丢失时经 `findByRequest` 找回。
+   * 未实现时工具层按同步单次提交处理（仍然只提交一次、超时不重提）。
+   */
+  imageAsync?: ImageAsyncCapability
 }
 
 /** 从 "1024x1024" 格式解析宽高。 */

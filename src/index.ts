@@ -31,6 +31,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import { Config, peekProviderCredentials } from './config.ts'
 import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
+import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { TaskManager } from './task-manager.ts'
@@ -38,14 +39,41 @@ import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
 
 export { Config } from './config.ts'
-export type { Config as ConfigType, Provider, ProviderCredentials } from './config.ts'
+export type { Config as ConfigType, Provider, ProviderCredentials, WatermarkConfig, WatermarkPosition } from './config.ts'
+export { applyImageWatermark, buildWatermarkSvg, fitFontSize } from './watermark.ts'
+export type { WatermarkResult } from './watermark.ts'
 export { TaskManager } from './task-manager.ts'
-export { GenerationError } from './http-client.ts'
+export type { TaskQueryFn } from './task-manager.ts'
+export { GenerationError, isAsyncImageUnavailableError, isUnknownSubmitStateError, isModelNotAcceptedError } from './http-client.ts'
 export type { ErrorKind, RequestOptions, RequestResult } from './http-client.ts'
+export {
+  AsyncTransportUnavailableError,
+  DEFAULT_RECOVERY_BUDGET,
+  TRANSPORT_PROBE_TTL_MS,
+  canFallbackToNextProvider,
+  consumeSubmitBudget,
+  createImageTransaction,
+  reportTransaction,
+  resolveImageTransport,
+  runImageTransaction,
+  submitBudget,
+  unknownStateError,
+} from './image-transaction.ts'
+export type {
+  ImageTransaction,
+  ImageTransport,
+  RecoveryBudget,
+  TransactionReport,
+  TransactionStatus,
+  TransportProbeCache,
+  UnknownStatePolicy,
+} from './image-transaction.ts'
+export { formatPreflightNote, looksLikeVideoModel, resolveImagePreflight } from './image-preflight.ts'
+export type { ImagePreflight } from './image-preflight.ts'
 export { wanxAdapter } from './providers/wanx.ts'
 export { seedanceAdapter } from './providers/seedance.ts'
 export { threerouterAdapter } from './providers/threerouter.ts'
-export type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult } from './providers/types.ts'
+export type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, AsyncImageSubmit, ImageAsyncCapability } from './providers/types.ts'
 export { createGenerateImageTool } from './tools/generate-image.ts'
 export { createGenerateVideoTool } from './tools/generate-video.ts'
 export {
@@ -86,9 +114,15 @@ export const inject = ['tools']
  * @param config - 已由 Schemastery 填充默认值的插件配置。
  */
 export function apply(ctx: Context, config: Config): void {
+  // outputsDir 的**唯一解析点**：相对路径按进程 cwd 解析成绝对路径后，生成/下载/
+  // 水印后处理/只读媒体路由全部使用这一个结果。这样「图片到底写到了哪个目录」
+  // 有唯一答案，不会再出现模型结果在 A 目录、后处理结果在 B 目录的旁路产物。
+  const outputsDir = resolveOutputsDir(config.outputsDir)
+
   // 生效配置摘要（不含 key 明文）：把「哪个 profile/patch 生效、默认服务商与默认模型
-  // 究竟是什么、哪些服务商配了 key」一次性写进宿主日志，便于在 web/desktop 多 profile
-  // 场景定位配置来源，消除「用了哪个服务商/模型」只能靠推断的问题。
+  // 究竟是什么、图片提交走哪条传输、水印开没开、结果落到哪个绝对目录」一次性写进
+  // 宿主日志，便于在 web/desktop 多 profile 场景定位配置来源，消除「用了哪个服务商/
+  // 模型/目录」只能靠推断的问题。
   const keyState = (provider: Provider): string =>
     peekProviderCredentials(config, provider).apiKey.trim().length > 0 ? '已配置' : '未配置'
   ctx.logger.info(
@@ -97,8 +131,11 @@ export function apply(ctx: Context, config: Config): void {
     + ` defaultImageProvider=${config.defaultImageProvider || '(跟随激活服务商)'}`
     + ` defaultVideoModel=${config.defaultVideoModel || '(服务商内置默认)'}`
     + ` defaultImageModel=${config.defaultImageModel || '(服务商内置默认)'}`
-    + ` defaultVideoDuration=${config.defaultVideoDuration}`
-    + ` outputsDir=${config.outputsDir}`
+    + ` defaultImageSize=${config.defaultImageSize}`
+    + ` imageTransport=${config.imageTransport}`
+    + ` imageUnknownStatePolicy=${config.imageUnknownStatePolicy}`
+    + ` watermark=${config.watermark.enabled ? `${config.watermark.text}@${config.watermark.position}` : '关闭'}`
+    + ` outputsDir=${outputsDir}`
     + ` keys{threerouter=${keyState('threerouter')}, wanx=${keyState('wanx')}, minimax=${keyState('minimax')}, seedance=${keyState('seedance')}}`,
   )
 
@@ -118,11 +155,11 @@ export function apply(ctx: Context, config: Config): void {
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
-    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults }))
+    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir }))
   })
 
   // generate_video：不依赖 attachments，始终注册。
-  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults }))
+  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir }))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -130,7 +167,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['webServer'], (mediaCtx) => {
     const webServer = mediaCtx.get('webServer') as MediaWebServer | undefined
     if (!webServer) return
-    const disposeRoute = registerOutputsRoute(webServer, config.outputsDir)
+    const disposeRoute = registerOutputsRoute(webServer, outputsDir)
     // host 非 127.0.0.1 时不注册，无路由可注销
     if (disposeRoute) mediaCtx.effect(() => disposeRoute, 'dsh-image-video: outputs media route')
 

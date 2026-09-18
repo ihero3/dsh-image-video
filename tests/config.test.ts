@@ -17,6 +17,39 @@ describe('Config Schema', () => {
     expect(cfg.seedance.apiKey).toBe('')
   })
 
+  it('生图传输与水印的新增字段：默认值符合「保守 + 品牌水印开启」', () => {
+    const cfg = Config({})
+    // auto：优先异步（幂等 + 超时找回），端点不可用时自动降级同步，不阻断出图
+    expect(cfg.imageTransport).toBe('auto')
+    // fail：提交状态未知时默认不自动重提（最保守，绝不重复扣费）
+    expect(cfg.imageUnknownStatePolicy).toBe('fail')
+    expect(cfg.watermark).toEqual({
+      enabled: true,
+      text: 'Threerouter',
+      opacity: 0.68,
+      position: 'bottom-right',
+      fontSizeRatio: 0.032,
+      marginXRatio: 0.028,
+      marginYRatio: 0.012,
+      glowEnabled: true,
+      glowColor: '#ffffff',
+      glowBlurRatio: 0.18,
+    })
+  })
+
+  it('新增字段的取值域校验：非法传输/策略/水印位置一律报错', () => {
+    expect(Config({ imageTransport: 'async' }).imageTransport).toBe('async')
+    expect(Config({ imageTransport: 'sync' }).imageTransport).toBe('sync')
+    expect(() => Config({ imageTransport: 'turbo' })).toThrow()
+    expect(Config({ imageUnknownStatePolicy: 'resubmit-same-key' }).imageUnknownStatePolicy).toBe('resubmit-same-key')
+    expect(() => Config({ imageUnknownStatePolicy: 'retry' })).toThrow()
+    expect(Config({ watermark: { position: 'top-left' } }).watermark.position).toBe('top-left')
+    expect(Config({ watermark: { position: 'top-left' } }).watermark.text).toBe('Threerouter')
+    expect(() => Config({ watermark: { position: 'center' } })).toThrow()
+    expect(() => Config({ watermark: { opacity: 1.5 } })).toThrow()
+    expect(Config({ watermark: { enabled: false } }).watermark.enabled).toBe(false)
+  })
+
   it('provider 接受四家服务商，非法值报错', () => {
     expect(() => Config({ provider: 'threerouter' })).not.toThrow()
     expect(() => Config({ provider: 'wanx' })).not.toThrow()

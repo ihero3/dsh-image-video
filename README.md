@@ -6,6 +6,8 @@
 
 ## 核心特性
 
+- **图片单次提交与幂等找回** — `imageTransport: auto` 优先使用异步任务；提交超时/5xx 时只按 `request_id` 反查原任务，默认不盲目重提、不换模型、不生成候选，异步端点未启用时安全降级同步单次提交
+- **统一品牌水印后处理** — 图片在写入 `outputsDir` 和附件前以内存方式叠加可配置水印，桌面交互流直接展示最终水印图，并透出传输方式、提交次数与后处理元数据
 - **两个工具，自然语言触发** — 模型在对话中自主决策何时调用 `generate_image` / `generate_video`，无需手动指令
 - **四家服务商 + 按模型家族自动路由** — Threerouter（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threerouter 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
@@ -91,6 +93,19 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
     pollTimeoutMs: 300000
     retryTimes: 3
     outputsDir: './outputs'
+    imageTransport: auto              # auto | async（强制） | sync（强制同步）
+    imageUnknownStatePolicy: fail     # fail（默认）| resubmit-same-key
+    watermark:
+      enabled: true
+      text: 'Threerouter'
+      position: bottom-right
+      opacity: 0.68
+      fontSizeRatio: 0.032
+      marginXRatio: 0.028
+      marginYRatio: 0.012
+      glowEnabled: true
+      glowColor: '#ffffff'
+      glowBlurRatio: 0.18
 ```
 
 凭证建议通过环境变量注入（`!!js process.env.XXX`），不要明文写入配置文件。DSH 凭证系统支持 `~/.dsh/.credentials.yaml` 和 `~/.dsh/.env` 两种来源。
@@ -205,6 +220,16 @@ dsh-image-video/
 | `pollTimeoutMs` | `number` | `300000` | 视频任务整体超时（毫秒），超时中止轮询 |
 | `retryTimes` | `number` | `3` | 可重试错误的最大重试次数（鉴权/配额错误不重试） |
 | `outputsDir` | `string` | `'./outputs'` | 生成媒体落地目录（相对路径基于进程 cwd） |
+| `imageTransport` | `'auto' \| 'async' \| 'sync'` | `'auto'` | 图片传输；auto 优先异步，异步端点未启用时降级同步 |
+| `imageUnknownStatePolicy` | `'fail' \| 'resubmit-same-key'` | `'fail'` | 提交超时/5xx 状态未知时的策略；默认只反查、不重提 |
+| `watermark.enabled` | `boolean` | `true` | 是否在落盘/附件前叠加品牌水印 |
+| `watermark.text` | `string` | `'Threerouter'` | 水印文字；空文本跳过后处理并保留原图 |
+| `watermark.position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'` | `'bottom-right'` | 水印锚点 |
+| `watermark.opacity` | `number` | `0.68` | 水印透明度，0–1 |
+| `watermark.fontSizeRatio` | `number` | `0.032` | 字号相对图片宽度比例 |
+| `watermark.marginXRatio` / `marginYRatio` | `number` | `0.028` / `0.012` | 水平/垂直边距比例 |
+| `watermark.glowEnabled` | `boolean` | `true` | 是否启用柔光描边 |
+| `watermark.glowColor` / `glowBlurRatio` | `string` / `number` | `'#ffffff'` / `0.18` | 描边颜色与模糊半径比例 |
 
 ## 图片渲染设计
 
@@ -215,6 +240,8 @@ dsh-image-video/
 - **模型可见**：文本摘要（`render` 产物）
 - **UI 可见**：`meta` 中的图片附件信息（`presentationMeta` 产物）
 - 图片文件始终落地 `outputs/` 目录
+- 水印后处理发生在内存中、唯一写盘入口之前；因此 UI 读取 `localPath` 时看到的就是最终水印图
+- `presentationMeta` 同时透出 `transport`、`submitAttempts`、`postprocess`、`requestId`，桌面媒体卡片会展示传输方式、物理提交次数和后处理链路
 
 ## 服务依赖
 

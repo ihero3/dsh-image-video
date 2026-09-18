@@ -17,7 +17,36 @@ export interface ProviderCredentials {
   baseURL?: string
 }
 
-/** 插件配置：服务商选择、凭证、模型、生成默认值、轮询与重试策略。 */
+/** 水印位置（四角之一）。 */
+export type WatermarkPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+
+/**
+ * 品牌水印后处理配置。所有尺寸类参数都是**相对图片宽/高的比例**，
+ * 保证同一套配置对不同尺寸出图观感一致。
+ */
+export interface WatermarkConfig {
+  /** 是否对最终图片合成品牌水印（关闭时图片流程完全不受影响）。 */
+  enabled: boolean
+  /** 水印文字。 */
+  text: string
+  /** 主文字不透明度（0-1）。 */
+  opacity: number
+  /** 水印位置：四角之一。 */
+  position: WatermarkPosition
+  /** 字号占图片宽度的比例。 */
+  fontSizeRatio: number
+  /** 水平留白占图片宽度的比例。 */
+  marginXRatio: number
+  /** 垂直留白占图片高度的比例。 */
+  marginYRatio: number
+  /** 是否给水印加柔光（浅色底图上也看得见）。 */
+  glowEnabled: boolean
+  /** 柔光颜色。 */
+  glowColor: string
+  /** 柔光半径占字号的比例。 */
+  glowBlurRatio: number
+}
+
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
@@ -41,16 +70,31 @@ export interface Config {
   defaultImageSize: string
   /** 默认视频时长（秒），上限 30；具体模型能力由上游校验。 */
   defaultVideoDuration: number
+  /**
+   * 图片提交传输方式：
+   * - `auto`：优先异步网关（幂等 + 超时找回），服务商不支持或探测到不可用时降级同步；
+   * - `async`：强制异步，端点不可用即响亮失败（上线验收口径）；
+   * - `sync`：强制同步单次提交（无幂等，仅保证「不自动重提」）。
+   */
+  imageTransport: 'auto' | 'async' | 'sync'
+  /**
+   * 提交结果未知（超时/断连/5xx 且按幂等键反查无果）后的策略：
+   * - `fail`：不自动重提，响亮失败并回报 request_id（默认，最保守）；
+   * - `resubmit-same-key`：用同一个幂等键再提交一次（服务端按键去重，不会重复生成）。
+   */
+  imageUnknownStatePolicy: 'fail' | 'resubmit-same-key'
   /** 单次 HTTP 请求超时（毫秒）。 */
   timeoutMs: number
   /** 视频任务轮询间隔（毫秒）。 */
   pollIntervalMs: number
   /** 视频任务整体超时（毫秒），超时后中止轮询。 */
   pollTimeoutMs: number
-  /** 可重试错误的最大重试次数（鉴权失败等不可重试错误立即抛出）。 */
+  /** 可重试错误的最大重试次数（仅作用于幂等的读取类请求；生图提交永远不重试）。 */
   retryTimes: number
-  /** 生成媒体落地目录，相对路径基于进程 cwd 解析。 */
+  /** 生成媒体落地目录，相对路径基于进程 cwd 解析；插件启动时解析为绝对路径并打日志。 */
   outputsDir: string
+  /** 图片最终结果的品牌水印后处理。 */
+  watermark: WatermarkConfig
 }
 
 /** 服务商凭证 schema，复用于 threerouter/wanx/seedance。apiKey 可空（未激活的 provider 留空）。 */
@@ -72,11 +116,36 @@ export const Config: z<Config> = z.object({
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
   defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threerouter/方舟换算为宽x高）'),
   defaultVideoDuration: z.number().default(5).min(1).max(30).description('默认视频时长（秒），上限 30，由上游模型校验具体能力'),
+  imageTransport: z.union(['auto', 'async', 'sync']).default('auto').description('图片提交传输：auto 优先异步（幂等+超时找回）并按需降级，async 强制异步，sync 强制同步单次提交'),
+  imageUnknownStatePolicy: z.union(['fail', 'resubmit-same-key']).default('fail').description('提交状态未知时的策略：fail 不重提（默认），resubmit-same-key 用同一幂等键重提一次（服务端按键去重）'),
   timeoutMs: z.number().default(60_000).min(1_000).description('单次 HTTP 请求超时（毫秒）'),
   pollIntervalMs: z.number().default(5_000).min(1_000).description('视频任务轮询间隔（毫秒）'),
   pollTimeoutMs: z.number().default(600_000).min(10_000).description('视频任务整体超时（毫秒）'),
-  retryTimes: z.number().default(3).min(0).max(10).description('可重试错误的最大重试次数'),
-  outputsDir: z.string().default('./outputs').description('生成媒体落地目录'),
+  retryTimes: z.number().default(3).min(0).max(10).description('可重试错误的最大重试次数（仅读取类请求；生图提交永远不重试）'),
+  outputsDir: z.string().default('./outputs').description('生成媒体落地目录（插件唯一解析点，启动时打绝对路径日志）'),
+  watermark: z.object({
+    enabled: z.boolean().default(true).description('是否对最终图片合成品牌水印'),
+    text: z.string().default('Threerouter').description('水印文字'),
+    opacity: z.number().default(0.68).min(0).max(1).description('主文字不透明度'),
+    position: z.union(['bottom-right', 'bottom-left', 'top-right', 'top-left']).default('bottom-right').description('水印位置'),
+    fontSizeRatio: z.number().default(0.032).min(0.005).max(0.2).description('字号占图片宽度比例'),
+    marginXRatio: z.number().default(0.028).min(0).max(0.3).description('水平留白占比'),
+    marginYRatio: z.number().default(0.012).min(0).max(0.3).description('垂直留白占比'),
+    glowEnabled: z.boolean().default(true).description('是否加柔光'),
+    glowColor: z.string().default('#ffffff').description('柔光颜色'),
+    glowBlurRatio: z.number().default(0.18).min(0).max(1).description('柔光半径占字号比例'),
+  }).default({
+    enabled: true,
+    text: 'Threerouter',
+    opacity: 0.68,
+    position: 'bottom-right',
+    fontSizeRatio: 0.032,
+    marginXRatio: 0.028,
+    marginYRatio: 0.012,
+    glowEnabled: true,
+    glowColor: '#ffffff',
+    glowBlurRatio: 0.18,
+  }).description('图片最终结果的品牌水印后处理（内存内合成，只落盘最终图）'),
 })
 
 /**

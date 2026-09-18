@@ -20,11 +20,12 @@ const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
 const DEFAULT_IMAGE_TO_VIDEO_MODEL = 'wan2.2-i2v-plus'
 
 /** DashScope 请求头。 */
-function dashscopeHeaders(apiKey: string): Record<string, string> {
+function dashscopeHeaders(apiKey: string, requestId?: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`,
     'X-DashScope-Async': 'enable',
+    ...(requestId ? { 'Idempotency-Key': requestId, 'X-Request-Id': requestId } : {}),
   }
 }
 
@@ -50,7 +51,7 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
       model: effectiveModel,
       input: { function: 'description_edit', prompt: params.prompt, base_image_url: params.image },
     }
-    const data = await request(toRequestOpts('POST', editUrl, dashscopeHeaders(opts.apiKey), editBody, opts)) as WanxTaskResponse
+    const data = await request(toRequestOpts('POST', editUrl, dashscopeHeaders(opts.apiKey, params.requestId), editBody, opts)) as WanxTaskResponse
     const taskId = data?.output?.task_id
     if (!taskId) throw new Error('万象 图生图：未返回 task_id')
     return { taskId, async: true, mediaType: 'image', model: effectiveModel }
