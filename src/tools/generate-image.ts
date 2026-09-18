@@ -121,8 +121,30 @@ type CandidateAttempt =
   | { ok: false; error: unknown; tx: ImageTransaction }
 
 /**
+/**
+ * 从当前会话最后一条用户消息读取已持久化图片，并转为服务商可消费的 data URL。
+ * 粘贴图片进入对话后，输入框已经由宿主 attachment 服务持久化；这里不再要求用户
+ * 复制路径，也不扫描历史图片，严格只取本轮最新用户消息中的图片，顺序保持不变。
+ */
+async function resolveConversationImages(exec: ToolExecution, attachments: AttachmentStore): Promise<string[]> {
+  const messages = exec.agent?.session.deriveMessages() ?? []
+  const latest = [...messages].reverse().find((message) => message.role === 'user'
+    && message.content.some((block) => block.type === 'image'))
+  if (latest === undefined) return []
+  const refs = latest.content
+    .filter((block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image')
+    .map((block) => block.attachment)
+  const resolved: string[] = []
+  for (const ref of refs) {
+    const stored = await attachments.readImage(ref, exec.signal)
+    resolved.push(`data:${stored.ref.mediaType};base64,${Buffer.from(stored.data).toString('base64')}`)
+  }
+  return resolved
+}
+
+/**
  * 创建 generate_image 工具定义。
- * 工具参数：prompt（必填，找回模式除外）、image（可选参考图）、size、model、recoverRequestId。
+ * 工具参数：prompt（必填，找回模式除外）、image（单图）、images（多参考图）、size、model、recoverRequestId。
  */
 export function createGenerateImageTool(deps: GenerateImageDeps) {
   const { config, taskManager, attachments, ctx, runtimeDefaults, outputsDir } = deps
@@ -164,12 +186,13 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       model: string | undefined
       size: string
       imageReference: string | undefined
+      imageReferences: string[]
       prompt: string
       exec: ToolExecution
       notes: string[]
     },
   ): Promise<CandidateAttempt> => {
-    const { requestId, model, size, imageReference, prompt, exec, notes } = input
+    const { requestId, model, size, imageReference, imageReferences, prompt, exec, notes } = input
     const adapter = adapterFor(candidate)
     const creds = resolveProviderCredentials(config, candidate)
     const httpOpts: HttpOpts = {
@@ -190,7 +213,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       provider: candidate,
       model,
       size,
-      hasReferenceImage: imageReference !== undefined,
+      hasReferenceImage: imageReference !== undefined || imageReferences.length > 0,
       transport: configuredTransport,
       adapterSupportsAsync: adapter.imageAsync !== undefined,
       config,
@@ -202,7 +225,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       size,
       model,
       requestId,
-      ...(imageReference === undefined ? {} : { image: imageReference }),
+      ...(imageReferences.length > 0 ? { images: imageReferences } : imageReference === undefined ? {} : { image: imageReference }),
     }
     const run = async (transport: 'async' | 'sync', tx: ImageTransaction) =>
       await runImageTransaction({
@@ -285,7 +308,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       + '需要多个版本时请分别发起多次调用。'
       + '生成结果经品牌水印后处理（可配置）后保存到客户端统一 outputs 目录（对话内附最终图片附件）。'
       + '不要自行编写脚本、不要直接调用服务商 API、不要把结果写到 outputs 之外。'
-      + '参数：prompt（提示词，必填；仅找回模式可省略）、image（参考图本地路径/URL，可选，传入即图生图）、'
+      + '参数：prompt（提示词，必填；仅找回模式可省略）、image（单张参考图本地路径/URL，可选）; images（多参考图数组，直接粘贴到对话的图片会自动作为参考图，首图为底图，其余为脸部/风格参考）、'
       + 'size（尺寸或比例，可选，默认 3:4；qwen/wan 系自动换算为宽*高）、'
       + 'model（模型名，可选，留空用配置 defaultImageModel 或服务商内置默认模型）、'
       + 'recoverRequestId（可选：凭上一次调用的 request_id 找回结果，不产生新的生成请求）。',
@@ -297,7 +320,12 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       },
       image: {
         type: 'string',
-        description: '可选参考图（本地文件路径或 http(s) URL）。传入即走图生图：结合提示词编辑或保留主体生成新图。',
+        description: '单张参考图（本地文件路径或 http(s) URL）。',
+      },
+      images: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '多张参考图路径/URL；首图为底图，其余按顺序作为编辑、脸部或风格参考。若省略，自动读取本轮对话中粘贴的图片。',
       },
       size: {
         type: 'string',
@@ -415,6 +443,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const typedArgs = args as {
         prompt?: string
         image?: string
+        images?: string[]
         size?: string
         model?: string
         recoverRequestId?: string
@@ -436,10 +465,18 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const prompt = applyImageStyle(rawPrompt, runtime.imageStyle)
 
       // 参考图解析：本地路径 → data URL，URL/data URL 原样透传（图生图入参）
-      const imageReference = typedArgs.image ? await resolveImageReference(typedArgs.image) : undefined
+      const conversationReferences = await resolveConversationImages(exec, attachments)
+       const explicitReferences = Array.isArray(typedArgs.images)
+         ? await Promise.all(typedArgs.images.filter((value): value is string => typeof value === 'string' && value.trim() !== '').map(resolveImageReference))
+         : []
+       const resolvedReferences = explicitReferences.length > 0 ? explicitReferences : conversationReferences
+       const imageReference = typedArgs.image
+         ? await resolveImageReference(typedArgs.image)
+         : undefined
 
       // 模型取值链：调用参数 model > 配置 defaultImageModel > adapter 内置默认
-      const model = typedArgs.model || config.defaultImageModel || undefined
+      const imageReferences = imageReference !== undefined ? [imageReference] : resolvedReferences
+       const model = typedArgs.model || config.defaultImageModel || undefined
       const size = typedArgs.size ?? runtime.imageSize ?? config.defaultImageSize
 
       // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
@@ -470,6 +507,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           model,
           size,
           imageReference,
+          imageReferences,
           prompt,
           exec,
           notes,

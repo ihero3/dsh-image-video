@@ -23,6 +23,12 @@ export interface ImageGenParams {
    * MiniMax 主体一致性（保留主体换场景）。
    */
   image?: string
+  /**
+   * 多参考图（按调用方顺序）：首图通常是底图，其余图片是编辑/身份参考。
+   * threerouter 适配器会以 `image_urls` 发给服务端；不支持多图的直连适配器
+   * 至少使用第一张图，保持旧版单图协议兼容。
+   */
+  images?: string[]
 }
 
 /** 视频生成请求参数（文生视频，带 image 时为首帧驱动的图生视频）。 */

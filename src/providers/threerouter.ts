@@ -69,7 +69,9 @@ function imageRequestBody(params: ImageGenParams, effectiveModel: string): Recor
     prompt: params.prompt,
     n: 1,
     response_format: 'url',
-    ...(params.image ? { image: params.image } : {}),
+    ...(params.images !== undefined && params.images.length > 0
+      ? { image: params.images[0], image_urls: params.images }
+      : params.image ? { image: params.image } : {}),
     ...(params.size
       ? { size: isAliNativeImageModel(effectiveModel) ? aliImageSize(params.size) : normalizeImageSize(params.size) }
       : {}),

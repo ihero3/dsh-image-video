@@ -82,6 +82,22 @@ describe('异步提交：POST /images/generations/async', () => {
     expect(accepted.model).toBe('qwen-image-3.0')
   })
 
+  it('多参考图：首图走 image，完整顺序走 image_urls', async () => {
+    const calls = stubFetch(json({ task_id: 'imgtask_multi', status: 'processing' }, 202))
+    await threerouterAdapter.imageAsync!.submit({
+      prompt: '只替换脸部，保持底图构图、服装和背景不变',
+      size: '1024*1024',
+      model: 'qwen-image-3.0-pro',
+      images: ['data:image/jpeg;base64,BASE', 'data:image/jpeg;base64,FACE'],
+      requestId: 'req-multi',
+    }, opts)
+    expect(calls[0]?.body.image).toBe('data:image/jpeg;base64,BASE')
+    expect(calls[0]?.body.image_urls).toEqual([
+      'data:image/jpeg;base64,BASE',
+      'data:image/jpeg;base64,FACE',
+    ])
+  })
+
   it('X-Idempotency-Replayed → 标记回放（本次没有新建任务）', async () => {
     stubFetch(json({ task_id: 'imgtask_old', status: 'processing' }, 202, { 'x-idempotency-replayed': 'true' }))
     const accepted = await threerouterAdapter.imageAsync!.submit(params, opts)
