@@ -193,7 +193,7 @@ export const VIDEO_MODEL_DEFAULT_RESOLUTION: Readonly<Record<string, string>> = 
  * media 存在且未显式指定模型时自动选择首项；当前只有 wan3.0-video。
  * 后续新增模型（如 seedance 多帧支持）直接追加即可。
  */
-export const MULTI_FRAME_CAPABLE_MODELS: ReadonlyArray<string> = ['wan3.0-video']
+export const MULTI_FRAME_CAPABLE_MODELS: ReadonlyArray<string> = ['MiniMax-H3', 'minimax-h3', 'wan3.0-video']
 
 /**
  * 构建候选服务商序列（工具层按序尝试提交，回退语义见工具实现）：
@@ -213,6 +213,11 @@ export function resolveModelCandidates(
   configChain: Provider | undefined,
   hasKey: (provider: Provider) => boolean,
 ): Provider[] {
+  // 视频生成在本项目中固定走 ThreeRouter（用户明确要求，禁止 OpenArt 及
+  // 其他直连服务商回退）。图片生成仍保留原有家族候选逻辑。
+  if (kind === 'video') {
+    return hasKey('threerouter') ? ['threerouter'] : []
+  }
   const candidates: Provider[] = []
   const push = (provider: Provider): void => {
     if (!candidates.includes(provider) && hasKey(provider)) candidates.push(provider)

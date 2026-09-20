@@ -79,20 +79,18 @@ describe('模型家族候选构建（resolveModelCandidates）', () => {
   /** 仅指定服务商有 key。 */
   const keysOf = (...providers: Provider[]): ((p: Provider) => boolean) => (p) => providers.includes(p)
 
-  it('配置链优先，家族直连商次之，threerouter 永远兜底', () => {
-    // minimax-h3：配置链 threerouter 已是第一候选，家族候选去重后追加 minimax 直连
-    expect(resolveModelCandidates('video', 'minimax-h3', 'threerouter', allKeys)).toEqual(['threerouter', 'minimax'])
-    // wan2.7-t2v：配置链 threerouter → [threerouter, wanx]（wan 家族：wanx 直连在前已去重聚合器）
-    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'threerouter', allKeys)).toEqual(['threerouter', 'wanx'])
-    // 配置链是 wanx 时：wan 家族候选补上聚合器兜底
-    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'wanx', allKeys)).toEqual(['wanx', 'threerouter'])
-    // 配置链是 minimax、点 doubao 模型：先 minimax（配置链），再 seedance 直连，最后聚合器
-    expect(resolveModelCandidates('video', 'doubao-seedance-1-0-pro-250428', 'minimax', allKeys))
-      .toEqual(['minimax', 'seedance', 'threerouter'])
+  it('视频固定只走 threerouter，配置链与家族直连商都不参与', () => {
+    // 项目约定：视频生成强制 ThreeRouter，禁止 OpenArt 及其他直连服务商回退。
+    expect(resolveModelCandidates('video', 'minimax-h3', 'threerouter', allKeys)).toEqual(['threerouter'])
+    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'threerouter', allKeys)).toEqual(['threerouter'])
+    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'wanx', allKeys)).toEqual(['threerouter'])
+    expect(resolveModelCandidates('video', 'doubao-seedance-1-0-pro-250428', 'minimax', allKeys)).toEqual(['threerouter'])
+    // 图片仍保留家族候选逻辑，不受视频锁定影响。
+    expect(resolveModelCandidates('image', 'minimax-image-01', 'wanx', allKeys)).toEqual(['wanx', 'minimax', 'threerouter'])
   })
 
   it('wan 关键词一条规则覆盖 wan* 与 wanx*', () => {
-    expect(resolveModelCandidates('video', 'wanx2.1-t2v-turbo', 'threerouter', allKeys)).toEqual(['threerouter', 'wanx'])
+    expect(resolveModelCandidates('video', 'wanx2.1-t2v-turbo', 'threerouter', allKeys)).toEqual(['threerouter'])
     expect(resolveModelCandidates('image', 'wanx2.1-t2i-turbo', 'threerouter', allKeys)).toEqual(['threerouter', 'wanx'])
     expect(resolveModelCandidates('image', 'wan2.1-image', 'threerouter', allKeys)).toEqual(['threerouter', 'wanx'])
   })
@@ -101,7 +99,7 @@ describe('模型家族候选构建（resolveModelCandidates）', () => {
     // 家族路由按模型名关键词（minimax/hailuo）命中；threerouter 的 minimax 图模型名含 "minimax"
     expect(resolveModelCandidates('image', 'minimax-image-01', 'threerouter', allKeys)).toEqual(['threerouter', 'minimax'])
     expect(resolveModelCandidates('image', 'minimax-image-01', 'wanx', allKeys)).toEqual(['wanx', 'minimax', 'threerouter'])
-    expect(resolveModelCandidates('video', 'MiniMax-Hailuo-02', 'wanx', allKeys)).toEqual(['wanx', 'minimax', 'threerouter'])
+    expect(resolveModelCandidates('video', 'MiniMax-Hailuo-02', 'wanx', allKeys)).toEqual(['threerouter'])
     // minimax 官方原生模型名 "image-01" 不含家族关键词 → 仅配置链 + 兜底（如实反映，不硬编码特例）
     expect(resolveModelCandidates('image', 'image-01', 'wanx', allKeys)).toEqual(['wanx', 'threerouter'])
   })
@@ -109,18 +107,18 @@ describe('模型家族候选构建（resolveModelCandidates）', () => {
   it('未配置 key 的候选自动跳过', () => {
     // 只有 threerouter 有 key：minimax 模型的家族直连商（无 key）被过滤
     expect(resolveModelCandidates('video', 'minimax-h3', 'threerouter', keysOf('threerouter'))).toEqual(['threerouter'])
-    // 只有 wanx 有 key：wan 模型 → [wanx]，threerouter（无 key）不出现在候选里
-    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'wanx', keysOf('wanx'))).toEqual(['wanx'])
+    // 视频锁定 threerouter：即使只有 wanx 有 key，也没有可用的视频候选
+    expect(resolveModelCandidates('video', 'wan2.7-t2v', 'wanx', keysOf('wanx'))).toEqual([])
   })
 
   it('自定义模型无家族命中：仅配置链 + 聚合器兜底', () => {
-    expect(resolveModelCandidates('video', 'gpt-video-9', 'wanx', allKeys)).toEqual(['wanx', 'threerouter'])
+    expect(resolveModelCandidates('video', 'gpt-video-9', 'wanx', allKeys)).toEqual(['threerouter'])
     expect(resolveModelCandidates('image', 'my-custom-model', 'threerouter', allKeys)).toEqual(['threerouter'])
   })
 
   it('未显式指定模型：仅配置链 + 聚合器兜底', () => {
     expect(resolveModelCandidates('video', undefined, 'threerouter', allKeys)).toEqual(['threerouter'])
-    expect(resolveModelCandidates('video', undefined, 'wanx', allKeys)).toEqual(['wanx', 'threerouter'])
+    expect(resolveModelCandidates('video', undefined, 'wanx', allKeys)).toEqual(['threerouter'])
     expect(resolveModelCandidates('video', undefined, undefined, allKeys)).toEqual(['threerouter'])
   })
 
@@ -216,9 +214,9 @@ describe('POST 协议校验', () => {
     expect(IMAGE_SIZE_OPTIONS.map((o) => o.size)).toEqual(['1024*1024', '1152*864', '1152*1536', '1280*720', '720*1280'])
   })
 
-  it('MULTI_FRAME_CAPABLE_MODELS 首项为 wan3.0-video', () => {
-    expect(MULTI_FRAME_CAPABLE_MODELS[0]).toBe('wan3.0-video')
-    expect(MULTI_FRAME_CAPABLE_MODELS.length).toBeGreaterThanOrEqual(1)
+  it('MULTI_FRAME_CAPABLE_MODELS 首项为 MiniMax-H3，且仍包含 wan3.0-video', () => {
+    expect(MULTI_FRAME_CAPABLE_MODELS[0]).toBe('MiniMax-H3')
+    expect(MULTI_FRAME_CAPABLE_MODELS).toContain('wan3.0-video')
   })
 
   it('imageStyle 仅接受白名单风格', () => {

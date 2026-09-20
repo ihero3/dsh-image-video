@@ -52,15 +52,15 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
     description:
       '根据文本提示词生成短视频；传入 image（首帧图片）时为图生视频，让图片动起来。'
       + '服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
-      + '显式指定模型时按模型家族自动路由（minimax/hailuo→MiniMax 官方直连，wan/wanx→百炼直连，doubao/seedance/seedream→火山方舟），'
-      + '候选仅在「模型不被该服务商接受」的提交错误时按序回退，threerouter 永远兜底，回退过程在结果 notes 透明注明。'
+      + '视频生成固定通过 ThreeRouter 提交（项目约定，禁止切换到 OpenArt 或其他直连服务商），'
+      + '不使用任何其他服务商回退。'
       + '模型取值：调用参数 model > 配置 defaultVideoModel > 多关键帧自动路由 > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；具体模型能力由上游校验，wan 系模型不支持自定义时长时会在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
       + '参数：prompt（提示词，必填）、duration（时长秒数，1-30，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
       + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略）、image（首帧图片：本地路径/URL，可选，单图时用）、'
-      + 'media（多关键帧序列：数组，每项含 image 路径/URL 和 position 时间点如 "0s""1s"；适用于 wan3.0-video、此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
+      + 'media（参考素材序列：数组，每项含 image 路径/URL 和 position 时间点如 "0s""1s"；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
 
     parameters: {
       prompt: {
@@ -86,7 +86,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       media: {
         type: 'array',
-        description: '多关键帧序列（wan3.0-video 专属）：每项为 {image, position}，适配器会转换为服务端要求的 type/url。存在时 image 字段忽略。',
+        description: '参考素材序列（MiniMax-H3 / wan3.0-video）：每项为 {image, position}，适配器会转换为服务端要求的 type/url。存在时 image 字段忽略。',
         items: {
           type: 'object',
           additionalProperties: false,
