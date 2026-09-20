@@ -128,12 +128,12 @@ type CandidateAttempt =
  */
 async function resolveConversationImages(exec: ToolExecution, attachments: AttachmentStore): Promise<string[]> {
   const messages = exec.agent?.session.deriveMessages() ?? []
-  const latest = [...messages].reverse().find((message) => message.role === 'user'
-    && message.content.some((block) => block.type === 'image'))
+  const latest = [...messages].reverse().find((message) => message.role === 'user')
   if (latest === undefined) return []
   const refs = latest.content
     .filter((block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image')
     .map((block) => block.attachment)
+  if (refs.length === 0) return []
   const resolved: string[] = []
   for (const ref of refs) {
     const stored = await attachments.readImage(ref, exec.signal)
