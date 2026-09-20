@@ -66,6 +66,8 @@
 dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 ```
 
+> 构建产物 `lib/` 已随仓库提交，安装过程不执行任何构建脚本，无需 pnpm 的 `allowBuilds` 授权。
+
 ### 2. 配置 API Key
 
 在 profile 的 `cordis.patch.yml` 中覆盖默认配置（`~/.dsh/profiles/<profile>/cordis.patch.yml`）：
@@ -173,10 +175,11 @@ dsh --profile <profile>
 
 ```
 dsh-image-video/
-├── package.json              # 依赖定义 + dsh.bundle manifest + prepare 脚本
+├── package.json              # 依赖定义 + dsh.bundle manifest + build/prepublishOnly 脚本
 ├── cordis.patch.yml          # bundle 层插件清单（image-video 行 + 默认 config）
+├── lib/                      # 构建产物，随仓库提交（安装方无需构建）
 ├── tsconfig.json             # TypeScript 配置
-├── tsdown.config.ts          # 构建配置（prepare 脚本调用）
+├── tsdown.config.ts          # 构建配置（build 脚本调用）
 ├── README.md
 └── src/
     ├── index.ts              # 主入口：name / inject / Config / apply
@@ -314,7 +317,7 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 |---|---|
 | `pnpm run test` 报 lockfile out of date | 重跑 `pnpm install --ignore-workspace --no-frozen-lockfile` |
 | vitest 里 fetch 真实发网请求 | 用 `vi.stubGlobal('fetch', ...)`，`afterEach` 调 `vi.unstubAllGlobals()` |
-| DSH 启动报 `cannot find module dsh-image-video` | 先在插件目录跑 `pnpm run build`，再 `dsh plugin add` |
+| DSH 启动报 `cannot find module dsh-image-video` | 若用 `link:` 本地路径安装，改过 `src/` 后需跑 `pnpm run build` 让 `lib/` 与源码同步；从 git/npm 安装无需构建，产物已随包提交 |
 | 生成图片但对话无内嵌渲染 | 确认 profile 包含 `attachment-local`；图片文件始终可在 `outputs/` 查看 |
 | `size is not in the correct format` | 百炼接口要求 `*` 分隔（如 `1024*1024`），不是 `x`；插件已自动转换 |
 

@@ -20,6 +20,8 @@ pnpm exec tsc --noEmit   # 类型检查（提交前必跑）
 pnpm run build        # 构建到 lib/
 ```
 
+> **`lib/` 是提交进仓库的构建产物。**消费方以 git/npm 安装时不执行任何构建脚本（因此不会被 pnpm 的 allowBuilds 拦截），直接使用仓库中的 `lib/index.js`。改了 `src/` 就必须重新 `pnpm run build` 并把 `lib/index.js`、`lib/index.d.ts` 一起提交，否则仓库里的产物会与源码不一致。
+
 ## 代码规范
 
 - TypeScript `strict: true` + `noImplicitAny` + `noUnusedLocals/Parameters`

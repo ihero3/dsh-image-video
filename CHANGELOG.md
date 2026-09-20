@@ -2,6 +2,14 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.1] - 2026-09-20
+
+### 变更
+- **构建产物随仓库提交**：`lib/index.js` 与 `lib/index.d.ts` 入库（`.gitignore` 移除 `lib/`），移除 `prepare` 脚本（保留 `build`，新增 `prepublishOnly`）。此前以 git 安装会因 pnpm 的 `allowBuilds` 拦截 `prepare` 而报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，需手动"允许并重试"；现在 `dsh plugin add github:ihero3/dsh-image-video` 一次装好
+- **peerDependencies 改为 `*` 且标记 `optional`**：此前的 `^0.1.1-rc.2` 按 semver 预发布规则不匹配 harness 的 `0.1.6-alpha.2`；而 `optional: false` 会让 pnpm 到 registry 自动拉取 peer 链（实测因 `@deepseek-ai/dsh-type-meta` 未发布而 404，或在可解析时装出第二份 `dsh-tools`/`cordis` 与宿主并存）
+- 类型声明路径由不存在的 `lib/types/index.d.ts` 修正为实际产物 `lib/index.d.ts`（`types` / `exports.types` / `files` 三处）；`tsdown.config.ts` 固定 dts 文件名，避免内容哈希导致路径漂移
+- 文档同步：说明 `lib/` 已随仓库提交、消费方无需构建；`CONTRIBUTING` 增加"改 `src/` 后必须重新构建并提交 `lib/`"的约定
+
 ## [0.3.0] - 2026-08-21
 
 ### 变更
