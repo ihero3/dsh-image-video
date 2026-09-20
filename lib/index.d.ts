@@ -1,8 +1,5 @@
 import z from "@deepseek-ai/schemastery";
-import * as _deepseek_ai_dsh_tools0 from "@deepseek-ai/dsh-tools";
-import { Context } from "@deepseek-ai/cordis";
-import { AttachmentStore } from "@deepseek-ai/dsh-attachment";
-import * as node_http0 from "node:http";
+import { Context, Service } from "@deepseek-ai/cordis";
 import { IncomingMessage, ServerResponse } from "node:http";
 
 //#region src/config.d.ts
@@ -94,10 +91,6 @@ interface Config {
 }
 /** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
 declare const Config: z<Config>;
-/**
- * 读取指定服务商的凭证，不校验 key 非空。供候选服务商构建时的 key 过滤
- * （resolveModelCandidates 用它跳过未配置 key 的候选），不抛错。
- */
 //#endregion
 //#region src/watermark.d.ts
 /** 水印处理结果。 */
@@ -163,27 +156,18 @@ declare class GenerationError extends Error {
   readonly code?: string;
   constructor(kind: ErrorKind, message: string, retryable: boolean, status?: number, retryAfterMs?: number, code?: string);
 }
-/** 服务端错误码：幂等键对应的首次提交仍在进行中（GateWay 异步图片契约）。 */
-
 /**
  * 判定错误是否为「异步图片端点在本环境不可用」：功能未开启（未配对象存储）或
  * 该分组平台不支持 Images API。两者都在创建任务前返回 404，因此降级到同步
  * 单次提交不会产生重复生成。
  */
 declare function isAsyncImageUnavailableError(err: unknown): boolean;
-/** 判定错误是否为「同一幂等键首次提交仍在进行中」：任务已存在，应凭 request_id 找回而非重提。 */
-
 /**
  * 判定错误是否为「提交状态未知」——客户端无法确认请求是否已在服务端创建任务。
  * 超时、连接中断、502/503 都属于此类：**绝不允许自动重提或换模型**，只能凭
  * request_id 反查（见 image-transaction.ts）。
  */
 declare function isUnknownSubmitStateError(err: unknown): boolean;
-/**
- * 判定错误是否为「调用方主动取消」。取消同样可能发生在请求已抵达服务端之后，
- * 因此不视为「未提交」——只是不再做任何自动动作（找回/重提都不做）。
- */
-
 /**
  * 判定错误是否为「模型不被该服务商接受」类，供工具层在候选服务商间回退。
  * 实测形态（2026-09）：
@@ -222,14 +206,6 @@ interface RequestResult {
   data: unknown;
   headers: Headers;
 }
-/**
- * 分类 HTTP 响应错误，生成友好中文提示。
- * 内部实现，不在 execute 外部直接调用。通过 `classifyErrorForTest` 导出用于单元测试。
- */
-/**
- * 解析 Retry-After 响应头为毫秒（支持秒数与 HTTP 日期两种形态），上限 180s。
- * 导出供适配器读取 202/409 上的服务端建议轮询间隔。
- */
 //#endregion
 //#region src/providers/types.d.ts
 /** 图片生成请求参数（不传 image 为文生图，传入 image 为图生图/参考图编辑）。 */
@@ -360,8 +336,6 @@ interface HttpOpts {
   retryTimes: number;
   signal?: AbortSignal;
 }
-/** 将 HttpOpts 转换为 RequestOptions。 */
-
 /** 服务商适配器接口。 */
 interface ProviderAdapter {
   /** 提交文生图任务（同步语义：返回体即结果，或返回可轮询的异步任务句柄）。 */
@@ -377,7 +351,6 @@ interface ProviderAdapter {
    */
   imageAsync?: ImageAsyncCapability;
 }
-/** 从 "1024x1024" 格式解析宽高。 */
 //#endregion
 //#region src/task-manager.d.ts
 /** 轮询完成结果。 */
@@ -437,13 +410,7 @@ type ImageTransport = 'async' | 'sync';
  */
 type UnknownStatePolicy = 'fail' | 'resubmit-same-key';
 /** 事务状态机取值。 */
-type TransactionStatus = /** 已创建，尚未提交。 */
-'idle'
-/** 提交请求已发出。 */ | 'submitting'
-/** 服务端已接受任务（有 taskId）。 */ | 'accepted'
-/** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */ | 'unknown'
-/** 成功拿到结果。 */ | 'succeeded'
-/** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */ | 'failed';
+type TransactionStatus = /** 已创建，尚未提交。 */'idle' /** 提交请求已发出。 */ | 'submitting' /** 服务端已接受任务（有 taskId）。 */ | 'accepted' /** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */ | 'unknown' /** 成功拿到结果。 */ | 'succeeded' /** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */ | 'failed';
 /**
  * 事务账本：一次 `generate_image` 调用对应一个实例，记录提交/找回/结果的
  * 全部事实，作为结果元数据回给用户（「本次到底提交了几次」必须可核对）。
@@ -578,8 +545,6 @@ declare function runImageTransaction(deps: RunImageTransactionDeps): Promise<Run
 declare class AsyncTransportUnavailableError extends GenerationError {
   constructor(detail: string);
 }
-/** 异步端点不可用的错误码（工具层据此决定降级）。 */
-
 /** 传输能力探测缓存：避免每次调用都为一个已知不可用的端点付一次 404 往返。 */
 interface TransportProbeCache {
   /** 已知不可用状态持续到该时间点（毫秒时间戳）。 */
@@ -652,19 +617,197 @@ declare function formatPreflightNote(preflight: ImagePreflight): string;
 //#region src/providers/wanx.d.ts
 /** 万象适配器实例。 */
 declare const wanxAdapter: ProviderAdapter;
-/** 从配置解析万象 HttpOpts（已由 config.resolveActiveProvider 解析凭证）。 */
 //#endregion
 //#region src/providers/seedance.d.ts
 /** Seedance 适配器实例。 */
 declare const seedanceAdapter: ProviderAdapter;
-/** 复用 downloadMedia。 */
-
 //#endregion
 //#region src/providers/threerouter.d.ts
 /** Threerouter 适配器实例：统一入口同时支持文生图与文生视频。 */
 declare const threerouterAdapter: ProviderAdapter;
-/** 复用 downloadMedia。 */
-
+//#endregion
+//#region ../node_modules/@deepseek-ai/dsh-brand/lib/types/index.d.ts
+/**
+ * The `Branded<B>` nominal-typing primitive — a type-only utility (no runtime
+ * code, no harness-package dependency) shared by every package that owns a
+ * cross-boundary id.
+ *
+ * A brand makes structurally-identical strings non-interchangeable at the type
+ * level: a `SessionId` cannot be passed where a `CallId` is expected, even
+ * though both are plain strings at runtime. Construction goes through a per-id
+ * factory in the OWNING package (a plain cast inside — zero runtime cost);
+ * comparison, logging, and serialization all behave as ordinary strings.
+ *
+ * Policy: a package brands the ids it owns — `CallId` in dsh-llm (tool-call
+ * correlation), the shared agent/session `SessionId` in dsh-session, and
+ * `JobId` in dsh-jobs. Branding is for ids that cross package boundaries and
+ * could plausibly be confused; not every string needs a brand.
+ * This package owns ONLY the primitive — no concrete id, no runtime code beyond
+ * the (erased) type — so the brand vocabulary stays dependency-free and a
+ * package can brand its ids without depending on an unrelated capability
+ * package.
+ *
+ * @module @deepseek-ai/dsh-brand
+ */
+declare const BRAND: unique symbol;
+/** A string carrying a compile-time-only brand `B`. */
+type Branded<B extends string> = string & {
+  readonly [BRAND]: B;
+};
+//#endregion
+//#region ../node_modules/@deepseek-ai/dsh-attachment/lib/types/brand.d.ts
+/** Opaque content-addressed identifier for one immutable attachment object. */
+type AttachmentId = Branded<'AttachmentId'>;
+/**
+ * Brand a validated storage identifier.
+ * @param value - backend-produced opaque identifier.
+ * @returns the branded identifier.
+ */
+declare function AttachmentId(value: string): AttachmentId;
+/** Opaque deterministic identity for one request-image transformation. */
+type ImageVariantId = Branded<'ImageVariantId'>;
+/**
+ * Brand a validated request-image transformation identifier.
+ * @param value - attachment-provider-produced opaque identifier.
+ * @returns the branded identifier.
+ */
+declare function ImageVariantId(value: string): ImageVariantId;
+//#endregion
+//#region ../node_modules/@deepseek-ai/dsh-attachment/lib/types/types.d.ts
+/** Raster image formats accepted by the version-one attachment path. */
+type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+/** Durable, serializable reference to one immutable normalized image. */
+interface ImageAttachmentRef {
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId;
+  /** Media type verified from the stored bytes. */
+  mediaType: ImageMediaType;
+  /** Exact encoded byte length. */
+  bytes: number;
+  /** Intrinsic encoded width in pixels. */
+  width: number;
+  /** Intrinsic encoded height in pixels. */
+  height: number;
+  /** Optional display name stripped of local path information. */
+  name?: string;
+  /**
+   * Input dimensions after applying EXIF orientation and before normalization
+   * scaling. Present only when normalization reduced the image.
+   */
+  originalDimensions?: {
+    width: number;
+    height: number;
+  };
+}
+/** Deployment-resolved limits used by upload admission and request buffering. */
+interface ImageAttachmentLimits {
+  maxImageBytes: number;
+  maxImagesPerMessage: number;
+  maxMessageImageBytes: number;
+  maxImagePixels: number;
+  /** Maximum intrinsic width and maximum intrinsic height in pixels for one image. */
+  maxImageDimension: number;
+  mediaTypes: readonly ImageMediaType[];
+}
+/** Request to validate and durably commit one image. */
+interface SaveImageAttachment {
+  data: Uint8Array;
+  /** Caller-declared media type, checked against fully decoded bytes. */
+  mediaType: ImageMediaType;
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string;
+}
+/** Stored image bytes returned after reference and digest verification. */
+interface StoredImageAttachment {
+  ref: ImageAttachmentRef;
+  data: Uint8Array;
+}
+/** Deterministic request-image policy selected by one exact model route. */
+interface ImageRequestPolicy {
+  /** Maximum width multiplied by height after aspect-preserving projection. */
+  maxPixels: number;
+  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  maxBytes: number;
+}
+/** Cached request version derived from one provider-independent normalized attachment. */
+interface RequestImageAttachment {
+  /** Cache and upload-index key over the attachment id, policy, and fixed encoder parameters. */
+  variantId: ImageVariantId;
+  /** Durable normalized attachment from which this request version was derived. */
+  attachment: ImageAttachmentRef;
+  /** Encoded request bytes. */
+  data: Uint8Array;
+  mediaType: ImageMediaType;
+  bytes: number;
+  width: number;
+  height: number;
+  /** Provider-compatible sample depth proven after request encoding. */
+  depth: 'uchar';
+  /** Provider-compatible color space proven after request encoding. */
+  space: 'srgb';
+  /** Whether the encoded request version retains an alpha channel. */
+  hasAlpha: boolean;
+}
+//#endregion
+//#region ../node_modules/@deepseek-ai/dsh-attachment/lib/types/index.d.ts
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    attachments: AttachmentStore;
+  }
+}
+/** Immutable binary attachment service. Implementations validate bytes before publishing a reference. */
+declare abstract class AttachmentStore extends Service {
+  constructor(ctx: Context);
+  /** Deployment-resolved image policy used by authoritative and fast-path validation. */
+  abstract readonly imageLimits: ImageAttachmentLimits;
+  /**
+   * Validate one image without persisting it.
+   * Batch callers validate every member before saving any member.
+   * @param input - encoded bytes, declared media type, and optional display name.
+   * @returns completion after the encoded raster has been fully decoded.
+   */
+  abstract validateImage(input: SaveImageAttachment): Promise<void>;
+  /**
+   * Validate one ordered image batch before committing any member.
+   * Validation failures start no writes; storage failures return no partial
+   * references, although already published content-addressed objects may stay
+   * unreachable until a future retention policy collects them.
+   * @param inputs - encoded images in their owning message order.
+   * @returns durable references in the exact input order.
+   */
+  protected validateImageBatch(inputs: readonly SaveImageAttachment[]): void;
+  /**
+   * Validate and durably commit one ordered image batch.
+   * @param inputs - encoded images in owning-message order.
+   * @returns durable normalized attachment references in the same order after every member succeeds.
+   */
+  saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>;
+  /**
+   * Validate and durably commit one image before its owning session event is appended.
+   * The returned reference describes the persisted normalized image. When
+   * normalization reduces the raster, its `originalDimensions` records the
+   * orientation-applied input dimensions.
+   * @param input - encoded bytes, declared media type, and optional display name.
+   * @returns the durable content-addressed normalized image reference.
+   */
+  abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>;
+  /**
+   * Read one image and verify that bytes still match the recorded reference.
+   * @param ref - durable reference from the session log.
+   * @param signal - optional cancellation for backend read and verification work.
+   * @returns the verified bytes and normalized attachment reference.
+   * @throws the signal reason when aborted, or a storage error when verification fails.
+   */
+  abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>;
+  /**
+   * Generate or read one deterministic model-request version from the stored normalized image.
+   * @param ref - durable provider-independent normalized attachment reference.
+   * @param policy - exact route pixel and encoded-byte budget.
+   * @param signal - optional cancellation.
+   * @returns request bytes and the cache/upload identity covering every transform input.
+   */
+  readImageRequest(ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal): Promise<RequestImageAttachment>;
+}
 //#endregion
 //#region src/media-route.d.ts
 /** webServer 服务的本地结构视图（上游 WebServer 的最小消费子集）。 */
@@ -678,7 +821,6 @@ interface MediaWebServer {
     handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
   }): () => void;
 }
-/** outputs 媒体路由前缀（prefix 匹配 /outputs 与 /outputs/<文件名>）。 */
 //#endregion
 //#region src/runtime-defaults.d.ts
 /**
@@ -732,16 +874,6 @@ declare const IMAGE_SIZE_OPTIONS: ReadonlyArray<{
   label: string;
   size: string;
 }>;
-/**
- * 模型家族规则：按厂商关键词对显式 model 参数做小写包含匹配，得到该模型的家族
- * 候选服务商。维护点按「厂商」而非「模型 id」——新模型（wan3.0、qwen-video、
- * minimax 新版本等）自动命中家族规则，无需逐个登记。
- *
- * 家族事实（2026-09）：threerouter 是聚合器，出所有家族的模型（wan/minimax/seedance
- * 及文本/图片模型）；wanx（阿里百炼）、minimax（官方平台，仅视频）、seedance（火山方舟）
- * 是家族直连商。规则数组顺序即匹配优先级（更具体的家族在前）。
- */
-
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 declare const DEFAULTS_ROUTE_PATH = "/image-video/defaults";
 /** GET / POST 响应体：六字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
@@ -781,7 +913,7 @@ declare function parseDefaultsPatch(body: unknown): {
  * @param persisted - settings 持久默认回落层（{@link extractPersistedDefaults}
  *   提取；未提供时用空对象，即不回落）。
  */
-declare function createDefaultsRouteHandler(store: RuntimeDefaultsStore, persisted?: PersistedDefaultsView): (req: node_http0.IncomingMessage, res: node_http0.ServerResponse) => Promise<void>;
+declare function createDefaultsRouteHandler(store: RuntimeDefaultsStore, persisted?: PersistedDefaultsView): (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>;
 /**
  * 把 defaults 路由注册进 webServer。仅回环地址注册：host 非 127.0.0.1 时返回
  * undefined 且不注册——运行时覆盖值属本机会话状态，不暴露到局域网。
@@ -812,7 +944,7 @@ interface GenerateImageDeps {
  * 创建 generate_image 工具定义。
  * 工具参数：prompt（必填，找回模式除外）、image（单图）、images（多参考图）、size、model、recoverRequestId。
  */
-declare function createGenerateImageTool(deps: GenerateImageDeps): _deepseek_ai_dsh_tools0.ToolDefinition;
+declare function createGenerateImageTool(deps: GenerateImageDeps): import("@deepseek-ai/dsh-tools").ToolDefinition;
 //#endregion
 //#region src/tools/generate-video.d.ts
 /** 工具依赖。 */
@@ -832,7 +964,7 @@ interface GenerateVideoDeps {
  * 工具参数：prompt（必填）、duration（可选，1-10秒）、model（可选）、aspectRatio（可选）、
  * image（可选首帧图片，传了即图生视频）、resolution（可选分辨率档位）。
  */
-declare function createGenerateVideoTool(deps: GenerateVideoDeps): _deepseek_ai_dsh_tools0.ToolDefinition;
+declare function createGenerateVideoTool(deps: GenerateVideoDeps): import("@deepseek-ai/dsh-tools").ToolDefinition;
 //#endregion
 //#region src/index.d.ts
 /** Cordis 插件名，用于 loader 诊断。 */
