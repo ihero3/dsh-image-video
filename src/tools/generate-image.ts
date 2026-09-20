@@ -394,6 +394,9 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       // 适配器序列化成 image_url 后网关 400（unknown variant `image_url`）。
       render: (_args, value): ContentBlock[] => {
         const v = value as GenerateImageOutput
+        // 尺寸取自**始终提供**的最终图引用（previewImage），与 presentationMeta 同一取值链；
+        // 不能只读 v.image——它仅在路由支持图片输入时才注入，纯文本模型下会让结果退化成「未知尺寸」。
+        const dimensions = v.previewImage ?? v.image
         const content = createImageSummaryText({
           provider: v.provider,
           localPath: v.localPath,
@@ -406,7 +409,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
           ...(v.submitAttempts === undefined ? {} : { submitAttempts: v.submitAttempts }),
           ...(v.transport === undefined ? {} : { transport: v.transport }),
           ...(v.requestId === undefined ? {} : { requestId: v.requestId }),
-          ...v.image === undefined ? {} : { width: v.image.width, height: v.image.height },
+          ...dimensions === undefined ? {} : { width: dimensions.width, height: dimensions.height },
         })
         if (v.image !== undefined) {
           content.push({ type: 'image', attachment: imageAttachmentRef(v.image) })
@@ -546,7 +549,9 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const output: GenerateImageOutput = {
         provider: chosen.tx.provider,
         prompt,
-        mode: imageReference === undefined ? 'text-to-image' : 'image-to-image',
+        // 模式与预检查同源：预检查已统一按「单图 / 多图 / 对话粘贴图」判定是否带参考图，
+        // 这里只再看 imageReference 会把 images（含对话粘贴图）误报成文生图。
+        mode: chosen.preflight.mode,
         localPath: saved.localPath,
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
