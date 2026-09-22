@@ -10,6 +10,8 @@
 - `duration` 接受 `-1`：保持参考视频原时长 / 交由模型智能决定
 - 新增 `resolveReferenceVideo`：本地参考视频提交前经 ffmpeg 裁到 ≤15 秒、长边 ≤1280、CRF 32 并转 data URL；压缩后仍超过 6MB 时响亮报错而不是提交巨型请求体（threerouter 无上传端点，2026-09-22 探测 `/v1/files`、`/v1/uploads`、`/v1/assets` 全 404）
 - 新增 `REFERENCE_VIDEO_CAPABLE_MODELS` 能力表（`src/runtime-defaults.ts`）与真机契约测试 `tests/live-video-edit-contract.test.ts`（`DSH_IMAGE_VIDEO_LIVE=1` 显式开启，一次运行 = 一个视频任务）
+- 新增**原片 / 复刻对比片**（`src/compare.ts`）：存在参考视频时缺省（`compare: true`）额外产出一条对比片并写回 `output.comparePath`。**方向按原片画幅自动选择**——竖屏（3:4、9:16，`height ≥ width`）左右并排，横屏（4:3、16:9，`width > height`）上下堆叠；两侧等比缩放、统一 30fps、按较短者截断，命中常见系统字体时叠加 `ORIGINAL` / `AI RECREATED` 角标。合成失败只写 `notes`，不影响复刻结果
+- 新增分段复刻工作流与真机契约测试 `tests/live-video-edit-segments.test.ts`：单次视频编辑任务实测只产出约 5 秒（15 秒参考片同样只回 5 秒），长片必须切段（建议每段 ≈4.4 秒）并行提交后再拼接；该测试的轮询对瞬时网络错误容错——任务在服务端继续跑且结果保留 24 小时，此前一次 `fetch failed` 会丢掉整批已付费任务的结果
 
 ### 修复
 - `generate_image` 结果行的**生成模式**改由预检查结论驱动：参考图经 `images` 数组或对话粘贴传入时，不再误报为「文生图」（此前结果行只判断单图入参 `image`）

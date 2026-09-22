@@ -21,7 +21,9 @@ import { threerouterAdapter } from '../providers/threerouter.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
 import type { VideoMediaInput } from '../media.ts'
-import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia } from '../media.ts'
+import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia, writeOutputFile } from '../media.ts'
+import type { CompareLayout } from '../compare.ts'
+import { renderComparison } from '../compare.ts'
 
 /** 视频时长上限（秒），强制规范。 */
 const MAX_VIDEO_DURATION = 30
@@ -63,7 +65,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略，参考视频时默认 adaptive 保持原片比例）、image（首帧图片：本地路径/URL，可选，单图时用）、'
       + 'media（参考素材序列：数组，每项含 image 路径/URL 或 video 路径/URL，可带 type 与 position；'
       + '传 video 即「视频编辑」——把参考视频交给 wan3.0-video，配合提示词里的编辑意图（如"替换""改成""去掉"）改内容而保留原片动作，'
-      + '此时 model 缺省为 wan3.0-video、ratio 缺省 adaptive、duration 缺省 -1；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
+      + '此时 model 缺省为 wan3.0-video、ratio 缺省 adaptive、duration 缺省 -1；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）、'
+      + 'compare（是否额外产出「原片 / 复刻」对比片，可选，存在参考视频时缺省 true；拼接方向按原片画幅自动选择——竖屏（3:4、9:16）左右并排，横屏（4:3、16:9）上下堆叠）。',
 
     parameters: {
       prompt: {
@@ -107,6 +110,11 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         type: 'string',
         description: '分辨率档位，取值由模型决定（如 MiniMax-H3：480P/768P/2K；wan 图生视频：480P/1080P）。留空使用服务商默认。',
       },
+      compare: {
+        type: 'boolean',
+        description: '是否额外产出一条「原片 / 复刻」对比片（左原片右复刻，或上原片下复刻）。'
+          + '存在参考视频时缺省开启；拼接方向按原片画幅自动选择：竖屏（3:4、9:16）左右并排，横屏（4:3、16:9）上下堆叠。',
+      },
     },
 
     output: {
@@ -124,6 +132,12 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           bytes: { type: 'integer', required: true },
           elapsedMs: { type: 'integer', required: true },
           model: { type: 'string', description: '实际发给上游的模型名（含服务商内置默认），供用户核对本次到底用了哪个模型。' },
+          comparePath: { type: 'string', description: '原片 / 复刻对比片本地路径（存在参考视频且未禁用 compare 时生成）。' },
+          compareLayout: {
+            type: 'string',
+            enum: ['side-by-side', 'stacked'],
+            description: '对比片拼接方向：原片竖屏左右并排（side-by-side）、原片横屏上下堆叠（stacked）。',
+          },
           notes: { type: 'array', items: { type: 'string' } },
         },
       },
@@ -136,6 +150,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           mode: v.mode,
           duration: v.duration,
           resolution: v.resolution,
+          ...(v.comparePath === undefined ? {} : { comparePath: v.comparePath }),
           ...(v.notes ? { notes: v.notes } : {}),
         })
       },
@@ -151,6 +166,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           localPath: v.localPath,
           sourceUrl: v.sourceUrl,
           bytes: v.bytes,
+          ...(v.comparePath === undefined ? {} : { comparePath: v.comparePath }),
+          ...(v.compareLayout === undefined ? {} : { compareLayout: v.compareLayout }),
           ...(v.notes ? { notes: v.notes } : {}),
         }
       },
@@ -165,7 +182,14 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         image?: string
         media?: VideoMediaInput[]
         resolution?: string
+        compare?: boolean
       }
+
+      // 参考视频的**原始**输入（本地路径或 http URL）：素材经 resolveVideoMedia 后会变成
+      // data URL，而 ffmpeg 读不了 data URL，所以对比片必须用这里保留的原值。
+      const referenceVideoInput = typedArgs.media?.find((m) =>
+        typeof m.video === 'string' && m.video.trim() !== ''
+        && (m.type ?? 'reference_video') === 'reference_video')?.video
 
       // 参考素材先解析：media 优先于 image；video 条目即「视频编辑」（保留原片动作、按提示词改写内容）。
       const mediaRef = typedArgs.media ? await resolveVideoMedia(typedArgs.media) : undefined
@@ -310,6 +334,27 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const downloadOpts = { timeoutMs: config.timeoutMs, retryTimes: config.retryTimes, signal: exec.signal }
       const saved = await downloadAndSave(pollResult.mediaUrl, outputsDir, '.mp4', downloadOpts)
 
+      // 原片 / 复刻对比片：参考视频存在时缺省生成，方向由原片画幅决定（见 compare.ts）。
+      // 失败只写 notes 降级——复刻结果已经下载完成，不能因为合成对比片而丢掉它。
+      let comparePath: string | undefined
+      let compareLayout: CompareLayout | undefined
+      if ((typedArgs.compare ?? true) && hasRefVideo && referenceVideoInput !== undefined) {
+        try {
+          const comparison = await renderComparison({
+            source: referenceVideoInput,
+            result: saved.localPath,
+            signal: exec.signal,
+          })
+          const written = await writeOutputFile(comparison.data, comparison.contentType, outputsDir, '.mp4')
+          comparePath = written.localPath
+          compareLayout = comparison.layout
+          notes.push(`对比片：${comparison.layout === 'side-by-side' ? '原片竖屏 → 左右并排' : '原片横屏 → 上下堆叠'}，`
+            + `${comparison.width}×${comparison.height}，已保存 ${written.localPath}`)
+        } catch (err) {
+          notes.push(`对比片合成失败（不影响复刻结果）：${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+
       const output: GenerateVideoOutput = {
         provider,
         prompt: typedArgs.prompt,
@@ -321,6 +366,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         sourceUrl: saved.sourceUrl,
         bytes: saved.bytes,
         elapsedMs: pollResult.elapsedMs,
+        ...(comparePath === undefined ? {} : { comparePath }),
+        ...(compareLayout === undefined ? {} : { compareLayout }),
         ...(notes.length > 0 ? { notes } : {}),
       }
       return output
@@ -353,6 +400,10 @@ interface GenerateVideoOutput {
   sourceUrl: string
   bytes: number
   elapsedMs: number
+  /** 原片 / 复刻对比片本地路径（存在参考视频且未禁用 compare 时生成）。 */
+  comparePath?: string
+  /** 对比片拼接方向：原片竖屏左右并排、原片横屏上下堆叠。 */
+  compareLayout?: CompareLayout
   /** 透明告知：模型能力导致的参数降级说明（如 wan 系模型丢弃自定义时长）；无降级时缺省。 */
   notes?: string[]
 }

@@ -424,6 +424,8 @@ export interface VideoSummaryDetails {
   resolution?: string
   /** 透明告知条目（时长被丢弃、候选回退链等）。 */
   notes?: string[]
+  /** 原片 / 复刻对比片本地路径；未生成时缺省。 */
+  comparePath?: string
 }
 
 /**
@@ -455,6 +457,7 @@ export function createVideoContent(
     ...(details.mode ? [`- 生成模式：${details.mode}`] : []),
     ...(details.duration !== undefined ? [`- 时长参数：${details.duration} 秒`] : []),
     ...(details.resolution ? [`- 分辨率：${details.resolution}`] : []),
+    ...(details.comparePath ? [`- 对比片（原片 / 复刻）：${details.comparePath}`] : []),
     `- 源地址：${sourceUrl}`,
   ]
   const notesBlock = details.notes && details.notes.length > 0
