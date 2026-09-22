@@ -185,23 +185,118 @@ export async function compressVideoFirstFrame(ref: string): Promise<string> {
   }
 }
 
+/** 参考视频压缩阈值：本地视频超过该字节数时先经 ffmpeg 转码再编码为 data URL。 */
+const REFERENCE_VIDEO_COMPRESS_THRESHOLD = 2_000_000
+/** 参考视频原始字节上限：超出后不再提交（threerouter 无上传端点，巨型请求体会被网关拒绝）。 */
+const REFERENCE_VIDEO_MAX_BYTES = 6_000_000
+/** 参考视频长边上限：产出最高 1080P，参考段压到 720p 档足够表达动作与构图。 */
+const REFERENCE_VIDEO_LONG_EDGE = 1280
+/** 参考视频时长上限（秒）：wan3.0-video 的 reference_video 要求单段不超过 15 秒。 */
+const REFERENCE_VIDEO_MAX_SECONDS = 15
+
+/** 从扩展名推断视频 MIME；未知扩展名回退 video/mp4（wan3.0-video 只接受 mp4 参考段）。 */
+export function videoMimeFromPath(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case '.webm': return 'video/webm'
+    case '.mov': return 'video/quicktime'
+    default: return 'video/mp4'
+  }
+}
+
 /**
- * wan3.0-video 多关键帧媒体解析：把 `{image, position}` 原始参数数组解析为
- * 适配器可直接消费的 `{url: dataURL, position}` 形态，每个图先压缩再编码。
- * 已有 data URL 的条目跳过压缩。
- * @param ms - 原始媒体数组，image 为本地路径/URL/data URL，position 可选。
+ * 参考视频 ffmpeg 转码：裁到 {@link REFERENCE_VIDEO_MAX_SECONDS} 秒内、长边压到
+ * {@link REFERENCE_VIDEO_LONG_EDGE}、CRF 32。ffmpeg 缺失或执行失败返回原字节，
+ * 由上游体积上限兜底拒绝（不静默提交巨型请求体）。
+ */
+async function compressReferenceVideo(bytes: Buffer, sourcePath: string): Promise<Buffer> {
+  const dir = tmpdir()
+  const inPath = join(dir, `dsh-refvid-${randomBytes(6).toString('hex')}${extname(sourcePath) || '.mp4'}`)
+  const outPath = join(dir, `dsh-refvid-${randomBytes(6).toString('hex')}.mp4`)
+  try {
+    await writeFile(inPath, bytes)
+    await execFileAsync('ffmpeg', [
+      '-y', '-v', 'error', '-i', inPath,
+      '-t', String(REFERENCE_VIDEO_MAX_SECONDS),
+      '-vf', `scale='min(${REFERENCE_VIDEO_LONG_EDGE},iw)':-2`,
+      '-c:v', 'libx264', '-crf', '32', '-preset', 'veryfast',
+      '-c:a', 'aac', '-b:a', '96k',
+      outPath,
+    ])
+    const out = await readFile(outPath)
+    return out.byteLength > 0 ? out : bytes
+  } catch {
+    // ffmpeg 缺失或转码失败：保留原字节，交由体积上限判定
+    return bytes
+  } finally {
+    await unlink(inPath).catch(() => {})
+    await unlink(outPath).catch(() => {})
+  }
+}
+
+/**
+ * 解析参考视频为服务商可直接消费的引用：http(s) URL 原样透传；本地文件读取后按需
+ * 转码并编码为 data URL。threerouter 没有上传端点（2026-09-22 探测 /v1/files 等全 404），
+ * 本地视频只能以 data URL 提交，而网关对超大请求体会拒绝，因此在客户端完成压缩。
+ * @param input - http(s) URL、data URL 或本地文件路径。
+ * @returns 适配器可直接消费的参考视频引用。
+ * @throws 本地文件超过 {@link REFERENCE_VIDEO_MAX_BYTES} 时抛错，避免提交必然失败的巨型请求体。
+ */
+export async function resolveReferenceVideo(input: string): Promise<string> {
+  const ref = input.trim()
+  if (/^(https?|data):/.test(ref)) return ref
+  const original = await readFile(ref)
+  const payload = original.byteLength > REFERENCE_VIDEO_COMPRESS_THRESHOLD
+    ? await compressReferenceVideo(original, ref)
+    : original
+  if (payload.byteLength > REFERENCE_VIDEO_MAX_BYTES) {
+    const mb = (payload.byteLength / 1024 / 1024).toFixed(1)
+    throw new Error(
+      `参考视频体积 ${mb}MB 超过 ${REFERENCE_VIDEO_MAX_BYTES / 1024 / 1024}MB 上限：`
+      + 'threerouter 无上传端点，本地视频只能以 data URL 提交，过大的请求体会被网关拒绝。'
+      + '请先裁短/压缩该视频（建议 ≤15 秒、720p 以内），或改传公网 http(s) URL。',
+    )
+  }
+  return `data:${videoMimeFromPath(ref)};base64,${payload.toString('base64')}`
+}
+
+/** 参考素材条目：image（参考图）与 video（参考视频）二选一，type 显式指定时优先。 */
+export interface VideoMediaInput {
+  /** 参考图：本地路径 / http(s) URL / data URL。 */
+  image?: string
+  /** 参考视频：本地路径 / http(s) URL / data URL；对应上游 type=reference_video。 */
+  video?: string
+  /** 显式素材类型（first_frame / last_frame / reference_image / reference_video）；缺省按字段与 position 推断。 */
+  type?: string
+  /** 兼容旧入参的时间点写法（'0s' / 'first_frame' / 'last_frame'）。 */
+  position?: string
+}
+
+/**
+ * 视频参考素材解析：把工具参数数组解析为适配器可直接消费的 `{url, type}` 形态。
+ * 图片先压缩再编码为 data URL（已有 data URL 跳过压缩），视频经
+ * {@link resolveReferenceVideo} 处理；参考视频用于 wan3.0-video 的视频编辑
+ * （原片动作 + 自然语言指令替换主体/元素）。
+ * @param ms - 原始媒体数组。
  * @returns 适配器可直接消费的媒体数组。
+ * @throws 条目既无 image 也无 video 时抛错，避免静默丢素材。
  */
 export async function resolveVideoMedia(
-  ms: Array<{ image: string; position?: string }>,
+  ms: VideoMediaInput[],
 ): Promise<Array<{ url: string; type: string }>> {
   return await Promise.all(ms.map(async (m) => {
-    const url = await resolveImageReference(m.image)
+    const video = typeof m.video === 'string' && m.video.trim() !== '' ? m.video : undefined
+    if (video !== undefined) {
+      return { url: await resolveReferenceVideo(video), type: m.type ?? 'reference_video' }
+    }
+    const image = typeof m.image === 'string' && m.image.trim() !== '' ? m.image : undefined
+    if (image === undefined) {
+      throw new Error('media 条目必须提供 image（参考图）或 video（参考视频）之一')
+    }
     const position = m.position?.toLowerCase()
-    const type = position === 'first_frame' || position === '0s'
+    const type = m.type ?? (position === 'first_frame' || position === '0s'
       ? 'first_frame'
-      : position === 'last_frame' ? 'last_frame' : 'reference_image'
-    return { url: await compressVideoFirstFrame(url), type }
+      : position === 'last_frame' ? 'last_frame' : 'reference_image')
+    return { url: await compressVideoFirstFrame(await resolveImageReference(image)), type }
   }))
 }
 

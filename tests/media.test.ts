@@ -11,6 +11,8 @@ import {
   resolveImageReference,
   compressVideoFirstFrame,
   resolveVideoMedia,
+  resolveReferenceVideo,
+  videoMimeFromPath,
   saveBase64Image,
 } from '../src/media.ts'
 
@@ -253,6 +255,53 @@ describe('media 扩展名与类型推断', () => {
       expect(out[1].type).toBe('reference_image')
       expect(out[2].type).toBe('reference_image')
       expect(out[0].url.startsWith('data:image/')).toBe(true)
+    })
+
+    it('videoMimeFromPath：mp4 为默认，webm/mov 按扩展名', () => {
+      expect(videoMimeFromPath('a.mp4')).toBe('video/mp4')
+      expect(videoMimeFromPath('a.MP4')).toBe('video/mp4')
+      expect(videoMimeFromPath('a.webm')).toBe('video/webm')
+      expect(videoMimeFromPath('a.mov')).toBe('video/quicktime')
+      expect(videoMimeFromPath('a.unknown')).toBe('video/mp4')
+    })
+
+    it('resolveReferenceVideo：http(s) 与 data URL 原样返回', async () => {
+      const url = 'https://cdn.example.com/clip.mp4'
+      expect(await resolveReferenceVideo(url)).toBe(url)
+      expect(await resolveReferenceVideo('data:video/mp4;base64,QUJD')).toBe('data:video/mp4;base64,QUJD')
+    })
+
+    it('resolveReferenceVideo：本地小视频编码为 data URL，MIME 按扩展名', async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-'))
+      const file = join(tempDir, 'clip.webm')
+      const bytes = Buffer.from([0x1a, 0x45, 0xdf, 0xa3])
+      await writeFile(file, bytes)
+      // 低于压缩阈值：原样编码，不做 ffmpeg 转码
+      expect(await resolveReferenceVideo(file)).toBe(`data:video/webm;base64,${bytes.toString('base64')}`)
+    })
+
+    it('resolveReferenceVideo：超过体积上限时响亮报错，不提交巨型请求体', async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-'))
+      const file = join(tempDir, 'huge.mp4')
+      // 6.5MB 垃圾字节：超过压缩阈值（触发 ffmpeg，对垃圾数据必然失败并回退原字节）
+      // 且超过 6MB 上限，必须抛错而不是拼出 ~8.7MB 的 data URL
+      await writeFile(file, Buffer.alloc(6_500_000, 0x11))
+      await expect(() => resolveReferenceVideo(file)).rejects.toThrow(/超过.*上限/)
+    })
+
+    it('resolveVideoMedia：video 条目映射为 reference_video，显式 type 优先', async () => {
+      const out = await resolveVideoMedia([
+        { video: 'https://cdn.example.com/source.mp4' },
+        { video: 'https://cdn.example.com/source.mp4', type: 'reference_video' },
+        { image: 'data:image/png;base64,QUJD', type: 'reference_image' },
+      ])
+      expect(out[0]).toEqual({ url: 'https://cdn.example.com/source.mp4', type: 'reference_video' })
+      expect(out[1].type).toBe('reference_video')
+      expect(out[2]).toEqual({ url: 'data:image/png;base64,QUJD', type: 'reference_image' })
+    })
+
+    it('resolveVideoMedia：条目既无 image 也无 video 时报错', async () => {
+      await expect(() => resolveVideoMedia([{ position: '0s' }])).rejects.toThrow(/image.*video/)
     })
   })
 })

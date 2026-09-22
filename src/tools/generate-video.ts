@@ -12,7 +12,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Config, Provider } from '../config.ts'
 import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
-import { resolveModelCandidates, MULTI_FRAME_CAPABLE_MODELS } from '../runtime-defaults.ts'
+import { resolveModelCandidates, MULTI_FRAME_CAPABLE_MODELS, REFERENCE_VIDEO_CAPABLE_MODELS } from '../runtime-defaults.ts'
 import { isModelNotAcceptedError } from '../http-client.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
@@ -20,6 +20,7 @@ import { seedanceAdapter } from '../providers/seedance.ts'
 import { threerouterAdapter } from '../providers/threerouter.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
+import type { VideoMediaInput } from '../media.ts'
 import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia } from '../media.ts'
 
 /** 视频时长上限（秒），强制规范。 */
@@ -58,9 +59,11 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；具体模型能力由上游校验，wan 系模型不支持自定义时长时会在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
-      + '参数：prompt（提示词，必填）、duration（时长秒数，1-30，可选）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
-      + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略）、image（首帧图片：本地路径/URL，可选，单图时用）、'
-      + 'media（参考素材序列：数组，每项含 image 路径/URL 和 position 时间点如 "0s""1s"；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
+      + '参数：prompt（提示词，必填）、duration（时长秒数，1-30；传 -1 表示保持参考视频原时长/由模型智能决定）、model（模型名，可选，留空用配置或服务商内置默认模型）、'
+      + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略，参考视频时默认 adaptive 保持原片比例）、image（首帧图片：本地路径/URL，可选，单图时用）、'
+      + 'media（参考素材序列：数组，每项含 image 路径/URL 或 video 路径/URL，可带 type 与 position；'
+      + '传 video 即「视频编辑」——把参考视频交给 wan3.0-video，配合提示词里的编辑意图（如"替换""改成""去掉"）改内容而保留原片动作，'
+      + '此时 model 缺省为 wan3.0-video、ratio 缺省 adaptive、duration 缺省 -1；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）。',
 
     parameters: {
       prompt: {
@@ -70,7 +73,8 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       duration: {
         type: 'integer',
-        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}。留空使用配置默认值。具体模型能力由上游校验。`,
+        description: `视频时长（秒），范围 1-${MAX_VIDEO_DURATION}；传 -1 表示保持参考视频原时长（参考视频未指定时自动取 -1）。`
+          + '留空使用配置默认值。具体模型能力由上游校验。',
       },
       model: {
         type: 'string',
@@ -86,12 +90,15 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       },
       media: {
         type: 'array',
-        description: '参考素材序列（MiniMax-H3 / wan3.0-video）：每项为 {image, position}，适配器会转换为服务端要求的 type/url。存在时 image 字段忽略。',
+        description: '参考素材序列（MiniMax-H3 / wan3.0-video）：每项为 {image|video, type?, position?}，适配器转换为服务端的 type/url。'
+          + '传 video 即视频编辑：保留参考视频的构图与动作，按提示词替换/增删元素（缺省 type=reference_video）。存在时 image 字段忽略。',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
-            image: { type: 'string', description: '本地路径或 http(s) URL / data URL' },
+            image: { type: 'string', description: '参考图：本地路径 / http(s) URL / data URL' },
+            video: { type: 'string', description: '参考视频（视频编辑用）：本地路径 / http(s) URL；本地文件超过阈值时自动压缩，建议 ≤15 秒、720p 以内' },
+            type: { type: 'string', description: '素材类型，缺省按字段与 position 推断：first_frame / last_frame / reference_image / reference_video（传 video 时缺省值）' },
             position: { type: 'string', description: "参考图对应时间点，如 '0s' / '1s' / 'first_frame' / 'last_frame'" },
           },
         },
@@ -156,16 +163,22 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         model?: string
         aspectRatio?: string
         image?: string
-        media?: Array<{ image: string; position?: string }>
+        media?: VideoMediaInput[]
         resolution?: string
       }
 
+      // 参考素材先解析：media 优先于 image；video 条目即「视频编辑」（保留原片动作、按提示词改写内容）。
+      const mediaRef = typedArgs.media ? await resolveVideoMedia(typedArgs.media) : undefined
+      const hasMedia = !!mediaRef
+      const hasRefVideo = mediaRef?.some((m) => m.type === 'reference_video') ?? false
+
       // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
-      // 运行时双重校验时长上限（schema 已约束，此处防御性检查）
+      // 参考视频缺省 duration=-1：由服务端保持原片时长（官方视频编辑建议值）。
+      // 运行时双重校验时长上限（schema 已约束，此处防御性检查）；-1 是「保持原片时长」哨兵值。
       const runtime = runtimeDefaults.get()
-      const duration = typedArgs.duration ?? runtime.videoDuration ?? config.defaultVideoDuration
-      if (duration < 1 || duration > MAX_VIDEO_DURATION) {
-        throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间，当前为 ${duration}`)
+      const duration = typedArgs.duration ?? (hasRefVideo ? -1 : runtime.videoDuration ?? config.defaultVideoDuration)
+      if (duration !== -1 && (duration < 1 || duration > MAX_VIDEO_DURATION)) {
+        throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间（-1 表示保持参考视频原时长），当前为 ${duration}`)
       }
 
       // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
@@ -192,18 +205,18 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const imageRef = typedArgs.image
         ? await compressVideoFirstFrame(await resolveImageReference(typedArgs.image))
         : undefined
-      // 多关键帧（wan3.0-video）：media 存在时解析并覆盖 image
-      const mediaRef = typedArgs.media
-        ? await resolveVideoMedia(typedArgs.media)
-        : undefined
-      // 模型取值链：调用参数 model > 配置 defaultVideoModel > adapter 内置默认
-      let model = typedArgs.model || config.defaultVideoModel || undefined
+      // 模型取值链：调用参数 model > 参考视频固定 wan3.0-video（All-in-One，只有它支持视频编辑）
+      // > 配置 defaultVideoModel > adapter 内置默认
+      let model = typedArgs.model
+        || (hasRefVideo ? REFERENCE_VIDEO_CAPABLE_MODELS[0] : config.defaultVideoModel)
+        || undefined
 
-      const hasMedia = !!mediaRef
-
-      // 多关键帧（media[]）自动路由：未指定模型时自动选首支持多帧的模型；
-      // 指定了但不支持多帧时报清晰错误，不静默失败。
-      if (hasMedia) {
+      // 参考素材能力校验：参考视频与多关键帧要求不同，分别响亮报错，不静默失败。
+      if (hasRefVideo) {
+        if (model && !REFERENCE_VIDEO_CAPABLE_MODELS.includes(model)) {
+          throw new Error(`模型「${model}」不支持参考视频（视频编辑）。请使用 ${REFERENCE_VIDEO_CAPABLE_MODELS.join('、')}`)
+        }
+      } else if (hasMedia) {
         if (model && !MULTI_FRAME_CAPABLE_MODELS.includes(model)) {
           throw new Error(`模型「${model}」不支持多关键帧。请使用支持多帧的模型：${MULTI_FRAME_CAPABLE_MODELS.join('、')}`)
         }
@@ -216,8 +229,10 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         duration,
         model,
         // 文档承诺「留空使用 16:9」在此落地：MiniMax 等上游纯文生场景要求显式 ratio；
-        // 多关键帧时构图由 media 数组决定，不传 ratio
-        aspectRatio: hasMedia ? undefined : (typedArgs.aspectRatio || runtime.videoAspectRatio || '16:9'),
+        // 参考视频按官方建议用 adaptive 保持原片宽高比；多关键帧构图由素材决定，不传 ratio
+        aspectRatio: hasRefVideo
+          ? (typedArgs.aspectRatio || 'adaptive')
+          : hasMedia ? undefined : (typedArgs.aspectRatio || runtime.videoAspectRatio || '16:9'),
         // media 存在时 image 忽略（适配器以 media 为准）
         image: hasMedia ? undefined : imageRef,
         media: mediaRef,
@@ -266,6 +281,16 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       // 实际模型以适配器回报为准（含服务商内置默认兜底），避免用配置推断模型。
       const actualModel = submitResult.model ?? model ?? ''
       const notes: string[] = []
+      if (hasRefVideo) {
+        const videoCount = mediaRef?.filter((m) => m.type === 'reference_video').length ?? 0
+        const assetCount = (mediaRef?.length ?? 0) - videoCount
+        notes.push(`视频编辑：提交 ${videoCount} 段参考视频 + ${assetCount} 张参考素材，`
+          + '由上游保留参考视频的构图与动作、按提示词改写内容'
+          + `${assetCount > 0 ? '（提示词需包含「替换 / 改成 / 去掉」等编辑意图才会触发改写）' : ''}`)
+        if (duration === -1) {
+          notes.push('duration=-1：时长由服务端按参考视频原时长决定，不使用配置默认时长')
+        }
+      }
       if (submitResult.droppedDuration) {
         notes.push(`当前模型 ${actualModel || '（服务商内置默认）'} 不支持自定义时长，已忽略 duration=${duration} 秒，实际时长由上游模型默认决定`)
       }
@@ -289,7 +314,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         provider,
         prompt: typedArgs.prompt,
         duration,
-        mode: imageRef ? 'image-to-video' : 'text-to-video',
+        mode: hasRefVideo ? 'video-edit' : imageRef ? 'image-to-video' : 'text-to-video',
         resolution: typedArgs.resolution ?? '',
         model: actualModel,
         localPath: saved.localPath,
@@ -318,8 +343,8 @@ interface GenerateVideoOutput {
   provider: string
   prompt: string
   duration: number
-  /** 生成模式：image-to-video（图生视频）或 text-to-video（文生视频）。 */
-  mode: 'image-to-video' | 'text-to-video'
+  /** 生成模式：text-to-video（文生视频）/ image-to-video（图生视频）/ video-edit（参考视频编辑）。 */
+  mode: 'image-to-video' | 'text-to-video' | 'video-edit'
   /** 请求携带的分辨率档位；未指定为空字符串。 */
   resolution: string
   /** 实际发给上游的模型名（含服务商内置默认），逐次调用如实回报。 */

@@ -20,7 +20,7 @@
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
 | `generate_image` | 文生图 + **图生图**（可选 `image` 参考图入参） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
-| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 10s） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 30s）+ **视频编辑**（`media[].video` 参考视频 + 编辑意图提示词，保留原片动作换主体） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
@@ -166,6 +166,27 @@ dsh --profile <profile>
 ```
 
 `resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
+
+**视频编辑（参考视频换主体 / 改元素）：**
+
+```
+用户：把这段视频里的人物换成图片里的人  /path/source.mp4  /path/person.png
+
+模型（调用 generate_video）：
+  prompt: "编辑视频1：把视频1里的人物替换成图片1中的人物，保持镜头运动与人物动作不变"
+  media: [
+    { video: "/path/source.mp4", type: "reference_video" },
+    { image: "/path/person.png", type: "reference_image" }
+  ]
+
+→ 存在参考视频时缺省 model=wan3.0-video、aspectRatio=adaptive、duration=-1（保持原片时长）
+→ 本地素材在客户端预处理：图片按需压到长边 1600 的 JPEG，视频压到 ≤15 秒 / 720p / CRF 32
+→ 完成后视频保存到 outputs/
+```
+
+**视频编辑的能力与边界**：`wan3.0-video` 是 All-in-One 视频模型，按 `input.media[].type` 与提示词意图自动路由任务类型——`reference_video` + 含编辑意图的提示词（"替换""改成""去掉"等）即「保留原片构图与动作、只改写指定元素」，**不需要额外的控制参数**（该模型没有 depth/pose 控制入参，深度等信息由服务端自原片自行提取）。上游限制：参考视频单段 ≤15 秒、最多 5 段、总时长 ≤15 秒、单文件 ≤100MB；参考图最多 10 张、单张 ≤20MB；`reference_*` 与 `first_frame`/`last_frame` 不可混用。
+
+**本地素材为何要压缩**：threerouter **没有文件上传端点**（2026-09-22 探测 `/v1/files`、`/v1/uploads`、`/v1/assets` 全 404），本地视频/图片只能以 data URL 提交，而过大的请求体会被网关拒绝（生图端点实测 2.4MB 载荷连续 502、≤1MB 稳定通过）。因此插件在客户端完成压缩，并对压缩后仍超过 6MB 的参考视频**响亮报错**（提示改用公网 URL 或裁短），而不是提交一个必然失败的巨型请求体。
 
 **图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threerouter `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸默认 **3:4**（`config.defaultImageSize`，接受比例写法 `3:4`/`16:9`/`1:1`）：qwen/wan 系自动换算为上游要求的 `宽*高`（长边 1536、32 对齐，如 3:4→1152*1536，实测 `3:4` 原样透传会被千问 400）；threerouter（OpenAI 系）/ 方舟系换算为 `宽x高`；MiniMax 比例写法原样透传。**实测约束**：百炼 `wanx2.1-imageedit` 参考图宽度须 512–4096px（过小先放大再调用）；其文字渲染弱（拼写易错），需要精准文字时建议生成后本地合成（如 ffmpeg drawtext）；千问图像默认开启 prompt_extend+思考模式，出图约 1–5 分钟，超时已按官方建议抬到 600s。
 

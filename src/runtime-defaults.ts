@@ -196,6 +196,14 @@ export const VIDEO_MODEL_DEFAULT_RESOLUTION: Readonly<Record<string, string>> = 
 export const MULTI_FRAME_CAPABLE_MODELS: ReadonlyArray<string> = ['MiniMax-H3', 'minimax-h3', 'wan3.0-video']
 
 /**
+ * 支持参考视频（视频编辑）的视频模型列表，按优先序排列。
+ * wan3.0-video 是 All-in-One 视频模型：按 `input.media[].type` 与提示词意图自动路由任务类型，
+ * `reference_video` 素材 + 编辑意图提示词（"替换""改成""去掉"等）即「保留原片构图与动作、
+ * 只改写指定元素」，因此视频编辑只声明模型名即可，不需要额外的控制参数。
+ */
+export const REFERENCE_VIDEO_CAPABLE_MODELS: ReadonlyArray<string> = ['wan3.0-video']
+
+/**
  * 构建候选服务商序列（工具层按序尝试提交，回退语义见工具实现）：
  * ① 配置链服务商（会话选定 > settings 默认 > 激活服务商）——配置优先原则；
  * ② 显式 model 参数命中 {@link MODEL_FAMILY_RULES} 时的家族候选（直连商在前）；
