@@ -21,6 +21,7 @@ import {
   MULTI_FRAME_CAPABLE_MODELS,
   parseDefaultsPatch,
   registerDefaultsRoute,
+  resolveDefaultsView,
   resolveModelCandidates,
 } from '../src/runtime-defaults.ts'
 import type { Config, Provider } from '../src/config.ts'
@@ -210,6 +211,28 @@ describe('POST 协议校验', () => {
     if (!bad.ok) expect(bad.error).toContain('imageSize')
   })
 
+  it('mediaMode 仅接受 text / image / video；空串清除覆盖', () => {
+    expect(parseDefaultsPatch({ mediaMode: 'image' })).toEqual({ ok: true, patch: { mediaMode: 'image' } })
+    expect(parseDefaultsPatch({ mediaMode: 'video' })).toEqual({ ok: true, patch: { mediaMode: 'video' } })
+    expect(parseDefaultsPatch({ mediaMode: 'text' })).toEqual({ ok: true, patch: { mediaMode: 'text' } })
+    // 空串 = 自动（清除覆盖），与其它字段同一口径
+    expect(parseDefaultsPatch({ mediaMode: '' })).toEqual({ ok: true, patch: { mediaMode: null } })
+    expect(parseDefaultsPatch({ mediaMode: null })).toEqual({ ok: true, patch: { mediaMode: null } })
+    const bad = parseDefaultsPatch({ mediaMode: 'audio' })
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.error).toContain('mediaMode')
+    expect(parseDefaultsPatch({ mediaMode: 1 }).ok).toBe(false)
+  })
+
+  it('resolveDefaultsView 合并 mediaMode：运行时覆盖优先，且不回落到 settings（纯运行时概念）', () => {
+    const store = createRuntimeDefaultsStore()
+    expect(resolveDefaultsView(store).mediaMode).toBeNull()
+    store.patch({ mediaMode: 'image' })
+    expect(resolveDefaultsView(store, { imageProvider: 'wanx' }).mediaMode).toBe('image')
+    store.patch({ mediaMode: null })
+    expect(resolveDefaultsView(store).mediaMode).toBeNull()
+  })
+
   it('imageSize 白名单覆盖五个比例（3:4 按实测规格 1152*1536）', () => {
     expect(IMAGE_SIZE_OPTIONS.map((o) => o.size)).toEqual(['1024*1024', '1152*864', '1152*1536', '1280*720', '720*1280'])
   })
@@ -267,10 +290,11 @@ describe('defaults 路由 handler', () => {
     })
   })
 
-  it('GET 初始返回六字段全 null 视图', async () => {
+  it('GET 初始返回七字段全 null 视图', async () => {
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
+      mediaMode: null,
       imageProvider: null,
       imageSize: null,
       imageStyle: null,
@@ -288,6 +312,7 @@ describe('defaults 路由 handler', () => {
     })
     expect(post.status).toBe(200)
     expect(await post.json()).toEqual({
+      mediaMode: null,
       imageProvider: null,
       imageSize: null,
       imageStyle: 'anime',
@@ -363,6 +388,7 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
+      mediaMode: null,
       imageProvider: 'wanx',
       imageSize: null,
       imageStyle: null,

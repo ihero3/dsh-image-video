@@ -27,10 +27,10 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { Config, Provider } from '../config.ts'
+import type { ApiKeyResolver, Config, Provider } from '../config.ts'
 import { randomUUID } from 'node:crypto'
 import { applyImageWatermark } from '../watermark.ts'
-import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
+import { hasConfiguredCredentials, resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
 import { applyImageStyle, resolveModelCandidates } from '../runtime-defaults.ts'
 import {
@@ -76,6 +76,8 @@ export interface GenerateImageDeps {
   runtimeDefaults: RuntimeDefaultsStore
   /** 已解析为绝对路径的 outputsDir（插件唯一解析点，见 index.apply）。 */
   outputsDir: string
+  /** API Key 的凭证引用解析器（插件经 `ctx.credentials` 构造）。 */
+  resolveApiKey: ApiKeyResolver
 }
 
 /**
@@ -112,6 +114,7 @@ function imageAttachmentRef(image: NonNullable<GenerateImageOutput['image']>): I
     width: image.width,
     height: image.height,
     ...image.name === undefined ? {} : { name: image.name },
+    ...image.originalDimensions === undefined ? {} : { originalDimensions: image.originalDimensions },
   }
 }
 
@@ -147,7 +150,7 @@ async function resolveConversationImages(exec: ToolExecution, attachments: Attac
  * 工具参数：prompt（必填，找回模式除外）、image（单图）、images（多参考图）、size、model、recoverRequestId。
  */
 export function createGenerateImageTool(deps: GenerateImageDeps) {
-  const { config, taskManager, attachments, ctx, runtimeDefaults, outputsDir } = deps
+  const { config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey } = deps
   /**
    * 异步传输能力探测缓存（按服务商）：某个服务商的异步端点被判为不可用后，
    * 在 TTL（10 分钟）内直接走同步，省掉每次调用一次的 404 往返；TTL 过后自动
@@ -194,7 +197,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   ): Promise<CandidateAttempt> => {
     const { requestId, model, size, imageReference, imageReferences, prompt, exec, notes } = input
     const adapter = adapterFor(candidate)
-    const creds = resolveProviderCredentials(config, candidate)
+    const creds = await resolveProviderCredentials(config, candidate, resolveApiKey)
     const httpOpts: HttpOpts = {
       apiKey: creds.apiKey,
       baseURL: creds.baseURL,
@@ -371,6 +374,15 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
               width: { type: 'integer', required: true },
               height: { type: 'integer', required: true },
               name: { type: 'string' },
+              originalDimensions: {
+                type: 'object',
+                additionalProperties: false,
+                description: '归一化前的原始像素尺寸；仅在附件服务缩放了图片时出现。',
+                properties: {
+                  width: { type: 'integer', required: true },
+                  height: { type: 'integer', required: true },
+                },
+              },
             },
           },
           previewImage: {
@@ -384,6 +396,15 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
               width: { type: 'integer', required: true },
               height: { type: 'integer', required: true },
               name: { type: 'string' },
+              originalDimensions: {
+                type: 'object',
+                additionalProperties: false,
+                description: '归一化前的原始像素尺寸；仅在附件服务缩放了图片时出现。',
+                properties: {
+                  width: { type: 'integer', required: true },
+                  height: { type: 'integer', required: true },
+                },
+              },
             },
           },
         },
@@ -491,10 +512,10 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         'image',
         model,
         preferred ?? config.provider,
-        (p) => peekProviderCredentials(config, p).apiKey.trim().length > 0,
+        (p) => hasConfiguredCredentials(config, p),
       )
       if (candidates.length === 0) {
-        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey')
+        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey 或 apiKeyEnv')
       }
 
       // 一个调用 = 一个生成事务 = 一个幂等键（换候选服务商也复用同一个键：
@@ -583,7 +604,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
         for (const candidate of probeCandidates) {
           const adapter = adapterFor(candidate)
           if (adapter.imageAsync === undefined) continue
-          const creds = resolveProviderCredentials(config, candidate)
+          const creds = await resolveProviderCredentials(config, candidate, resolveApiKey)
           const httpOpts: HttpOpts = {
             apiKey: creds.apiKey,
             baseURL: creds.baseURL,
@@ -699,4 +720,9 @@ type ImageAttachmentOutput = {
   width: number
   height: number
   name?: string
+  /** 归一化前的原始像素尺寸；附件服务缩放了图片时才有。 */
+  originalDimensions?: {
+    width: number
+    height: number
+  }
 }

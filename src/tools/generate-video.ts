@@ -9,8 +9,8 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { Config, Provider } from '../config.ts'
-import { resolveProviderCredentials, peekProviderCredentials } from '../config.ts'
+import type { ApiKeyResolver, Config, Provider } from '../config.ts'
+import { hasConfiguredCredentials, resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
 import { resolveModelCandidates, MULTI_FRAME_CAPABLE_MODELS, REFERENCE_VIDEO_CAPABLE_MODELS } from '../runtime-defaults.ts'
 import { isModelNotAcceptedError } from '../http-client.ts'
@@ -39,6 +39,8 @@ export interface GenerateVideoDeps {
    * 与图片链路共用同一个目录，杜绝旁路产物；缺省时回退 config.outputsDir。
    */
   outputsDir?: string
+  /** API Key 的凭证引用解析器（插件经 `ctx.credentials` 构造）。 */
+  resolveApiKey: ApiKeyResolver
 }
 
 /**
@@ -47,7 +49,7 @@ export interface GenerateVideoDeps {
  * image（可选首帧图片，传了即图生视频）、resolution（可选分辨率档位）。
  */
 export function createGenerateVideoTool(deps: GenerateVideoDeps) {
-  const { config, taskManager, runtimeDefaults } = deps
+  const { config, taskManager, runtimeDefaults, resolveApiKey } = deps
   const outputsDir = deps.outputsDir ?? config.outputsDir
 
   return defineTool({
@@ -214,10 +216,10 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         'video',
         typedArgs.model,
         preferred ?? config.provider,
-        (p) => peekProviderCredentials(config, p).apiKey.trim().length > 0,
+        (p) => hasConfiguredCredentials(config, p),
       )
       if (candidates.length === 0) {
-        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey')
+        throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey 或 apiKeyEnv')
       }
       const adapterFor = (p: Provider): ProviderAdapter => p === 'threerouter' ? threerouterAdapter
         : p === 'wanx' ? wanxAdapter
@@ -273,7 +275,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const fallbackNotes: string[] = []
       let lastError: unknown
       for (const candidate of candidates) {
-        const creds = resolveProviderCredentials(config, candidate)
+        const creds = await resolveProviderCredentials(config, candidate, resolveApiKey)
         const candidateAdapter = adapterFor(candidate)
         const candidateOpts: HttpOpts = {
           apiKey: creds.apiKey,

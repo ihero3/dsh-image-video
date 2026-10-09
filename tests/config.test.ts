@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Config, resolveActiveProvider } from '../src/config.ts'
+import { Config, hasConfiguredCredentials, resolveActiveProvider } from '../src/config.ts'
 
 describe('Config Schema', () => {
   it('空对象 → 全部使用默认值（默认 provider=threerouter）', () => {
@@ -91,32 +91,35 @@ describe('Config Schema', () => {
 })
 
 describe('resolveActiveProvider 凭证解析', () => {
-  it('provider=threerouter → 使用 threerouter 凭证 + 默认 baseURL', () => {
+  /** 不解析任何引用的解析器：引用用例各测各的。 */
+  const noRef = async (): Promise<string | undefined> => undefined
+
+  it('provider=threerouter → 使用 threerouter 凭证 + 默认 baseURL', async () => {
     const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-threerouter' } })
-    const r = resolveActiveProvider(cfg)
+    const r = await resolveActiveProvider(cfg, noRef)
     expect(r.provider).toBe('threerouter')
     expect(r.apiKey).toBe('sk-threerouter')
     expect(r.baseURL).toBe('https://api.threerouter.com/v1')
   })
 
-  it('provider=wanx → 使用 wanx 凭证 + 默认 baseURL', () => {
+  it('provider=wanx → 使用 wanx 凭证 + 默认 baseURL', async () => {
     const cfg = Config({ provider: 'wanx', wanx: { apiKey: 'sk-wanx' } })
-    const r = resolveActiveProvider(cfg)
+    const r = await resolveActiveProvider(cfg, noRef)
     expect(r.provider).toBe('wanx')
     expect(r.apiKey).toBe('sk-wanx')
     expect(r.baseURL).toBe('https://dashscope.aliyuncs.com/api/v1')
   })
 
-  it('provider=seedance → 使用 seedance 凭证 + 默认 baseURL', () => {
+  it('provider=seedance → 使用 seedance 凭证 + 默认 baseURL', async () => {
     const cfg = Config({ provider: 'seedance', seedance: { apiKey: 'sk-seed' } })
-    const r = resolveActiveProvider(cfg)
+    const r = await resolveActiveProvider(cfg, noRef)
     expect(r.provider).toBe('seedance')
     expect(r.baseURL).toBe('https://ark.cn-beijing.volces.com/api/v3')
   })
 
-  it('provider=minimax → 使用 minimax 凭证 + 官方平台默认 baseURL；defaultVideoProvider 联合含 minimax', () => {
+  it('provider=minimax → 使用 minimax 凭证 + 官方平台默认 baseURL；defaultVideoProvider 联合含 minimax', async () => {
     const cfg = Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultVideoProvider: 'minimax' })
-    const r = resolveActiveProvider(cfg)
+    const r = await resolveActiveProvider(cfg, noRef)
     expect(r.provider).toBe('minimax')
     expect(r.baseURL).toBe('https://api.minimaxi.com/v1')
     expect(cfg.defaultVideoProvider).toBe('minimax')
@@ -124,17 +127,52 @@ describe('resolveActiveProvider 凭证解析', () => {
     expect(Config({ provider: 'minimax', minimax: { apiKey: 'sk-mm' }, defaultImageProvider: 'minimax' }).defaultImageProvider).toBe('minimax')
   })
 
-  it('自定义 baseURL 覆盖默认端点', () => {
+  it('自定义 baseURL 覆盖默认端点', async () => {
     const cfg = Config({ provider: 'wanx', wanx: { apiKey: 'sk', baseURL: 'https://proxy/wanx' } })
-    expect(resolveActiveProvider(cfg).baseURL).toBe('https://proxy/wanx')
+    expect((await resolveActiveProvider(cfg, noRef)).baseURL).toBe('https://proxy/wanx')
   })
 
-  it('未配置 API Key 时抛错，含中文友好提示', () => {
+  it('未配置 API Key 时抛错，含中文友好提示', async () => {
     const cfgT = Config({ provider: 'threerouter', threerouter: { apiKey: '' } })
-    expect(() => resolveActiveProvider(cfgT)).toThrow(/threerouter.*未配置 API Key/)
+    await expect(resolveActiveProvider(cfgT, noRef)).rejects.toThrow(/threerouter.*未配置 API Key/)
     const cfgW = Config({ provider: 'wanx', wanx: { apiKey: '' } })
-    expect(() => resolveActiveProvider(cfgW)).toThrow(/wanx.*未配置 API Key/)
+    await expect(resolveActiveProvider(cfgW, noRef)).rejects.toThrow(/wanx.*未配置 API Key/)
     const cfgS = Config({ provider: 'seedance', seedance: { apiKey: '   ' } })
-    expect(() => resolveActiveProvider(cfgS)).toThrow(/seedance.*未配置 API Key/)
+    await expect(resolveActiveProvider(cfgS, noRef)).rejects.toThrow(/seedance.*未配置 API Key/)
+  })
+
+  it('apiKeyEnv 引用：明文留空时经凭证缝解析，且解析值两端空白被裁掉', async () => {
+    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: '', apiKeyEnv: 'THREEROUTER_API_KEY' } })
+    const seen: string[] = []
+    const r = await resolveActiveProvider(cfg, async (ref) => {
+      seen.push(ref)
+      return '  sk-from-seam  '
+    })
+    expect(seen).toEqual(['THREEROUTER_API_KEY'])
+    expect(r.apiKey).toBe('sk-from-seam')
+  })
+
+  it('apiKeyEnv 引用：明文优先，不查凭证缝', async () => {
+    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-literal', apiKeyEnv: 'THREEROUTER_API_KEY' } })
+    let called = 0
+    const r = await resolveActiveProvider(cfg, async () => {
+      called += 1
+      return 'sk-from-seam'
+    })
+    expect(r.apiKey).toBe('sk-literal')
+    expect(called).toBe(0)
+  })
+
+  it('apiKeyEnv 引用解析不到时按未配置报错', async () => {
+    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: '', apiKeyEnv: 'MISSING_KEY' } })
+    await expect(resolveActiveProvider(cfg, async () => undefined)).rejects.toThrow(/threerouter.*未配置 API Key/)
+    await expect(resolveActiveProvider(cfg, async () => '   ')).rejects.toThrow(/threerouter.*未配置 API Key/)
+  })
+
+  it('hasConfiguredCredentials：明文或引用任一非空即为已配置', () => {
+    expect(hasConfiguredCredentials(Config({}), 'threerouter')).toBe(false)
+    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: 'sk' } }), 'threerouter')).toBe(true)
+    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: '', apiKeyEnv: 'THREEROUTER_API_KEY' } }), 'threerouter')).toBe(true)
+    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: '  ', apiKeyEnv: '  ' } }), 'threerouter')).toBe(false)
   })
 })

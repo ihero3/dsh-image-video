@@ -12,6 +12,8 @@
 - **四家服务商 + 按模型家族自动路由** — Threerouter（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threerouter 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
 - **图片内嵌渲染** — 图片字节经 attachment 服务持久化，附件引用走 `presentationMeta` UI-only 通道，模型只见文本摘要，纯文本模型照常工作
+- **凭证缝引用，不内联明文** — 每个服务商可只声明 `apiKeyEnv`（凭证引用名），生成时经 `ctx.credentials` 现读；桌面端登录写入的 Key 因此可直接复用，明文 `apiKey` 仍优先于引用
+- **媒体模式注入** — composer 切到「图片 / 视频」tab 时，插件在用户轮次进入模型请求前追加一条指令（`agent/pre-step`），要求模型直接调用生成工具并带出当前生效参数；子代理不继承该模式
 - **统一异常分类** — `GenerationError` 五类错误（auth / quota / task / timeout / network），可重试错误指数退避，不可重试错误即时中止
 - **声明式服务依赖** — `inject = ['tools']` 顶部声明 + `ctx.inject(['attachments'])` 显式注入，不假设其他插件内部实现
 
@@ -232,7 +234,8 @@ dsh-image-video/
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `provider` | `'threerouter' \| 'wanx' \| 'minimax' \| 'seedance'` | `threerouter` | 激活的服务商，切换后立即生效（HMR） |
-| `threerouter.apiKey` | `string` | `''` | Threerouter API Key；`provider=threerouter` 时必填 |
+| `threerouter.apiKey` | `string` | `''` | Threerouter API Key；`provider=threerouter` 时必填（也可只填 `apiKeyEnv`） |
+| `threerouter.apiKeyEnv` | `string` | `''` | 凭证引用名；`apiKey` 留空时经 `ctx.credentials` 解析（如桌面端登录写入的 `THREEROUTER_API_KEY`），留空表示不使用引用 |
 | `threerouter.baseURL` | `string` | `''` | Threerouter 自定义接口地址，留空用默认端点 |
 | `wanx.apiKey` | `string` | `''` | 万象 API Key；`provider=wanx` 时必填 |
 | `minimax.apiKey` | `string` | `''` | MiniMax 官方平台 API Key；`provider=minimax` 或模型家族路由命中时使用，留空自动跳过该候选 |
@@ -257,6 +260,24 @@ dsh-image-video/
 | `watermark.position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'` | `'bottom-right'` | 水印锚点 |
 | `watermark.opacity` | `number` | `0.68` | 水印透明度，0–1 |
 | `watermark.fontSizeRatio` | `number` | `0.032` | 字号相对图片宽度比例 |
+
+### 凭证缝引用（`apiKeyEnv`）
+
+每个服务商的凭证块都支持 `apiKeyEnv`：`apiKey` 留空时按该引用经宿主的 `credentials` 服务解析（`ctx.credentials.resolve(credentialRef(ref))`）。取值优先级为「明文 `apiKey` > 引用解析值」，两者都取不到时按未配置响亮报错。用途是让部署只在配置里声明引用名，把明文留给宿主凭证存储——桌面端登录 Threerouter 后写入的 `THREEROUTER_API_KEY` 因此可直接复用：
+
+```yaml
+- id: image-video
+  config:
+    provider: threerouter
+    threerouter:
+      apiKeyEnv: THREEROUTER_API_KEY   # 不内联明文
+```
+
+候选服务商过滤按「明文或引用任一非空」判定，只声明引用的服务商不会被跳过。
+
+### 媒体模式注入（`mediaMode`）
+
+桌面 composer 的媒体 tab 通过回环路由 `POST /image-video/defaults` 写入 `mediaMode`（`text` / `image` / `video`）。当它为 `image` / `video` 时，插件在 `agent/pre-step` 监听里向本步追加一条插件来源的指令消息（`source.kind = 'image-video.media-mode'`），要求模型直接调用对应生成工具、并告知当前生效的尺寸/风格/比例/时长；`text` 与未设置不注入。门控：只在 `next()` 成功且本步确实带来新的用户输入时注入（工具循环的后续步不重复），子代理（`origin === 'subagent'`）不继承主会话的媒体模式。
 | `watermark.marginXRatio` / `marginYRatio` | `number` | `0.028` / `0.012` | 水平/垂直边距比例 |
 | `watermark.glowEnabled` | `boolean` | `true` | 是否启用柔光描边 |
 | `watermark.glowColor` / `glowBlurRatio` | `string` / `number` | `'#ffffff'` / `0.18` | 描边颜色与模糊半径比例 |
@@ -281,6 +302,9 @@ dsh-image-video/
 |---|---|---|---|
 | `tools` | `inject = ['tools']` 顶部声明 | 插件必需，缺失则不加载 | dsh-base |
 | `attachments` | `ctx.inject(['attachments'], cb)` | `generate_image` 必需，`generate_video` 不依赖 | dsh-base 的 `attachment-local` |
+| `credentials` | `ctx.get('credentials')`（可选） | 可选：缺失时 `apiKeyEnv` 引用解析为未配置，显式 `apiKey` 仍可用 | dsh 的 credentials 服务 |
+| `agents` | `ctx.inject(['agents'], cb)`（可选） | 可选：缺失时不做媒体模式注入，工具本身照常注册 | dsh-base 的 agent 循环 |
+| `webServer` | `ctx.inject(['webServer'], cb)`（可选） | 可选：缺失时跳过 outputs 只读路由与 defaults 热更新路由 | 桌面宿主 |
 
 `generate_image` 通过 `ctx.inject` 显式声明 attachment 服务依赖：服务挂载时注册工具，服务撤销时 fiber dispose 自动注销。`generate_video` 始终注册。`cordis.patch.yml` 用 `- insert` 新增 `image-video` 行，不覆盖任何现有插件行，升级保持组合兼容。
 

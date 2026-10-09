@@ -28,7 +28,18 @@ import type { Config, Provider } from './config.ts'
  * `imageSize` 为映射后的尺寸串（如 '1024*1024'），`videoAspectRatio` 为比例串
  * （如 '16:9'），`imageStyle` 为风格 id（见 {@link IMAGE_STYLE_OPTIONS}）。
  */
+/**
+ * composer 媒体 tab 模式：'text' 为默认聊天模式；'image' / 'video' 令宿主在用户轮次
+ * 进入模型请求前注入「必须调用生成工具」的指令（见 media-mode-injection.ts）。
+ */
+export type MediaMode = 'text' | 'image' | 'video'
+
 export interface RuntimeDefaults {
+  /**
+   * composer 媒体 tab 模式覆盖；undefined / 'text' 不注入生成指令。
+   * 纯运行时概念：settings 没有对应持久字段。
+   */
+  mediaMode?: MediaMode
   /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
   imageProvider?: Provider
   /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
@@ -248,7 +259,7 @@ export function resolveModelCandidates(
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 export const DEFAULTS_ROUTE_PATH = '/image-video/defaults'
 
-/** GET / POST 响应体：六字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
+/** GET / POST 响应体：七字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
 export type RuntimeDefaultsView = RuntimeDefaultsPatch
 
 /**
@@ -292,6 +303,7 @@ export function extractPersistedDefaults(config: Config): PersistedDefaultsView 
  */
 function toView(defaults: Readonly<RuntimeDefaults>, persisted: PersistedDefaultsView): RuntimeDefaultsView {
   return {
+    mediaMode: defaults.mediaMode ?? null,
     imageProvider: defaults.imageProvider ?? persisted.imageProvider ?? null,
     imageSize: defaults.imageSize ?? persisted.imageSize ?? null,
     imageStyle: defaults.imageStyle ?? null,
@@ -302,7 +314,21 @@ function toView(defaults: Readonly<RuntimeDefaults>, persisted: PersistedDefault
 }
 
 /**
- * 校验并归一化 POST body 为存储 patch。严格协议：仅接受六个已知键；
+ * 合并为「运行时覆盖 ?? settings 持久默认」的当前生效视图。defaults 路由与
+ * 媒体模式注入共用这一个取值口径，避免两处各算一遍。
+ * @param store - 运行时覆盖存储。
+ * @param persisted - settings 持久默认回落层；缺省为空。
+ * @returns 当前生效默认值视图。
+ */
+export function resolveDefaultsView(
+  store: RuntimeDefaultsStore,
+  persisted: PersistedDefaultsView = {},
+): RuntimeDefaultsView {
+  return toView(store.get(), persisted)
+}
+
+/**
+ * 校验并归一化 POST body 为存储 patch。严格协议：仅接受七个已知键；
  * null 清除覆盖；'' 表示「自动」（归一化为 null）；其余值按字段白名单/范围校验。
  * @param body - 已 JSON.parse 的请求体（可能是任意值）。
  * @returns 归一化后的 patch；校验失败返回错误信息（字符串）。
@@ -312,7 +338,7 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
     return { ok: false, error: '请求体必须是 JSON 对象' }
   }
   const record = body as Record<string, unknown>
-  const KNOWN_KEYS: ReadonlyArray<keyof RuntimeDefaults> = ['imageProvider', 'imageSize', 'imageStyle', 'videoProvider', 'videoAspectRatio', 'videoDuration']
+  const KNOWN_KEYS: ReadonlyArray<keyof RuntimeDefaults> = ['mediaMode', 'imageProvider', 'imageSize', 'imageStyle', 'videoProvider', 'videoAspectRatio', 'videoDuration']
   for (const key of Object.keys(record)) {
     if (!KNOWN_KEYS.includes(key as keyof RuntimeDefaults)) {
       return { ok: false, error: `未知字段: ${key}` }
@@ -325,6 +351,13 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
     if (value === undefined) continue
     if (value === null || value === '') {
       patch[key] = null
+      continue
+    }
+    if (key === 'mediaMode') {
+      if (typeof value !== 'string' || (value !== 'text' && value !== 'image' && value !== 'video')) {
+        return { ok: false, error: 'mediaMode 必须是 text / image / video 之一' }
+      }
+      patch[key] = value
       continue
     }
     if (key === 'imageProvider' || key === 'videoProvider') {

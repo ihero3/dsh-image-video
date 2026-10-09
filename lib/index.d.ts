@@ -1,858 +1,8 @@
-import { Awaitable, Dict } from "@deepseek-ai/cosmokit";
-import { StandardSchemaV1 } from "@standard-schema/spec";
-import { Branded } from "@deepseek-ai/dsh-brand";
-import { Agent } from "@deepseek-ai/dsh-agent";
-import { UserMessage } from "@deepseek-ai/dsh-session";
-import * as node_http0 from "node:http";
+import z from "@deepseek-ai/schemastery";
+import { ContextFormed } from "@deepseek-ai/dsh-llm";
+import { Context, Service } from "@deepseek-ai/cordis";
 import { IncomingMessage, ServerResponse } from "node:http";
 
-//#region ../../deepseek-harness/vendor/cordis/lib/types/utils.d.ts
-/** Ordered collection of disposable values with O(1) deletion by value. */
-declare class DisposableList<T extends WeakKey> {
-  private sn;
-  private map;
-  private weak;
-  get length(): number;
-  push(value: T): () => boolean;
-  delete(value: T): boolean;
-  clear(): T[];
-  [Symbol.iterator](): MapIterator<T>;
-}
-/** Metadata used by traceable proxies to rebind `ctx` and associated services. */
-
-/** Shared symbols used to avoid public property-name collisions. */
-declare const symbols: {
-  shadow: symbol;
-  receiver: symbol;
-  original: symbol;
-  metadata: symbol;
-  initHooks: symbol;
-  checkProto: symbol;
-  effect: typeof Context.effect;
-  filter: typeof Context.filter;
-  isolate: typeof Context.isolate;
-  intercept: typeof Context.intercept;
-  init: typeof Service.init;
-  check: typeof Service.check;
-  config: typeof Service.config;
-  invoke: typeof Service.invoke;
-  extend: typeof Service.extend;
-  tracker: typeof Service.tracker;
-  resolveConfig: typeof Service.resolveConfig;
-};
-/** Return true when a plugin callback should be constructed with `new`. */
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/registry.d.ts
-/**
- * Service dependency declaration accepted by plugins and the `@Inject`
- * decorator.
- *
- * Array form requests services without intercept config. Object form maps each
- * service name to optional intercept config for the plugin context.
- */
-type Inject<M = Dict> = (keyof M)[] | { [K in keyof M]?: M[K] };
-/** Context keys that correspond to services with typed intercept config. */
-type InjectKey = keyof { [K in keyof Context & string as Context[K] extends {
-  [symbols.config]: any;
-} ? K : never]: any };
-/**
- * Decorator for declaring service dependencies on classes or class methods.
- *
- * On classes it contributes to the plugin's static `inject` map. On methods it
- * delays the method call until the declared services are available.
- */
-/**
- * @param name — the required service name.
- * @param config — optional intercept config applied for that service.
- * @returns the class or method decorator.
- */
-declare function Inject<K extends InjectKey>(name: K, config?: Context[K] extends {
-  [symbols.config]: infer T;
-} ? T : never): (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) => void;
-/** Utilities for normalizing plugin dependency declarations. */
-declare namespace Inject {
-  /**
-   * Convert array/object/class-inherited inject metadata into a plain map.
-   *
-   * @param inject — the declaration to normalize; `null`/`undefined` add nothing.
-   * @param result — the map to fill (service name → intercept config or `null`).
-   * @returns `result`.
-   */
-  function resolve(inject: Inject | null | undefined, result?: Dict): Dict;
-}
-/** Supported plugin entrypoint shapes. */
-type Plugin<T = any> = Plugin.Function<T> | Plugin.Constructor<T> | Plugin.Object<T>;
-/** Types associated with plugin entrypoints and runtime records. */
-declare namespace Plugin {
-  /** Shared metadata understood by the plugin registry and related tooling. */
-  interface Base<T = any> {
-    /** Display name used for fiber diagnostics and logger names. */
-    name?: string;
-    /** Standard-schema validator applied to config before the plugin starts. */
-    Config?: StandardSchemaV1<any, T>;
-    /** Services the plugin requires; it only loads while all are available. */
-    inject?: Inject;
-    /** Service name(s) the plugin provides (read by `Service` and by loaders). */
-    provide?: string | string[];
-    /** Service names whose intercept config the plugin declares it consumes. */
-    intercept?: Dict<boolean>;
-  }
-  interface Transform<S, T> {
-    /** Marks the transform object as a schema/config transform. */
-    schema?: true;
-    /** Convert user-facing config to runtime config. */
-    Config: (config: S) => T;
-  }
-  /** Function plugin called with `(ctx, config)`. */
-  interface Function<T = any> extends Base<T> {
-    (ctx: Context, config: T): any;
-  }
-  /** Class plugin constructed with `(ctx, config)`. */
-  interface Constructor<T = any> extends Base<T> {
-    new (ctx: Context, config: T): any;
-  }
-  /** Object plugin with an `apply(ctx, config)` method. */
-  interface Object<T = any> extends Base<T> {
-    apply(ctx: Context, config: T): any;
-  }
-  /** Mutable registry record shared by all fibers of one plugin callback. */
-  interface Runtime {
-    /** Display name copied from the first registered plugin shape. */
-    name?: string;
-    /** Every live fiber of this plugin (one per `ctx.plugin()` call). */
-    fibers: DisposableList<Fiber>;
-    /** The executable entrypoint all fibers share (registry identity key). */
-    callback: globalThis.Function;
-    /** Standard-schema validator applied to each fiber's config. */
-    Config?: StandardSchemaV1;
-  }
-}
-sideEffect();
-/**
- * Plugin registry installed as `ctx.registry` and mixed into every context.
- *
- * It normalizes plugin shapes, tracks plugin runtimes, starts fibers, and
- * exposes map-like inspection over active plugin callbacks.
- */
-declare class RegistryService {
-  ctx: Context;
-  private _counter;
-  private _internal;
-  constructor(ctx: Context);
-  /** Allocate the next fiber uid (increments on every read). */
-  get counter(): number;
-  /** Number of registered plugin runtimes. */
-  get size(): number;
-  /**
-   * Resolve a supported plugin shape to its executable callback.
-   *
-   * @param plugin — a function, class, or `{ apply }` object plugin.
-   * @returns the callback identifying the plugin, or `undefined` if invalid.
-   */
-  resolve(plugin: Plugin): Function | undefined;
-  /**
-   * Look up the runtime record for a plugin.
-   *
-   * @param plugin — any supported plugin shape.
-   * @returns the runtime, or `undefined` when the plugin is not registered.
-   */
-  get(plugin: Plugin): Plugin.Runtime | undefined;
-  /**
-   * Check whether a plugin has a registered runtime.
-   *
-   * @param plugin — any supported plugin shape.
-   * @returns `true` when at least one fiber of the plugin exists.
-   */
-  has(plugin: Plugin): boolean;
-  /**
-   * Dispose every running fiber for a plugin and remove its runtime record.
-   *
-   * @param plugin — any supported plugin shape.
-   * @returns the removed runtime, or `undefined` when none was registered.
-   */
-  delete(plugin: Plugin): Plugin.Runtime | undefined;
-  /** Iterate the registered plugin callbacks. */
-  keys(): MapIterator<Function>;
-  /** Iterate the registered plugin runtimes. */
-  values(): MapIterator<Plugin.Runtime>;
-  /** Iterate `[callback, runtime]` pairs. */
-  entries(): MapIterator<[Function, Plugin.Runtime]>;
-  /**
-   * Visit every registered runtime.
-   *
-   * @param callback — receives each runtime and its identifying callback.
-   */
-  forEach(callback: (value: Plugin.Runtime, key: Function) => void): void;
-  /**
-   * Start a callback once the requested dependencies are available.
-   *
-   * @param inject — required services, as an array or a name → config map.
-   * @param callback — plugin body called with `(ctx, config)`.
-   * @returns the fiber; awaiting it settles once loading finished.
-   */
-  inject(inject: Inject, callback: Plugin.Function<void>): Fiber & PromiseLike<Fiber>;
-  /**
-   * Start a plugin in the current context and return its fiber.
-   *
-   * Creates (or reuses) the plugin's runtime record, then starts a new fiber
-   * under the current context. Throws if `plugin` is not a supported shape or
-   * if the current fiber is already disposed.
-   *
-   * @param plugin — a function, class, or `{ apply }` object plugin.
-   * @param config — the plugin config, validated against its `Config` schema.
-   * @param getOuterStack — captures the caller stack for effect diagnostics.
-   * @returns the fiber; awaiting it settles once loading finished.
-   */
-  plugin(plugin: Plugin, config?: any, getOuterStack?: () => string[]): Fiber & PromiseLike<Fiber>;
-}
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/reflect.d.ts
-sideEffect();
-/** Context property definition known by the reflection service. */
-type Property = Property.Service | Property.Accessor;
-/** Property definition variants understood by `ReflectService`. */
-declare namespace Property {
-  /** Service property backed by a provided implementation. */
-  interface Service {
-    /** Discriminator. */
-    type: 'service';
-  }
-  /** Computed context property backed by custom get/set hooks. */
-  interface Accessor {
-    /** Discriminator. */
-    type: 'accessor';
-    /** Compute the property value; `error` carries the caller stack for diagnostics. */
-    get: (this: Context, receiver: any, error: Error) => any;
-    /** Optional setter; return `false` to reject the write. */
-    set?: (this: Context, value: any, receiver: any, error: Error) => boolean;
-  }
-}
-/** Concrete service implementation record stored in the root reflect service. */
-interface Impl {
-  /** The service name. */
-  name: string;
-  /** The fiber that provided the service (owns its lifetime). */
-  fiber: Fiber;
-  /** The current service value. */
-  value?: any;
-  /** Optional availability predicate consulted before dependents may load. */
-  check?: () => boolean;
-}
-/**
- * Reflection and service-resolution layer installed as `ctx.reflect`.
- *
- * This service powers the context proxy, service registration, accessors, and
- * the mixins that expose core service methods directly on `ctx`.
- */
-declare class ReflectService {
-  ctx: Context;
-  /** Proxy traps implementing service resolution for every context object. */
-  static handler: ProxyHandler<Context>;
-  /** Service implementations, keyed by isolation label. */
-  store: Dict<Impl, symbol>;
-  /** Declared context properties (services and accessors), by name. */
-  props: Dict<Property>;
-  constructor(ctx: Context);
-  /**
-   * Read a service from the store without the inject requirement.
-   *
-   * @param name — the service name.
-   * @param strict — when `true`, only return implementations whose providing
-   * fiber is currently active.
-   * @returns the service value, or `undefined` when not (yet) provided.
-   */
-  get(name: string, strict?: boolean): any;
-  _getImpl(name: string, strict?: boolean): Impl | undefined;
-  /**
-   * Overwrite a provided service's value.
-   *
-   * @param name — the service name.
-   * @param value — the new service value.
-   * @param error — carrier for the caller stack in diagnostics.
-   * @returns `true` on success.
-   * @throws when `name` was never provided, or was provided by another fiber.
-   */
-  set(name: string, value: any, error?: Error): boolean;
-  /**
-   * Register a service implementation owned by the current fiber.
-   *
-   * See the `ctx.provide()` overload above for the full contract.
-   *
-   * @param name — the service name.
-   * @param value — the service value.
-   * @param check — optional availability predicate for dependents.
-   * @returns a disposer that unregisters the service.
-   */
-  provide(name: string, value?: any, check?: () => boolean): Disposable<Promise<void>>;
-  /**
-   * Re-evaluate every fiber that requires one of the given services.
-   *
-   * @param names — the service names that changed.
-   * @param filter — restricts notification to matching isolation scopes.
-   * @returns the fibers whose dependency state was refreshed.
-   */
-  notify(names: string[], filter?: (ctx: Context, name: string) => boolean): Fiber[];
-  /**
-   * Define a computed context property backed by get/set hooks.
-   *
-   * @param name — the context property name.
-   * @param options — the `get` hook and optional `set` hook.
-   * @returns a disposer that removes the accessor.
-   */
-  accessor(name: string, options: Omit<Property.Accessor, 'type'>): Disposable<Promise<void>>;
-  /**
-   * Expose selected members of a service directly on `ctx`.
-   *
-   * See the `ctx.mixin()` overload above for the full contract.
-   *
-   * @param source — a context property name or a source object.
-   * @param mixins — keys to forward, or a source-key → ctx-key map.
-   * @returns a disposer that removes all created accessors.
-   */
-  mixin(source: any, mixins: string[] | Dict<string>): Disposable<Promise<void>>;
-  /**
-   * Attach this context's tracing wrapper to a value.
-   *
-   * @param value — the value to wrap.
-   * @returns the traceable wrapper (or the value itself when not applicable).
-   */
-  trace<T>(value: T): T;
-  /**
-   * Wrap a callback so calls trace `this` and arguments to this context.
-   *
-   * @param callback — the function to wrap.
-   * @returns a proxy delegating to `callback` with traced values.
-   */
-  bind<T extends Function>(callback: T): T;
-}
-//# sourceMappingURL=reflect.d.ts.map
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/fiber.d.ts
-sideEffect();
-interface AsyncDisposable<T extends Awaitable<void> = Awaitable<void>> extends PromiseLike<() => T> {
-  (): T;
-}
-/**
- * Function returned by an effect to release resources during disposal.
- *
- * Disposers run in reverse registration order when the owning fiber unloads;
- * they may be async, in which case unloading awaits them.
- */
-type Disposable<T = any> = () => T;
-/**
- * Effect body result accepted by `ctx.effect()` and plugin startup.
- *
- * Either a single disposer, a promise of one, or a (possibly async) iterable
- * yielding several — generator effects register each yielded disposer as it
- * is produced.
- */
-type Effect<T = any> = SyncEffect<T> | AsyncEffect<T>;
-type SyncEffect<T = any> = Disposable<T> | Iterable<Disposable<T>, void, void>;
-type AsyncEffect<T = any> = Promise<Disposable<T>> | AsyncIterable<Disposable<T>, void, void>;
-/** Tree node used to expose nested effect labels for diagnostics. */
-interface EffectMeta {
-  /** Human-readable effect label, e.g. `ctx.on("event")` or `ctx.provide("name")`. */
-  label: string;
-  /** Metadata of nested effects registered while this effect ran. */
-  children: EffectMeta[];
-}
-/**
- * Lifecycle state for one plugin fiber.
- *
- * `PENDING` — waiting for required services; `LOADING` — the plugin callback
- * is running; `ACTIVE` — loaded and providing; `FAILED` — the callback or its
- * config threw; `UNLOADING` — disposers are running; `DISPOSED` — the fiber
- * was removed and cannot restart.
- */
-declare const enum FiberState {
-  PENDING = 0,
-  LOADING = 1,
-  ACTIVE = 2,
-  FAILED = 3,
-  DISPOSED = 4,
-  UNLOADING = 5,
-}
-/** Framework error with a stable machine-readable code. */
-
-/**
- * Runtime instance of one plugin application.
- *
- * A fiber tracks dependency state, validated config, lifecycle effects, and
- * cleanup for the plugin context returned by `ctx.plugin()`.
- */
-declare class Fiber {
-  parent: Context;
-  inject: Dict<any>;
-  runtime: Plugin.Runtime | null;
-  /** Unique id within the registry; 0 for the root fiber, `null` once disposed. */
-  uid: number | null;
-  /** The context this fiber's plugin runs in (extends the parent context). */
-  readonly ctx: Context;
-  /** The validated plugin config (updated by `update()`). */
-  config: any;
-  /** The raw plugin config, re-resolved before each activation. */
-  _config: any;
-  /** Current lifecycle state; transitions emit `internal/status`. */
-  state: FiberState;
-  /** Dispose this fiber: unload the plugin, then settle once cleanup finished. */
-  readonly dispose: () => Promise<void>;
-  /** Snapshot of required service implementations while loaded; `undefined` otherwise. */
-  store: Dict<Impl> | undefined;
-  /** The in-flight load/unload transition, if one is currently running. */
-  inertia: Promise<void> | undefined;
-  readonly _hooks: Dict<DisposableList<Function>>;
-  readonly _disposables: DisposableList<Disposable<any>>;
-  protected context: Context;
-  private _error;
-  private _runner;
-  private _store;
-  /**
-   * Create a fiber. Plugin authors normally obtain fibers from `ctx.plugin()`
-   * rather than constructing them directly.
-   *
-   * @param parent — the context the plugin was loaded from.
-   * @param config — raw config, validated against the runtime's schema.
-   * @param inject — resolved dependency map (service name → intercept config).
-   * @param runtime — the shared plugin runtime, or `null` for the root fiber.
-   * @param getOuterStack — captures the caller stack for effect diagnostics.
-   */
-  constructor(parent: Context, config: any, inject: Dict<any>, runtime: Plugin.Runtime | null, getOuterStack: () => string[]);
-  /** The plugin's display name, inherited from the nearest named ancestor, else `'root'`. */
-  get name(): string;
-  /**
-   * Throw if the fiber has already been disposed.
-   *
-   * @returns nothing when the fiber is still active.
-   * @throws {CordisError} `INACTIVE_EFFECT` when the fiber's uid has been cleared.
-   */
-  assertActive(): void;
-  private _execute;
-  /**
-   * Register a cleanup-aware effect on this fiber.
-   *
-   * `execute` runs immediately; the disposers it produces are collected and
-   * run (in reverse order) either when the returned disposer is called or
-   * when the fiber unloads, whichever comes first. Calling the disposer twice
-   * is a no-op. Throws `CordisError('INACTIVE_EFFECT')` if the fiber is
-   * already disposed, and `TypeError` if `execute` returns an invalid shape.
-   *
-   * @param execute — the effect body; see {@link Effect} for accepted shapes.
-   * @param label — effect label shown in `getEffects()` diagnostics.
-   * @returns a disposer that tears the effect down and settles once done.
-   */
-  effect(execute: () => SyncEffect, label?: string): Disposable<Promise<void>>;
-  /** Same as above for async effects; the disposer is also awaitable. */
-  effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>;
-  /**
-   * Return metadata for currently registered effects.
-   *
-   * @returns one {@link EffectMeta} tree per labeled live effect.
-   */
-  getEffects(): EffectMeta[];
-  private _getState;
-  private _updateState;
-  _checkImpl(name: string): boolean | undefined;
-  _refresh(): void;
-  private _setEpoch;
-  private _resolveConfig;
-  private _reload;
-  private _unload;
-  /**
-   * Wait for current lifecycle work and rethrow startup errors.
-   *
-   * @returns this fiber, once it has settled into a stable state.
-   * @throws the config-validation or plugin-startup error, if any.
-   */
-  await(): Promise<this>;
-  /**
-   * Dispose and immediately reload this plugin with its current config.
-   *
-   * @returns a promise resolving once the reload settled.
-   * @throws {CordisError} `INACTIVE_EFFECT` when the fiber is already disposed.
-   */
-  restart(): Promise<void>;
-  /**
-   * Validate and apply new config, then restart the plugin.
-   *
-   * Runs the `internal/update` waterfall first, so update hooks (and HMR)
-   * can veto or replace the restart.
-   *
-   * @param config — the new raw config; validated before anything restarts.
-   * @param noSave — hint for persistence hooks not to write the change back.
-   * @returns nothing; the restart runs behind the `internal/update` waterfall.
-   * @throws {ValidationError} when the new config fails validation.
-   */
-  update(config: any, noSave?: boolean): void;
-}
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/events.d.ts
-sideEffect();
-/** Options accepted by `ctx.on()` and `ctx.once()`. */
-interface EventOptions {
-  /** Add the listener before existing listeners for the same event. */
-  prepend?: boolean;
-  /** Receive the event regardless of context filter checks. */
-  global?: boolean;
-}
-/** Registered listener record stored by the event service. */
-interface Hook extends EventOptions {
-  ctx: Context;
-  callback: (...args: any[]) => any;
-}
-/**
- * Event bus installed as `ctx.events` and mixed into every context.
- *
- * The service supports concurrent, synchronous, serial, bail, and waterfall
- * dispatch and automatically disposes listeners with their owning fiber.
- */
-declare class EventsService {
-  private ctx;
-  _hooks: Record<keyof any, Hook[]>;
-  constructor(ctx: Context);
-  /**
-   * Resolve listeners for one dispatch and apply context filtering.
-   *
-   * @param type — the dispatch mode, reported on `internal/dispatch`.
-   * @param args — the raw dispatch arguments; consumed up to the event name.
-   * @returns the matching listener callbacks, bound to the dispatch `this`.
-   */
-  dispatch(type: string, args: any[]): ((...args: any[]) => any)[];
-  /**
-   * Run listeners concurrently and wait for all of them.
-   *
-   * @param args — optional `this`, the event name, then listener arguments.
-   * @returns a promise resolving once every listener has settled.
-   */
-  parallel(...args: any[]): Promise<void>;
-  /**
-   * Run listeners synchronously without waiting for returned promises.
-   *
-   * @param args — optional `this`, the event name, then listener arguments.
-   */
-  emit(...args: any[]): void;
-  /**
-   * Run listeners in order, awaiting each, until one returns a bail value.
-   *
-   * @param args — optional `this`, the event name, then listener arguments.
-   * @returns the first bail value (see {@link isBailed}), if any.
-   */
-  serial(...args: any[]): Promise<any>;
-  /**
-   * Run listeners synchronously until one returns a bail value.
-   *
-   * @param args — optional `this`, the event name, then listener arguments.
-   * @returns the first bail value (see {@link isBailed}), if any.
-   */
-  bail(...args: any[]): any;
-  /**
-   * Compose listeners around the final `next` callback.
-   *
-   * The last dispatch argument is treated as the innermost `next`. Listeners
-   * run outermost-first; a listener that does not call `next()` vetoes the
-   * rest of the chain, including the built-in behavior.
-   *
-   * @param args — optional `this`, the event name, listener arguments, then `next`.
-   * @returns the outermost listener's return value.
-   */
-  waterfall(...args: any[]): any;
-  /**
-   * Store a listener record as an effect on the current fiber.
-   *
-   * @param label — effect label shown in fiber diagnostics.
-   * @param hooks — the listener list for one event.
-   * @param callback — the listener to store.
-   * @param options — placement and filtering options.
-   * @returns a disposer that unregisters the listener.
-   */
-  register(label: string, hooks: Hook[], callback: any, options: EventOptions): () => void;
-  /**
-   * Remove a stored listener record.
-   *
-   * @param hooks — the listener list for one event.
-   * @param callback — the listener to remove.
-   * @returns `true` if the listener was found and removed.
-   */
-  unregister(hooks: Hook[], callback: any): true | undefined;
-  /**
-   * Register an event listener owned by the current fiber.
-   *
-   * The listener is removed automatically when the fiber unloads. Throws
-   * `CordisError('INACTIVE_EFFECT')` if the fiber is already disposed.
-   *
-   * @param name — the event name to listen for.
-   * @param listener — called with the dispatch arguments.
-   * @param options — listener options; a boolean is shorthand for `prepend`.
-   * @returns a disposer removing the listener; `true` if it was still registered.
-   */
-  on(name: string | symbol, listener: (...args: any) => any, options?: boolean | EventOptions): any;
-  /**
-   * Register an event listener that disposes itself after the first call.
-   *
-   * @param name — the event name to listen for.
-   * @param listener — called at most once with the dispatch arguments.
-   * @param options — listener options; a boolean is shorthand for `prepend`.
-   * @returns a disposer removing the listener; `true` if it was still registered.
-   */
-  once(name: string, listener: (...args: any) => any, options?: boolean | EventOptions): any;
-}
-/**
- * Built-in framework events used by core services and extension points.
- *
- * Plugin and status events track fiber lifecycle, service events observe
- * dependency registration, update/get/set/listener events allow core services
- * to intercept runtime operations, and `internal/dispatch` exposes event-bus
- * diagnostics before public events are delivered.
- */
-
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/logger.d.ts
-sideEffect();
-/** Logger method name and severity category. */
-type LoggerType = 'error' | 'info' | 'warn' | 'debug';
-/** Callable shape for one logger severity method. */
-type LoggerMethod = (format: any, ...param: any[]) => void;
-/** Formatter used to resolve a printf-style placeholder. */
-type Formatter = (value: any, exporter: Exporter, message: Message) => any;
-/** Numeric severity used when exporters decide whether to emit a message. */
-
-/** Structured log record delivered to exporters. */
-interface Message {
-  sn: number;
-  ts: number;
-  name: string;
-  type: LoggerType;
-  level: number;
-  args: any[];
-  fiber?: WeakRef<Fiber>;
-}
-/** Sink that receives structured log messages. */
-interface Exporter {
-  colors?: number | false;
-  maxLength?: number;
-  levels?: Record<string, number>;
-  formatters?: Record<string, Formatter>;
-  export(message: Message): void;
-}
-/** Built-in placeholder formatters used by `Logger.format()`. */
-
-/** Options used when creating a named logger facade. */
-interface LoggerOptions {
-  /** The logger name shown with each message. */
-  name: string;
-  /** Message fields merged into every record from this logger. */
-  meta?: Partial<Message>;
-  /** Default maximum level exported when an exporter has no own threshold. */
-  level?: number;
-}
-/** Logger facade identity, inherited message metadata, and optional minimum level. */
-interface Logger extends LoggerOptions {}
-/** Logger facade severity methods. */
-interface Logger extends Record<LoggerType, LoggerMethod> {}
-/** Logger facade for one named subsystem. */
-declare class Logger {
-  private service;
-  static color(exporter: Exporter, code: number, value: any, decoration?: string): string;
-  static code(name: string, level?: false | number): number;
-  static format(exporter: Exporter, message: Message): string;
-  constructor(options: LoggerOptions, service: LoggerService);
-  private _method;
-}
-/** ANSI 16-color palette indexes used for logger name coloring. */
-
-/** Logger service configuration merged from context intercepts. */
-declare namespace LoggerService {
-  interface Intercept {
-    name?: string;
-    level?: number;
-  }
-}
-/** Callable `ctx.logger` service shape. */
-interface LoggerService extends Record<LoggerType, LoggerMethod> {
-  (name?: string): Logger;
-}
-/**
- * Built-in logging service.
- *
- * Call `ctx.logger()` to create a named logger, or call `ctx.logger.info()`
- * directly to log with the current fiber-derived name.
- */
-declare class LoggerService {
-  bufferSize: number;
-  buffer: Message[];
-  ctx: Context;
-  _snMessage: number;
-  _snExporter: number;
-  exporters: Map<number, Exporter>;
-  constructor(ctx: Context);
-  /**
-   * Register an exporter and dispose it with the current fiber.
-   *
-   * @param exporter — the sink that receives structured log messages.
-   * @returns a disposer that removes the exporter.
-   */
-  exporter(exporter: Exporter): Disposable<Promise<void>>;
-  private _resolveConfig;
-  [symbols.invoke](name?: string): Logger;
-}
-//# sourceMappingURL=logger.d.ts.map
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/context.d.ts
-/**
- * Public shape of a Cordis context.
- *
- * The concrete `Context` class is proxied at runtime, so this interface is
- * augmented by core services and plugins to describe the properties that may
- * be read from `ctx`.
- */
-interface Context {
-  /** Isolation map: service name → scope label. Lookups for a name resolve within its label. */
-  [symbols.isolate]: Dict<symbol>;
-  /** Intercept map: service name → config merged into that service's per-plugin config. */
-  [symbols.intercept]: Dict;
-  /** The root context of the application (every child context shares it). @experimental */
-  root: this;
-  /** Base URL used to resolve relative plugin/module specifiers, if the runtime sets one. */
-  baseUrl?: string;
-  /** The event bus. Its methods are also mixed onto `ctx` (`ctx.on`, `ctx.emit`, ...). */
-  events: EventsService;
-  /** The logging service. Call `ctx.logger(name)` for a named logger. */
-  logger: LoggerService;
-  /** The reflection layer backing the context proxy (`ctx.get`, `ctx.provide`, ...). */
-  reflect: ReflectService;
-  /** The plugin registry. Its methods are mixed onto `ctx` (`ctx.plugin`, `ctx.inject`). */
-  registry: RegistryService;
-}
-/**
- * Root and child dependency containers for Cordis plugins.
- *
- * A context is a proxy: normal property reads go through the service resolver,
- * while `extend()`, `isolate()`, and `intercept()` create scoped child
- * contexts without mutating their parent.
- */
-declare class Context {
-  /** Symbol key under which a disposer exposes its {@link EffectMeta} diagnostics tree. */
-  static readonly effect: unique symbol;
-  /** Symbol key for a context's listener filter, consulted on every event dispatch. */
-  static readonly filter: unique symbol;
-  /** Symbol key of the isolation map (see the `Context[symbols.isolate]` property). */
-  static readonly isolate: unique symbol;
-  /** Symbol key of the intercept map (see the `Context[symbols.intercept]` property). */
-  static readonly intercept: unique symbol;
-  /**
-   * Returns true for Cordis context proxies and context prototypes.
-   *
-   * Works across realms and across multiple copies of cordis, because the
-   * brand is keyed by a global symbol rather than by `instanceof`.
-   *
-   * @param value — the value to test.
-   * @returns `true` if `value` is a Cordis context, narrowing its type.
-   */
-  static is(value: any): value is Context;
-  /** Create the root context and install the built-in services. */
-  constructor();
-  /**
-   * Create a child context with extra metadata on top of the current scope.
-   *
-   * The child prototypally inherits every property of this context; own
-   * properties of `meta` shadow the inherited ones. The parent is not mutated.
-   *
-   * @param meta — own properties (including symbol keys) to define on the child.
-   * @returns a child context inheriting from this one.
-   */
-  extend(meta?: {}): this;
-  /**
-   * Create a child context with an independent service scope for `name`.
-   *
-   * Below the returned context, reads and writes of the service `name`
-   * resolve against the new label instead of the parent's, so a different
-   * implementation can be provided without affecting the parent scope.
-   * Passing the same `label` to two `isolate()` calls joins their scopes.
-   *
-   * @param name — the service name to isolate.
-   * @param label — scope label to join; defaults to a fresh unique symbol.
-   * @returns a child context whose `name` service resolves in the new scope.
-   */
-  isolate(name: string, label?: symbol): this;
-  /**
-   * Add service-specific intercept config for plugins started below this
-   * context.
-   *
-   * Plugins loaded under the returned context see `config` merged into the
-   * service's resolved config (ancestor entries first; see
-   * `Service[symbols.resolveConfig]`). The parent context is not affected.
-   *
-   * @param name — the service name whose config to intercept.
-   * @param config — the intercept config to merge for that service.
-   * @returns a child context carrying the additional intercept entry.
-   */
-  intercept<K extends InjectKey>(name: K, config: Context[K] extends {
-    [symbols.config]: infer T;
-  } ? T : never): this;
-  intercept(name: string, config: any): this;
-}
-//# sourceMappingURL=context.d.ts.map
-//#endregion
-//#region ../../deepseek-harness/vendor/cordis/lib/types/service.d.ts
-/**
- * Base class for services that expose a named API on `ctx`.
- *
- * Subclasses call `super(ctx, name)` from their constructor. The service is
- * registered immediately and is automatically removed with the owning fiber.
- */
-declare abstract class Service<out T = never> {
-  protected ctx: Context;
-  /** Symbol key of an instance method run after construction (class plugins). */
-  static readonly init: unique symbol;
-  /** Symbol key of the availability predicate passed to `ctx.provide()`. */
-  static readonly check: unique symbol;
-  /** Symbol key of the phantom intercept-config type parameter. */
-  static readonly config: unique symbol;
-  /** Symbol key of the call body making a service callable (e.g. `ctx.logger()`). */
-  static readonly invoke: unique symbol;
-  /** Symbol key of the helper deriving an extended service instance. */
-  static readonly extend: unique symbol;
-  /** Symbol key of the tracker metadata used for context tracing. */
-  static readonly tracker: unique symbol;
-  /** Symbol key of the intercept-config resolution helper below. */
-  static readonly resolveConfig: unique symbol;
-  [symbols.config]: T;
-  /** The service name this instance is registered under. */
-  name: string;
-  /**
-   * Register this instance as `name` in the current context.
-   *
-   * Calls `ctx.reflect.provide(name, this, this[Service.check])`, so the
-   * service is unregistered automatically when the owning fiber unloads.
-   * Services with a `[Service.invoke]` body return a callable instance.
-   *
-   * @param ctx — the context to register in (stored as `this.ctx`).
-   * @param name — the service name; defaults to the static `provide` field.
-   */
-  constructor(ctx: Context, name: string);
-  protected [symbols.filter](ctx: Context): boolean;
-  protected [symbols.extend](props?: any): any;
-  /**
-   * Merge intercept config from ancestors with optional base and head values.
-   *
-   * Entries added closer to the root apply first; `base` is prepended and
-   * `head` appended. Uses `Config.merge` when the service declares one,
-   * otherwise a shallow `Object.assign`.
-   *
-   * @param base — lowest-precedence config merged before all intercepts.
-   * @param head — highest-precedence config merged after all intercepts.
-   * @returns the merged config.
-   */
-  [symbols.resolveConfig](base?: T, head?: T): T;
-  static [Symbol.hasInstance](instance: any): boolean;
-}
-//# sourceMappingURL=service.d.ts.map
-
-//#endregion
-//#region ../../deepseek-harness/vendor/schemastery/lib/types/index.d.ts
-sideEffect();
-type Schema<S = any, T = S> = Schemastery<S, T>;
-declare const Schema: Schemastery.Static;
-//#endregion
 //#region src/config.d.ts
 /** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threerouter 为聚合器（所有模型）。 */
 type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance';
@@ -860,9 +10,21 @@ type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance';
 interface ProviderCredentials {
   /** 服务商 API Key；切换 provider 后对应 key 立即生效。 */
   apiKey: string;
+  /**
+   * API Key 的凭证引用名；apiKey 留空时按此引用经凭证缝解析，例如桌面端登录后
+   * 写入的 Key。留空表示不使用引用。
+   */
+  apiKeyEnv: string;
   /** 自定义接口地址，留空使用服务商默认端点。 */
   baseURL?: string;
 }
+/**
+ * 按凭证引用名解析密钥值的回调。生成工具的 execute 内由插件经 `ctx.credentials`
+ * 构造，使配置只携带引用、不内联明文凭证。
+ * @param ref - 凭证引用名（POSIX 环境变量式标识符）。
+ * @returns 引用当前解析到的值；引用未配置或凭证服务缺失时为 undefined。
+ */
+type ApiKeyResolver = (ref: string) => Promise<string | undefined>;
 /** 水印位置（四角之一）。 */
 type WatermarkPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 /**
@@ -941,11 +103,7 @@ interface Config {
   watermark: WatermarkConfig;
 }
 /** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
-declare const Config: Schema<Config>;
-/**
- * 读取指定服务商的凭证，不校验 key 非空。供候选服务商构建时的 key 过滤
- * （resolveModelCandidates 用它跳过未配置 key 的候选），不抛错。
- */
+declare const Config: z<Config>;
 //#endregion
 //#region src/watermark.d.ts
 /** 水印处理结果。 */
@@ -1011,27 +169,18 @@ declare class GenerationError extends Error {
   readonly code?: string;
   constructor(kind: ErrorKind, message: string, retryable: boolean, status?: number, retryAfterMs?: number, code?: string);
 }
-/** 服务端错误码：幂等键对应的首次提交仍在进行中（GateWay 异步图片契约）。 */
-
 /**
  * 判定错误是否为「异步图片端点在本环境不可用」：功能未开启（未配对象存储）或
  * 该分组平台不支持 Images API。两者都在创建任务前返回 404，因此降级到同步
  * 单次提交不会产生重复生成。
  */
 declare function isAsyncImageUnavailableError(err: unknown): boolean;
-/** 判定错误是否为「同一幂等键首次提交仍在进行中」：任务已存在，应凭 request_id 找回而非重提。 */
-
 /**
  * 判定错误是否为「提交状态未知」——客户端无法确认请求是否已在服务端创建任务。
  * 超时、连接中断、502/503 都属于此类：**绝不允许自动重提或换模型**，只能凭
  * request_id 反查（见 image-transaction.ts）。
  */
 declare function isUnknownSubmitStateError(err: unknown): boolean;
-/**
- * 判定错误是否为「调用方主动取消」。取消同样可能发生在请求已抵达服务端之后，
- * 因此不视为「未提交」——只是不再做任何自动动作（找回/重提都不做）。
- */
-
 /**
  * 判定错误是否为「模型不被该服务商接受」类，供工具层在候选服务商间回退。
  * 实测形态（2026-09）：
@@ -1070,14 +219,6 @@ interface RequestResult {
   data: unknown;
   headers: Headers;
 }
-/**
- * 分类 HTTP 响应错误，生成友好中文提示。
- * 内部实现，不在 execute 外部直接调用。通过 `classifyErrorForTest` 导出用于单元测试。
- */
-/**
- * 解析 Retry-After 响应头为毫秒（支持秒数与 HTTP 日期两种形态），上限 180s。
- * 导出供适配器读取 202/409 上的服务端建议轮询间隔。
- */
 //#endregion
 //#region src/providers/types.d.ts
 /** 图片生成请求参数（不传 image 为文生图，传入 image 为图生图/参考图编辑）。 */
@@ -1208,8 +349,6 @@ interface HttpOpts {
   retryTimes: number;
   signal?: AbortSignal;
 }
-/** 将 HttpOpts 转换为 RequestOptions。 */
-
 /** 服务商适配器接口。 */
 interface ProviderAdapter {
   /** 提交文生图任务（同步语义：返回体即结果，或返回可轮询的异步任务句柄）。 */
@@ -1225,7 +364,6 @@ interface ProviderAdapter {
    */
   imageAsync?: ImageAsyncCapability;
 }
-/** 从 "1024x1024" 格式解析宽高。 */
 //#endregion
 //#region src/task-manager.d.ts
 /** 轮询完成结果。 */
@@ -1285,13 +423,7 @@ type ImageTransport = 'async' | 'sync';
  */
 type UnknownStatePolicy = 'fail' | 'resubmit-same-key';
 /** 事务状态机取值。 */
-type TransactionStatus = /** 已创建，尚未提交。 */
-'idle'
-/** 提交请求已发出。 */ | 'submitting'
-/** 服务端已接受任务（有 taskId）。 */ | 'accepted'
-/** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */ | 'unknown'
-/** 成功拿到结果。 */ | 'succeeded'
-/** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */ | 'failed';
+type TransactionStatus = /** 已创建，尚未提交。 */'idle' /** 提交请求已发出。 */ | 'submitting' /** 服务端已接受任务（有 taskId）。 */ | 'accepted' /** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */ | 'unknown' /** 成功拿到结果。 */ | 'succeeded' /** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */ | 'failed';
 /**
  * 事务账本：一次 `generate_image` 调用对应一个实例，记录提交/找回/结果的
  * 全部事实，作为结果元数据回给用户（「本次到底提交了几次」必须可核对）。
@@ -1426,8 +558,6 @@ declare function runImageTransaction(deps: RunImageTransactionDeps): Promise<Run
 declare class AsyncTransportUnavailableError extends GenerationError {
   constructor(detail: string);
 }
-/** 异步端点不可用的错误码（工具层据此决定降级）。 */
-
 /** 传输能力探测缓存：避免每次调用都为一个已知不可用的端点付一次 404 往返。 */
 interface TransportProbeCache {
   /** 已知不可用状态持续到该时间点（毫秒时间戳）。 */
@@ -1500,20 +630,16 @@ declare function formatPreflightNote(preflight: ImagePreflight): string;
 //#region src/providers/wanx.d.ts
 /** 万象适配器实例。 */
 declare const wanxAdapter: ProviderAdapter;
-/** 从配置解析万象 HttpOpts（已由 config.resolveActiveProvider 解析凭证）。 */
 //#endregion
 //#region src/providers/seedance.d.ts
 /** Seedance 适配器实例。 */
 declare const seedanceAdapter: ProviderAdapter;
-/** 复用 downloadMedia。 */
-
 //#endregion
 //#region src/providers/threerouter.d.ts
 /** Threerouter 适配器实例：统一入口同时支持文生图与文生视频。 */
 declare const threerouterAdapter: ProviderAdapter;
-/** 复用 downloadMedia。 */
 //#endregion
-//#region ../../deepseek-harness/packages/attachment/attachment/lib/types/error.d.ts
+//#region ../../packages/attachment/attachment/lib/types/error.d.ts
 declare const ATTACHMENT_ERROR_CODES: readonly ["TOO_MANY_IMAGES", "IMAGES_TOO_LARGE", "UNSUPPORTED_IMAGE_TYPE", "INVALID_IMAGE_BASE64", "INVALID_IMAGE", "IMAGE_TYPE_MISMATCH", "IMAGE_TOO_LARGE", "IMAGE_TOO_MANY_PIXELS", "IMAGE_DIMENSION_TOO_LARGE", "INVALID_FILE_BASE64", "INVALID_ATTACHMENT_REF", "ATTACHMENT_CORRUPT", "ATTACHMENT_WRITE_FAILED", "ATTACHMENT_NOT_FOUND", "ATTACHMENT_READ_FAILED", "ATTACHMENT_PROJECTION_UNSUPPORTED", "ATTACHMENT_FILES_UNSUPPORTED"];
 /** Stable attachment failure codes used for protocol error routing. */
 type AttachmentErrorCode = typeof ATTACHMENT_ERROR_CODES[number];
@@ -1536,13 +662,28 @@ declare class AttachmentError extends Error {
    */
   constructor(message: string, code: AttachmentErrorCode, options?: ErrorOptions);
 }
-/**
- * Identify attachment failures by their stable code across duplicate package installations.
- * @param error - failure raised while validating, persisting, or reading an attachment.
- * @returns whether the failure carries a recognized attachment error code.
- */
 //#endregion
-//#region ../../deepseek-harness/packages/attachment/attachment/lib/types/brand.d.ts
+//#region ../../packages/util/brand/lib/types/index.d.ts
+/**
+ * Duplicate-install-safe nominal primitive helpers.
+ *
+ * A brand makes structurally identical strings or numbers non-interchangeable
+ * at the type level: a `SessionId` cannot be passed where a `ToolCallId` is
+ * expected, and an event sequence cannot be passed as a log offset. Comparison,
+ * logging, and serialization retain the underlying primitive behavior.
+ *
+ * This package owns no concrete domain value and keeps no runtime identity or mutable
+ * state, so independently installed copies produce interchangeable values.
+ *
+ * @module @deepseek-ai/dsh-brand
+ */
+declare const BRAND: unique symbol;
+/** A string carrying a compile-time-only brand `B`. */
+type Branded<B extends string> = string & {
+  readonly [BRAND]: B;
+};
+//#endregion
+//#region ../../packages/attachment/attachment/lib/types/brand.d.ts
 /** Opaque content-addressed identifier for one immutable attachment object. */
 type AttachmentId = Branded<'AttachmentId'>;
 /**
@@ -1559,9 +700,8 @@ type ImageVariantId = Branded<'ImageVariantId'>;
  * @returns the branded identifier.
  */
 declare function ImageVariantId(value: string): ImageVariantId;
-//# sourceMappingURL=brand.d.ts.map
 //#endregion
-//#region ../../deepseek-harness/packages/attachment/attachment/lib/types/types.d.ts
+//#region ../../packages/attachment/attachment/lib/types/types.d.ts
 /** Raster image formats accepted by the version-one attachment path. */
 type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 /** Durable, serializable reference to one immutable normalized image. */
@@ -1632,8 +772,6 @@ interface ImageAttachmentLimits {
   maxImageDimension: number;
   mediaTypes: readonly ImageMediaType[];
 }
-/** Base64-encoded image upload accompanying one wire request. */
-
 /**
  * Browser-submitted prompt content accepted by Host prompt endpoints; the
  * accepting Host promotes image parts to durable references through
@@ -1706,11 +844,13 @@ interface RequestImageAttachment {
   /** Whether the encoded request version retains an alpha channel. */
   hasAlpha: boolean;
 }
-//# sourceMappingURL=types.d.ts.map
-
 //#endregion
-//#region ../../deepseek-harness/packages/attachment/attachment/lib/types/index.d.ts
-sideEffect();
+//#region ../../packages/attachment/attachment/lib/types/index.d.ts
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    attachments: AttachmentStore;
+  }
+}
 /** Immutable binary attachment service. Implementations validate bytes before publishing a reference. */
 declare abstract class AttachmentStore extends Service {
   constructor(ctx: Context);
@@ -1826,787 +966,6 @@ declare abstract class AttachmentStore extends Service {
   readImageRequest(ref: ImageAttachmentRef, target: ImageRequestTarget, signal?: AbortSignal): Promise<RequestImageAttachment>;
 }
 //#endregion
-//#region ../../deepseek-harness/packages/llm/llm/lib/types/brand.d.ts
-/**
- * Correlates a model-issued tool call with its result. Provider-issued for
- * real adapters; synthesized by mocks/assembler fallbacks.
- */
-type ToolCallId = Branded<'ToolCallId'>;
-/**
- * Brand a string as a {@link ToolCallId}.
- * @param id - the provider-issued or synthesized call id.
- * @returns the same string with the tool-call-id brand.
- */
-declare function ToolCallId(id: string): ToolCallId;
-/** Provider-issued request identifier retained for diagnostics across package boundaries. */
-
-//#endregion
-//#region ../../deepseek-harness/packages/llm/llm/lib/types/types.d.ts
-sideEffect();
-/** Plain text visible to the end user. */
-interface TextBlock {
-  type: 'text';
-  text: string;
-}
-/** Reasoning / thinking content, distinct from visible text. */
-interface ReasoningBlock {
-  type: 'reasoning';
-  text: string;
-}
-/**
- * A durable raster image reference, valid in user or assistant content. The
- * block is deliberately role-neutral; assistant-side rendering is forward
- * compatibility — the current production adapters declare text-only output,
- * so only user messages may carry images.
- */
-interface ImageBlock {
-  type: 'image';
-  /** Immutable bytes and intrinsic display metadata owned by the attachment service. */
-  attachment: ImageAttachmentRef;
-  /**
-   * Derived from a durable image-offload decision or preserved by a message
-   * rewrite. Every route sends placeholder text naming the image and its
-   * available read-only path instead of image bytes.
-   */
-  offloaded?: true;
-}
-/**
- * A durable verbatim file reference, valid in user content. Files never reach
- * a provider natively: request assembly projects every occurrence to
- * deterministic handle text (name, byte size, and the read-only saved path),
- * so adapters and providers see text in its place while the durable log keeps
- * the structured reference for presentation and authorization.
- */
-interface FileBlock {
-  type: 'file';
-  /** Immutable verbatim bytes and display metadata owned by the attachment service. */
-  attachment: FileAttachmentRef;
-}
-/** A tool invocation requested by the model. */
-interface ToolCallBlock {
-  type: 'tool-call';
-  /** Provider-issued call id; correlates with the matching tool result. */
-  id: ToolCallId;
-  name: string;
-  /** Raw JSON string as produced by the model. */
-  arguments: string;
-}
-/** The result of a tool invocation, sent back to the model. */
-interface ToolResultBlock {
-  type: 'tool-result';
-  toolCallId: ToolCallId;
-  content: ContentBlock[];
-  isError?: boolean;
-}
-/**
- * Merge-extensible content blocks keyed by `type`. New core blocks must land
- * with adapter, UI, and compaction support.
- */
-interface ContentBlockMap {
-  'text': TextBlock;
-  'reasoning': ReasoningBlock;
-  'image': ImageBlock;
-  'file': FileBlock;
-  'tool-call': ToolCallBlock;
-  'tool-result': ToolResultBlock;
-}
-/** The block `type` tag vocabulary; widens as plugins add entries to {@link ContentBlockMap}. */
-type ContentBlockType = keyof ContentBlockMap;
-/** Any known content block, derived from {@link ContentBlockMap}; switch on `type` and fall through unknowns (merge-extensible). */
-type ContentBlock = ContentBlockMap[ContentBlockType];
-/**
- * Why a model response stopped.
- * Merge-extensible so adapters can surface provider-specific reasons.
- */
-
-sideEffect();
-/**
- * JSON-schema description of a tool, as sent to the model.
- *
- * Declared here (not in dsh-tools) because it is part of {@link GenerateOptions};
- * dsh-tools' ToolDefinition and dsh-system-prompt's PromptAssembly both import
- * it from this package.
- */
-interface ToolSchema {
-  name: string;
-  description: string;
-  /** JSON Schema object for the arguments. */
-  parameters: Record<string, unknown>;
-}
-/** A single model request, fully assembled. */
-
-//#endregion
-//#region ../../deepseek-harness/packages/llm/llm/lib/types/index.d.ts
-sideEffect();
-
-//#endregion
-//#region ../../deepseek-harness/packages/util/values/lib/types/index.d.ts
-/** Duplicate-install-safe JSON and immutable-value helpers. @module @deepseek-ai/dsh-util-values */
-/** A value that round-trips through JSON without loss. */
-type JsonValue = null | boolean | number | string | JsonValue[] | {
-  [key: string]: JsonValue;
-};
-/**
- * Mark an unreachable closed-union branch.
- * @param value - impossible value; an unhandled typed variant fails at the call site.
- * @param context - optional switch-site label included in the failure message.
- * @returns never; a runtime value that escaped its type always throws.
- */
-
-//#endregion
-//#region ../../deepseek-harness/packages/core/tools/lib/types/presentation.d.ts
-/**
- * Category of a tool call, used by a UI to pick an icon or treatment. The
- * provider-neutral vocabulary lets tools describe themselves without depending
- * on a particular client; `other` is the default.
- */
-type ToolCallKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'fetch' | 'other';
-/**
- * A file location a tool reads or modifies, so a capable UI can "follow along" —
- * highlight or jump to the file (and line) as the tool runs. `path` is what the
- * tool operated on (the model-facing path); `line` is an optional 1-based line
- * to focus (e.g. a read's offset).
- */
-interface FileLocation {
-  path: string;
-  line?: number;
-}
-/**
- * A single-file change a tool is about to make, for a UI that renders inline
- * diffs. `oldText` is `null` for a new-file create (nothing to diff against);
- * an overwrite also uses `null`, because a call-time presenter has no access to
- * the file's prior content.
- */
-interface FileDiff {
-  path: string;
-  /** Prior content, or `null` for a new file / an overwrite (no prior content available at call time). */
-  oldText: string | null;
-  /** Content after the change. */
-  newText: string;
-}
-/**
- * Provider-neutral pending-call presentation. Tools declare one tagged intent;
- * UI bridges map it without special-casing tool names.
- */
-type ToolCallView = GenericCallView | TerminalCallView | DiffCallView;
-/**
- * The default card: a titled tool-call row with an optional category icon, a
- * salient raw input, extra content blocks, and follow-along file locations. Any
- * tool whose call is not a terminal or a diff uses this.
- */
-interface GenericCallView {
-  card: 'generic';
-  /**
-   * Human-readable, always-visible label describing what THIS call does. Keep it
-   * short — a UI shows it as a card header / log line.
-   */
-  title: string;
-  /** Category for icon/treatment; defaults to `other` when omitted. */
-  kind?: ToolCallKind;
-  /**
-   * The salient input to show in a detail/expanded view (e.g. a background
-   * job id). Omit to show nothing; a string renders as-is, an object as pretty
-   * JSON. NOT the full raw args object unless that is genuinely what a reader wants.
-   */
-  rawInput?: unknown;
-  /**
-   * UI-facing content blocks to show on the pending call alongside the title.
-   * Omit to show none. A UI maps these to its own content blocks.
-   */
-  content?: ContentBlock[];
-  /** Files this call reads/modifies, for editor follow-along. Omit for a call that touches no file. */
-  locations?: FileLocation[];
-}
-/**
- * A call that IS a shell command running in a working directory: a capable UI
- * renders it as a terminal card (cwd-headed, with the command as the title and
- * live/afterward output from the {@link TerminalResultView}); an incapable UI
- * falls back to a generic card whose body is the fenced command output. Set by a
- * tool whose call is a foreground command (e.g. `bash`).
- */
-interface TerminalCallView {
-  card: 'terminal';
-  /** The command, shown as the terminal card's title / header line. */
-  title: string;
-  /**
-   * A human-readable one-line summary of what the command does, rendered ABOVE
-   * the terminal card (the card itself has no description slot). Omit for none.
-   */
-  description?: string;
-  /**
-   * Working directory the command runs in, shown as the terminal header. An
-   * ABSOLUTE path is used as-is; a RELATIVE path is resolved by the UI bridge
-   * against the session workspace (the pure presenter can't see the session cwd).
-   * Omit entirely to let the bridge use the session workspace.
-   */
-  cwd?: string;
-}
-/**
- * A call that creates or modifies files, rendered as an inline diff card by a
- * capable UI. Set by a tool whose call writes/edits a file (e.g. `write`,
- * `edit`). The diffs are derived from the call ARGUMENTS (a create's `oldText` is
- * `null`); the tool emits a separate {@link DiffResultView} after `execute` — the
- * applied change (an edit/overwrite hunk with context, or a whole-file diff for a
- * create).
- */
-interface DiffCallView {
-  card: 'diff';
-  /** Card header (e.g. `Write foo.txt`). */
-  title: string;
-  /** One entry per file the call changes. */
-  diffs: FileDiff[];
-  /** Files this call modifies, for editor follow-along (usually the diffs' paths). */
-  locations?: FileLocation[];
-}
-/**
- * One numbered line of a file, the unit a {@link ReadResultView} carries so a
- * capable UI can render a syntax-highlighted, line-numbered code view. `number`
- * is the 1-based line number in the file (a window past `offset` keeps the file's
- * own numbering, not a 1-based re-count); `text` is the line without its trailing
- * newline, already truncated to the read tool's per-line cap.
- */
-interface ReadFileLine {
-  number: number;
-  text: string;
-}
-/**
- * How a tool wants the COMPLETED call shown — the *result* state, after `execute`
- * returns. A `card`-tagged union mirroring {@link ToolCallView}: a UI switches on
- * `card`. Lets the tool reformat its result for a UI distinctly from the
- * model-facing text it returned from `execute`. Returned by
- * `ToolDefinition.presentResult`; omitting the method keeps the pending
- * title and renders the raw result content.
- */
-type ToolResultView = GenericResultView | TerminalResultView | DiffResultView | SearchResultView | ReadResultView | WebResultView;
-/**
- * The default completed card: an optional replacement title and reformatted
- * content. Omit a field to keep the pending title / render the raw result content.
- */
-interface GenericResultView {
-  card: 'generic';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /**
-   * UI-facing result content (harness {@link ContentBlock}s), reformatted from
-   * the model-facing result. Omit to let the UI render the raw result content.
-   */
-  content?: ContentBlock[];
-}
-/**
- * The completed state of a {@link TerminalCallView}: the captured output and exit
- * status. A capable UI renders `output` in the terminal card and shows an
- * exit-status pill; an incapable UI gets a fenced ```console fallback the BRIDGE
- * derives from `output` (the tool does not double-encode it).
- */
-interface TerminalResultView {
-  card: 'terminal';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** Captured command output (stdout+stderr as the tool chooses to combine them). */
-  output?: string;
-  /**
-   * Process exit code, when the run ended by exiting (not a signal). Lets a
-   * capable UI show an exit-status pill. Omit when killed by a signal or unknown.
-   */
-  exitCode?: number;
-  /** Signal name that killed the process (e.g. `SIGTERM`). Mutually exclusive with `exitCode`. */
-  signal?: string;
-}
-/**
- * A completed file mutation rendered as an inline diff card, the result-time
- * analogue of {@link DiffCallView}. Because a completed UI update replaces the
- * pending card content, mutation tools return this even when it repeats the
- * call-time diff; otherwise raw result text would replace the diff.
- */
-interface DiffResultView {
-  card: 'diff';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** The change to show, in file order — applied contextual hunks, or a whole-file diff when there is no before-image. */
-  diffs: FileDiff[];
-}
-/** One matched line inside a {@link SearchFileMatches} group: its 1-based line number and text. */
-interface SearchLineMatch {
-  /** 1-based line number of the match within its file. */
-  lineNumber: number;
-  /** The matched line text, as the tool surfaced it (the per-line preview budget already applied). */
-  line: string;
-}
-/** One file's grouped content matches for a {@link SearchMatchesResultView}, in first-seen file order. */
-interface SearchFileMatches {
-  /** The file the matches belong to (the model-facing display path). */
-  path: string;
-  /** The file's matched lines, in output order. */
-  matches: SearchLineMatch[];
-}
-/**
- * A completed content search (`grep`) rendered as a search card whose matches are
- * grouped by file, so a capable UI can list each file as an expandable group of
- * its matched lines. `shape: 'matches'` discriminates this variant from the path
- * variant ({@link SearchPathsResultView}) within {@link SearchResultView}. The
- * discriminant is `shape`, not `kind`, so it never collides with the
- * {@link ToolCallKind} `kind` an icon-picking bridge reads off a call view.
- */
-interface SearchMatchesResultView {
-  card: 'search';
-  shape: 'matches';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** Matched lines grouped by file, in first-seen file order. */
-  files: SearchFileMatches[];
-  /**
-   * Whether the tool capped the inline result: `files` carries only the retained
-   * matches, not every match the search found. A UI shows a capped indicator so it
-   * never presents a partial group as complete.
-   */
-  truncated: boolean;
-  /** Total matches the search found before capping (equals the retained count when not `truncated`). */
-  total: number;
-}
-/**
- * A completed path search (`glob`) rendered as a search card whose result is a flat
- * path list. `shape: 'paths'` discriminates this variant from the grouped-matches
- * variant ({@link SearchMatchesResultView}) within {@link SearchResultView}.
- */
-interface SearchPathsResultView {
-  card: 'search';
-  shape: 'paths';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** The discovered paths, in the tool's result order (the retained page when `truncated`). */
-  paths: string[];
-  /**
-   * Whether the tool capped the inline result: `paths` carries only the retained
-   * page, not every path the search found. A UI shows a capped indicator so it
-   * never presents a partial list as complete.
-   */
-  truncated: boolean;
-  /** Total paths the search found before capping (equals `paths.length` when not `truncated`). */
-  total: number;
-}
-/**
- * A completed search rendered as a search card, the result-time view a discovery
- * tool (`grep`, `glob`) returns from `presentResult`. One `card: 'search'` view
- * with two `shape`-discriminated variants: grouped-by-file content matches
- * ({@link SearchMatchesResultView}) and a flat path list
- * ({@link SearchPathsResultView}). Both carry a `truncated`/`total` signal so a UI
- * never presents a capped result as complete. The view carries no result text: a
- * UI without a search card falls back to the raw `tool/result` content. There is
- * no call-time analogue: a search call stays a {@link GenericCallView}
- * (`kind: 'search'`) because the pending state has no matches or paths to show —
- * the structured shape exists only after `execute`.
- */
-type SearchResultView = SearchMatchesResultView | SearchPathsResultView;
-/**
- * A completed file read rendered as a line-numbered, optionally syntax-highlighted
- * code view by a capable UI. Set by a tool whose call reads file text (e.g.
- * `read`); the pending state stays a {@link GenericCallView} (`kind: 'read'`)
- * because a call carries no content until `execute` returns. The structured
- * `lines`/`path`/`lang`/`totalLines` fields cannot be reconstructed from the
- * model-facing result text alone, so the read tool projects them through its
- * `output.presentationMeta` (persisted with the session log) and `presentResult`
- * narrows that metadata back into this view on live and replay paths alike. A UI
- * without the read capability falls back to `content` (the model-facing text with
- * its envelope stripped), so this view degrades to the generic text card.
- */
-interface ReadResultView {
-  card: 'read';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** The read file's path (the model-facing path; the bridge relativizes it). */
-  path: string;
-  /**
-   * The 1-based first line the window requested, preserved even when `lines` is
-   * empty (a byte cap below the first selected line yields an empty window) so a
-   * UI knows where the window starts and where a continuation resumes.
-   */
-  offset: number;
-  /** The returned window's lines, in file order, each keeping its file line number. */
-  lines: ReadFileLine[];
-  /** Exact total line count in the file, so a UI can show a "showing N of M" affordance. */
-  totalLines: number;
-  /**
-   * A syntax-highlighting language hint derived from the file extension (e.g.
-   * `ts`, `py`), or omitted when the extension maps to no known language so a UI
-   * renders the lines as plain text.
-   */
-  lang?: string;
-  /**
-   * The model-facing result content with its envelope stripped, for a UI without
-   * the read capability. Omit to let such a UI render the raw result content.
-   */
-  content?: ContentBlock[];
-}
-/**
- * One citeable source in a completed {@link WebSearchResultView}, the faithful
- * projection of one web-search source. The presentation projection of `dsh-web`'s
- * `WebSearchSource`: that Service Definition type is authoritative (core cannot depend
- * on the web Service Definition, so the two are declared separately and MUST evolve together).
- * A web tool projects this shape through `output.presentationMeta` because the
- * render text cannot losslessly carry it (see the web-result-card Agent Note); its
- * `presentResult` reads it back.
- */
-interface WebSource {
-  /** The source URL. */
-  url: string;
-  /** The source title, when the provider returned one. */
-  title?: string;
-  /** A short excerpt or summary, when the provider returned one. */
-  snippet?: string;
-  /** Publication/crawl timestamp as a provider-supplied ISO-8601 string, when present. */
-  publishedAt?: string;
-}
-/**
- * A completed web retrieval rendered as a structured card by a capable UI. Set
- * by a web tool whose call retrieves from the web (`web_search`, `web_fetch`).
- * One `kind`-tagged union carries both shapes because both are web retrieval and
- * a UI renders them with one component family; a UI switches on `kind`. An
- * incapable UI falls back to the raw `tool/result` content (this view carries no
- * `content` copy — see the web-result-card Agent Note). This is the result-time
- * analogue of the `web_search`/`web_fetch` calls' generic call views
- * (`kind: 'search'`/`'fetch'`); those tools keep their generic pending card and
- * add only this completed card.
- *
- * The `kind` field here is this union's own discriminant, NOT a
- * {@link ToolCallKind}: the two values deliberately match the tools' pending
- * `ToolCallKind` (`'search'`/`'fetch'`) so a call and its result read as one
- * category, but a new arm is a union edit plus a consumer branch, not any
- * arbitrary `ToolCallKind` value.
- */
-type WebResultView = WebSearchResultView | WebFetchResultView;
-/**
- * The completed state of a `web_search` call: the structured sources the model
- * cited, an optional provider answer, and whether the source list was cut to the
- * result cap. A capable UI renders the sources as a citation list; a UI without
- * the `web` capability falls back to the raw `tool/result` content.
- */
-interface WebSearchResultView {
-  card: 'web';
-  kind: 'search';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** The faithful, structured sources — the field render text cannot losslessly carry. */
-  sources: WebSource[];
-  /** The provider-generated answer text, when any. */
-  answer?: string;
-  /** True when the web service cut the source list to honor the result cap. */
-  truncated: boolean;
-}
-/**
- * The completed state of a `web_fetch` call: the fetched URL, its HTTP status,
- * and whether the content was cut. The body itself is already markdown in the
- * raw `tool/result` content, so this card carries only the retrieval summary and
- * a UI without the `web` capability falls back to that content.
- */
-interface WebFetchResultView {
-  card: 'web';
-  kind: 'fetch';
-  /** Replacement title for the completed call. Omit to keep the pending-state title. */
-  title?: string;
-  /** The final URL after allowed redirects. */
-  url: string;
-  /** HTTP status code of the fetched response. */
-  statusCode: number;
-  /**
-   * True when the provider capped the decoded body, or the output cap or a
-   * pre-conversion source cut trimmed the rendered text (the effective
-   * truncation the model-facing text also reflects).
-   */
-  truncated: boolean;
-}
-//# sourceMappingURL=presentation.d.ts.map
-//#endregion
-//#region ../../deepseek-harness/packages/core/tools/lib/types/json-schema.d.ts
-/** Scalar JSON values supported by `enum` and `const`. */
-type JsonSchemaScalar = string | number | boolean | null;
-/** Single-type keywords accepted by the enforced subset. */
-type JsonSchemaType = 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
-/**
- * One raw JSON Schema node in the enforced subset. The optional fields express
- * the external wire schema; {@link assertSupportedJsonSchema} rejects invalid
- * combinations before a caller treats the node as trusted.
- */
-interface JsonSchemaNode {
-  /** Omit with no constraints for any JSON value, or use `oneOf`. */
-  type?: JsonSchemaType;
-  /** Exactly one branch must validate; at least two branches are required. */
-  oneOf?: JsonSchemaNode[];
-  /** Nested property schemas (`type: 'object'` only). */
-  properties?: Record<string, JsonSchemaNode>;
-  /** Required property names; each must appear in `properties`. */
-  required?: string[];
-  /** `false` rejects undeclared keys; absent/`true` follows JSON Schema's open default. */
-  additionalProperties?: boolean;
-  /** Item schema (`type: 'array'` only); absent accepts any JSON item. */
-  items?: JsonSchemaNode;
-  /** Allowed values for a scalar node. */
-  enum?: JsonSchemaScalar[];
-  /** The single allowed value for a scalar node. */
-  const?: JsonSchemaScalar;
-  /** Annotation, ignored for validation. */
-  description?: string;
-  /** Annotation, ignored for validation. */
-  title?: string;
-  /** Annotation, ignored for validation but required to be lossless JSON. */
-  default?: JsonValue;
-  /** Annotation, ignored for validation but required to be lossless JSON. */
-  examples?: JsonValue;
-}
-/** A consumer-constrained object-rooted schema. */
-
-//#endregion
-//#region ../../deepseek-harness/packages/core/tools/lib/types/types.d.ts
-sideEffect();
-
-//#endregion
-//#region ../../deepseek-harness/packages/sandbox/sandbox/lib/types/index.d.ts
-sideEffect();
-
-//#endregion
-//#region ../../deepseek-harness/packages/ptc-runtime/ptc-runtime/lib/types/index.d.ts
-sideEffect();
-
-//#endregion
-//#region ../../deepseek-harness/packages/core/tools/lib/types/index.d.ts
-sideEffect();
-/** Tool-owned canonical output contract used after the body returns a JSON value. */
-interface ToolOutputDefinition {
-  /** Raw supported JSON Schema enforced against every successful canonical value. */
-  readonly schema: JsonSchemaNode;
-  /** Pure projection from validated arguments and value to Native/model content. */
-  render(args: unknown, value: JsonValue): ContentBlock[];
-  /** Pure replayable presentation projection, computed only for top-level calls. */
-  presentationMeta?(args: unknown, value: JsonValue): JsonValue;
-}
-/** A registered tool: its schema plus the execution function. */
-interface ToolDefinition extends ToolSchema {
-  /** Mandatory canonical output declaration. */
-  readonly output: ToolOutputDefinition;
-  /**
-   * Run one accepted call and return only its canonical lossless-JSON value.
-   * Async work must observe or forward `exec.signal` and settle only after its
-   * owned work reaches quiescence. The registry preserves caller cancellation
-   * through around-dispatch signal replacement and does not abandon this
-   * promise, but it cannot hard-kill same-process code.
-   * @param args - losslessly snapshotted, frozen model arguments.
-   * @param exec - execution identity, cancellation signal, and context deferral.
-   * @returns the canonical value declared by `output.schema`.
-   */
-  execute(args: unknown, exec: ToolRunContext): Promise<unknown>;
-  /**
-   * Synchronous last-mile transform for model-facing content. The registry
-   * snapshots this callback when execution starts and invokes it exactly once
-   * for every normalized outcome, including pipeline failures that bypass
-   * `tools/post-execute`, immediately before lossless materialization.
-   * Returning `undefined` preserves the content; every other result field
-   * remains registry-owned. The callback must be total and must not throw.
-   * @param exec - immutable execution identity and arguments.
-   * @param result - complete normalized outcome before materialization.
-   * @returns replacement content, or `undefined` to preserve it.
-   */
-  finalizeContent?(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): ContentBlock[] | undefined;
-  /**
-   * Cooperative tool-call timeout budget in milliseconds. Omit for no deadline.
-   * Enforced by `@deepseek-ai/dsh-tool-call-timeout-policy` (a `tools/execute` wrapper); it
-   * is NEVER sent to the model — `schemas()` whitelists only name/description/
-   * parameters. Declaring it asserts this tool forwards `exec.signal` to a
-   * cooperative implementation that can reach quiescence when the signal aborts.
-   */
-  timeoutMs?: number;
-  /**
-   * Pure synchronous classifier for overlap with sibling tool calls. Only
-   * `true` opts in; omission, exceptions, non-`true` returns, and invalid
-   * `defineTool` arguments are exclusive. This metadata is never model-visible.
-   *
-   * Opted-in executions must not mutate parent-owned state. Shared state must
-   * tolerate concurrent dispatch; recorder races are permitted only when they
-   * commute or fail closed. See the
-   * [parallel-tool-call Agent Note](../../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)
-   * for the full contract.
-   * @param args - parsed arguments; `defineTool` validates before calling.
-   * @returns Whether this call may join a parallel group.
-   */
-  isConcurrencySafe?(args: unknown): boolean;
-  /**
-   * Optional: how to present the PENDING state of one call in a UI, derived from
-   * the call's `args` (parsed arguments, `unknown` — the tool validates/narrows
-   * its own input). Returns a {@link ToolCallView} (a `card`-tagged render intent),
-   * or `undefined` (or omit the method) to fall back to a generic presentation
-   * (title = tool name, raw args as input). Pure and side-effect-free: a UI may
-   * call it during live streaming AND a session-log replay, so it must depend
-   * only on `args`.
-   */
-  presentCall?(args: unknown): ToolCallView | undefined;
-  /**
-   * Optional: how to present the COMPLETED state, given the same `args` and the
-   * durable result projection (`content`, failure state, and optional `meta`). Returns a
-   * {@link ToolResultView}, or `undefined` (or omit the method) to keep the
-   * pending title and render the raw result content. Pure and side-effect-free
-   * for the same replay reason.
-   */
-  presentResult?(args: unknown, result: ToolResult): ToolResultView | undefined;
-}
-/** The completed outcome handed to {@link ToolDefinition.presentResult}. */
-interface ToolResult {
-  /** The final model-facing content (or the rendered error text on failure). */
-  content: ContentBlock[];
-  /** Whether the call failed. */
-  isError: boolean;
-  /**
-   * The tool-private presentation payload projected by its output declaration.
-   * It is persisted verbatim on `tool/result` for Host presenters and Client
-   * renderers to narrow independently. Absent when the tool declared no
-   * projector or the call was nested under a composite transport.
-   */
-  meta?: JsonValue;
-}
-declare const toolExecutionTokenBrand: unique symbol;
-/** Opaque call identity that permits correlation without exposing mutable execution state. */
-type ToolExecutionToken = symbol & {
-  readonly [toolExecutionTokenBrand]: true;
-};
-/**
- * Caller-supplied description of one tool call. {@link ToolRuntime.execute}
- * adds the registry-owned token to form a pipeline {@link ToolExecution};
- * callers do not choose that token.
- */
-interface ToolExecutionInput {
-  readonly callId: ToolCallId;
-  /**
-   * Root model-requested call owning this execution tree. Callers omit it for
-   * a root execution; nested dispatchers propagate the enclosing value.
-   */
-  readonly rootCallId?: ToolCallId;
-  readonly name: string;
-  /** Binding-time tool schema for a PTC inner call; frozen by its producer and never logged. */
-  readonly schema?: ToolSchema;
-  /** Losslessly JSON-serializable parsed arguments (tools validate their own schema). */
-  readonly arguments: unknown;
-  /** The agent on whose behalf the call runs (set by the agent loop). */
-  readonly agent?: Agent;
-  /**
-   * Opaque token of the enclosing transport execution, when one exists. PTC
-   * mode sets this on SDK sub-dispatches so commit-style observers can wait for
-   * the outer `run_code` outcome without receiving its live mutable execution.
-   * The token also marks the call as a transport sub-dispatch rather than a
-   * model-direct call: under `mode: 'ptc'`, only calls WITH a parent may
-   * execute a native tool name — a model-direct call (no parent) is denied as
-   * `UNKNOWN_TOOL` before the policy pipeline. See {@link ToolRuntime.execute}.
-   */
-  readonly parent?: ToolExecutionToken;
-  /** Required caller-owned cancellation for this invocation. */
-  readonly signal: AbortSignal;
-}
-/**
- * Scheduling mode for one pending call. `parallel` may overlap with siblings;
- * `exclusive` runs alone and forms an ordering barrier.
- */
-
-/**
- * One pending tool call inside the registry pipeline. Parsed arguments cross
- * one lossless-JSON materialization boundary before policy and are deep-frozen;
- * call identity, the caller signal, and the registry-assigned {@link token} are
- * readonly. The registry freezes the complete object before `tools/result`
- * observers run.
- */
-interface ToolExecution extends ToolExecutionInput {
-  /** Root model-requested call, resolved for every root and nested execution. */
-  readonly rootCallId: ToolCallId;
-  /** Registry-assigned identity shared with nested calls only as their opaque `parent` token. */
-  readonly token: ToolExecutionToken;
-}
-/**
- * Around-dispatch view of a {@link ToolExecution}. A `tools/execute` wrapper
- * may replace the signal for its delegated lifetime, but it cannot remove it.
- * The registry fuses every replacement with the captured caller signal.
- */
-
-/**
- * Runtime context handed to a tool implementation after the registry has
- * accepted a {@link ToolExecution}. {@link deferContext} attaches context to
- * this execution's own result — a composite tool ferries nested-dispatch
- * context back to the outer result, and a leaf tool may mint a fresh
- * plugin-sourced instruction; the loop appends it only after the
- * `tool/result`.
- */
-interface ToolRunContext extends ToolExecution {
-  /**
-   * Defer one context — typically a nested-dispatch context ferried by a
-   * composite tool, or a fresh plugin-sourced instruction — until this tool's
-   * final result reaches the agent loop. Contexts retain their individual
-   * source and metadata and are emitted in call order.
-   */
-  deferContext(context: UserMessage): void;
-  /**
-   * Mark a successful final result as terminal for the current agent turn.
-   * The marker rides this execution's own result (`concludesTurn` exists only
-   * on {@link ToolExecutionSuccess}); a composite that dispatches nested
-   * calls forwards it from the nested result, exactly like
-   * `additionalContexts`, so only an authoritative nested success can
-   * conclude the enclosing run.
-   */
-  concludeTurn(): void;
-}
-/**
- * Scheduler-only result after ordered pre-execute and guards. A `post-result`
- * still receives post-execute; a `final-result` bypasses it.
- * @internal
- */
-
-/** Structured error metadata for a failed tool call (alongside the model-facing text). */
-interface ToolErrorInfo {
-  name: string;
-  code: string;
-  /** Optional raw user-facing detail; durable projections preserve it but model-facing content does not include it. */
-  reason?: string;
-}
-/** Canonical failure detail; internal routing information remains optional. */
-interface ToolFailure {
-  /** Human-readable failure message without the Native `Error: ` envelope. */
-  message: string;
-  /** Internal error class/code used by policy and durable diagnostics. */
-  info?: ToolErrorInfo;
-}
-/**
- * Thrown (internally) when the model requests a tool that isn't registered.
- * Extends {@link HarnessError} (`code: 'UNKNOWN_TOOL'`) so an unknown-tool
- * failure is as routable as a tool-thrown one — retry/sandbox/replay code can
- * distinguish it from a tool body's own error.
- */
-
-/** Successful canonical tool execution, including its Native/model projection. */
-interface ToolExecutionSuccess {
-  readonly isError: false;
-  /** Execution-local canonical value; deliberately omitted from durable events. */
-  readonly value: JsonValue;
-  readonly content: ContentBlock[];
-  readonly error?: never;
-  readonly meta?: JsonValue;
-  readonly additionalContexts?: UserMessage[];
-  /** The agent loop stops after committing this successful result batch. */
-  readonly concludesTurn?: true;
-}
-/** Failed canonical tool execution; failures never carry a successful value. */
-interface ToolExecutionFailure {
-  readonly isError: true;
-  readonly error: ToolFailure;
-  readonly value?: never;
-  readonly content: ContentBlock[];
-  readonly meta?: JsonValue;
-  readonly additionalContexts?: UserMessage[];
-  readonly concludesTurn?: never;
-}
-/** The discriminated, execution-local outcome of one tool call. */
-type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure;
-/**
- * Pre-dispatch decision. `allow` runs the call; `deny` materializes its
- * model-facing reason and optional structured error identity; `cancel` selects
- * the canonical cancellation result without presenting a policy denial; `ask`
- * runs only after an approval service returns `allowed-once` and otherwise
- * denies. Input rewriting is excluded because arguments are already logged and
- * presented.
- */
-//#endregion
 //#region src/media-route.d.ts
 /** webServer 服务的本地结构视图（上游 WebServer 的最小消费子集）。 */
 interface MediaWebServer {
@@ -2619,7 +978,6 @@ interface MediaWebServer {
     handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
   }): () => void;
 }
-/** outputs 媒体路由前缀（prefix 匹配 /outputs 与 /outputs/<文件名>）。 */
 //#endregion
 //#region src/runtime-defaults.d.ts
 /**
@@ -2628,7 +986,17 @@ interface MediaWebServer {
  * `imageSize` 为映射后的尺寸串（如 '1024*1024'），`videoAspectRatio` 为比例串
  * （如 '16:9'），`imageStyle` 为风格 id（见 {@link IMAGE_STYLE_OPTIONS}）。
  */
+/**
+ * composer 媒体 tab 模式：'text' 为默认聊天模式；'image' / 'video' 令宿主在用户轮次
+ * 进入模型请求前注入「必须调用生成工具」的指令（见 media-mode-injection.ts）。
+ */
+type MediaMode = 'text' | 'image' | 'video';
 interface RuntimeDefaults {
+  /**
+   * composer 媒体 tab 模式覆盖；undefined / 'text' 不注入生成指令。
+   * 纯运行时概念：settings 没有对应持久字段。
+   */
+  mediaMode?: MediaMode;
   /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
   imageProvider?: Provider;
   /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
@@ -2673,19 +1041,9 @@ declare const IMAGE_SIZE_OPTIONS: ReadonlyArray<{
   label: string;
   size: string;
 }>;
-/**
- * 模型家族规则：按厂商关键词对显式 model 参数做小写包含匹配，得到该模型的家族
- * 候选服务商。维护点按「厂商」而非「模型 id」——新模型（wan3.0、qwen-video、
- * minimax 新版本等）自动命中家族规则，无需逐个登记。
- *
- * 家族事实（2026-09）：threerouter 是聚合器，出所有家族的模型（wan/minimax/seedance
- * 及文本/图片模型）；wanx（阿里百炼）、minimax（官方平台，仅视频）、seedance（火山方舟）
- * 是家族直连商。规则数组顺序即匹配优先级（更具体的家族在前）。
- */
-
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 declare const DEFAULTS_ROUTE_PATH = "/image-video/defaults";
-/** GET / POST 响应体：六字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
+/** GET / POST 响应体：七字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
 type RuntimeDefaultsView = RuntimeDefaultsPatch;
 /**
  * settings 持久默认值视图：{@link extractPersistedDefaults} 从 config 提取出的
@@ -2702,7 +1060,15 @@ type PersistedDefaultsView = Partial<RuntimeDefaults>;
  */
 declare function extractPersistedDefaults(config: Config): PersistedDefaultsView;
 /**
- * 校验并归一化 POST body 为存储 patch。严格协议：仅接受六个已知键；
+ * 合并为「运行时覆盖 ?? settings 持久默认」的当前生效视图。defaults 路由与
+ * 媒体模式注入共用这一个取值口径，避免两处各算一遍。
+ * @param store - 运行时覆盖存储。
+ * @param persisted - settings 持久默认回落层；缺省为空。
+ * @returns 当前生效默认值视图。
+ */
+declare function resolveDefaultsView(store: RuntimeDefaultsStore, persisted?: PersistedDefaultsView): RuntimeDefaultsView;
+/**
+ * 校验并归一化 POST body 为存储 patch。严格协议：仅接受七个已知键；
  * null 清除覆盖；'' 表示「自动」（归一化为 null）；其余值按字段白名单/范围校验。
  * @param body - 已 JSON.parse 的请求体（可能是任意值）。
  * @returns 归一化后的 patch；校验失败返回错误信息（字符串）。
@@ -2722,7 +1088,7 @@ declare function parseDefaultsPatch(body: unknown): {
  * @param persisted - settings 持久默认回落层（{@link extractPersistedDefaults}
  *   提取；未提供时用空对象，即不回落）。
  */
-declare function createDefaultsRouteHandler(store: RuntimeDefaultsStore, persisted?: PersistedDefaultsView): (req: node_http0.IncomingMessage, res: node_http0.ServerResponse) => Promise<void>;
+declare function createDefaultsRouteHandler(store: RuntimeDefaultsStore, persisted?: PersistedDefaultsView): (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => Promise<void>;
 /**
  * 把 defaults 路由注册进 webServer。仅回环地址注册：host 非 127.0.0.1 时返回
  * undefined 且不注册——运行时覆盖值属本机会话状态，不暴露到局域网。
@@ -2748,12 +1114,14 @@ interface GenerateImageDeps {
   runtimeDefaults: RuntimeDefaultsStore;
   /** 已解析为绝对路径的 outputsDir（插件唯一解析点，见 index.apply）。 */
   outputsDir: string;
+  /** API Key 的凭证引用解析器（插件经 `ctx.credentials` 构造）。 */
+  resolveApiKey: ApiKeyResolver;
 }
 /**
  * 创建 generate_image 工具定义。
  * 工具参数：prompt（必填，找回模式除外）、image（单图）、images（多参考图）、size、model、recoverRequestId。
  */
-declare function createGenerateImageTool(deps: GenerateImageDeps): ToolDefinition;
+declare function createGenerateImageTool(deps: GenerateImageDeps): import("@deepseek-ai/dsh-tools").ToolDefinition;
 //#endregion
 //#region src/tools/generate-video.d.ts
 /** 工具依赖。 */
@@ -2767,13 +1135,47 @@ interface GenerateVideoDeps {
    * 与图片链路共用同一个目录，杜绝旁路产物；缺省时回退 config.outputsDir。
    */
   outputsDir?: string;
+  /** API Key 的凭证引用解析器（插件经 `ctx.credentials` 构造）。 */
+  resolveApiKey: ApiKeyResolver;
 }
 /**
  * 创建 generate_video 工具定义。
  * 工具参数：prompt（必填）、duration（可选，1-10秒）、model（可选）、aspectRatio（可选）、
  * image（可选首帧图片，传了即图生视频）、resolution（可选分辨率档位）。
  */
-declare function createGenerateVideoTool(deps: GenerateVideoDeps): ToolDefinition;
+declare function createGenerateVideoTool(deps: GenerateVideoDeps): import("@deepseek-ai/dsh-tools").ToolDefinition;
+//#endregion
+//#region src/media-mode-injection.d.ts
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'image-video.media-mode': {
+      kind: 'image-video.media-mode';
+    } & ContextFormed;
+  }
+}
+/**
+ * 渲染当前媒体模式对应的模型指令。工具会按「显式参数 > 运行时覆盖 > settings 持久
+ * 默认 > 内置默认」取参，故指令要求模型不要抢先传生成参数，让 composer 选的生效值
+ * 真正落实。
+ * @param view - 当前生效的默认值视图（{@link resolveDefaultsView}）。
+ * @returns 指令文本；'text' 模式或不认识的模式返回 undefined（不注入）。
+ */
+declare function renderMediaModeInstruction(view: RuntimeDefaultsView): string | undefined;
+/** {@link registerMediaModeInjection} 的依赖。 */
+interface MediaModeInjectionOptions {
+  /** 运行时默认值存储（composer 覆盖值）。 */
+  readonly store: RuntimeDefaultsStore;
+  /** settings 持久默认回落层，与 defaults 路由共用同一取值口径。 */
+  readonly persisted: PersistedDefaultsView;
+}
+/**
+ * 注册 `agent/pre-step` 监听：媒体模式为 image / video 时，在纳入本步的消息之后
+ * 追加一条插件来源的指令消息。监听器挂载在插件根上下文，按 scope-filtered 分发
+ * 语义接收每个 agent 的事件；注销随持有本上下文的 fiber 卸载。
+ * @param ctx - 已注入 `agents` 的上下文。
+ * @param options - 运行时默认值存储与持久回落层。
+ */
+declare function registerMediaModeInjection(ctx: Context, options: MediaModeInjectionOptions): void;
 //#endregion
 //#region src/index.d.ts
 /** Cordis 插件名，用于 loader 诊断。 */
@@ -2800,4 +1202,4 @@ declare const inject: string[];
  */
 declare function apply(ctx: Context, config: Config): void;
 //#endregion
-export { type AsyncImageSubmit, AsyncTransportUnavailableError, Config, type Config as ConfigType, DEFAULTS_ROUTE_PATH, DEFAULT_RECOVERY_BUDGET, type ErrorKind, GenerationError, IMAGE_SIZE_OPTIONS, IMAGE_STYLE_OPTIONS, type ImageAsyncCapability, type ImageGenParams, type ImagePreflight, type ImageTransaction, type ImageTransport, type PersistedDefaultsView, type Provider, type ProviderAdapter, type ProviderCredentials, type RecoveryBudget, type RequestOptions, type RequestResult, type RuntimeDefaults, type RuntimeDefaultsPatch, type RuntimeDefaultsStore, type RuntimeDefaultsView, type SubmitResult, TRANSPORT_PROBE_TTL_MS, TaskManager, type TaskQueryFn, type TaskQueryResult, type TransactionReport, type TransactionStatus, type TransportProbeCache, type UnknownStatePolicy, type VideoGenParams, type WatermarkConfig, type WatermarkPosition, type WatermarkResult, apply, applyImageStyle, applyImageWatermark, buildWatermarkSvg, canFallbackToNextProvider, consumeSubmitBudget, createDefaultsRouteHandler, createGenerateImageTool, createGenerateVideoTool, createImageTransaction, createRuntimeDefaultsStore, extractPersistedDefaults, fitFontSize, formatPreflightNote, inject, isAsyncImageUnavailableError, isModelNotAcceptedError, isUnknownSubmitStateError, looksLikeVideoModel, name, parseDefaultsPatch, registerDefaultsRoute, reportTransaction, resolveImagePreflight, resolveImageTransport, runImageTransaction, seedanceAdapter, submitBudget, threerouterAdapter, unknownStateError, wanxAdapter };
+export { type AsyncImageSubmit, AsyncTransportUnavailableError, Config, type Config as ConfigType, DEFAULTS_ROUTE_PATH, DEFAULT_RECOVERY_BUDGET, type ErrorKind, GenerationError, IMAGE_SIZE_OPTIONS, IMAGE_STYLE_OPTIONS, type ImageAsyncCapability, type ImageGenParams, type ImagePreflight, type ImageTransaction, type ImageTransport, type MediaMode, type MediaModeInjectionOptions, type PersistedDefaultsView, type Provider, type ProviderAdapter, type ProviderCredentials, type RecoveryBudget, type RequestOptions, type RequestResult, type RuntimeDefaults, type RuntimeDefaultsPatch, type RuntimeDefaultsStore, type RuntimeDefaultsView, type SubmitResult, TRANSPORT_PROBE_TTL_MS, TaskManager, type TaskQueryFn, type TaskQueryResult, type TransactionReport, type TransactionStatus, type TransportProbeCache, type UnknownStatePolicy, type VideoGenParams, type WatermarkConfig, type WatermarkPosition, type WatermarkResult, apply, applyImageStyle, applyImageWatermark, buildWatermarkSvg, canFallbackToNextProvider, consumeSubmitBudget, createDefaultsRouteHandler, createGenerateImageTool, createGenerateVideoTool, createImageTransaction, createRuntimeDefaultsStore, extractPersistedDefaults, fitFontSize, formatPreflightNote, inject, isAsyncImageUnavailableError, isModelNotAcceptedError, isUnknownSubmitStateError, looksLikeVideoModel, name, parseDefaultsPatch, registerDefaultsRoute, registerMediaModeInjection, renderMediaModeInstruction, reportTransaction, resolveDefaultsView, resolveImagePreflight, resolveImageTransport, runImageTransaction, seedanceAdapter, submitBudget, threerouterAdapter, unknownStateError, wanxAdapter };

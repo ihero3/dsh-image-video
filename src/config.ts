@@ -13,9 +13,22 @@ export type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance'
 export interface ProviderCredentials {
   /** 服务商 API Key；切换 provider 后对应 key 立即生效。 */
   apiKey: string
+  /**
+   * API Key 的凭证引用名；apiKey 留空时按此引用经凭证缝解析，例如桌面端登录后
+   * 写入的 Key。留空表示不使用引用。
+   */
+  apiKeyEnv: string
   /** 自定义接口地址，留空使用服务商默认端点。 */
   baseURL?: string
 }
+
+/**
+ * 按凭证引用名解析密钥值的回调。生成工具的 execute 内由插件经 `ctx.credentials`
+ * 构造，使配置只携带引用、不内联明文凭证。
+ * @param ref - 凭证引用名（POSIX 环境变量式标识符）。
+ * @returns 引用当前解析到的值；引用未配置或凭证服务缺失时为 undefined。
+ */
+export type ApiKeyResolver = (ref: string) => Promise<string | undefined>
 
 /** 水印位置（四角之一）。 */
 export type WatermarkPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
@@ -97,9 +110,10 @@ export interface Config {
   watermark: WatermarkConfig
 }
 
-/** 服务商凭证 schema，复用于 threerouter/wanx/seedance。apiKey 可空（未激活的 provider 留空）。 */
+/** 服务商凭证 schema，复用于 threerouter/wanx/minimax/seedance。apiKey 可空（未激活的 provider 留空）。 */
 const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
   apiKey: z.string().default('').description('服务商 API Key；未激活的 provider 可留空'),
+  apiKeyEnv: z.string().role('credential-ref').default('').description('API Key 的凭证引用名；apiKey 留空时按此引用解析，留空表示不使用引用'),
   baseURL: z.string().default('').description('自定义接口地址，留空使用默认端点'),
 })
 
@@ -160,33 +174,66 @@ export function peekProviderCredentials(config: Config, provider: Provider): Pro
 }
 
 /**
- * 解析指定服务商的凭证，校验非空。供按模型自动路由的生成工具使用：
- * composer 选中某服务商分组下的模型时，工具以该服务商的凭证直连。
+ * 服务商是否声明了凭证来源：明文 `apiKey` 或 `apiKeyEnv` 引用。
+ * 供候选服务商过滤使用——不解析引用值（解析是异步的，且只在真正提交时做一次）。
  * @param config - 已校验的插件配置。
  * @param provider - 目标服务商。
- * @returns 服务商凭证与端点。
- * @throws 当该服务商未配置 API Key 时（报错指明缺 key 的 provider 字段）。
+ * @returns 明文或引用任一非空为 true。
  */
-export function resolveProviderCredentials(config: Config, provider: Provider): { provider: Provider; apiKey: string; baseURL: string } {
+export function hasConfiguredCredentials(config: Config, provider: Provider): boolean {
   const creds = peekProviderCredentials(config, provider)
-  if (!creds.apiKey || creds.apiKey.trim().length === 0) {
-    throw new Error(`dsh-image-video: 服务商 ${provider} 未配置 API Key，请在配置中设置 ${provider}.apiKey`)
+  return creds.apiKey.trim().length > 0 || (creds.apiKeyEnv ?? '').trim().length > 0
+}
+
+/**
+ * 解析指定服务商的凭证，校验非空。供按模型自动路由的生成工具使用：
+ * composer 选中某服务商分组下的模型时，工具以该服务商的凭证直连。
+ *
+ * 取值优先级：明文 `apiKey` > `apiKeyEnv` 引用经凭证缝解析的值。引用使部署可
+ * 只声明凭证名（如桌面端登录写入的 Key），不把明文写进配置文件。
+ * @param config - 已校验的插件配置。
+ * @param provider - 目标服务商。
+ * @param resolveApiKey - 按引用名解析凭证值的回调，由插件经 `ctx.credentials` 构造。
+ * @returns 服务商凭证与端点。
+ * @throws 当明文与引用都取不到非空 API Key 时（报错指明缺 key 的 provider 字段）。
+ */
+export async function resolveProviderCredentials(
+  config: Config,
+  provider: Provider,
+  resolveApiKey: ApiKeyResolver,
+): Promise<{ provider: Provider; apiKey: string; baseURL: string }> {
+  const creds = peekProviderCredentials(config, provider)
+  const literal = creds.apiKey.trim()
+  const ref = (creds.apiKeyEnv ?? '').trim()
+  let apiKey: string | undefined = literal === '' ? undefined : literal
+  if (apiKey === undefined && ref !== '') {
+    apiKey = (await resolveApiKey(ref))?.trim() || undefined
+  }
+  if (apiKey === undefined) {
+    throw new Error(
+      `dsh-image-video: 服务商 ${provider} 未配置 API Key，请设置 ${provider}.apiKey，`
+      + `或把 ${provider}.apiKeyEnv 指向已配置的凭证`,
+    )
   }
   return {
     provider,
-    apiKey: creds.apiKey,
+    apiKey,
     baseURL: creds.baseURL?.trim() || defaultBaseURL(provider),
   }
 }
 
 /**
- * 解析当前激活服务商的凭证，校验非空。配置错误在加载或首次调用时响亮失败。
+ * 解析当前激活服务商的凭证，校验非空。配置错误在首次调用时响亮失败。
  * @param config - 已校验的插件配置。
+ * @param resolveApiKey - 按引用名解析凭证值的回调。
  * @returns 激活服务商的凭证与端点。
- * @throws 当激活服务商未配置 API Key 时。
+ * @throws 当激活服务商既无明文 API Key 也无法解析其引用时。
  */
-export function resolveActiveProvider(config: Config): { provider: Provider; apiKey: string; baseURL: string } {
-  return resolveProviderCredentials(config, config.provider)
+export async function resolveActiveProvider(
+  config: Config,
+  resolveApiKey: ApiKeyResolver,
+): Promise<{ provider: Provider; apiKey: string; baseURL: string }> {
+  return resolveProviderCredentials(config, config.provider, resolveApiKey)
 }
 
 /** 服务商默认接口地址。 */

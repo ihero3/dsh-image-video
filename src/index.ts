@@ -28,12 +28,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config, peekProviderCredentials } from './config.ts'
+import { Config, hasConfiguredCredentials } from './config.ts'
+import type { ApiKeyResolver } from './config.ts'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
+import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -86,8 +89,11 @@ export {
   IMAGE_STYLE_OPTIONS,
   parseDefaultsPatch,
   registerDefaultsRoute,
+  resolveDefaultsView,
 } from './runtime-defaults.ts'
-export type { PersistedDefaultsView, RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
+export type { MediaMode, PersistedDefaultsView, RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
+export { registerMediaModeInjection, renderMediaModeInstruction } from './media-mode-injection.ts'
+export type { MediaModeInjectionOptions } from './media-mode-injection.ts'
 
 /** Cordis 插件名，用于 loader 诊断。 */
 export const name = 'image-video'
@@ -124,7 +130,7 @@ export function apply(ctx: Context, config: Config): void {
   // 宿主日志，便于在 web/desktop 多 profile 场景定位配置来源，消除「用了哪个服务商/
   // 模型/目录」只能靠推断的问题。
   const keyState = (provider: Provider): string =>
-    peekProviderCredentials(config, provider).apiKey.trim().length > 0 ? '已配置' : '未配置'
+    hasConfiguredCredentials(config, provider) ? '已配置' : '未配置'
   ctx.logger.info(
     `dsh-image-video 生效配置：provider=${config.provider}`
     + ` defaultVideoProvider=${config.defaultVideoProvider || '(跟随激活服务商)'}`
@@ -143,9 +149,23 @@ export function apply(ctx: Context, config: Config): void {
   // 插件卸载时自动取消所有排队任务、清理轮询定时器。
   const taskManager = new TaskManager(ctx, config)
 
+  // API Key 解析：生成工具每次执行时经凭证缝读取 `apiKeyEnv` 引用的值
+  // （如桌面端登录后写入的 Key），使配置只携带引用、不内联明文；每次操作重新
+  // 解析，凭证变更无需重启即生效。凭证服务或引用缺失都返回 undefined，由
+  // resolveProviderCredentials 回落明文 apiKey 或响亮报错。
+  const resolveApiKey: ApiKeyResolver = async (ref) => {
+    const validated = credentialRef(ref)
+    const credentials = ctx.get('credentials')
+    if (credentials === undefined) return undefined
+    return (await credentials.resolve(validated))?.value
+  }
+
   // 运行时生成默认值：桌面 composer 热更新覆盖值的内存态存储（不落盘，
   // 重载后回落 settings 持久值，避免任何配置写入触发宿主重启）。
   const runtimeDefaults = createRuntimeDefaultsStore()
+
+  // settings 持久默认回落层：defaults 路由与媒体模式注入共用同一取值口径。
+  const persistedDefaults = extractPersistedDefaults(config)
 
   // generate_image：显式声明 attachments 依赖。
   // callback 在 attachments 服务可用时执行，fiber-scoped 注册工具；
@@ -155,11 +175,11 @@ export function apply(ctx: Context, config: Config): void {
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
-    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir }))
+    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }))
   })
 
   // generate_video：不依赖 attachments，始终注册。
-  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir }))
+  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -175,7 +195,14 @@ export function apply(ctx: Context, config: Config): void {
     // composer 切换模型/比例/风格/时长立即生效（仅内存，不触发重启）；
     // GET/POST 响应为「运行时覆盖 ?? settings 持久默认」合并视图，持久默认经
     // extractPersistedDefaults 白名单守卫提取。同样仅回环注册，注销随 fiber 卸载。
-    const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults, extractPersistedDefaults(config))
+    const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults, persistedDefaults)
     if (disposeDefaults) mediaCtx.effect(() => disposeDefaults, 'dsh-image-video: runtime defaults route')
+  })
+
+  // 媒体模式注入：composer 选到图片/视频 tab 时，在用户轮次进入模型请求前追加
+  // 「直接调用生成工具」的指令（见 media-mode-injection.ts）。agents 服务可用时
+  // 注册，注销随 fiber 卸载；服务缺失（纯 CLI 会话）时跳过，不影响工具注册。
+  ctx.inject(['agents'], (agentCtx) => {
+    registerMediaModeInjection(agentCtx, { store: runtimeDefaults, persisted: persistedDefaults })
   })
 }
