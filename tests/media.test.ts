@@ -1,8 +1,11 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import sharp from 'sharp'
+import { randomBytes } from 'node:crypto'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  compressImageReference,
   extFromContentType,
   toImageMediaTypeForTest,
   createImageSummaryText,
@@ -220,6 +223,31 @@ describe('media 扩展名与类型推断', () => {
       const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
       await writeFile(file, bytes)
       expect(await resolveImageReference(file)).toBe(`data:image/png;base64,${bytes.toString('base64')}`)
+    })
+
+    it('compressImageReference：小图与远程 URL 原样返回', async () => {
+      const small = 'data:image/png;base64,QUJD'
+      expect(await compressImageReference(small)).toBe(small)
+      expect(await compressImageReference('https://img.example.com/big.png')).toBe('https://img.example.com/big.png')
+      // 无逗号的畸形 data URL 原样返回，不抛错
+      expect(await compressImageReference('data:image/png;base64')).toBe('data:image/png;base64')
+    })
+
+    it('compressImageReference：超过阈值的本地大图缩到长边上限并转 JPEG，体积下降', async () => {
+      // 造一张高熵大图（纯色/规律图压缩率过高，无法验证阈值行为）
+      const width = 3200
+      const height = 2400
+      const raw = randomBytes(width * height * 3)
+      const png = await sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer()
+      const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+      expect(png.byteLength).toBeGreaterThan(4_000_000)
+
+      const compressed = await compressImageReference(dataUrl)
+      expect(compressed.startsWith('data:image/jpeg;base64,')).toBe(true)
+      const outBytes = Buffer.from(compressed.slice(compressed.indexOf(',') + 1), 'base64')
+      expect(outBytes.byteLength).toBeLessThan(png.byteLength)
+      const meta = await sharp(outBytes).metadata()
+      expect(Math.max(meta.width ?? 0, meta.height ?? 0)).toBeLessThanOrEqual(2560)
     })
 
     it('resolveImageReference：不存在的本地路径响亮抛出 fs 错误', async () => {

@@ -11,9 +11,9 @@ export default defineConfig({
   format: ['esm'],
   platform: 'node',
   target: 'es2024',
+  // 单入口、无动态 import：产物天然是单个 chunk，不需要 codeSplitting 开关
+  // （该字段在新版 rolldown 已被 advancedChunks 取代，写了会直接报错）。
   outputOptions: {
-    // 单文件 bundle，避免 code-splitting 产生额外 chunk
-    codeSplitting: false,
     // dts chunk 默认带内容哈希（index-<hash>.d.ts），会让 package.json 的
     // types 指向一个每次改源码都变的文件名；固定为 index.d.ts
     chunkFileNames: (chunk) => (chunk.name.includes('.d') ? 'index.d.ts' : '[name]-[hash].js'),

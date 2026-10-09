@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import sharp from 'sharp'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import { downloadMedia } from './http-client.ts'
@@ -139,6 +140,43 @@ export async function resolveImageReference(input: string): Promise<string> {
   if (/^(https?|data):/.test(ref)) return ref
   const data = await readFile(ref)
   return `data:${imageMimeFromPath(ref)};base64,${data.toString('base64')}`
+}
+
+/** 图片参考图压缩阈值（data URL 解码后的字节数）：超过即先压再提交。 */
+const IMAGE_REFERENCE_COMPRESS_THRESHOLD = 4_000_000
+/** 压缩后长边上限：编辑模型只需看清主体与纹理，2560 足够且显著降体积。 */
+const IMAGE_REFERENCE_LONG_EDGE = 2560
+
+/**
+ * 压缩过大的本地参考图（data URL 形态）。手机原图直传时 data URL 比原文件还大约 1/3，
+ * 而网关/上游都有请求体上限、实测大体积提交容易被拖到超时；这里等比缩到长边
+ * {@link IMAGE_REFERENCE_LONG_EDGE} 并转 JPEG 后再提交。小图与 http(s) URL 原样返回。
+ * @param ref - {@link resolveImageReference} 的结果（data URL 或 http(s) URL）。
+ * @returns 可直接提交的图片引用；压缩不可用或失败时原样返回，交由服务端报错。
+ */
+export async function compressImageReference(ref: string): Promise<string> {
+  if (!ref.startsWith('data:image/')) return ref
+  const commaIdx = ref.indexOf(',')
+  if (commaIdx < 0) return ref
+  const b64 = ref.slice(commaIdx + 1)
+  if (Math.floor(b64.length * 3 / 4) <= IMAGE_REFERENCE_COMPRESS_THRESHOLD) return ref
+  try {
+    const out = await sharp(Buffer.from(b64, 'base64'))
+      .rotate()
+      .resize({
+        width: IMAGE_REFERENCE_LONG_EDGE,
+        height: IMAGE_REFERENCE_LONG_EDGE,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 88 })
+      .toBuffer()
+    if (out.byteLength === 0) return ref
+    return `data:image/jpeg;base64,${out.toString('base64')}`
+  } catch {
+    // sharp 不可用或解码失败：原样提交，让网关报出它自己的体积/格式错误
+    return ref
+  }
 }
 
 const execFileAsync = promisify(execFile)

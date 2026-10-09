@@ -53,6 +53,7 @@ import { threerouterAdapter } from '../providers/threerouter.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, ImageGenParams, HttpOpts, SubmitResult } from '../providers/types.ts'
 import {
+  compressImageReference,
   createImageSummaryText,
   decodeBase64Media,
   fetchMediaBytes,
@@ -488,14 +489,17 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const runtime = runtimeDefaults.get()
       const prompt = applyImageStyle(rawPrompt, runtime.imageStyle)
 
-      // 参考图解析：本地路径 → data URL，URL/data URL 原样透传（图生图入参）
+      // 参考图解析：本地路径 → data URL，URL/data URL 原样透传（图生图入参）；
+      // 超过阈值的本地大图先压缩，避免 data URL 体积触发网关/上游上限或超时
       const conversationReferences = await resolveConversationImages(exec, attachments)
        const explicitReferences = Array.isArray(typedArgs.images)
-         ? await Promise.all(typedArgs.images.filter((value): value is string => typeof value === 'string' && value.trim() !== '').map(resolveImageReference))
+         ? await Promise.all(typedArgs.images
+             .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+             .map(async (value) => compressImageReference(await resolveImageReference(value))))
          : []
        const resolvedReferences = explicitReferences.length > 0 ? explicitReferences : conversationReferences
        const imageReference = typedArgs.image
-         ? await resolveImageReference(typedArgs.image)
+         ? await compressImageReference(await resolveImageReference(typedArgs.image))
          : undefined
 
       // 模型取值链：调用参数 model > 配置 defaultImageModel > adapter 内置默认

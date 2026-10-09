@@ -12,6 +12,7 @@
 - **四家服务商 + 按模型家族自动路由** — Threerouter（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threerouter 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
 - **图片内嵌渲染** — 图片字节经 attachment 服务持久化，附件引用走 `presentationMeta` UI-only 通道，模型只见文本摘要，纯文本模型照常工作
+- **参考图自动瘦身** — 本地参考图大于 4MB 时先等比缩到长边 2560、转 JPEG(q88) 再提交，避免手机原图的 data URL 撞网关体积上限/超时；小图与远程 URL 原样透传
 - **凭证缝引用，不内联明文** — 每个服务商可只声明 `apiKeyEnv`（凭证引用名），生成时经 `ctx.credentials` 现读；桌面端登录写入的 Key 因此可直接复用，明文 `apiKey` 仍优先于引用
 - **媒体模式注入** — composer 切到「图片 / 视频」tab 时，插件在用户轮次进入模型请求前追加一条指令（`agent/pre-step`），要求模型直接调用生成工具并带出当前生效参数；子代理不继承该模式
 - **统一异常分类** — `GenerationError` 五类错误（auth / quota / task / timeout / network），可重试错误指数退避，不可重试错误即时中止
