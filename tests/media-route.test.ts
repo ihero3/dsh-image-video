@@ -49,12 +49,12 @@ let outputsDir: string
 let secretDir: string
 
 beforeAll(async () => {
-  outputsDir = await mkdtemp(join(tmpdir(), 'dsh-media-route-'))
+  outputsDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-route-'))
   await writeFile(join(outputsDir, 'clip.mp4'), Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]))
   await writeFile(join(outputsDir, 'still.png'), Buffer.from([9, 8, 7]))
   await writeFile(join(outputsDir, 'notes.txt'), Buffer.from('text not allowed'))
   // 目录遍历目标：outputs 同级的真实文件，必须不可达
-  secretDir = await mkdtemp(join(tmpdir(), 'dsh-media-secret-'))
+  secretDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-secret-'))
   await writeFile(join(secretDir, 'secret.txt'), Buffer.from('secret'))
 
   server = createServer((req, res) => {
