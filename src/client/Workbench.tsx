@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { AssetRecord, ProjectRecord } from '../workbench/records.ts'
+import type { AssetRecord, ProjectRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
@@ -78,6 +78,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+/** Localized label for one task status. */
+function statusKey(status: TaskStatus): WorkbenchLocaleKey {
+  switch (status) {
+    case 'queued': return 'statusQueued'
+    case 'running': return 'statusRunning'
+    case 'succeeded': return 'statusSucceeded'
+    case 'failed': return 'statusFailed'
+    case 'cancelled': return 'statusCancelled'
+  }
+}
+
+/** `HH:MM` of an ISO stamp, for the task list. */
+function clockTime(iso: string): string {
+  const parsed = new Date(iso)
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 /** File name of an absolute path. */
 function baseName(path: string): string {
   return path.split('/').pop() ?? path
@@ -102,6 +119,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [assets, setAssets] = useState<readonly AssetRecord[]>([])
   const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
+  const [tasks, setTasks] = useState<readonly TaskRecord[]>([])
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
@@ -134,6 +152,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setOutputs(await apiRef.current.listOutputs())
   }, [])
 
+  const loadTasks = useCallback(async () => {
+    setTasks(await apiRef.current.listTasks())
+  }, [])
+
   useEffect(() => {
     void (async () => {
       try {
@@ -142,9 +164,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       } catch (error) {
         setHealth({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
       }
-      await run(async () => { await loadProjects(); await loadOutputs() })
+      await run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() })
     })()
-  }, [loadOutputs, loadProjects, run])
+  }, [loadOutputs, loadProjects, loadTasks, run])
 
   useEffect(() => {
     void (async () => {
@@ -173,6 +195,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       data-workbench-health={health.status}
       data-workbench-projects={String(projects.length)}
       data-workbench-assets={String(assets.length)}
+      data-workbench-tasks={String(tasks.length)}
     >
       <header style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: '13px' }}>{t('sectionProject')}</strong>
@@ -250,7 +273,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           type="button"
           style={{ ...BUTTON, marginLeft: 'auto' }}
           disabled={busy}
-          onClick={() => { void run(async () => { await loadProjects(); await loadOutputs() }) }}
+          onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
         >
           {t('refresh')}
         </button>
@@ -359,9 +382,45 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           <p style={MUTED}>{t('panePlanned')}</p>
         </section>
 
-        <section data-workbench-pane="paneTasks" data-workbench-planned="true" style={PANE}>
+        <section data-workbench-pane="paneTasks" data-workbench-planned="false" style={PANE}>
           <h3 style={PANE_TITLE}>{t('paneTasks')}</h3>
-          <p style={MUTED}>{t('panePlanned')}</p>
+          {tasks.length === 0
+            ? <p style={MUTED}>{t('noTasks')}</p>
+            : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '4px' }}>
+                {tasks.map(task => (
+                  <li key={task.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={task.error ?? task.prompt ?? task.outputPath ?? ''}>
+                      {task.kind === 'video' ? '🎬' : '🖼️'} {t(statusKey(task.status))}
+                      {' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
+                    </span>
+                    <button
+                      type="button"
+                      style={BUTTON}
+                      aria-label={`${t('registerAsAsset')} ${task.id}`}
+                      disabled={busy || activeProject === undefined || task.outputPath === undefined}
+                      onClick={() => {
+                        void run(async () => {
+                          const project = activeProject
+                          const path = task.outputPath
+                          if (project === undefined || path === undefined) return
+                          await apiRef.current.attachAsset({
+                            projectId: project.id, path, kind: task.kind,
+                            bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
+                          })
+                          await apiRef.current.assignTask(task.id, project.id)
+                          setAssets(await apiRef.current.listAssets(project.id))
+                          await loadTasks()
+                        })
+                      }}
+                    >
+                      {t('registerAsAsset')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
         </section>
       </div>
     </div>

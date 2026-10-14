@@ -63,7 +63,7 @@
 ## 4. 阶段 2：项目、媒体素材、创作资源与任务统一（计划 §5）
 
 - [~] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已实现**：`ProjectRecord`、`AssetRecord`（含 `schemaVersion`）、`newWorkbenchId`、`normalizeProjectName`/`normalizeMediaKind`，`tests/workbench-store.test.ts` 覆盖校验边界；**待做**：`ResourceRecord`/`TrackResourceRecord`/`TaskRecord`｜R-PRJ-1、R-MED-1｜T1-10
-- [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目与素材，写入为 tmp+rename 原子、重启可重载、损坏文件不静默丢数据；`tests/workbench-store.test.ts` 覆盖。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 的项目包格式一致），KV 更适合会话/窗口级易变元数据，故此处保留文件后端并在阶段 8 前复核｜**待做**：资源/任务记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
+- [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目、素材与**任务账本**，写入为 tmp+rename 原子、重启可重载、损坏文件不静默；`tests/workbench-store.test.ts` 8 例。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目与账本需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 包格式一致），KV 更适合会话级易变元数据；阶段 8 前复核｜**待做**：资源记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
 - [~] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除（**二次确认**，符合 D2）；`tests/workbench-rpc-endpoints.test.ts` 走完整生命周期；客户端「新建/选中/删除」已可用。**待做**：改名、自动保存、保存状态四态（当前头部仍显示固定「已保存」）｜R-PRJ-3｜T2-2
 - [~] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义（后果说明、可选删文件、不可恢复提示）｜插件｜**已实现**：把 outputs 里的产物登记进项目（幂等去重：已登记的路径不会被重复登记）、按项目列出、删除记录（二次确认；**只删记录不动磁盘文件**）；**待做**：按类型/时间筛选、引用检查（时间轴/画布引用）、"同时删除文件"选项与不可恢复提示｜R-MED-2、R-MED-6｜T2-2
 - [ ] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜`test:` CRUD 单测；`scope` 只写 `project`｜回滚：资源库整块摘除（素材库不受影响）｜R-MED-3、R-COL-1｜T2-4

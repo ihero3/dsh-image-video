@@ -26,7 +26,7 @@ async function makeHandler() {
     if (!result.ok) throw new Error(`refused: ${result.error.code} ${result.error.message}`)
     return result.value as T
   }
-  return { handler, ok, outputsDir }
+  return { handler, ok, outputsDir, store }
 }
 
 describe('workbench channel endpoints', () => {
@@ -54,6 +54,28 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ removed: boolean }>('assets/remove', { id: attached.asset.id })).toEqual({ removed: true })
     expect(await ok<{ removed: boolean }>('projects/remove', { id: created.project.id })).toEqual({ removed: true })
     expect(await ok<{ projects: ProjectRecord[] }>('projects/list')).toEqual({ projects: [] })
+  })
+
+  it('files a recorded generation into a project through tasks endpoints', async () => {
+    const { ok, store } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '账本项目' })
+    const recorded = await store.recordTask({
+      kind: 'image', status: 'succeeded', provider: 'threerouter', model: 'minimax-image-01',
+      outputPath: '/tmp/x/shot.jpg', bytes: 106_000,
+    })
+
+    const listed = await ok<{ tasks: Array<{ id: string; kind: string }> }>('tasks/list')
+    expect(listed.tasks.map(task => task.id)).toEqual([recorded.id])
+
+    const assigned = await ok<{ task: { projectId?: string } }>('tasks/assign', {
+      id: recorded.id, projectId: created.project.id,
+    })
+    expect(assigned.task.projectId).toBe(created.project.id)
+    expect((await ok<{ tasks: Array<{ id: string }> }>('tasks/list', { projectId: created.project.id })).tasks)
+      .toHaveLength(1)
+
+    // 未知任务 id 要如实报错（结构化 envelope），不能用静默成功糊过去
+    expect(await store.updateTask('missing', { status: 'failed' })).toBeUndefined()
   })
 
   it('lists the newest media files and skips everything else', async () => {

@@ -78,6 +78,37 @@ describe('workbench store', () => {
     await expect(store.listProjects()).rejects.toThrow()
   })
 
+  it('records tasks, updates them and keeps them across a project removal', async () => {
+    const { store, directory } = await makeStore()
+    const project = await store.createProject('账本')
+    const task = await store.recordTask({
+      kind: 'video', status: 'succeeded', provider: 'threerouter', model: 'minimax-h3',
+      outputPath: '/tmp/outputs/clip.mp4', bytes: 4096, startedAt: '2026-10-13T00:00:00.000Z',
+    })
+    expect(task.status).toBe('succeeded')
+    expect(task.createdAt).toBe('2026-10-13T00:00:00.000Z')
+    expect((await store.listTasks())[0]?.id).toBe(task.id)
+
+    const assigned = await store.updateTask(task.id, { projectId: project.id })
+    expect(assigned?.projectId).toBe(project.id)
+    expect((await store.listTasks(50, project.id)).map(item => item.id)).toEqual([task.id])
+    expect(await store.updateTask('missing', { status: 'failed' })).toBeUndefined()
+
+    // 新实例读同一目录：账本连状态一起恢复
+    const reopened = new WorkbenchStore({ directory })
+    expect((await reopened.listTasks())[0]).toMatchObject({ status: 'succeeded', projectId: project.id })
+
+    // 删除项目不动历史账本（产物文件仍在磁盘上）
+    await reopened.removeProject(project.id)
+    expect(await reopened.listTasks()).toHaveLength(1)
+  })
+
+  it('validates task input', async () => {
+    const { store } = await makeStore()
+    await expect(store.recordTask({ kind: 'audio', status: 'succeeded' })).rejects.toThrow(/media kind/)
+    await expect(store.recordTask({ kind: 'image', status: 'done' })).rejects.toThrow(/task status/)
+  })
+
   it('derives its directory next to the output directory', () => {
     expect(resolveWorkbenchDirectory('/home/me/profiles/desktop/outputs'))
       .toBe('/home/me/profiles/desktop/image-video-workbench')

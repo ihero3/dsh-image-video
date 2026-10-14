@@ -31,6 +31,37 @@ export interface AssetRecord {
     /** Prompt that produced it, when known. */
     readonly prompt?: string;
 }
+/**
+ * Lifecycle of one generation as the workbench records it.
+ *
+ * `queued`/`running` exist so the ledger can be written *before* the provider
+ * answers (a long video job outlives the tab), and `cancelled` is distinct from
+ * `failed` because the user asked for it.
+ */
+export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+/** One generation attempt, recorded by the host when a tool call finishes. */
+export interface TaskRecord {
+    readonly schemaVersion: number;
+    readonly id: string;
+    readonly kind: MediaKind;
+    readonly status: TaskStatus;
+    /** Provider and model actually used, when the tool reported them. */
+    readonly provider?: string;
+    readonly model?: string;
+    /** The prompt as submitted. */
+    readonly prompt?: string;
+    /** Absolute path of the produced file, when the call succeeded. */
+    readonly outputPath?: string;
+    /** Size of that file in bytes. */
+    readonly bytes?: number;
+    /** Project this task was filed into, once the user registers its output. */
+    readonly projectId?: string;
+    /** Failure message for `failed` (and the reason for `cancelled`). */
+    readonly error?: string;
+    /** When the call started / last changed. */
+    readonly createdAt: string;
+    readonly updatedAt: string;
+}
 /** Media kinds the workbench distinguishes today. */
 export type MediaKind = 'image' | 'video';
 /** Longest project name the store accepts (kept short enough for the tab header). */
@@ -49,6 +80,13 @@ export declare function newWorkbenchId(prefix: string): string;
  * @throws {Error} when the name is empty or too long.
  */
 export declare function normalizeProjectName(value: unknown): string;
+/**
+ * Validate a task status.
+ * @param value - raw status.
+ * @returns the status.
+ * @throws {Error} when it is not one of the five known states.
+ */
+export declare function normalizeTaskStatus(value: unknown): TaskStatus;
 /**
  * Validate a media kind from the client.
  * @param value - raw kind.

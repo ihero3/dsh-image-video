@@ -11,8 +11,8 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
-  newWorkbenchId, normalizeMediaKind, normalizeProjectName, WORKBENCH_SCHEMA_VERSION,
-  type AssetRecord, type MediaKind, type ProjectRecord,
+  newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
+  type AssetRecord, type MediaKind, type ProjectRecord, type TaskRecord, type TaskStatus,
 } from './records.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
@@ -20,6 +20,8 @@ interface WorkbenchDocument {
   schemaVersion: number
   projects: ProjectRecord[]
   assets: AssetRecord[]
+  /** Generation history; kept when a project is removed (the file still exists). */
+  tasks: TaskRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -28,6 +30,30 @@ export interface WorkbenchStoreOptions {
   readonly directory: string
   /** Clock override, for deterministic tests. */
   readonly now?: () => Date
+}
+
+/** What the host records when a generation call finishes. */
+export interface TaskInput {
+  readonly kind: MediaKind | string
+  readonly status: TaskStatus | string
+  readonly provider?: string
+  readonly model?: string
+  readonly prompt?: string
+  readonly outputPath?: string
+  readonly bytes?: number
+  readonly projectId?: string
+  readonly error?: string
+  /** When the call started (defaults to now). */
+  readonly startedAt?: string
+}
+
+/** What may be changed on an existing task afterwards. */
+export interface TaskPatch {
+  readonly status?: TaskStatus | string
+  readonly outputPath?: string
+  readonly bytes?: number
+  readonly projectId?: string
+  readonly error?: string
 }
 
 /** What the client may register as an asset. */
@@ -157,6 +183,72 @@ export class WorkbenchStore {
     return true
   }
 
+  /**
+   * Record one generation attempt.
+   * @param input - what the tool reported.
+   * @returns the stored record.
+   */
+  async recordTask(input: TaskInput): Promise<TaskRecord> {
+    const document = await this.load()
+    const stamp = this.now().toISOString()
+    const task: TaskRecord = {
+      schemaVersion: WORKBENCH_SCHEMA_VERSION,
+      id: newWorkbenchId('tsk'),
+      kind: normalizeMediaKind(input.kind),
+      status: normalizeTaskStatus(input.status),
+      createdAt: input.startedAt ?? stamp,
+      updatedAt: stamp,
+      ...input.provider === undefined ? {} : { provider: input.provider },
+      ...input.model === undefined ? {} : { model: input.model },
+      ...input.prompt === undefined ? {} : { prompt: input.prompt },
+      ...input.outputPath === undefined ? {} : { outputPath: input.outputPath },
+      ...input.bytes === undefined ? {} : { bytes: input.bytes },
+      ...input.projectId === undefined ? {} : { projectId: input.projectId },
+      ...input.error === undefined ? {} : { error: input.error },
+    }
+    document.tasks.push(task)
+    await this.save(document)
+    return task
+  }
+
+  /**
+   * Change an existing task (status, output, project).
+   * @param id - task id.
+   * @param patch - fields to change.
+   * @returns the updated record, or `undefined` when the id is unknown.
+   */
+  async updateTask(id: string, patch: TaskPatch): Promise<TaskRecord | undefined> {
+    const document = await this.load()
+    const current = document.tasks.find(task => task.id === id)
+    if (current === undefined) return undefined
+    const updated: TaskRecord = {
+      ...current,
+      ...patch.status === undefined ? {} : { status: normalizeTaskStatus(patch.status) },
+      ...patch.outputPath === undefined ? {} : { outputPath: patch.outputPath },
+      ...patch.bytes === undefined ? {} : { bytes: patch.bytes },
+      ...patch.projectId === undefined ? {} : { projectId: patch.projectId },
+      ...patch.error === undefined ? {} : { error: patch.error },
+      updatedAt: this.now().toISOString(),
+    }
+    document.tasks = document.tasks.map(task => (task.id === id ? updated : task))
+    await this.save(document)
+    return updated
+  }
+
+  /**
+   * List recorded generations, newest first.
+   * @param limit - maximum entries.
+   * @param projectId - restrict to one project (tasks filed into it).
+   * @returns the records.
+   */
+  async listTasks(limit = 50, projectId?: string): Promise<TaskRecord[]> {
+    const document = await this.load()
+    return document.tasks
+      .filter(task => projectId === undefined || task.projectId === projectId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, Math.max(0, limit))
+  }
+
   /** Read the document, caching it after the first read. */
   private async load(): Promise<WorkbenchDocument> {
     if (this.cache !== undefined) return this.cache
@@ -166,10 +258,11 @@ export class WorkbenchStore {
         schemaVersion: raw.schemaVersion ?? WORKBENCH_SCHEMA_VERSION,
         projects: raw.projects ?? [],
         assets: raw.assets ?? [],
+        tasks: raw.tasks ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      this.cache = { schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [] }
+      this.cache = { schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [] }
     }
     return this.cache
   }

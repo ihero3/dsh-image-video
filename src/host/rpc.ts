@@ -129,6 +129,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     case 'assets/remove':
       return { removed: await deps.store.removeAsset(text(payload, 'id')) }
+    case 'tasks/list': {
+      const limit = optionalNumber(payload, 'limit')
+      const projectId = optionalText(payload, 'projectId')
+      return { tasks: await deps.store.listTasks(limit ?? undefined, projectId) }
+    }
+    case 'tasks/assign': {
+      const id = text(payload, 'id')
+      const task = await deps.store.updateTask(id, { projectId: text(payload, 'projectId') })
+      if (task === undefined) throw new Error(`unknown task: ${id}`)
+      return { task }
+    }
     case 'outputs/list': {
       const limit = optionalNumber(payload, 'limit')
       const outputs: OutputFile[] = await listOutputs(deps.outputsDir, limit ?? undefined)

@@ -8,7 +8,7 @@
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
-import type { AssetRecord, MediaKind, ProjectRecord } from '../workbench/records.ts'
+import type { AssetRecord, MediaKind, ProjectRecord, TaskRecord } from '../workbench/records.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 
 /** What the workbench UI may ask the host (phase 2, first slice). */
@@ -35,6 +35,10 @@ export interface WorkbenchApi {
   }) => Promise<AssetRecord>
   /** Remove one asset record. */
   removeAsset: (id: string) => Promise<boolean>
+  /** Recorded generations, newest first. */
+  listTasks: (limit?: number) => Promise<TaskRecord[]>
+  /** File a recorded generation into a project. */
+  assignTask: (id: string, projectId: string) => Promise<TaskRecord>
   /** Newest media files under the output directory. */
   listOutputs: (limit?: number) => Promise<OutputFile[]>
 }
@@ -59,6 +63,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     listAssets: async projectId => (await call<{ assets: AssetRecord[] }>('assets/list', { projectId })).assets,
     attachAsset: async input => (await call<{ asset: AssetRecord }>('assets/attach', input)).asset,
     removeAsset: async id => (await call<{ removed: boolean }>('assets/remove', { id })).removed,
+    listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
+    assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
   }
 }

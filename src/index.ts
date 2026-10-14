@@ -40,6 +40,7 @@ import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc } from './host/rpc.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
+import { withTaskLedger } from './workbench/ledger.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -128,6 +129,10 @@ export function apply(ctx: Context, config: Config): void {
   // 有唯一答案，不会再出现模型结果在 A 目录、后处理结果在 B 目录的旁路产物。
   const outputsDir = resolveOutputsDir(config.outputsDir)
 
+  // 工作台数据（项目/素材/任务账本）：目录由输出目录派生，全进程一个实例，
+  // 生成工具的账本写入与 RPC 端点读写共用它。
+  const workbenchStore = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
+
   // 生效配置摘要（不含 key 明文）：把「哪个 profile/patch 生效、默认服务商与默认模型
   // 究竟是什么、图片提交走哪条传输、水印开没开、结果落到哪个绝对目录」一次性写进
   // 宿主日志，便于在 web/desktop 多 profile 场景定位配置来源，消除「用了哪个服务商/
@@ -178,11 +183,17 @@ export function apply(ctx: Context, config: Config): void {
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
-    imageCtx.tools.register(createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }))
+    imageCtx.tools.register(withTaskLedger(
+      createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }),
+      { store: workbenchStore, kind: 'image' },
+    ))
   })
 
   // generate_video：不依赖 attachments，始终注册。
-  ctx.tools.register(createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }))
+  ctx.tools.register(withTaskLedger(
+    createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }),
+    { store: workbenchStore, kind: 'video' },
+  ))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -224,8 +235,6 @@ export function apply(ctx: Context, config: Config): void {
   // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
   // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
-    // 工作台数据目录由输出目录派生（`<outputsDir>/../image-video-workbench`），不额外加配置项。
-    const store = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
-    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir, store })
+    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir, store: workbenchStore })
   })
 }

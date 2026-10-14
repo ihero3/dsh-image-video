@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Workbench, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import type { WorkbenchApi } from '../src/client/api.ts'
-import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
+import type { AssetRecord, ProjectRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
@@ -33,9 +33,10 @@ const OUTPUT_VIDEO: OutputFile = {
 }
 
 /** In-memory stand-in for the host API, recording the calls it received. */
-function fakeApi(options: { failHealth?: string } = {}) {
+function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = []
+  const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -83,9 +84,17 @@ function fakeApi(options: { failHealth?: string } = {}) {
       assets.splice(index, 1)
       return true
     },
+    listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    assignTask: async (id, projectId) => {
+      calls.push('tasks/assign')
+      const index = tasks.findIndex(task => task.id === id)
+      const updated = { ...tasks[index]!, projectId }
+      tasks[index] = updated
+      return updated
+    },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
   }
-  return { api, calls, projects, assets }
+  return { api, calls, projects, assets, tasks }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -124,8 +133,9 @@ describe('workbench skeleton', () => {
     }
     // 阶段 2 起：素材与预览面可交互，只剩创作资源与任务仍是占位
     expect(view.container.querySelector('[data-workbench-pane=paneAssets]')?.getAttribute('data-workbench-planned')).toBe('false')
-    expect(view.container.querySelector('[data-workbench-pane=paneTasks]')?.getAttribute('data-workbench-planned')).toBe('true')
-    expect(screen.getAllByText(en.panePlanned)).toHaveLength(2)
+    expect(view.container.querySelector('[data-workbench-pane=paneTasks]')?.getAttribute('data-workbench-planned')).toBe('false')
+    // 阶段 2 起只剩「创作资源」面仍是占位
+    expect(screen.getAllByText(en.panePlanned)).toHaveLength(1)
     expect(await screen.findByText('0.3.1 · threerouter')).toBeTruthy()
   })
 
@@ -201,6 +211,29 @@ describe('workbench project and asset flow', () => {
     fireEvent.click(screen.getByRole('button', { name: `${en.confirmRemove} shot.png` }))
     await waitFor(() => { expect(host.calls).toContain('assets/remove') })
     expect(host.assets).toHaveLength(0)
+  })
+
+  it('lists recorded generations and files one into the active project', async () => {
+    const task: TaskRecord = {
+      schemaVersion: 1, id: 'tsk-1', kind: 'video', status: 'succeeded', provider: 'threerouter',
+      model: 'minimax-h3', outputPath: '/tmp/outputs/clip.mp4', bytes: 4_096_000,
+      createdAt: '2026-10-14T10:30:00.000Z', updatedAt: '2026-10-14T10:30:00.000Z',
+    }
+    const host = fakeApi({ tasks: [task] })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+
+    // 任务面板：状态/模型/大小/时间都可读
+    expect(await screen.findByText(new RegExp(`${en.statusSucceeded} · minimax-h3`))).toBeTruthy()
+    expect(view.container.querySelector('[data-workbench-tasks]')?.getAttribute('data-workbench-tasks')).toBe('1')
+
+    await createProject(host, '任务项目')
+    fireEvent.click(await screen.findByRole('button', { name: `${en.registerAsAsset} tsk-1` }))
+    await waitFor(() => { expect(host.assets).toHaveLength(1) })
+    expect(host.calls).toContain('assets/attach')
+    expect(host.calls).toContain('tasks/assign')
+    expect(host.assets[0]?.path).toBe(task.outputPath)
+    expect(host.tasks[0]?.projectId).toBe(host.projects[0]?.id)
   })
 
   it('surfaces a host failure as a notice instead of crashing', async () => {

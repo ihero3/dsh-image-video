@@ -33,6 +33,13 @@ export type WorkbenchLocaleKey =
   | 'previewEmpty'
   | 'busy'
   | 'failed'
+  | 'noTasks'
+  | 'registerAsAsset'
+  | 'statusQueued'
+  | 'statusRunning'
+  | 'statusSucceeded'
+  | 'statusFailed'
+  | 'statusCancelled'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -70,6 +77,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   previewEmpty: 'Select an asset to preview it',
   busy: 'Working…',
   failed: 'Operation failed',
+  noTasks: 'No tasks recorded yet',
+  registerAsAsset: 'Register as asset',
+  statusQueued: 'Queued',
+  statusRunning: 'Running',
+  statusSucceeded: 'Succeeded',
+  statusFailed: 'Failed',
+  statusCancelled: 'Cancelled',
 }
 
 /** Simplified Chinese copy. */
@@ -105,4 +119,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   previewEmpty: '选中素材后可在此预览',
   busy: '处理中…',
   failed: '操作失败',
+  noTasks: '还没有任务记录',
+  registerAsAsset: '登记为素材',
+  statusQueued: '排队中',
+  statusRunning: '运行中',
+  statusSucceeded: '成功',
+  statusFailed: '失败',
+  statusCancelled: '已取消',
 }
