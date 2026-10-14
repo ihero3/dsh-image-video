@@ -26,7 +26,7 @@
 | 阶段 | 任务 | 已完成 | 阶段门禁（不过不进下一阶段） |
 |---|---|---|---|
 | 0 审计与方案（纯文档 + 环境可复现） | 6 | 4 | 决策 D2–D7 有结论；口径收敛完成 |
-| 1 右栏工作台（PR-1 / PR-2） | 10 | 4 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
+| 1 右栏工作台（PR-1 / PR-2） | 10 | 5 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
 | 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4` |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
 | 4 专业工作流 MVP | 7 | 0 | `R-FLW-1..8` |
@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **8** | — |
+| **合计** | **59** | **9** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -53,10 +53,10 @@
 - [~] **T1-4** 工作台骨架：项目名称 / 保存状态 / 模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格；用 `useTabInfo()` 读座位信息并以 `data-*` 暴露可见性/是否全屏｜插件｜代码已绿（`src/client/Workbench.tsx`）；**待 T1-7 桌面实测**：分区与框架图一致、切模式不报错、空态有 guide 文案｜回滚：tab body 换成空组件（类型保留）｜R-ENT-2、R-ENT-3｜T1-3
 - [x] **T1-5** 宿主半边：`/image-video/workbench` RPC 健康检查 + 服务装配，`rpc.handle` 的 disposer 挂在本插件自己的 effect 上；只答 `health`，其余端点结构化拒绝｜插件｜`test:` `tests/host-workbench-rpc.test.ts`（4 例：健康值不含凭证、未知端点走 envelope、注册与撤销、无 connection 时空挂 disposer）；`cmd:` `lib/index.js` 含通道名，`src/index.ts` 经 `ctx.inject(['connection'])` 注册｜回滚：删 `src/host/rpc.ts` 与那一处 inject｜R-AGT-1、R-BND-2｜T1-4
 - [x] **T1-6** 生命周期与骨架测试：字典 / tab 类型 / 座位三处注册随卸载撤销；骨架渲染与模式切换｜插件｜`test:` `tests/client-lifecycle.test.ts`、`tests/workbench.client.test.tsx`（jsdom）、`tests/version.test.ts` 全绿；全量 **260 passed / 5 skipped**；`cmd:` vitest 配 `jsx: automatic`、jsdom 30、`@testing-library/react` 16｜回滚：删四个测试与新 devDeps｜R-BND-1、R-NFR-2｜T1-5
-- [ ] **T1-7** 桌面装载实测：dev App 右栏出现工作台 tab、guide 可见、卸载后消失；RPC 健康检查（宿主半边需重启宿主进程才能实测）｜插件（Harness 侧只 bump 子模块指针）｜`cmd:` `pnpm run build:plugins` + 重载/重启 dev App；`pnpm exec vitest run apps/desktop/tests/private-plugins.spec.ts` 绿｜**更正（2026-10-14 实测）**：审计曾说 `private-plugins.spec.ts:61` 的 `imageVideo.clientEntry === undefined` 会被 client 半边打破——该用例用**自造 fixture**（`writePlugin(..., withClient=false)`），根本不读真实 manifest，**无需改 Harness 测试**（已跑 10/10 通过）｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
-- [ ] **T1-8** 现有能力零回归：对话出图/出片、composer 媒体 tab、`/image-video/defaults` 不变；左栏与中间对话区零新增控件｜插件｜`test:` 现有 255 个用例全绿 + `manual:` 真机走一次出图与一次出片，卡片文案不变、右栏外无新增 DOM｜回滚：不改现有代码；发现回归则回退对应提交｜R-BND-5、R-QCK-1、R-ENT-4｜T1-5
-- [ ] **T1-9** 右栏形态：窄窗口可用 + 展开入口 + 深浅主题，直接接线右栏既有呈现（视口 <768px 自动 fullscreen、`primary+alt+Enter`、右栏最小 300 / 中间最小 400 由 `ui-layout` 定）｜插件｜`manual:` 最窄宽度仍能完成"选素材→预览→提交"占位流程；展开/退出后布局与编辑状态复位；**不自造全屏**｜回滚：保留骨架，撤掉主题/窄窗微调｜R-ENT-5、R-NFR-3｜T1-4
-- [ ] **T1-10** 产物与提交：`lib/`（含 client）+ `CHANGELOG.md` + 子模块指针对齐｜插件（+ Harness 指针）｜`cmd:` 插件仓库提交含 `lib/client/plugin.js`；Harness 侧只有子模块指针 + T1-7 那一行｜回滚：`git revert` 对应提交并把 Harness 指针回退到上一 SHA｜R-NFR-2｜T1-7
+- [!] **T1-7** 桌面装载实测（**阻塞：需重启承载本会话的桌面 App**）：dev App 右栏出现工作台 tab、guide 可见、卸载后消失；RPC 健康检查同样要宿主重启后才生效｜插件（Harness 侧只 bump 子模块指针）｜**证据（2026-10-14 实测）**：`__DSH_BOOT__.entries` 里没有 `dsh-image-video`（`hasClientHalf: false`），**重载渲染进程后仍然没有**、无 boot 报错 → 宿主在插件首次装载时缓存了 `dsh.client` 扫描结果，后加 `./client` 必须**重启宿主进程**；桌面私有插件测试 10/10 绿（顺带更正：审计说该测试会因 client 半边变红是**误判**——它用自造 fixture，不读真实 manifest）｜**解除条件**：owner 决定由谁重启（我执行则会话 UI 重连一次）｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
+- [~] **T1-8** 现有能力零回归：对话出图/出片、composer 媒体 tab、`/image-video/defaults` 不变；左栏与中间对话区零新增控件｜插件｜**已取到的证据**：全量 **262 passed / 5 skipped**（原 255 + 新增 7）；`--dump-config` 的 `image-video` 配置块改动前后**逐字节一致**（24 行）；源码改动除新增 client/host 文件外只有注释/文案（T0-5）｜**待补**：真机走一次出图与一次出片（在 App 里做，同样等 T1-7 的重启决定；不想产生真实付费调用的话由 owner 自己走一次）｜回滚：发现回归则回退对应提交｜R-BND-5、R-QCK-1、R-ENT-4｜T1-5
+- [!] **T1-9** 右栏形态：窄窗口可用 + 展开入口 + 深浅主题，直接接线右栏既有呈现（视口 <768px 自动 fullscreen、`primary+alt+Enter`、右栏最小 300 / 中间最小 400 由 `ui-layout` 定）｜插件｜**阻塞于 T1-7**（宿主没认到 tab 前无法实测窄窗/主题）；代码侧已用主题中立色（`currentColor` + `color-mix`），无硬编码色板｜解除条件同 T1-7｜回滚：保留骨架，撤掉主题/窄窗微调｜R-ENT-5、R-NFR-3｜T1-4
+- [x] **T1-10** 产物与提交：`lib/`（含 client）+ `CHANGELOG.md` + 子模块指针对齐｜插件（+ Harness 指针）｜`cmd:` 插件仓库 `bd5064e` / `55e8e53` / `0d0f053` 已推 `origin/main`（含 `lib/client/plugin.js`、`lib/types/client/**`、CHANGELOG）；Harness `d9d21e050d` 只含子模块指针 + 台账 R08 补记｜回滚：`git revert` 对应提交并把 Harness 指针回退到上一 SHA｜R-NFR-2｜T1-7
 
 ## 4. 阶段 2：项目、媒体素材、创作资源与任务统一（计划 §5）
 

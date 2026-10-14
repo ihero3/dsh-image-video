@@ -146,7 +146,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run dev
 | 症状 | 首查 | 处理 |
 |---|---|---|
 | 桌面启动报 `client entry ... is not built` | `private-plugins.ts:84` | 先 `pnpm run build`（插件仓库）产出 `lib/client.js` 再提交；二者必须原子 |
-| 右栏没有工作台 tab | `dsh.client` 声明、`inject` 是否含右栏包、注册是否在 `ctx.effect()` 内 | 按审计 §4.1 两段式注册；用 `--dump-config` 确认入口被解析 |
+| 右栏没有工作台 tab | ① 宿主是否在**启动后**扫过 `dsh.client`（实测：给已在跑的插件后加 `./client`，宿主不会重新扫描，重载渲染进程也没用）② `dsh.client` 声明与 `inject` ③ 注册是否在 `ctx.effect()` 内 | ① **重启宿主进程**（`pnpm run dev:desktop` / `start:desktop`）② 按审计 §4.1 两段式注册 ③ `--dump-config` 确认入口被解析；`__DSH_BOOT__.entries` 可确认宿主是否已在服务该客户端半边 |
 | tab 出现但空白 | 组件抛错 / 主题变量缺失 / RPC 未就绪 | 先渲染骨架 + 健康检查，再挂业务；看宿主日志与 DevTools console |
 | 生成任务卡在"运行中" | 轮询超时、进程被杀 | 任务状态机必须有 `中断`；刷新后按项目账本恢复（`R-PRJ-6`、`R-TSK-2`） |
 | 工作台媒体预览 404 / 播放器空白 | `/outputs` 是否注册 | 该路由只在 `webServer.host === '127.0.0.1'` 注册；非本机宿主给"媒体预览不可用"提示（`R-NFR-6`），不要静默空白 |
