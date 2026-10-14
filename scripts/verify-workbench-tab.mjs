@@ -11,7 +11,7 @@
  *
  * 用法：
  *   node scripts/verify-workbench-tab.mjs [--cdp http://127.0.0.1:9222] [--reload] [--shot out.png]
- * 退出码：0 = 客户端半边已在服务；1 = 未在服务（需重启宿主）；2 = 探测本身失败。
+ * 退出码：0 = 客户端半边在服务**且健康检查通过**；1 = 半边未在服务（需重启宿主）；3 = 半边在服务但健康检查失败（通道未注册/宿主仍是旧 bundle）；2 = 探测本身失败。
  */
 import { writeFileSync } from 'node:fs'
 
@@ -79,6 +79,18 @@ const probe = JSON.parse(await evaluate(`JSON.stringify({
   ourUrl: (window.__DSH_BOOT__?.entries ?? []).find(entry => entry.id === 'dsh-image-video')?.url ?? null,
   titles: ${JSON.stringify(TAB_TITLES)},
   visibleText: document.body.innerText.slice(0, 200_000),
+  workbench: (() => {
+    const root = document.querySelector('[data-workbench-kind]')
+    if (root === null) return null
+    const chip = [...root.querySelectorAll('span')]
+      .map(span => (span.textContent ?? '').trim())
+      .find(text => /·|连接|未就绪|Connecting|unavailable/.test(text)) ?? null
+    return {
+      health: root.getAttribute('data-workbench-health'),
+      chip,
+      error: [...root.querySelectorAll('span')].map(span => span.getAttribute('title')).find(Boolean) ?? null,
+    }
+  })(),
 })`))
 const served = probe.ourUrl !== null
 const matched = probe.titles.filter(title => probe.visibleText.includes(title))
@@ -86,6 +98,12 @@ const matched = probe.titles.filter(title => probe.visibleText.includes(title))
 console.log(`页面加载时间: ${probe.loadedAt}`)
 console.log(`客户端半边在服务: ${served ? `是（${probe.ourUrl}）` : '否'}`)
 console.log(`右栏入口文案命中: ${matched.length === 0 ? '否' : matched.join('、')}`)
+if (probe.workbench !== null) {
+  console.log(`工作台骨架: 健康=${probe.workbench.health} 芯片=${JSON.stringify(probe.workbench.chip)}`
+    + (probe.workbench.error === null ? '' : ` 报错=${JSON.stringify(probe.workbench.error)}`))
+} else {
+  console.log('工作台骨架: 未挂载（右栏 tab 未打开）')
+}
 
 if (shotPath !== undefined) {
   const shot = await send('Page.captureScreenshot', { format: 'png' })
@@ -100,8 +118,14 @@ if (!served) {
   console.error('处置：重启宿主进程（pnpm run dev:desktop / pnpm --filter @deepseek-ai/dsh-desktop run start）；重载渲染进程无效。')
   process.exit(1)
 }
+const healthy = probe.workbench?.health === 'ok'
+if (!healthy) {
+  console.error(`结论：客户端半边已在服务，但健康检查未通过（${probe.workbench?.health ?? '骨架未挂载'}）——`
+    + '通道未注册或宿主仍在跑旧 bundle，请重启宿主进程后重跑。')
+  process.exit(3)
+}
 if (matched.length === 0) {
-  console.log('结论：客户端半边已在服务，但当前视图里没有工作台入口（打开右侧边栏后重跑本脚本）。')
+  console.log('结论：客户端半边在服务、健康检查通过，但当前视图里没有工作台入口（打开右侧边栏后重跑）。')
   process.exit(0)
 }
-console.log('结论：客户端半边已在服务，且右栏已出现工作台入口。')
+console.log('结论：客户端半边在服务、健康检查通过，且右栏已出现工作台入口。')

@@ -121,7 +121,7 @@ pnpm --filter @deepseek-ai/dsh-desktop run dev
 现场检查脚本（默认只读，退出码 1 = 宿主未认到客户端半边，需重启宿主）：
 
 ```sh
-node scripts/verify-workbench-tab.mjs            # 只读探测当前页面
+node scripts/verify-workbench-tab.mjs            # 只读探测：半边是否在服务 + 骨架健康状态（exit 0/1/3）
 node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 ```
 
