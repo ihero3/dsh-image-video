@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### 新增
+- **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）
+- **工作台 RPC 健康检查**：宿主侧注册 `/image-video/workbench` 通道（`connection.rpc.handle`，随 fiber 卸载撤销）；端点 `health` 回报插件名、版本、通道名、生效服务商与已解析的输出目录；未知端点按连接的 envelope 结构化拒绝，不抛异常、不泄漏凭证
+- **`PLUGIN_VERSION` 与一致性守卫**：版本常量集中一处，`tests/version.test.ts` 与 `package.json` 对账
+
 - **图片参考图体积守卫**：本地参考图解析出的 data URL 超过 4MB 时，先用 sharp 等比缩到长边 2560 并转 JPEG(q88) 再提交（媒体模式注入/图生图两组入口都走这条链）。手机原图直传时 data URL 比原文件还大约 1/3，此前会撞网关/上游的请求体上限或被拖到超时；压缩不可用时原样提交，交由服务端报错
 - **凭证缝引用（`apiKeyEnv`）**：`ProviderCredentials` 新增 `apiKeyEnv`；`apiKey` 留空时按该引用经 `ctx.credentials` 解析（如桌面端登录后写入的 Key），配置里不必内联明文。取值优先级为「明文 `apiKey` > 引用解析值」，两者都取不到按未配置响亮报错；候选服务商过滤改用 `hasConfiguredCredentials`（明文或引用任一非空即已配置），只声明引用的部署不会再被跳过。`resolveProviderCredentials` / `resolveActiveProvider` 因此变为异步并接收 `ApiKeyResolver`
 - **媒体模式注入（`mediaMode`）**：`/image-video/defaults` 协议新增 `mediaMode`（`text` / `image` / `video`）；composer 切到图片/视频 tab 后，插件在 `agent/pre-step` 追加一条指令消息（`source.kind = 'image-video.media-mode'`），要求模型直接调用 `generate_image` / `generate_video` 并带出当前生效参数。门控：只在 `next()` 成功且本步带来新的用户输入时注入（工具循环不重复），子代理（`origin === 'subagent'`）不继承主会话模式；`text` 与未设置不注入
@@ -25,6 +29,10 @@
 
 ### 变更
 - `peerDependencies` 的 DSH 范围由 `*` 收紧为 `^0.2.1-alpha.1`（`dsh-tools` / `dsh-llm` / `dsh-credentials`），`devDependencies` 同步升到 `^0.2.1-alpha.1` 并补 `@deepseek-ai/dsh-agent`：`originalDimensions` 与凭证缝 `resolve` 需要 0.2.x 运行时
+- **依赖对齐（修掉一根红基线）**：`@deepseek-ai/schemastery` 由 `^3.18.1` 提到 `^3.18.5-alpha.1`——与 dsh-0.2.1 线 devDeps 传递来的那一份统一，消除"两份 schemastery 并存"导致的 `z<T>` 注解冲突与 `TS2742`；`pnpm-workspace.yaml` 的 `allowBuilds.esbuild` 从占位符改为 `true`（此前 esbuild postinstall 被静默跳过）。对齐后 `pnpm run typecheck` 由红转绿
+- **构建改为双面**：`build = clean && tsdown（宿主角 + 客户端角）&& tsc -p tsconfig.client.json`；`bundle` 复用 `build`（Harness 根 `build:plugins` 直接可用）；`files` 纳入 `lib/client/**` 与 `lib/types/client/**`
+- **README 与源码注释口径收敛**：视频时长上限统一为 1–30 秒（原注释/README 写 1–10）、`pollTimeoutMs` 默认 600000（原写 300000）、参考视频上限如实写为"上游文档声明 + 本地只强制 ≤15 秒 / 压缩后 ≤6MB"、`runtime-defaults` 的"六个字段"改回"七个字段"、`http-client.ts` 指向的契约文档名修正、`image-preflight` 去掉"threerouter 是唯一异步图片服务商"的过期断言、`media.ts` 陈旧注释改为与实现一致（是否注入模型可见 image 块由路由能力决定）
+- **文档**：新增 `docs/REQUIREMENTS.md`（需求 + 验收 + 追踪矩阵 + 16 条实现前必须收敛的事实）、`docs/EXECUTION.md`（工作区/环境/执行流程/验证证据/回滚/发布/排错）、`docs/TASKS.md`（59 个原子任务的唯一进度账本）
 
 ## [0.3.1] - 2026-09-20
 

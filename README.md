@@ -95,7 +95,7 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
     defaultVideoDuration: 5
     timeoutMs: 60000
     pollIntervalMs: 5000
-    pollTimeoutMs: 300000
+    pollTimeoutMs: 600000
     retryTimes: 3
     outputsDir: './outputs'
     imageTransport: auto              # auto | async（强制） | sync（强制同步）
@@ -193,7 +193,7 @@ dsh --profile <profile>
 
 对比片两侧等比缩放放进同一格（单格高度取 720 与原片高度的较小值）、统一 30fps、按较短者截断；命中常见系统字体时叠加 `ORIGINAL` / `AI RECREATED` 角标（字体全部未命中则不加，合成照常完成）。合成失败**只写进 `notes`**，不影响已经下载完成的复刻结果。
 
-**视频编辑的能力与边界**：`wan3.0-video` 是 All-in-One 视频模型，按 `input.media[].type` 与提示词意图自动路由任务类型——`reference_video` + 含编辑意图的提示词（"替换""改成""去掉"等）即「保留原片构图与动作、只改写指定元素」，**不需要额外的控制参数**（该模型没有 depth/pose 控制入参，深度等信息由服务端自原片自行提取）。上游限制：参考视频单段 ≤15 秒、最多 5 段、总时长 ≤15 秒、单文件 ≤100MB；参考图最多 10 张、单张 ≤20MB；`reference_*` 与 `first_frame`/`last_frame` 不可混用。
+**视频编辑的能力与边界**：`wan3.0-video` 是 All-in-One 视频模型，按 `input.media[].type` 与提示词意图自动路由任务类型——`reference_video` + 含编辑意图的提示词（"替换""改成""去掉"等）即「保留原片构图与动作、只改写指定元素」，**不需要额外的控制参数**（该模型没有 depth/pose 控制入参，深度等信息由服务端自原片自行提取）。上游文档声明：参考视频单段 ≤15 秒、最多 5 段、总时长 ≤15 秒、单文件 ≤100MB；**插件本地只强制**「单段 ≤15 秒」与「压缩后 ≤6MB」（`REFERENCE_VIDEO_MAX_BYTES`），其余不做事前拦截；参考图最多 10 张、单张 ≤20MB；`reference_*` 与 `first_frame`/`last_frame` 不可混用。
 
 **本地素材为何要压缩**：threerouter **没有文件上传端点**（2026-09-22 探测 `/v1/files`、`/v1/uploads`、`/v1/assets` 全 404），本地视频/图片只能以 data URL 提交，而过大的请求体会被网关拒绝（生图端点实测 2.4MB 载荷连续 502、≤1MB 稳定通过）。因此插件在客户端完成压缩，并对压缩后仍超过 6MB 的参考视频**响亮报错**（提示改用公网 URL 或裁短），而不是提交一个必然失败的巨型请求体。
 
@@ -248,10 +248,10 @@ dsh-image-video/
 | `defaultImageModel` | `string` | `''` | 默认图片模型，留空用服务商内置默认（模型取值链：调用参数 > 此配置 > 内置默认） |
 | `defaultVideoModel` | `string` | `''` | 默认视频模型，留空用服务商内置默认（threerouter 内置 `minimax-h3`） |
 | `defaultImageSize` | `string` | `'1024*1024'` | 默认图片尺寸，形如 `宽*高`（百炼接口要求 `*` 分隔） |
-| `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1-10 |
+| `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1–30（上限由上游模型校验） |
 | `timeoutMs` | `number` | `60000` | 单次 HTTP 请求超时（毫秒） |
 | `pollIntervalMs` | `number` | `5000` | 视频任务轮询间隔（毫秒） |
-| `pollTimeoutMs` | `number` | `300000` | 视频任务整体超时（毫秒），超时中止轮询 |
+| `pollTimeoutMs` | `number` | `600000` | 视频任务整体超时（毫秒），超时中止轮询 |
 | `retryTimes` | `number` | `3` | 可重试错误的最大重试次数（鉴权/配额错误不重试） |
 | `outputsDir` | `string` | `'./outputs'` | 生成媒体落地目录（相对路径基于进程 cwd） |
 | `imageTransport` | `'auto' \| 'async' \| 'sync'` | `'auto'` | 图片传输；auto 优先异步，异步端点未启用时降级同步 |
