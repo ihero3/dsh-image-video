@@ -118,6 +118,8 @@ pnpm --filter @deepseek-ai/dsh-desktop run dev
 
 右栏 UI 抽检（四态）：普通宽度 / 窄窗口自动 fullscreen / 深色 / 浅色 / 插件禁用后恢复。
 
+阶段 1 的门禁逐项证据见 `docs/GATE-1-EVIDENCE.md`（命令 + 读数 + 未满足项与解除动作）。
+
 现场检查脚本（默认只读，退出码 1 = 宿主未认到客户端半边，需重启宿主）：
 
 ```sh

@@ -51,6 +51,12 @@ describe('workbench skeleton', () => {
     for (const pane of [en.paneAssets, en.paneResources, en.panePreview, en.paneTasks]) {
       expect(screen.getByRole('heading', { name: pane })).toBeTruthy()
     }
+    // 计划 §15 第 5 条：两个入口必须有"不可运行"提示（其余面暂不加）
+    expect(screen.getAllByText(en.panePlanned)).toHaveLength(2)
+    for (const entry of ['paneAssets', 'paneResources']) {
+      expect(view.container.querySelector(`[data-workbench-pane=${entry}]`)?.getAttribute('data-workbench-planned')).toBe('true')
+    }
+    expect(view.container.querySelector('[data-workbench-pane=paneTasks]')?.getAttribute('data-workbench-planned')).toBe('false')
     expect(screen.getByText(en.emptyHint)).toBeTruthy()
   })
 

@@ -47,6 +47,8 @@
 
 ## 3. 阶段 1：Harness 插件与右栏工作台（最小可验收切片，计划 §15）
 
+> 门禁证据（六条逐项判定 + 未满足项与解除动作）：`docs/GATE-1-EVIDENCE.md`。
+
 - [x] **T1-1** 客户端产物面：`package.json` 加 `exports["./client"]`、`dsh.client`（`platform: web` + 5 个 `inject`）、**扩 `files` 纳入 `lib/client/**` 与 `lib/types/client/**`**、补 `react`/`react-dom`/`@types/react`/`@types/react-dom` 与 6 个 `@deepseek-ai/dsh-client-*` devDeps（peer 同步 optional）｜插件｜`cmd:` `pnpm run typecheck` 双程序 exit 0；`pnpm install` 后 client 包解析到 0.2.1-alpha.2、react 18.3.1｜回滚：撤销这三处声明并删 `lib/client` 重新构建｜R-ENT-1、R-BND-1、R-NFR-2｜T0-4
 - [x] **T1-2** tsdown 增加 client face：CJS/browser + `window.__ModuleLoader__.load({id, factory})` banner/footer/intro + `neverBundle`（react/react-dom/cordis/client-* 包）；`clean` 只留在 `build` 脚本，两个 face 都不 clean（避免互删）｜插件｜`cmd:` `pnpm run build` exit 0 → `lib/client/plugin.js`（8.19 kB）包装头尾正确；`grep` 确认 `require("react")` / `require("react/jsx-runtime")` 外置、无 react-dom 内联；`lib/types/client/plugin.d.ts` 由 `tsc -p tsconfig.client.json` 产出｜回滚：删 client face 与 `tsconfig.client.json`｜R-NFR-1｜T1-1
 - [x] **T1-3** 客户端入口：自有 `kind`（`dsh-image-video-workbench`）+ 全局唯一 `id`（`dsh-image-video`），两段式注册（`ctx.sidebarRightTabs.register(...)` → 以该 `id` 为 key 的 `sidebar.right.pane.tab` 座位）+ guide entry（`open-workbench`）+ locale 字典｜插件｜**现场验通（2026-10-14 重启后）**：右栏出现 tab chip（`role=tab`，标题「dsh-image-video 工作台」）、guide 文案命中、骨架真实挂载；`node scripts/verify-workbench-tab.mjs` exit 0；卸载撤销由 `tests/client-lifecycle.test.ts` 覆盖｜回滚：移除两段式注册（tab 消失，宿主不受影响）｜R-ENT-1、R-ENT-6｜T1-2

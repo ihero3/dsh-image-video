@@ -49,8 +49,24 @@ const MODE_KEYS: Record<WorkbenchMode, WorkbenchLocaleKey> = {
 }
 const MODES: readonly WorkbenchMode[] = ['quick', 'workflow', 'timeline']
 
-/** Pane → dictionary key, in grid order. */
-const PANES: readonly WorkbenchLocaleKey[] = ['paneAssets', 'paneResources', 'panePreview', 'paneTasks']
+/** One pane of the workbench grid: what it is, and whether it is runnable yet. */
+interface Pane {
+  /** Dictionary key of the pane's title. */
+  readonly label: WorkbenchLocaleKey
+  /**
+   * `true` for entries that exist as placeholders only: 计划 §15 要求「媒体素材 /
+   * 创作资源」两个入口明确给出**不可运行提示**，而不是让用户以为点了就能用。
+   */
+  readonly planned: boolean
+}
+
+/** Panes in grid order: the two entry points first, then the working surfaces. */
+const PANES: readonly Pane[] = [
+  { label: 'paneAssets', planned: true },
+  { label: 'paneResources', planned: true },
+  { label: 'panePreview', planned: false },
+  { label: 'paneTasks', planned: false },
+]
 
 const SURFACE = {
   display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px',
@@ -138,8 +154,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       </section>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
         {PANES.map(pane => (
-          <section key={pane} style={{ border: HAIRLINE, borderRadius: '8px', padding: '10px', minHeight: '88px' }}>
-            <h3 style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 600 }}>{t(pane)}</h3>
+          <section
+            key={pane.label}
+            data-workbench-pane={pane.label}
+            data-workbench-planned={pane.planned ? 'true' : 'false'}
+            style={{ border: HAIRLINE, borderRadius: '8px', padding: '10px', minHeight: '88px' }}
+          >
+            <h3 style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 600 }}>{t(pane.label)}</h3>
+            {pane.planned
+              ? <p style={{ margin: 0, fontSize: '12px', opacity: 0.6 }}>{t('panePlanned')}</p>
+              : null}
           </section>
         ))}
       </div>
