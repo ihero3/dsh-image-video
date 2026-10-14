@@ -39,6 +39,7 @@ import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc } from './host/rpc.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
+import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -223,6 +224,8 @@ export function apply(ctx: Context, config: Config): void {
   // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
   // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
-    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir })
+    // 工作台数据目录由输出目录派生（`<outputsDir>/../image-video-workbench`），不额外加配置项。
+    const store = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
+    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir, store })
   })
 }

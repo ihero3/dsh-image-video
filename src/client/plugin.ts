@@ -23,9 +23,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: the slot declarations this file registers against.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { createWorkbenchApi } from './api.ts'
 import { Workbench, type WorkbenchInjected } from './Workbench.tsx'
 import { NS, en, zh, type WorkbenchLocaleKey } from './locales.ts'
-import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -67,20 +67,22 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.right.pane.tab',
     key: WORKBENCH_TAB_ID,
     locale: NS,
-    inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND, health: () => workbenchHealth(ctx) }),
+    inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND, api: createWorkbenchApi(requireConnection(ctx)) }),
   }, Workbench))
 }
 
 /**
- * Ask the host for the workbench health facts over the shared channel.
- * @param ctx - client context carrying the `connection` service.
- * @returns the host's answer, unwrapped; throws the reported message on refusal.
+ * Read the client connection service.
+ *
+ * `inject` already waits for it, so a miss here means the deployment wired the
+ * browser half without its RPC counterpart — worth a named error rather than a
+ * TypeError on the first click.
+ * @param ctx - client root context.
+ * @returns the connection handle.
  */
-async function workbenchHealth(ctx: ClientContext): Promise<WorkbenchHealth> {
-  const connection = ctx.get('connection') as ConnectionHandle | undefined
+function requireConnection(ctx: ClientContext): ConnectionHandle {
+  const connection = ctx.get('connection')
   if (connection === undefined) throw new Error('image-video-workbench: connection service is unavailable')
-  const result = await connection.rpc.call(WORKBENCH_RPC_CHANNEL, 'health', {})
-  if (!result.ok) throw new Error(result.error?.message ?? 'workbench health check failed')
-  return result.value as WorkbenchHealth
+  return connection as ConnectionHandle
 }
 

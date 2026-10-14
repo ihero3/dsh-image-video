@@ -1,29 +1,30 @@
 /**
- * Workbench skeleton, browser half: the surface shape the later phases fill in —
- * header (project name, save state, mode switch, host health), the current mode's
- * working area, and the four panes (media assets / resources / preview / tasks).
+ * Workbench surface: the right-pane tab body.
  *
- * It reads the seat's own tab information (`useTabInfo`) so the right-pane
- * integration is observable on its own, and asks the host half for its health
- * over the workbench RPC channel on mount — that answer is the end-to-end proof
- * that the browser half, the channel and the host half agree.
+ * Phase 1 shipped the skeleton and the host health check; this is the first
+ * *usable* slice — create and pick a project, register a file from the output
+ * directory as its asset, preview it, and remove records again. Everything it
+ * does goes through the injected `api` (the `/image-video` channel), so no part
+ * of this component reaches into the host directly.
  *
  * Colours stay theme-neutral (`currentColor` + `color-mix`) until the theme pass
  * (`R-NFR-3`) switches every surface to the Harness CSS variables.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { AssetRecord, ProjectRecord } from '../workbench/records.ts'
+import type { OutputFile } from '../workbench/outputs.ts'
+import type { WorkbenchApi } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
-import type { WorkbenchHealth } from '../workbench-contract.ts'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
   /** Registered tab kind, echoed in the header so the seat wiring is visible at a glance. */
   kind: string
-  /** Host answer for the workbench channel's `health` endpoint. */
-  health: () => Promise<WorkbenchHealth>
+  /** Host API over the workbench channel. */
+  api: WorkbenchApi
 }
 
 /** The three modes the workbench offers. */
@@ -38,7 +39,7 @@ export type WorkbenchProps =
 /** What the header can say about the host. */
 type HealthState =
   | { status: 'checking' }
-  | { status: 'ok'; health: WorkbenchHealth }
+  | { status: 'ok'; version: string; provider: string }
   | { status: 'failed'; message: string }
 
 /** Mode → dictionary key, in switch order. */
@@ -49,25 +50,6 @@ const MODE_KEYS: Record<WorkbenchMode, WorkbenchLocaleKey> = {
 }
 const MODES: readonly WorkbenchMode[] = ['quick', 'workflow', 'timeline']
 
-/** One pane of the workbench grid: what it is, and whether it is runnable yet. */
-interface Pane {
-  /** Dictionary key of the pane's title. */
-  readonly label: WorkbenchLocaleKey
-  /**
-   * `true` for entries that exist as placeholders only: 计划 §15 要求「媒体素材 /
-   * 创作资源」两个入口明确给出**不可运行提示**，而不是让用户以为点了就能用。
-   */
-  readonly planned: boolean
-}
-
-/** Panes in grid order: the two entry points first, then the working surfaces. */
-const PANES: readonly Pane[] = [
-  { label: 'paneAssets', planned: true },
-  { label: 'paneResources', planned: true },
-  { label: 'panePreview', planned: false },
-  { label: 'paneTasks', planned: false },
-]
-
 const SURFACE = {
   display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px',
   font: 'inherit', color: 'inherit', height: '100%', boxSizing: 'border-box', overflow: 'auto',
@@ -75,42 +57,111 @@ const SURFACE = {
 
 /** One theme-neutral hairline; the theme pass replaces it with a Harness token. */
 const HAIRLINE = '1px solid color-mix(in srgb, currentColor 18%, transparent)'
-
-/** One pill in the header row. */
 const PILL = { border: HAIRLINE, borderRadius: '999px', padding: '0 8px', fontSize: '12px', opacity: 0.8 } as const
+const BUTTON = {
+  border: HAIRLINE, borderRadius: '6px', padding: '3px 9px', color: 'inherit',
+  background: 'transparent', cursor: 'pointer', fontSize: '12px',
+} as const
+const INPUT = {
+  border: HAIRLINE, borderRadius: '6px', padding: '3px 8px', color: 'inherit',
+  background: 'transparent', fontSize: '12px', minWidth: '110px',
+} as const
+const PANE = { border: HAIRLINE, borderRadius: '8px', padding: '10px', minHeight: '88px' } as const
+const PANE_TITLE = { margin: '0 0 6px', fontSize: '13px', fontWeight: 600 } as const
+const MUTED = { margin: 0, fontSize: '12px', opacity: 0.65 } as const
+
+/** Human-readable size for one asset row. */
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** File name of an absolute path. */
+function baseName(path: string): string {
+  return path.split('/').pop() ?? path
+}
 
 /**
- * Render the workbench skeleton.
- * @param props - seat runtime hooks, the injected face, and localized copy.
- * @returns the skeleton surface.
+ * Render the workbench.
+ * @param props - seat runtime hooks, the injected API, and localized copy.
+ * @returns the workbench surface.
  */
 export function Workbench(props: WorkbenchProps): ReactNode {
-  const { kind, t, useTabInfo, health } = props
-  const [mode, setMode] = useState<WorkbenchMode>('quick')
-  const [healthState, setHealthState] = useState<HealthState>({ status: 'checking' })
+  const { api, kind, t, useTabInfo } = props
   const { sidebar, tab } = useTabInfo()
 
-  // 注入面通过 ref 固定：座位可能每次渲染给出新的函数实例，直接写进依赖数组会让
-  // 健康检查自我循环（一次渲染一次请求）。
-  const healthRef = useRef(health)
-  healthRef.current = health
-  useEffect(() => {
-    let alive = true
-    healthRef.current().then(
-      (value) => { if (alive) setHealthState({ status: 'ok', health: value }) },
-      (error: unknown) => {
-        if (alive) {
-          setHealthState({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
-        }
-      },
-    )
-    return () => { alive = false }
+  // 注入面通过 ref 固定：座位可能每次渲染给出新实例，写进依赖数组会自我循环。
+  const apiRef = useRef(api)
+  apiRef.current = api
+
+  const [mode, setMode] = useState<WorkbenchMode>('quick')
+  const [health, setHealth] = useState<HealthState>({ status: 'checking' })
+  const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
+  const [activeId, setActiveId] = useState<string | undefined>(undefined)
+  const [assets, setAssets] = useState<readonly AssetRecord[]>([])
+  const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
+  const [name, setName] = useState('')
+  const [confirming, setConfirming] = useState<string | undefined>(undefined)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | undefined>(undefined)
+
+  const activeProject = projects.find(project => project.id === activeId)
+  const selectedAsset = assets.find(asset => asset.id === selectedId)
+
+  /** Run one host action, surfacing failure as a notice instead of a crash. */
+  const run = useCallback(async (action: () => Promise<void>) => {
+    setBusy(true)
+    setNotice(undefined)
+    try {
+      await action()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
   }, [])
 
-  const healthText = healthState.status === 'checking'
+  const loadProjects = useCallback(async () => {
+    const list = await apiRef.current.listProjects()
+    setProjects(list)
+    setActiveId(previous => (previous !== undefined && list.some(item => item.id === previous) ? previous : list[0]?.id))
+  }, [])
+
+  const loadOutputs = useCallback(async () => {
+    setOutputs(await apiRef.current.listOutputs())
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const facts = await apiRef.current.health()
+        setHealth({ status: 'ok', version: facts.version, provider: facts.provider })
+      } catch (error) {
+        setHealth({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
+      }
+      await run(async () => { await loadProjects(); await loadOutputs() })
+    })()
+  }, [loadOutputs, loadProjects, run])
+
+  useEffect(() => {
+    void (async () => {
+      setSelectedId(undefined)
+      if (activeId === undefined) { setAssets([]); return }
+      try {
+        setAssets(await apiRef.current.listAssets(activeId))
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : String(error))
+      }
+    })()
+  }, [activeId])
+
+  const healthText = health.status === 'checking'
     ? t('healthChecking')
-    : healthState.status === 'ok'
-      ? `${healthState.health.version} · ${healthState.health.provider}`
+    : health.status === 'ok'
+      ? `${health.version} · ${health.provider}`
       : t('healthFailed')
 
   return (
@@ -119,17 +170,67 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       data-workbench-kind={kind}
       data-workbench-visible={tab.visible ? 'true' : 'false'}
       data-workbench-fullscreen={sidebar.fullscreen ? 'true' : 'false'}
-      data-workbench-health={healthState.status}
+      data-workbench-health={health.status}
+      data-workbench-projects={String(projects.length)}
+      data-workbench-assets={String(assets.length)}
     >
-      <header style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: '13px' }}>{t('sectionProject')}</strong>
-        <span style={{ fontSize: '13px', opacity: 0.7 }}>{t('projectNone')}</span>
-        <span style={PILL}>{t('saveSaved')}</span>
-        <span style={PILL} title={healthState.status === 'failed' ? healthState.message : undefined}>
-          {healthText}
-        </span>
+        {projects.length === 0
+          ? <span style={{ fontSize: '13px', opacity: 0.7 }}>{t('projectNone')}</span>
+          : (
+            <select
+              aria-label={t('sectionProject')}
+              value={activeId ?? ''}
+              onChange={event => { setActiveId(event.target.value) }}
+              style={INPUT}
+            >
+              {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          )}
+        <input
+          aria-label={t('newProject')}
+          placeholder={t('projectNamePlaceholder')}
+          value={name}
+          onChange={event => { setName(event.target.value) }}
+          style={INPUT}
+        />
+        <button
+          type="button"
+          style={BUTTON}
+          disabled={busy || name.trim().length === 0}
+          onClick={() => {
+            void run(async () => {
+              const project = await apiRef.current.createProject(name.trim())
+              setName('')
+              await loadProjects()
+              setActiveId(project.id)
+            })
+          }}
+        >
+          {t('create')}
+        </button>
+        {activeProject === undefined ? null : (
+          <button
+            type="button"
+            style={BUTTON}
+            disabled={busy}
+            onClick={() => {
+              if (confirming !== activeProject.id) { setConfirming(activeProject.id); return }
+              setConfirming(undefined)
+              void run(async () => {
+                await apiRef.current.removeProject(activeProject.id)
+                await loadProjects()
+              })
+            }}
+          >
+            {confirming === activeProject.id ? t('confirmRemove') : t('remove')}
+          </button>
+        )}
+        <span style={PILL} title={health.status === 'failed' ? health.message : undefined}>{healthText}</span>
         <span style={{ marginLeft: 'auto', fontSize: '12px', opacity: 0.55 }}>{kind}</span>
       </header>
+
       <nav style={{ display: 'flex', gap: '6px' }} aria-label={t('tabTitle')}>
         {MODES.map(candidate => (
           <button
@@ -138,34 +239,130 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             aria-pressed={candidate === mode}
             onClick={() => { setMode(candidate) }}
             style={{
-              border: HAIRLINE, borderRadius: '6px', padding: '4px 10px', color: 'inherit', cursor: 'pointer',
+              ...BUTTON,
               background: candidate === mode ? 'color-mix(in srgb, currentColor 10%, transparent)' : 'transparent',
             }}
           >
             {t(MODE_KEYS[candidate])}
           </button>
         ))}
+        <button
+          type="button"
+          style={{ ...BUTTON, marginLeft: 'auto' }}
+          disabled={busy}
+          onClick={() => { void run(async () => { await loadProjects(); await loadOutputs() }) }}
+        >
+          {t('refresh')}
+        </button>
       </nav>
-      <section
-        aria-label={t(MODE_KEYS[mode])}
-        style={{ border: HAIRLINE, borderRadius: '8px', padding: '10px', minHeight: '72px' }}
-      >
-        <p style={{ margin: 0, fontSize: '12px', opacity: 0.7 }}>{t('emptyHint')}</p>
+
+      {notice === undefined ? null : (
+        <p style={{ ...MUTED, opacity: 0.9 }} role="status">{t('failed')}: {notice}</p>
+      )}
+
+      <section aria-label={t(MODE_KEYS[mode])} style={PANE}>
+        <p style={MUTED}>
+          {busy ? t('busy') : t('emptyHint')}
+          {' · '}
+          {outputs.length === 0 ? t('noOutputs') : `${outputs.length} output(s)`}
+        </p>
       </section>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
-        {PANES.map(pane => (
-          <section
-            key={pane.label}
-            data-workbench-pane={pane.label}
-            data-workbench-planned={pane.planned ? 'true' : 'false'}
-            style={{ border: HAIRLINE, borderRadius: '8px', padding: '10px', minHeight: '88px' }}
+        <section data-workbench-pane="paneAssets" data-workbench-planned="false" style={PANE}>
+          <h3 style={PANE_TITLE}>{t('paneAssets')}</h3>
+          <button
+            type="button"
+            style={{ ...BUTTON, marginBottom: '6px' }}
+            disabled={busy || activeProject === undefined || outputs.length === 0}
+            onClick={() => {
+              void run(async () => {
+                const project = activeProject
+                if (project === undefined) return
+                const known = new Set(assets.map(asset => asset.path))
+                const candidate = outputs.find(output => !known.has(output.path))
+                if (candidate === undefined) { setNotice(t('noOutputs')); return }
+                await apiRef.current.attachAsset({
+                  projectId: project.id, path: candidate.path, kind: candidate.kind, bytes: candidate.bytes,
+                })
+                setAssets(await apiRef.current.listAssets(project.id))
+              })
+            }}
           >
-            <h3 style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 600 }}>{t(pane.label)}</h3>
-            {pane.planned
-              ? <p style={{ margin: 0, fontSize: '12px', opacity: 0.6 }}>{t('panePlanned')}</p>
-              : null}
-          </section>
-        ))}
+            {t('registerLatest')}
+          </button>
+          {assets.length === 0
+            ? <p style={MUTED}>{t('noAssets')}</p>
+            : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '4px' }}>
+                {assets.map(asset => (
+                  <li key={asset.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                    <button
+                      type="button"
+                      aria-pressed={asset.id === selectedId}
+                      aria-label={`${t('panePreview')} ${baseName(asset.path)}`}
+                      onClick={() => { setSelectedId(asset.id) }}
+                      style={{
+                        ...BUTTON, flex: 1, textAlign: 'left', overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {asset.kind === 'video' ? '🎬' : '🖼️'} {baseName(asset.path)} · {formatBytes(asset.bytes)}
+                    </button>
+                    <button
+                      type="button"
+                      // 可访问名带上文件名：同一区域里可能有多个"删除"按钮
+                      aria-label={`${confirming === asset.id ? t('confirmRemove') : t('remove')} ${baseName(asset.path)}`}
+                      style={BUTTON}
+                      disabled={busy}
+                      onClick={() => {
+                        if (confirming !== asset.id) { setConfirming(asset.id); return }
+                        setConfirming(undefined)
+                        void run(async () => {
+                          await apiRef.current.removeAsset(asset.id)
+                          setAssets(await apiRef.current.listAssets(asset.projectId))
+                        })
+                      }}
+                    >
+                      {confirming === asset.id ? t('confirmRemove') : t('remove')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </section>
+
+        <section data-workbench-pane="panePreview" data-workbench-planned="false" style={PANE}>
+          <h3 style={PANE_TITLE}>{t('panePreview')}</h3>
+          {selectedAsset === undefined
+            ? <p style={MUTED}>{t('previewEmpty')}</p>
+            : selectedAsset.kind === 'video'
+              ? (
+                <video
+                  key={selectedAsset.id}
+                  src={`/outputs/${encodeURIComponent(baseName(selectedAsset.path))}`}
+                  controls
+                  style={{ width: '100%', borderRadius: '6px' }}
+                />
+              )
+              : (
+                <img
+                  alt={baseName(selectedAsset.path)}
+                  src={`/outputs/${encodeURIComponent(baseName(selectedAsset.path))}`}
+                  style={{ width: '100%', borderRadius: '6px' }}
+                />
+              )}
+        </section>
+
+        <section data-workbench-pane="paneResources" data-workbench-planned="true" style={PANE}>
+          <h3 style={PANE_TITLE}>{t('paneResources')}</h3>
+          <p style={MUTED}>{t('panePlanned')}</p>
+        </section>
+
+        <section data-workbench-pane="paneTasks" data-workbench-planned="true" style={PANE}>
+          <h3 style={PANE_TITLE}>{t('paneTasks')}</h3>
+          <p style={MUTED}>{t('panePlanned')}</p>
+        </section>
       </div>
     </div>
   )

@@ -21,6 +21,18 @@ export type WorkbenchLocaleKey =
   | 'healthChecking'
   | 'healthFailed'
   | 'panePlanned'
+  | 'newProject'
+  | 'projectNamePlaceholder'
+  | 'create'
+  | 'remove'
+  | 'confirmRemove'
+  | 'refresh'
+  | 'noOutputs'
+  | 'registerLatest'
+  | 'noAssets'
+  | 'previewEmpty'
+  | 'busy'
+  | 'failed'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -46,6 +58,18 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   healthChecking: 'Connecting to host…',
   healthFailed: 'Host unavailable',
   panePlanned: 'Not runnable yet — planned for a later phase',
+  newProject: 'New project',
+  projectNamePlaceholder: 'Project name',
+  create: 'Create',
+  remove: 'Remove',
+  confirmRemove: 'Confirm remove',
+  refresh: 'Refresh',
+  noOutputs: 'No media in the output directory yet',
+  registerLatest: 'Register latest output',
+  noAssets: 'No assets in this project yet',
+  previewEmpty: 'Select an asset to preview it',
+  busy: 'Working…',
+  failed: 'Operation failed',
 }
 
 /** Simplified Chinese copy. */
@@ -69,4 +93,16 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
   panePlanned: '暂不可运行——排在后续阶段',
+  newProject: '新建项目',
+  projectNamePlaceholder: '项目名称',
+  create: '创建',
+  remove: '删除',
+  confirmRemove: '确认删除',
+  refresh: '刷新',
+  noOutputs: 'outputs 目录里还没有产物',
+  registerLatest: '登记最新产物',
+  noAssets: '这个项目还没有素材',
+  previewEmpty: '选中素材后可在此预览',
+  busy: '处理中…',
+  failed: '操作失败',
 }

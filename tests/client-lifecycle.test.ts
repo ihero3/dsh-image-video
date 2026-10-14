@@ -55,6 +55,10 @@ function stubContext() {
       if (typeof dispose === 'function') disposers.push(dispose as () => void)
     },
     locale: { register: localeRegister, bind: () => (key: string) => `t:${key}` },
+    // 座位注入面在注册时会构造客户端 API，需要 connection 可用
+    get: (name: string) => (name === 'connection'
+      ? { rpc: { call: async () => ({ ok: true as const, value: {} }) } }
+      : undefined),
     sidebarRightTabs: { register: registerTab },
     slots: { inject: slotsInject, register: registerSeat },
   }
@@ -97,7 +101,8 @@ describe('workbench browser half', () => {
     // 注入面：kind 是注册身份，health 是宿主通道的取数入口（惰性，不在注册时调用）
     const face = seat.inject() as WorkbenchInjected
     expect(face.kind).toBe(WORKBENCH_TAB_KIND)
-    expect(typeof face.health).toBe('function')
+    expect(typeof face.api.health).toBe('function')
+    expect(typeof face.api.createProject).toBe('function')
     expect(stub.component()).toBe(Workbench)
   })
 

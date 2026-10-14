@@ -14,6 +14,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
+import type { WorkbenchStore } from '../workbench/store.ts'
+import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
+import { normalizeMediaKind, normalizeProjectName, type AssetRecord } from '../workbench/records.ts'
 
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
@@ -45,12 +48,14 @@ export function workbenchRpcStatus(): WorkbenchRpcStatus {
   return status
 }
 
-/** Host facts the health check reports. */
+/** Host facts the channel answers with, plus the store behind the project API. */
 export interface WorkbenchRpcDeps {
   /** Configured provider name (`threerouter` | `wanx` | `minimax` | `seedance`). */
   provider: string
   /** Resolved absolute output directory. */
   outputsDir: string
+  /** Projects and assets (phase 2). */
+  store: WorkbenchStore
 }
 
 /**
@@ -59,8 +64,37 @@ export interface WorkbenchRpcDeps {
  * @returns the connection RPC handler.
  */
 export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHandler {
-  return async (endpoint) => {
-    if (endpoint === 'health') {
+  return async (endpoint, payload) => {
+    try {
+      const value = await answer(deps, endpoint, payload)
+      return { ok: true, value }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        ok: false,
+        error: {
+          code: message.startsWith('unknown workbench endpoint') ? 'workbench/unknown-endpoint'
+            : message.startsWith('invalid workbench payload') ? 'workbench/invalid-payload'
+            : 'workbench/failed',
+          message,
+          details: {},
+        },
+      }
+    }
+  }
+}
+
+/**
+ * Answer one endpoint. Payloads are read field by field through {@link field}, so a
+ * malformed request fails with a named error instead of a TypeError deep in the store.
+ * @param deps - host facts.
+ * @param endpoint - channel-relative endpoint.
+ * @param payload - raw request payload.
+ * @returns the endpoint's value.
+ */
+async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown): Promise<unknown> {
+  switch (endpoint) {
+    case 'health': {
       const value: WorkbenchHealth = {
         plugin: 'dsh-image-video',
         version: PLUGIN_VERSION,
@@ -69,17 +103,90 @@ export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHan
         outputsDir: deps.outputsDir,
         at: new Date().toISOString(),
       }
-      return { ok: true, value }
+      return value
     }
-    return {
-      ok: false,
-      error: {
-        code: 'workbench/unknown-endpoint',
-        message: `unknown workbench endpoint: ${endpoint}`,
-        details: {},
-      },
+    // ---- 阶段 2 首个切片：项目 / 素材 / 产物清单 ----------------------------------
+    case 'projects/list':
+      return { projects: await deps.store.listProjects() }
+    case 'projects/create':
+      // 校验放在 handler 这层，错误码才能准确报成 invalid-payload（store 仍持有规则本身）
+      return { project: await deps.store.createProject(validated(() => normalizeProjectName(field(payload, 'name')))) }
+    case 'projects/remove':
+      return { removed: await deps.store.removeProject(text(payload, 'id')) }
+    case 'assets/list':
+      return { assets: await deps.store.listAssets(text(payload, 'projectId')) }
+    case 'assets/attach': {
+      const asset: AssetRecord = await deps.store.attachAsset({
+        projectId: text(payload, 'projectId'),
+        path: text(payload, 'path'),
+        kind: validated(() => normalizeMediaKind(text(payload, 'kind'))),
+        bytes: optionalNumber(payload, 'bytes'),
+        provider: optionalText(payload, 'provider'),
+        model: optionalText(payload, 'model'),
+        prompt: optionalText(payload, 'prompt'),
+      })
+      return { asset }
     }
+    case 'assets/remove':
+      return { removed: await deps.store.removeAsset(text(payload, 'id')) }
+    case 'outputs/list': {
+      const limit = optionalNumber(payload, 'limit')
+      const outputs: OutputFile[] = await listOutputs(deps.outputsDir, limit ?? undefined)
+      return { outputs, directory: deps.outputsDir }
+    }
+    default:
+      throw new Error(`unknown workbench endpoint: ${endpoint}`)
   }
+}
+
+/**
+ * Run a payload validation, re-tagging its failure so the client sees
+ * `workbench/invalid-payload` instead of a generic failure.
+ * @param validate - validator to run.
+ * @returns the validated value.
+ */
+function validated<T>(validate: () => T): T {
+  try {
+    return validate()
+  } catch (error) {
+    throw new Error(`invalid workbench payload: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/** Read one required string field. */
+function text(payload: unknown, key: string): string {
+  const value = field(payload, key)
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`invalid workbench payload: ${key} must be a non-empty string`)
+  }
+  return value
+}
+
+/** Read one optional string field. */
+function optionalText(payload: unknown, key: string): string | undefined {
+  const value = field(payload, key)
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new Error(`invalid workbench payload: ${key} must be a string`)
+  return value
+}
+
+/** Read one optional number field. */
+function optionalNumber(payload: unknown, key: string): number | undefined {
+  const value = field(payload, key)
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`invalid workbench payload: ${key} must be a finite number`)
+  }
+  return value
+}
+
+/** Read one field out of an untyped payload. */
+function field(payload: unknown, key: string): unknown {
+  if (typeof payload !== 'object' || payload === null) {
+    if (payload === undefined) return undefined
+    throw new Error('invalid workbench payload: expected an object')
+  }
+  return (payload as Record<string, unknown>)[key]
 }
 
 /**

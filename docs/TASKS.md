@@ -27,7 +27,7 @@
 |---|---|---|---|
 | 0 审计与方案（纯文档 + 环境可复现） | 6 | 6 | 决策 D2–D7 有结论；口径收敛完成 |
 | 1 右栏工作台（PR-1 / PR-2） | 10 | 10 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
-| 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4` |
+| 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4`（首切片 6 项进行中：项目/素材/产物清单已可用） |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
 | 4 专业工作流 MVP | 7 | 0 | `R-FLW-1..8` |
 | 5 时间轴精剪 MVP | 6 | 0 | `R-TML-1..7` |
@@ -62,16 +62,16 @@
 
 ## 4. 阶段 2：项目、媒体素材、创作资源与任务统一（计划 §5）
 
-- [ ] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` 及 `version` 字段｜插件｜`test:` 纯类型 + 校验函数单测；稳定 ID 不含数组下标｜回滚：删 `src/domain/**` 新增文件｜R-PRJ-1、R-MED-1、R-MED-4、R-TSK-1｜T1-10
-- [ ] **T2-2** 持久化层：元数据走 `ctx.storage` + `storageDomain` 的 KV domain（schema 校验），项目文件与媒体字节落插件自有目录（`@deepseek-ai/dsh-home-paths` 的 `dshHomePath('image-video','projects',<id>)`，参照 attachment-local）｜插件｜`test:` 旧版本 fixture 迁移成功且不改写原文件；KV 内只有元数据（无 base64/字节）｜回滚：删新 storage domain（保留磁盘上的项目目录不动）｜R-PRJ-2、R-PRJ-3｜T2-1
-- [ ] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜`test:` 改名后 2s 内状态变"已保存"；写失败给可操作原因｜回滚：隐藏工作台入口，保留既有项目文件｜R-PRJ-1、R-PRJ-2、R-ENT-2｜T2-2
-- [ ] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义（后果说明、可选删文件、不可恢复提示）｜插件｜`test:` 被时间轴引用的素材删除被拒并报引用数；勾选"同时删除文件"才动磁盘｜回滚：改为只读素材列表（不提供删除）｜R-MED-1、R-MED-2、R-MED-6、R-PRJ-4｜T2-2
+- [~] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已实现**：`ProjectRecord`、`AssetRecord`（含 `schemaVersion`）、`newWorkbenchId`、`normalizeProjectName`/`normalizeMediaKind`，`tests/workbench-store.test.ts` 覆盖校验边界；**待做**：`ResourceRecord`/`TrackResourceRecord`/`TaskRecord`｜R-PRJ-1、R-MED-1｜T1-10
+- [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目与素材，写入为 tmp+rename 原子、重启可重载、损坏文件不静默丢数据；`tests/workbench-store.test.ts` 覆盖。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 的项目包格式一致），KV 更适合会话/窗口级易变元数据，故此处保留文件后端并在阶段 8 前复核｜**待做**：资源/任务记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
+- [~] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除（**二次确认**，符合 D2）；`tests/workbench-rpc-endpoints.test.ts` 走完整生命周期；客户端「新建/选中/删除」已可用。**待做**：改名、自动保存、保存状态四态（当前头部仍显示固定「已保存」）｜R-PRJ-3｜T2-2
+- [~] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义（后果说明、可选删文件、不可恢复提示）｜插件｜**已实现**：把 outputs 里的产物登记进项目（幂等去重：已登记的路径不会被重复登记）、按项目列出、删除记录（二次确认；**只删记录不动磁盘文件**）；**待做**：按类型/时间筛选、引用检查（时间轴/画布引用）、"同时删除文件"选项与不可恢复提示｜R-MED-2、R-MED-6｜T2-2
 - [ ] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜`test:` CRUD 单测；`scope` 只写 `project`｜回滚：资源库整块摘除（素材库不受影响）｜R-MED-3、R-COL-1｜T2-4
 - [ ] **T2-6** 轨迹资源：关键帧校验 / 绑定 / 序列化 + 轨迹转约束文本｜插件｜`test:` 关键帧越界被拒；轨迹→约束文本可断言｜回滚：移除轨迹资源类型与绑定入口｜R-MED-4｜T2-5
 - [ ] **T2-7** `TaskService`：状态机（排队/运行/成功/失败/取消/中断）+ 持久化 + 恢复；进程内执行可借 `ctx.jobs`（可声明自有 `JobKindMap` 种类），项目账本必须落盘｜插件｜`test:` 运行中杀进程后重开显示"中断（可重试）"｜回滚：任务只存内存（退回现状）｜R-TSK-1、R-TSK-2、R-PRJ-6｜T2-2
 - [ ] **T2-8** 快速创作登记适配：生成结果 → 素材登记 + 资源使用记录（幂等）｜插件｜`test:` 同一任务重复登记不产生第二条素材｜回滚：关掉适配层（对话链路原样可用）｜R-QCK-2、R-QCK-3｜T2-4、T2-5
-- [ ] **T2-9** 工作台四个面板：素材 / 资源 / 预览 / 任务（含跳转产出）；预览走 `/outputs` 通道，非本机宿主给可操作提示｜插件｜`manual:` ≥200MB 参考视频预览不冻结 UI（交互 <200ms）；`cmd:` 非 127.0.0.1 宿主提示"预览不可用"｜回滚：四区退回占位布局｜R-MED-5、R-TSK-3、R-ENT-2、R-NFR-6｜T2-7
-- [ ] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（**轮询/失效重查**，无推送通道）｜插件｜`test:` 宿主写完客户端下一次刷新即一致；刷新策略（间隔/触发点）有文档口径｜回滚：只保留健康检查 RPC｜R-AGT-1、R-AGT-3｜T2-9
+- [~] **T2-9** 工作台四个面板：素材 / 资源 / 预览 / 任务（含跳转产出）；预览走 `/outputs` 通道，非本机宿主给可操作提示｜插件｜**已实现**：素材面板（登记最新产物/点选/删除）、预览面板（`/outputs/<文件名>` 渲染图片与视频）、刷新、错误提示；`tests/workbench.client.test.tsx` 8 例覆盖。**待做**：资源面板、任务面板（含跳转产出）、非本机宿主的可操作提示｜R-ENT-2｜T2-2
+- [~] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（**轮询/失效重查**，无推送通道）｜插件｜**已实现**：`/image-video` 通道扩出 `projects/list|create|remove`、`assets/list|attach|remove`、`outputs/list`，客户端 `createWorkbenchApi` 封装 + 手动「刷新」重查；未见未知端点/载荷错误都走结构化 envelope（错误码 `unknown-endpoint`/`invalid-payload`/`failed`）。**待做**：资源/任务端点、自动失效重查（无推送通道，需轮询或手动刷新策略）｜R-AGT-1、R-NFR-2｜T2-2
 - [ ] **T2-11** 配置口径对齐：复用 `src/config.ts` 与凭证缝（`apiKeyEnv`）；默认模型/尺寸/时长/水印/输出目录一律读宿主配置，不写死前端、不新增第二套 Key 入口｜插件｜`manual:` 桌面登录后工作台可直接生成（同一 Key）；改一次默认模型后对话与工作台两处都变｜回滚：工作台参数面板改回只读展示｜R-CFG-1、R-CFG-2｜T2-10
 
 ## 5. 阶段 3：预留能力边界（计划 §6.2）

@@ -1,0 +1,81 @@
+/**
+ * Workbench domain records (phase 2, first slice): projects and their media assets.
+ *
+ * Deliberately plain data: everything here round-trips through JSON so a project
+ * directory stays readable and hand-editable (`D5`: JSON manifest + asset
+ * directory). Nothing in this file touches the filesystem or the framework.
+ */
+
+/** Schema version stamped into every stored record, so later migrations have a hook. */
+export const WORKBENCH_SCHEMA_VERSION = 1
+
+/** One project: the container every asset, task and workflow belongs to. */
+export interface ProjectRecord {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly name: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** One media asset registered into a project (a file under the output directory). */
+export interface AssetRecord {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly projectId: string
+  readonly kind: MediaKind
+  /** Absolute path of the file. The host never copies it during this slice. */
+  readonly path: string
+  readonly bytes: number
+  readonly createdAt: string
+  /** Provider/model that produced it, when known. */
+  readonly provider?: string
+  readonly model?: string
+  /** Prompt that produced it, when known. */
+  readonly prompt?: string
+}
+
+/** Media kinds the workbench distinguishes today. */
+export type MediaKind = 'image' | 'video'
+
+/** Longest project name the store accepts (kept short enough for the tab header). */
+export const MAX_PROJECT_NAME_LENGTH = 60
+
+/**
+ * Mint a record id. Time-ordered prefix plus randomness keeps ids sortable and
+ * collision-free without pulling in a uuid dependency.
+ * @param prefix - short kind marker (`prj` | `ast`).
+ * @returns the new id.
+ */
+export function newWorkbenchId(prefix: string): string {
+  const time = Date.now().toString(36)
+  const random = Math.random().toString(36).slice(2, 8)
+  return `${prefix}-${time}-${random}`
+}
+
+/**
+ * Validate a user-supplied project name.
+ * @param value - raw name from the client.
+ * @returns the trimmed name.
+ * @throws {Error} when the name is empty or too long.
+ */
+export function normalizeProjectName(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('project name must be a string')
+  const name = value.trim()
+  if (name.length === 0) throw new Error('project name must not be empty')
+  if (name.length > MAX_PROJECT_NAME_LENGTH) {
+    throw new Error(`project name must be at most ${MAX_PROJECT_NAME_LENGTH} characters`)
+  }
+  return name
+}
+
+/**
+ * Validate a media kind from the client.
+ * @param value - raw kind.
+ * @returns the kind.
+ * @throws {Error} when it is neither `image` nor `video`.
+ */
+export function normalizeMediaKind(value: unknown): MediaKind {
+  if (value === 'image' || value === 'video') return value
+  throw new Error('media kind must be "image" or "video"')
+}

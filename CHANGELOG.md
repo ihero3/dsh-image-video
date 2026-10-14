@@ -6,6 +6,7 @@
 
 ### 新增
 - **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）
+- **工作台首个可用切片（阶段 2）**：右栏现在能真正操作——新建/选中/删除项目（二次确认）、把 `outputs/` 里最新未登记的产物登记为项目素材、点选素材在预览面板内联查看图片/视频（走只读 `/outputs` 路由）、删除素材记录（只删记录、不动文件）。宿主侧新增 `WorkbenchStore`（单 JSON 文档 + tmp+rename 原子写，`<outputsDir>/../image-video-workbench/workbench.json`）与 `/image-video` 通道端点 `projects/list|create|remove`、`assets/list|attach|remove`、`outputs/list`；客户端新增 `createWorkbenchApi` 封装。
 - **工作台 RPC 健康检查**：宿主侧注册 `/image-video` 通道（`connection.rpc.handle`，随 fiber 卸载撤销）；端点 `health` 回报插件名、版本、通道名、生效服务商与已解析的输出目录；未知端点按连接的 envelope 结构化拒绝，不抛异常、不泄漏凭证
 - **客户端 RPC 接线与健康状态展示**：`inject` 增加 `connection`；骨架挂载时调用 `/image-video` 通道的 `health`，头部显示「版本 · 服务商」（连接中/失败各有文案，原始报错只进 `title`），并以 `data-workbench-health` 暴露状态；通道名与健康结果类型抽到 `src/workbench-contract.ts`，两个半边共用，浏览器 bundle 不带宿主代码
 - **`PLUGIN_VERSION` 与一致性守卫**：版本常量集中一处，`tests/version.test.ts` 与 `package.json` 对账
