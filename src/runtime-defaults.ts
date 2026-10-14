@@ -10,7 +10,7 @@
  * 仅当 webServer 绑定 127.0.0.1 时注册，非本机回环一律不暴露。
  *
  * 请求协议（JSON）：
- *   - GET  → 200，六个字段齐全，值为「运行时覆盖 ?? settings 持久默认」的
+ *   - GET  → 200，七个字段齐全，值为「运行时覆盖 ?? settings 持久默认」的
  *     合并视图，`null` 表示两者皆未设置（工具使用内置默认）。
  *   - POST → body 为对象，仅接受六个已知键；值为 `null`（清除覆盖，回落
  *     settings 持久默认）或合法值；含未知键 / 非法值 / 不可解析 JSON → 400。
@@ -50,7 +50,7 @@ export interface RuntimeDefaults {
   videoProvider?: Provider
   /** 视频宽高比覆盖（如 '16:9'）；undefined 跟随 settings。 */
   videoAspectRatio?: string
-  /** 视频时长覆盖（秒，1-10）；undefined 跟随 settings。 */
+  /** 视频时长覆盖（秒，1-30）；undefined 跟随 settings。 */
   videoDuration?: number
 }
 
@@ -271,7 +271,7 @@ export type PersistedDefaultsView = Partial<RuntimeDefaults>
 /**
  * 从插件持久 config 提取 settings 默认值，作为 defaults 路由合并视图的回落层。
  * 白名单/范围守卫：服务商须命中 PROVIDERS 白名单（空串 = 跟随激活服务商，不
- * 提取）、imageSize 须命中 IMAGE_SIZE_OPTIONS 白名单、videoDuration 须 1-10 整数；
+ * 提取）、imageSize 须命中 IMAGE_SIZE_OPTIONS 白名单、videoDuration 须 1-30 整数；
  * settings 手填的遗留越界值一律忽略（composer 显示「自动」，工具用内置默认），
  * 避免把非法持久值经合并视图当作生效值回显。
  * @param config - 已由 Schemastery 填充默认值的插件配置。
@@ -388,7 +388,7 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
       patch[key] = value
       continue
     }
-    // videoDuration：1-10 整数
+    // videoDuration：1-30 整数
     if (typeof value !== 'number' || !Number.isInteger(value) || value < MIN_VIDEO_DURATION || value > MAX_VIDEO_DURATION) {
       return { ok: false, error: `videoDuration 必须是 ${MIN_VIDEO_DURATION}-${MAX_VIDEO_DURATION} 的整数秒` }
     }

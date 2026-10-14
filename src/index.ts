@@ -37,6 +37,7 @@ import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
+import { registerWorkbenchRpc } from './host/rpc.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -204,5 +205,12 @@ export function apply(ctx: Context, config: Config): void {
   // 注册，注销随 fiber 卸载；服务缺失（纯 CLI 会话）时跳过，不影响工具注册。
   ctx.inject(['agents'], (agentCtx) => {
     registerMediaModeInjection(agentCtx, { store: runtimeDefaults, persisted: persistedDefaults })
+  })
+
+  // 工作台 RPC（右栏客户端半边的唯一宿主入口，见 host/rpc.ts）：目前只暴露健康
+  // 检查，项目/素材/任务/渲染的端点后续加进同一通道。`connection` 缺失（纯 CLI、
+  // 无宿主 web 通道）时整块跳过；通道随 fiber 卸载撤销，禁用插件后调用即失败。
+  ctx.inject(['connection'], (rpcCtx) => {
+    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir })
   })
 }

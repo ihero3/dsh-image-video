@@ -81,7 +81,7 @@ export function isCancelledError(err: unknown): boolean {
 
 /**
  * 判定错误是否由服务端**在创建任务之前**返回——按 threerouter 的 HTTP 契约
- * （docs/ASYNC_IMAGE_TASKS.md「HTTP status code contract」），400/401/403/404/413/429
+ * （docs/threerouter-async-image-contract.md「HTTP status code contract」），400/401/403/404/413/429
  * 都在落库之前拦截，因此这类错误可以安全地回退到下一候选服务商或降级传输；
  * 409 例外（IN_PROGRESS 时任务已存在），5xx/超时同样例外。
  */

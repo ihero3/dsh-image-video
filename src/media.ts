@@ -370,9 +370,9 @@ export function extFromContentType(contentType: string, fallback: string): strin
  * `attachments` 由调用方保证非 undefined（generate_image 工具经 `ctx.inject` 注入），
  * 此处不做运行时回退——依赖关系在调用栈上游即已明确。
  *
- * 图片不再作为模型可见的 image ContentBlock 注入工具结果：纯文本模型无法接收
- * image 块（llm 适配器会序列化成 image_url，网关不支持时 400）。附件引用改为
- * 经 `output.presentationMeta` 走 UI-only 通道持久化，对模型不可见。
+ * 图片是否作为模型可见的 image ContentBlock 注入由**路由能力**决定（路由支持图片输入时注入）。
+ * 纯文本路由不注入，避免 llm 适配器序列化成 image_url 后被网关 400。附件引用同时经
+ * `output.presentationMeta` 走 UI-only 通道持久化。
  * @param attachments - attachment 服务实例。
  * @param data - 图片字节。
  * @param contentType - 图片 Content-Type。

@@ -45,7 +45,7 @@ export interface GenerateVideoDeps {
 
 /**
  * 创建 generate_video 工具定义。
- * 工具参数：prompt（必填）、duration（可选，1-10秒）、model（可选）、aspectRatio（可选）、
+ * 工具参数：prompt（必填）、duration（可选，1–30 秒；-1 = 保持参考视频原时长）、model（可选）、aspectRatio（可选）、
  * image（可选首帧图片，传了即图生视频）、resolution（可选分辨率档位）。
  */
 export function createGenerateVideoTool(deps: GenerateVideoDeps) {

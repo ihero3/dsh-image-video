@@ -87,7 +87,7 @@ export function resolveImagePreflight(input: ImagePreflightInput): ImagePrefligh
     throw new GenerationError(
       'task',
       `生图配置错误：服务商 ${provider} 不支持异步图片传输，但 imageTransport=async 要求它。`
-      + '可改用 threerouter（唯一实现异步图片网关的服务商），或把 imageTransport 改为 auto/sync',
+      + '可改用支持异步图片传输的服务商（如 threerouter），或把 imageTransport 改为 auto/sync',
       false,
     )
   }
