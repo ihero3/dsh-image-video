@@ -40,6 +40,7 @@ export type WorkbenchLocaleKey =
   | 'statusSucceeded'
   | 'statusFailed'
   | 'statusCancelled'
+  | 'cancelTask'
   | 'rename'
   | 'save'
   | 'cancel'
@@ -47,6 +48,9 @@ export type WorkbenchLocaleKey =
   | 'notePlaceholder'
   | 'noResources'
   | 'addResource'
+  | 'filterAll'
+  | 'filterImage'
+  | 'filterVideo'
   | 'kindRole'
   | 'kindScene'
   | 'kindProp'
@@ -97,6 +101,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusSucceeded: 'Succeeded',
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
+  cancelTask: 'Cancel task',
   rename: 'Rename',
   save: 'Save',
   cancel: 'Cancel',
@@ -104,6 +109,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   notePlaceholder: 'Note (optional)',
   noResources: 'No resources in this project yet',
   addResource: 'Add resource',
+  filterAll: 'All media',
+  filterImage: 'Images',
+  filterVideo: 'Videos',
   kindRole: 'Role',
   kindScene: 'Scene',
   kindProp: 'Prop',
@@ -152,6 +160,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusSucceeded: '成功',
   statusFailed: '失败',
   statusCancelled: '已取消',
+  cancelTask: '取消任务',
   rename: '改名',
   save: '保存',
   cancel: '取消',
@@ -159,6 +168,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   notePlaceholder: '备注（可选）',
   noResources: '这个项目还没有创作资源',
   addResource: '新建资源',
+  filterAll: '全部素材',
+  filterImage: '只看图片',
+  filterVideo: '只看视频',
   kindRole: '角色',
   kindScene: '场景',
   kindProp: '道具',

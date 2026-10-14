@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
+import { GenerationRegistry } from '../src/workbench/cancel.ts'
 import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
@@ -19,14 +20,15 @@ async function makeHandler() {
   await writeFile(join(outputsDir, 'clip.mp4'), 'mp4')
   await writeFile(join(outputsDir, 'notes.txt'), 'ignored')
   const store = new WorkbenchStore({ directory: dataDir, now: () => new Date('2026-10-14T00:00:00.000Z') })
-  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store })
+  const registry = new GenerationRegistry()
+  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry })
   /** Call one endpoint and fail the test on a refused envelope. */
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
     const result = await handler(endpoint, payload, new AbortController().signal, {} as never)
     if (!result.ok) throw new Error(`refused: ${result.error.code} ${result.error.message}`)
     return result.value as T
   }
-  return { handler, ok, outputsDir, store }
+  return { handler, ok, outputsDir, store, registry }
 }
 
 describe('workbench channel endpoints', () => {
@@ -77,6 +79,16 @@ describe('workbench channel endpoints', () => {
     const badProject = await handler('resources/create', { projectId: 'nope', kind: 'role', name: 'x' }, new AbortController().signal, {} as never)
     expect(badProject.ok).toBe(false)
     if (!badProject.ok) expect(badProject.error.code).toBe('workbench/failed')
+  })
+
+  it('cancels a running generation through the channel', async () => {
+    const { ok, registry } = await makeHandler()
+    const controller = registry.register('tsk-live', 'video', '2026-10-15T00:00:00.000Z')
+    expect((await ok<{ running: unknown[] }>('tasks/running')).running).toHaveLength(1)
+    expect(await ok<{ cancelled: boolean }>('tasks/cancel', { id: 'tsk-live' })).toEqual({ cancelled: true })
+    expect(controller.signal.aborted).toBe(true)
+    // 未注册的 id 如实返回 false（不假装取消成功）
+    expect(await ok<{ cancelled: boolean }>('tasks/cancel', { id: 'nope' })).toEqual({ cancelled: false })
   })
 
   it('files a recorded generation into a project through tasks endpoints', async () => {

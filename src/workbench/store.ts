@@ -332,6 +332,28 @@ export class WorkbenchStore {
       .slice(0, Math.max(0, limit))
   }
 
+  /**
+   * Close generations that were still `running` when the process went away.
+   *
+   * Without this, a crash or a host restart would leave rows reading "running"
+   * forever, and the workbench would offer to cancel something that no longer
+   * exists.
+   * @param reason - message filed with each closed task.
+   * @returns how many records were closed.
+   */
+  async failStaleRunning(reason: string): Promise<number> {
+    const document = await this.load()
+    const stamp = this.now().toISOString()
+    let closed = 0
+    document.tasks = document.tasks.map(task => {
+      if (task.status !== 'running') return task
+      closed += 1
+      return { ...task, status: 'failed' as TaskStatus, error: reason, updatedAt: stamp }
+    })
+    if (closed > 0) await this.save(document)
+    return closed
+  }
+
   /** Read the document, caching it after the first read. */
   private async load(): Promise<WorkbenchDocument> {
     if (this.cache !== undefined) return this.cache

@@ -50,6 +50,8 @@ export interface WorkbenchApi {
   removeResource: (id: string) => Promise<boolean>
   /** Recorded generations, newest first. */
   listTasks: (limit?: number) => Promise<TaskRecord[]>
+  /** Cancel one running generation (aborts the provider call). */
+  cancelTask: (id: string) => Promise<boolean>
   /** File a recorded generation into a project. */
   assignTask: (id: string, projectId: string) => Promise<TaskRecord>
   /** Newest media files under the output directory. */
@@ -82,6 +84,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     createResource: async input => (await call<{ resource: ResourceRecord }>('resources/create', input)).resource,
     removeResource: async id => (await call<{ removed: boolean }>('resources/remove', { id })).removed,
     listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
+    cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
   }

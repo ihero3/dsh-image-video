@@ -95,6 +95,17 @@ describe('workbench store', () => {
     expect(await store.listResources(project.id)).toEqual([])
   })
 
+  it('closes generations left running by a previous process', async () => {
+    const { store } = await makeStore()
+    const running = await store.recordTask({ kind: 'video', status: 'running', provider: 'threerouter' })
+    await store.recordTask({ kind: 'image', status: 'succeeded' })
+    expect(await store.failStaleRunning('interrupted by host restart')).toBe(1)
+    const closed = (await store.listTasks()).find(task => task.id === running.id)
+    expect(closed).toMatchObject({ status: 'failed', error: 'interrupted by host restart' })
+    // 幂等：再次调用没有可收尾的条目
+    expect(await store.failStaleRunning('again')).toBe(0)
+  })
+
   it('renames a project', async () => {
     const { store } = await makeStore()
     const project = await store.createProject('旧名')

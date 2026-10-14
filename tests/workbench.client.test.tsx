@@ -33,9 +33,9 @@ const OUTPUT_VIDEO: OutputFile = {
 }
 
 /** In-memory stand-in for the host API, recording the calls it received. */
-function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
+function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[]; assets?: AssetRecord[] } = {}) {
   const projects: ProjectRecord[] = []
-  const assets: AssetRecord[] = []
+  const assets: AssetRecord[] = [...(options.assets ?? [])]
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const resources: ResourceRecord[] = []
   const calls: string[] = []
@@ -115,6 +115,13 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
       return true
     },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    cancelTask: async (id) => {
+      calls.push('tasks/cancel')
+      const index = tasks.findIndex(task => task.id === id)
+      if (index < 0) return false
+      tasks[index] = { ...tasks[index]!, status: 'cancelled' }
+      return true
+    },
     assignTask: async (id, projectId) => {
       calls.push('tasks/assign')
       const index = tasks.findIndex(task => task.id === id)
@@ -306,6 +313,50 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(root.getAttribute('data-workbench-save')).toBe('saved') })
     expect(host.projects[0]?.name).toBe('新名字')
     expect(screen.getByRole('option', { name: '新名字' })).toBeTruthy()
+  })
+
+  it('filters assets by media kind', async () => {
+    const seededImage: AssetRecord = {
+      schemaVersion: 1, id: 'ast-img', projectId: 'prj-1', kind: 'image', path: '/tmp/outputs/shot.png',
+      bytes: 2048, createdAt: '2026-10-14T00:00:01.000Z',
+    }
+    const seededVideo: AssetRecord = {
+      schemaVersion: 1, id: 'ast-vid', projectId: 'prj-1', kind: 'video', path: '/tmp/outputs/clip.mp4',
+      bytes: 4096, createdAt: '2026-10-14T00:00:02.000Z',
+    }
+    const host = fakeApi({ assets: [seededImage, seededVideo] })
+    // 直接以一个已存在的项目 id 作为活动项目：先建项目并使 id 对齐
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '既有项目',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-assets]')?.getAttribute('data-workbench-assets')).toBe('2') })
+
+    fireEvent.change(screen.getByLabelText(en.filterAll), { target: { value: 'image' } })
+    await waitFor(() => { expect(screen.queryByRole('button', { name: `${en.panePreview} clip.mp4` })).toBeNull() })
+    expect(screen.getByRole('button', { name: `${en.panePreview} shot.png` })).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText(en.filterAll), { target: { value: 'video' } })
+    expect(await screen.findByRole('button', { name: `${en.panePreview} clip.mp4` })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: `${en.panePreview} shot.png` })).toBeNull()
+  })
+
+  it('offers cancel only for a running generation and files the result', async () => {
+    const running: TaskRecord = {
+      schemaVersion: 1, id: 'tsk-run', kind: 'video', status: 'running', provider: 'threerouter',
+      model: 'minimax-h3', createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
+    }
+    const host = fakeApi({ tasks: [running] })
+    render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(new RegExp(en.statusRunning))
+
+    const cancel = await screen.findByRole('button', { name: `${en.cancelTask} tsk-run` })
+    fireEvent.click(cancel)
+    await waitFor(() => { expect(host.calls).toContain('tasks/cancel') })
+    expect(await screen.findByText(new RegExp(en.statusCancelled))).toBeTruthy()
+    // 取消后不再提供取消按钮
+    expect(screen.queryByRole('button', { name: `${en.cancelTask} tsk-run` })).toBeNull()
   })
 
   it('surfaces a host failure as a notice instead of crashing', async () => {

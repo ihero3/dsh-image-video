@@ -136,6 +136,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
   const [tasks, setTasks] = useState<readonly TaskRecord[]>([])
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
+  const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
   const [resourceKind, setResourceKind] = useState<ResourceKind>('role')
   const [resourceName, setResourceName] = useState('')
   const [resourceNote, setResourceNote] = useState('')
@@ -150,6 +151,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   const activeProject = projects.find(project => project.id === activeId)
   const selectedAsset = assets.find(asset => asset.id === selectedId)
+  const visibleAssets = assetFilter === 'all' ? assets : assets.filter(asset => asset.kind === assetFilter)
 
   /** Run one host action, surfacing failure as a notice instead of a crash. */
   const run = useCallback(async (action: () => Promise<void>) => {
@@ -398,11 +400,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           >
             {t('registerLatest')}
           </button>
-          {assets.length === 0
+          <select
+            aria-label={t('filterAll')}
+            value={assetFilter}
+            onChange={event => { setAssetFilter(event.target.value as 'all' | 'image' | 'video') }}
+            style={{ ...INPUT, marginBottom: '6px' }}
+          >
+            <option value="all">{t('filterAll')}</option>
+            <option value="image">{t('filterImage')}</option>
+            <option value="video">{t('filterVideo')}</option>
+          </select>
+          {visibleAssets.length === 0
             ? <p style={MUTED}>{t('noAssets')}</p>
             : (
               <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '4px' }}>
-                {assets.map(asset => (
+                {visibleAssets.map(asset => (
                   <li key={asset.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
                     <button
                       type="button"
@@ -553,6 +565,24 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       {task.kind === 'video' ? '🎬' : '🖼️'} {t(statusKey(task.status))}
                       {' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
                     </span>
+                    {task.status === 'running'
+                      ? (
+                        <button
+                          type="button"
+                          style={BUTTON}
+                          aria-label={`${t('cancelTask')} ${task.id}`}
+                          disabled={busy}
+                          onClick={() => {
+                            void run(async () => {
+                              await apiRef.current.cancelTask(task.id)
+                              await loadTasks()
+                            })
+                          }}
+                        >
+                          {t('cancelTask')}
+                        </button>
+                      )
+                      : null}
                     <button
                       type="button"
                       style={BUTTON}

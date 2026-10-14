@@ -16,6 +16,7 @@ import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
+import type { GenerationRegistry } from '../workbench/cancel.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName, type AssetRecord,
 } from '../workbench/records.ts'
@@ -56,8 +57,10 @@ export interface WorkbenchRpcDeps {
   provider: string
   /** Resolved absolute output directory. */
   outputsDir: string
-  /** Projects and assets (phase 2). */
+  /** Projects, assets, resources and the task ledger (phase 2). */
   store: WorkbenchStore
+  /** In-flight generations the workbench may cancel. */
+  registry: GenerationRegistry
 }
 
 /**
@@ -162,6 +165,10 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const projectId = optionalText(payload, 'projectId')
       return { tasks: await deps.store.listTasks(limit ?? undefined, projectId) }
     }
+    case 'tasks/cancel':
+      return { cancelled: deps.registry.cancel(text(payload, 'id')) }
+    case 'tasks/running':
+      return { running: deps.registry.list() }
     case 'tasks/assign': {
       const id = text(payload, 'id')
       const task = await deps.store.updateTask(id, { projectId: text(payload, 'projectId') })

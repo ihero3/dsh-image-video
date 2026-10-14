@@ -41,6 +41,7 @@ import { registerWorkbenchRpc } from './host/rpc.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { withTaskLedger } from './workbench/ledger.ts'
+import { GenerationRegistry } from './workbench/cancel.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -133,6 +134,12 @@ export function apply(ctx: Context, config: Config): void {
   // 生成工具的账本写入与 RPC 端点读写共用它。
   const workbenchStore = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
 
+  // 在飞的生成任务：账本包装器按 taskId 注册可取消句柄，RPC 的 tasks/cancel 掐它。
+  const generationRegistry = new GenerationRegistry()
+
+  // 上次进程留下的"运行中"条目本进程无法再取消，启动时如实收尾（避免永远显示运行中）。
+  void workbenchStore.failStaleRunning('宿主重启中断（无法继续等待该任务）').catch(() => {})
+
   // 生效配置摘要（不含 key 明文）：把「哪个 profile/patch 生效、默认服务商与默认模型
   // 究竟是什么、图片提交走哪条传输、水印开没开、结果落到哪个绝对目录」一次性写进
   // 宿主日志，便于在 web/desktop 多 profile 场景定位配置来源，消除「用了哪个服务商/
@@ -185,14 +192,14 @@ export function apply(ctx: Context, config: Config): void {
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
     imageCtx.tools.register(withTaskLedger(
       createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }),
-      { store: workbenchStore, kind: 'image' },
+      { store: workbenchStore, registry: generationRegistry, kind: 'image' },
     ))
   })
 
   // generate_video：不依赖 attachments，始终注册。
   ctx.tools.register(withTaskLedger(
     createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }),
-    { store: workbenchStore, kind: 'video' },
+    { store: workbenchStore, registry: generationRegistry, kind: 'video' },
   ))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
@@ -235,6 +242,8 @@ export function apply(ctx: Context, config: Config): void {
   // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
   // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
-    registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir, store: workbenchStore })
+    registerWorkbenchRpc(rpcCtx, {
+      provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
+    })
   })
 }

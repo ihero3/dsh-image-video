@@ -6,6 +6,7 @@
 
 ### 新增
 - **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）
+- **真实的任务取消、运行中状态与重启恢复**：生成开始即写 `running` 记录（工作台立刻可见），结束写 `succeeded`/`failed`；`GenerationRegistry` 为每次生成注册可取消句柄，并把「取消信号」与「工具执行信号」取并集交给工具——UI 的「取消任务」因此真的会中止提交/轮询（而不是只改账本），账本落 `cancelled`；宿主启动时把上次进程遗留的 `running` 条目标为 `failed`（说明被重启中断），避免永远显示运行中。素材面板同时支持按媒体类型筛选（全部/只看图片/只看视频）
 - **创作资源面板与项目改名**：资源记录支持角色/场景/道具/品牌/风格/音色六类（名称与备注校验、按项目列出、按种类过滤、删除二次确认、删除项目时级联记录），面板可直接新建与删除；项目支持**改名**并新增**保存状态四态**（已保存/保存中…/有未保存改动/保存失败，根节点 `data-workbench-save` 暴露）。右栏四个面板至此全部可用
 - **任务账本与任务面板**：生成工具经 `withTaskLedger` 包装后**自动入账**（成功记 provider/model/产物路径/字节数，失败记错误原文；账本写失败只告警、绝不影响生成）。账本落在同一份 `workbench.json`，`tasks/list`（可按项目过滤）与 `tasks/assign` 端点对外；右栏任务面板显示状态/模型/大小/时间，并可一键把某次生成的产物**登记为当前项目素材**
 - **工作台首个可用切片（阶段 2）**：右栏现在能真正操作——新建/选中/删除项目（二次确认）、把 `outputs/` 里最新未登记的产物登记为项目素材、点选素材在预览面板内联查看图片/视频（走只读 `/outputs` 路由）、删除素材记录（只删记录、不动文件）。宿主侧新增 `WorkbenchStore`（单 JSON 文档 + tmp+rename 原子写，`<outputsDir>/../image-video-workbench/workbench.json`）与 `/image-video` 通道端点 `projects/list|create|remove`、`assets/list|attach|remove`、`outputs/list`；客户端新增 `createWorkbenchApi` 封装。

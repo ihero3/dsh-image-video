@@ -49,6 +49,8 @@ export interface WorkbenchApi {
     removeResource: (id: string) => Promise<boolean>;
     /** Recorded generations, newest first. */
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
+    /** Cancel one running generation (aborts the provider call). */
+    cancelTask: (id: string) => Promise<boolean>;
     /** File a recorded generation into a project. */
     assignTask: (id: string, projectId: string) => Promise<TaskRecord>;
     /** Newest media files under the output directory. */
