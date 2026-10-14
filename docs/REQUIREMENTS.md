@@ -281,3 +281,4 @@
 | 14 | 私有插件复制的内容面 | `materializePrivatePlugins` 只复制 `package.json` / `cordis.patch.yml` / `lib` | 画布、ffmpeg 侧车等任何额外产物必须落在 `lib` 内或另立打包规则（T1-1、`R-TML-7`） |
 | 15 | 依赖重复（schemastery 两份） | 插件直接依赖 `^3.18.1`（解析到 3.18.1），而 dsh-0.2.1 devDeps 传递 `3.18.5-alpha.1`；两份并存 → `z<T>` 注解报类型冲突、去掉注解又报 TS2742（推断类型不可移植） | 必须统一到当前 DSH 线使用的版本（**已统一为 `^3.18.5-alpha.1`**），否则 typecheck 不能作为门禁（T0-6、`R-NFR-2`） |
 | 16 | 参考文档里的验证命令不可用 | `IMPLEMENTATION-PLAN` §11/§12 写的 `pnpm dsh --profile desktop --dump-config` 会被 CLI 拒绝（`profile "desktop" is managed exclusively by the Electron application`） | 用"把 profile 拷成别的名字再 dump"的绕法（T0-4、`EXECUTION.md` §5） |
+| 17 | 异步图片端点可用性（2026-10-14 现场实测） | **不可用**：`POST https://api.threerouter.com/v1/images/generations/async` → 404 `async image tasks are not enabled`；插件自动降级为同步单次提交并在结果里明确告知「无幂等键、不自动重试」 | 任务面（`R-TSK-*`）不能假设存在可轮询的异步任务；进度/取消语义必须同时覆盖同步提交，本地任务账本要自己记录提交与产物 |

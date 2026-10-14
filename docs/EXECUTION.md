@@ -34,6 +34,7 @@
 | `pnpm-workspace.yaml` | `allowBuilds.esbuild` 原为未填占位符 → 填 `true` 后 esbuild postinstall 才真正执行（不再报 `ERR_PNPM_IGNORED_BUILDS`） |
 | `pnpm-lock.yaml` | 与 manifest 不同步（2 增 4 改）→ 只能用 `--no-frozen-lockfile` 安装并重新生成 |
 | `--dump-config` | 拷贝 profile 改名的绕法可用：1327 行，`image-video` 行（`id`/`name`/`config`）解析正常 |
+| 异步图片端点 | **不可用**（`…/v1/images/generations/async` → 404 `async image tasks are not enabled`）→ 插件降级为同步单次提交（无幂等键、不重试，结果里明确告知）——任务面设计前必读 |
 
 迭代循环（两种粒度的改动分开）：
 
