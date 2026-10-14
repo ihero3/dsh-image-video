@@ -26,7 +26,7 @@
 | 阶段 | 任务 | 已完成 | 阶段门禁（不过不进下一阶段） |
 |---|---|---|---|
 | 0 审计与方案（纯文档 + 环境可复现） | 6 | 6 | 决策 D2–D7 有结论；口径收敛完成 |
-| 1 右栏工作台（PR-1 / PR-2） | 10 | 9 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
+| 1 右栏工作台（PR-1 / PR-2） | 10 | 10 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
 | 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4` |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
 | 4 专业工作流 MVP | 7 | 0 | `R-FLW-1..8` |
@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **15** | — |
+| **合计** | **59** | **16** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -55,7 +55,7 @@
 - [x] **T1-4** 工作台骨架：项目名称 / 保存状态 / 模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格；用 `useTabInfo()` 读座位信息并以 `data-*` 暴露可见性/是否全屏｜插件｜**现场验通**：三模式逐个点击 → `aria-pressed=true` 且当前模式区 `aria-label` 同步；文案与字典一致；窄窗 720px → `data-workbench-fullscreen=true`；主题见 T1-9｜回滚：tab body 换成空组件（类型保留）｜R-ENT-2、R-ENT-3｜T1-3
 - [x] **T1-5** 宿主半边：`/image-video` RPC 健康检查 + 服务装配，`rpc.handle` 的 disposer 挂在本插件自己的 effect 上；只答 `health`，其余端点结构化拒绝｜插件｜`test:` `tests/host-workbench-rpc.test.ts`（4 例：健康值不含凭证、未知端点走 envelope、注册与撤销、无 connection 时空挂 disposer）；`cmd:` `lib/index.js` 含通道名，`src/index.ts` 经 `ctx.inject(['connection'])` 注册｜回滚：删 `src/host/rpc.ts` 与那一处 inject｜R-AGT-1、R-BND-2｜T1-4
 - [x] **T1-6** 生命周期与骨架测试：字典 / tab 类型 / 座位三处注册随卸载撤销；骨架渲染与模式切换｜插件｜`test:` `tests/client-lifecycle.test.ts`、`tests/workbench.client.test.tsx`（jsdom）、`tests/version.test.ts` 全绿；全量 **260 passed / 5 skipped**；`cmd:` vitest 配 `jsx: automatic`、jsdom 30、`@testing-library/react` 16；`tests/manifest-contract.test.ts` 守护清单⟷代码契约（每个注入服务都有对应客户端包且都在 `dsh.client.inject`、client 出口与入库产物存在、运行时依赖留在 `dependencies`）｜回滚：删四个测试与新 devDeps｜R-BND-1、R-NFR-2｜T1-5
-- [!] **T1-7** 桌面装载实测（**客户端半边已通过；宿主半边待第二次重启**）：右栏 tab + 骨架 + 模式切换 + 窄窗全屏已现场验通；RPC 健康检查未过｜插件｜**现场证据**：`__DSH_BOOT__.entries` 已含 `dsh-image-video`（`plugins/??dsh-image-video/client.js`）；骨架挂载、文案齐全、模式切换与窄窗全屏通过；健康检查显示「宿主未就绪」——**现场抓出真 bug**：原通道 `/image-video/workbench` 不合规（连接层通道必须单段且不得用 `/api`），宿主注册时抛错、浏览器调用被拒；已改 `/image-video` 并加守护测试（`tests/host-workbench-rpc.test.ts` 校验通道符合连接层规则；`tests/client-rpc-transport.test.ts` 更用**真实传输** `createWebConnectionRpc` 校验通道与提交路由，并含"旧名会被拒"的反例）。改完后客户端报 `transport failure for /image-video/health: HTTP 405`，405 来自 `apps/desktop/src/web-document.ts:19`（非 GET/HEAD 落静态处理器）→ 宿主需重启才能加载修复版。**随后又定位到更深一层根因**：`connection.rpc.handle()` 把 Web 路由注册在「读取该服务的 ctx」上（`HostConnectionService.callerCtx`），而 `webServer` 未注入那个子上下文时 `owner.webServer.register` 抛错、路由静默缺席（浏览器只会看到 405）；已改为 `ctx.inject(['connection', 'webServer'], …)`，并加 `tests/host-rpc-real-service.test.ts`（真实 `HostConnectionService`：正常注册 / webServer 不可见时记录错误）与 `GET /image-video/status` 自证端点（现场读数为 404，证明宿主仍跑旧 bundle——私有插件无 in-app 重载入口，「刷新」不重扫）｜**解除条件**：重启宿主（客户端半边只需重载渲染进程）｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
+- [x] **T1-7** 桌面装载实测（**两半都已现场验通**）：右栏 tab + guide entry + 骨架 + 三模式切换 + 窄窗全屏 + **RPC 健康检查**｜插件｜**现场证据（2026-10-14，宿主重启后）**：`__DSH_BOOT__.entries` 含 `dsh-image-video`；`node scripts/verify-workbench-tab.mjs` → **exit 0**（半边在服务 + 健康通过）；骨架 `data-workbench-health=ok`、头部芯片 `0.3.1 · threerouter`；`GET /image-video/status` → 200 且 `rpc.registered=true`；桌面私有插件测试 10/10；过程中修掉两个真 bug（通道名必须单段；`connection.rpc.handle` 的注册上下文必须能看到 `webServer`）｜**留档**：现场层「禁用后无残留」无 in-app 入口（插件面板只列内置插件），由 `tests/client-lifecycle.test.ts` 的三处 disposer 断言覆盖｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
 - [x] **T1-8** 现有能力零回归：对话出图/出片、composer 媒体 tab、`/image-video/defaults` 不变；左栏与中间对话区零新增控件｜插件｜**真机证据（2026-10-14，owner 指定 Threerouter）**：① 出图两条默认/指定路径都通——默认 `qwen-image-3.0` → `outputs/1791958816089-386ae614.png`（1024×1024、880.2 KB），指定 `minimax-image-01` → `outputs/1791972775533-0b4f2a71.jpg`（1024×1024、106.1 KB）；② **出片 `minimax-h3` → `outputs/1791972747949-851789cb.mp4`（5 秒、827.6 KB、text-to-video）**；③ `GET /image-video/defaults` → 200 且正好 7 字段（`imageSize=1024*1024`、`videoDuration=5`）；④ `GET /outputs/<图>` → 200 image/png；composer 仍是 文本/图片/视频；⑤ 全量 **280 passed / 5 skipped** + `--dump-config` 的 image-video 块逐字节一致｜注：异步图片端点当前不可用（已记 §16），两条出图都走了同步降级路径｜回滚：发现回归则回退对应提交｜R-BND-5、R-QCK-1、R-ENT-4｜T1-5
 - [x] **T1-9** 右栏形态：窄窗口可用 + 展开入口 + 深浅主题，直接接线右栏既有呈现（视口 <768px 自动 fullscreen、`primary+alt+Enter`、右栏最小 300 / 中间最小 400 由 `ui-layout` 定）｜插件｜**现场验通（2026-10-14）**：视口压到 720px → 骨架 `data-workbench-fullscreen=true`（未自造全屏）；主题跟随 App（`data-ds-theme-source=system`）——浅色：文字 `rgb(15,17,21)` / 底 `rgb(255,255,255)`，对比度 **18.9**；深色：文字 `rgb(249,250,251)` / 底 `rgb(21,21,23)`，对比度 **17.45**；内联样式**无硬编码色值**，边框走 `currentColor` + `color-mix`；媒体模拟已清除、App 保持原状｜回滚：保留骨架，撤掉主题/窄窗微调｜R-ENT-5、R-NFR-3｜T1-4
 - [x] **T1-10** 产物与提交：`lib/`（含 client）+ `CHANGELOG.md` + 子模块指针对齐｜插件（+ Harness 指针）｜`cmd:` 插件仓库 `bd5064e` / `55e8e53` / `0d0f053` 已推 `origin/main`（含 `lib/client/plugin.js`、`lib/types/client/**`、CHANGELOG）；Harness `d9d21e050d` 只含子模块指针 + 台账 R08 补记｜回滚：`git revert` 对应提交并把 Harness 指针回退到上一 SHA｜R-NFR-2｜T1-7
