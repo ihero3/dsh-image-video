@@ -117,6 +117,13 @@ pnpm --filter @deepseek-ai/dsh-desktop run dev
 
 右栏 UI 抽检（四态）：普通宽度 / 窄窗口自动 fullscreen / 深色 / 浅色 / 插件禁用后恢复。
 
+现场检查脚本（默认只读，退出码 1 = 宿主未认到客户端半边，需重启宿主）：
+
+```sh
+node scripts/verify-workbench-tab.mjs            # 只读探测当前页面
+node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
+```
+
 真实媒体流程抽检（8 步，计划 §11）：快速创作出图 → 快速创作出片 → 建角色/场景/道具/轨迹并绑素材 → 视频登记进项目 → 工作流里引用资源生成新视频 → 放入时间轴 → 导出 MP4 → 重开项目确认引用与导出结果仍在。
 
 **证据口径**（计划 §10 末）：不以静态 UI、模拟进度条、成功弹窗作为完成证据；每个 `本方案实现` 的需求必须有可复现的验收（单测/契约测试/真机步骤 + 任务 ID）。
