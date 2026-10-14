@@ -18,6 +18,33 @@ import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contra
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
 
+/**
+ * What happened when this process tried to register the channel.
+ *
+ * The failure this surfaces is worth stating plainly: `connection.rpc.handle()`
+ * registers its web route on the **context that read the service**, so a caller
+ * whose context cannot see `webServer` makes the registration throw — and all the
+ * browser half ever sees is `HTTP 405`. Recording it here (and serving it from
+ * `/image-video/status`) turns that silent 405 into a readable fact.
+ */
+export interface WorkbenchRpcStatus {
+  /** Channel the workbench registers under. */
+  readonly channel: string
+  /** `true` once `connection.rpc.handle` returned (the web route exists). */
+  readonly registered: boolean
+  /** `true` while the plugin is still waiting for the deferred injects. */
+  readonly awaiting: boolean
+  /** Registration failure message, when it threw. */
+  readonly error?: string
+}
+
+let status: WorkbenchRpcStatus = { channel: WORKBENCH_RPC_CHANNEL, registered: false, awaiting: false }
+
+/** Read the host-side registration state (served by `/image-video/status`). */
+export function workbenchRpcStatus(): WorkbenchRpcStatus {
+  return status
+}
+
 /** Host facts the health check reports. */
 export interface WorkbenchRpcDeps {
   /** Configured provider name (`threerouter` | `wanx` | `minimax` | `seedance`). */
@@ -62,12 +89,28 @@ export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHan
  * @param deps - host facts the answers are built from.
  */
 export function registerWorkbenchRpc(ctx: Context, deps: WorkbenchRpcDeps): void {
+  status = { ...status, awaiting: true }
   ctx.effect(() => {
     const connection = ctx.get('connection')
     // Effect callbacks must hand back a disposer; with no connection there is
     // nothing to lift, so the channel simply never exists.
     if (connection === undefined) return () => {}
-    const remove = connection.rpc.handle(WORKBENCH_RPC_CHANNEL, createWorkbenchHandler(deps))
-    return () => { void remove() }
+    try {
+      const remove = connection.rpc.handle(WORKBENCH_RPC_CHANNEL, createWorkbenchHandler(deps))
+      status = { channel: WORKBENCH_RPC_CHANNEL, registered: true, awaiting: false }
+      return () => {
+        status = { channel: WORKBENCH_RPC_CHANNEL, registered: false, awaiting: false }
+        void remove()
+      }
+    } catch (error) {
+      // 不抛出：注册失败不该连累工具与既有路由，但必须被记录（见 WorkbenchRpcStatus）。
+      status = {
+        channel: WORKBENCH_RPC_CHANNEL,
+        registered: false,
+        awaiting: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+      return () => {}
+    }
   }, 'dsh-image-video: workbench RPC channel')
 }

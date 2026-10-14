@@ -38,6 +38,7 @@ import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defau
 import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc } from './host/rpc.ts'
+import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -198,6 +199,12 @@ export function apply(ctx: Context, config: Config): void {
     // extractPersistedDefaults 白名单守卫提取。同样仅回环注册，注销随 fiber 卸载。
     const disposeDefaults = registerDefaultsRoute(webServer, runtimeDefaults, persistedDefaults)
     if (disposeDefaults) mediaCtx.effect(() => disposeDefaults, 'dsh-image-video: runtime defaults route')
+
+    // 工作台状态路由（GET /image-video/status，仅回环）：把宿主侧 RPC 通道的注册结果
+    // 直接摊开给页面——通道缺席时客户端只会看到 HTTP 405，这里能读到"已注册/仍在等
+    // 注入/注册报错"。与 defaults 同一条已验证可用的注册路径，因此它是可靠的诊断口。
+    const disposeStatus = registerWorkbenchStatusRoute(webServer, { provider: config.provider, outputsDir })
+    if (disposeStatus) mediaCtx.effect(() => disposeStatus, 'dsh-image-video: workbench status route')
   })
 
   // 媒体模式注入：composer 选到图片/视频 tab 时，在用户轮次进入模型请求前追加
@@ -208,9 +215,14 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // 工作台 RPC（右栏客户端半边的唯一宿主入口，见 host/rpc.ts）：目前只暴露健康
-  // 检查，项目/素材/任务/渲染的端点后续加进同一通道。`connection` 缺失（纯 CLI、
-  // 无宿主 web 通道）时整块跳过；通道随 fiber 卸载撤销，禁用插件后调用即失败。
-  ctx.inject(['connection'], (rpcCtx) => {
+  // 检查，项目/素材/任务/渲染的端点后续加进同一通道。通道随 fiber 卸载撤销，禁用
+  // 插件后调用即失败。
+  //
+  // **必须同时注入 `webServer`**：`connection.rpc.handle()` 把 Web 路由注册在
+  // 「读取该服务的 ctx」（见 `HostConnectionService.callerCtx`），即 `rpcCtx`；
+  // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
+  // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
+  ctx.inject(['connection', 'webServer'], (rpcCtx) => {
     registerWorkbenchRpc(rpcCtx, { provider: config.provider, outputsDir })
   })
 }
