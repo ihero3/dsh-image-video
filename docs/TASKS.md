@@ -25,7 +25,7 @@
 
 | 阶段 | 任务 | 已完成 | 阶段门禁（不过不进下一阶段） |
 |---|---|---|---|
-| 0 审计与方案（纯文档 + 环境可复现） | 6 | 4 | 决策 D2–D7 有结论；口径收敛完成 |
+| 0 审计与方案（纯文档 + 环境可复现） | 6 | 6 | 决策 D2–D7 有结论；口径收敛完成 |
 | 1 右栏工作台（PR-1 / PR-2） | 10 | 5 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
 | 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4` |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
@@ -34,16 +34,16 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **9** | — |
+| **合计** | **59** | **11** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
 - [x] **T0-1** 文档集定稿：需求 / 执行 / 任务三份，与既有两份互相引用、编号可追踪｜插件·docs｜`cmd:` 覆盖自检脚本（需求↔任务闭环、任务号无重复）｜回滚：删三份文件｜R-BND-1｜—
-- [ ] **T0-2** 决策拍板 **D2–D7** 并回填 §14（D1 已定：只用 dsh-image-video 命名）｜插件·docs｜`manual:` §14 每行都有结论，受影响的 `R-*` 同步更新｜回滚：恢复 §14 的建议值｜R-BND-1、R-TML-7、R-FLW-1｜T0-1
+- [x] **T0-2** 决策拍板 **D2–D7** 并回填 §14（D1 已定：只用 dsh-image-video 命名）｜插件·docs｜`manual:` §14 每行都有结论，受影响的 `R-*` 同步更新｜回滚：恢复 §14 的建议值｜R-BND-1、R-TML-7、R-FLW-1｜T0-1｜**已完成（2026-10-14，owner）**：六条全部采纳"建议"列取值，§14 逐行标注"已采纳"并写明最晚复核点（D4→T4-1 前，D2/D6→阶段 2 相关任务前，D7→阶段 4 节点集前，D5→T8-1 前，D3→阶段 7 发布门禁前）
 - [x] **T0-3** 基线快照：插件 / Harness / ffmpeg 版本与真机开关（`DSH_IMAGE_VIDEO_LIVE`）口径写进 `EXECUTION.md` §2｜插件·docs｜`cmd:` 实测基线 = typecheck exit 0、`pnpm run test` 250 passed / 5 skipped、`ffmpeg 8.0`｜回滚：不改代码，删段落｜R-NFR-2｜T0-1
 - [x] **T0-4** 证明"零改动宿主"：记录 `--dump-config` 现状、私有插件名单与 client 出口校验行为（`private-plugins.ts:80-86`）｜Harness·只读＋docs｜`cmd:` 计划里的 `--profile desktop --dump-config` **被 CLI 拒绝**（"profile desktop is managed exclusively by the Electron application"）；可用绕法 = 把 profile 拷成别的名字再 dump，实测 1327 行、`image-video` 行解析正常｜回滚：删段落｜R-BND-2、R-NFR-2｜T0-1
 - [x] **T0-6** 环境可复现修复（阻塞项）：① 仓库 lockfile 与 manifest 不同步 → 首次安装必须 `--no-frozen-lockfile` 并重新生成 lockfile；② `pnpm-workspace.yaml` 的 `allowBuilds: esbuild` 是未填占位符 → 填 `true`，esbuild postinstall 才真正执行；③ 插件直接依赖 `schemastery ^3.18.1` 与 dsh-0.2.1 devDeps 传递来的 `3.18.5-alpha.1` **两份并存**，导致 `z<T>` 注解报错 / 去注解后报 TS2742 → 统一到 `^3.18.5-alpha.1`，typecheck 转绿｜插件｜`cmd:` `pnpm run typecheck` exit 0、`pnpm run test` 全绿、`pnpm install` 不再报 `ERR_PNPM_IGNORED_BUILDS`｜回滚：`git checkout -- package.json pnpm-lock.yaml pnpm-workspace.yaml` 并删 `node_modules` 重装｜R-NFR-2｜T0-3
-- [ ] **T0-5** 口径收敛：修 README/注释里"1–10 秒"、`pollTimeoutMs 300000`、参考视频"100MB/5 段"，修 `http-client.ts` 指向的悬空文档名｜插件｜`cmd:` 文档与代码逐条对齐（对照 `REQUIREMENTS.md` §16 的 16 条）｜回滚：`git revert` 该提交｜R-NFR-4｜T0-3
+- [x] **T0-5** 口径收敛：修 README/注释里"1–10 秒"、`pollTimeoutMs 300000`、参考视频"100MB/5 段"，修 `http-client.ts` 指向的悬空文档名｜插件｜`cmd:` 文档与代码逐条对齐（对照 `REQUIREMENTS.md` §16 的 16 条）｜回滚：`git revert` 该提交｜R-NFR-4｜T0-3
 
 ## 3. 阶段 1：Harness 插件与右栏工作台（最小可验收切片，计划 §15）
 

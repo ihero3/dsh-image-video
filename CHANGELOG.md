@@ -28,6 +28,7 @@
 - `generate_image` 的**对话参考图**只取最新一条用户消息：不再把历史轮次里粘贴过的图片静默当作本次参考图（此前实现会扫描整段历史，与本文件与工具描述声明的「只取本轮」不符）
 
 ### 变更
+- **决策 D1–D7 全部落定**：D1（命名一律 `dsh-image-video`，不另起产品名/不加第三个包）已落地——全仓 `grep dsh-media` 为 0；D2–D7 采纳文档建议值（硬删除+二次确认+引用守卫 / V1 检测+提示、发布前再评 sidecar / 锁 `@xyflow/react` 精确版本 / JSON 清单+素材目录 / 只做音色元数据 / `video-generate` 承载参考视频编辑），并在 `docs/REQUIREMENTS.md` §14 写明各自最晚复核点
 - `peerDependencies` 的 DSH 范围由 `*` 收紧为 `^0.2.1-alpha.1`（`dsh-tools` / `dsh-llm` / `dsh-credentials`），`devDependencies` 同步升到 `^0.2.1-alpha.1` 并补 `@deepseek-ai/dsh-agent`：`originalDimensions` 与凭证缝 `resolve` 需要 0.2.x 运行时
 - **依赖对齐（修掉一根红基线）**：`@deepseek-ai/schemastery` 由 `^3.18.1` 提到 `^3.18.5-alpha.1`——与 dsh-0.2.1 线 devDeps 传递来的那一份统一，消除"两份 schemastery 并存"导致的 `z<T>` 注解冲突与 `TS2742`；`pnpm-workspace.yaml` 的 `allowBuilds.esbuild` 从占位符改为 `true`（此前 esbuild postinstall 被静默跳过）。对齐后 `pnpm run typecheck` 由红转绿
 - **构建改为双面**：`build = clean && tsdown（宿主角 + 客户端角）&& tsc -p tsconfig.client.json`；`bundle` 复用 `build`（Harness 根 `build:plugins` 直接可用）；`files` 纳入 `lib/client/**` 与 `lib/types/client/**`
