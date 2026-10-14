@@ -27,7 +27,7 @@
 |---|---|---|---|
 | 0 审计与方案（纯文档 + 环境可复现） | 6 | 6 | 决策 D2–D7 有结论；口径收敛完成 |
 | 1 右栏工作台（PR-1 / PR-2） | 10 | 10 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
-| 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4`（6 项进行中：项目/素材/预览/二次确认删除**已现场验通**；任务账本与任务面板**已现场验通**（生成即入账 → 一键登记为素材 → 预览）） |
+| 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4`（6 项进行中：项目/素材/预览/任务四面板均已实现，前三项与任务账本**已现场验通**；资源面板与改名/保存四态本批新增待现场复核。**T2-7 的取消/中断未做**：需要把取消信号穿到生成工具的提交/轮询路径，单列下一批） |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
 | 4 专业工作流 MVP | 7 | 0 | `R-FLW-1..8` |
 | 5 时间轴精剪 MVP | 6 | 0 | `R-TML-1..7` |
@@ -64,14 +64,14 @@
 
 - [~] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已实现**：`ProjectRecord`、`AssetRecord`（含 `schemaVersion`）、`newWorkbenchId`、`normalizeProjectName`/`normalizeMediaKind`，`tests/workbench-store.test.ts` 覆盖校验边界；**待做**：`ResourceRecord`/`TrackResourceRecord`/`TaskRecord`｜R-PRJ-1、R-MED-1｜T1-10
 - [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目、素材与**任务账本**，写入为 tmp+rename 原子、重启可重载、损坏文件不静默；`tests/workbench-store.test.ts` 8 例。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目与账本需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 包格式一致），KV 更适合会话级易变元数据；阶段 8 前复核｜**待做**：资源记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
-- [~] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除（**二次确认**，符合 D2）；`tests/workbench-rpc-endpoints.test.ts` 走完整生命周期；客户端「新建/选中/删除」已可用。**待做**：改名、自动保存、保存状态四态（当前头部仍显示固定「已保存」）｜R-PRJ-3｜T2-2
+- [~] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除与**改名**（`projects/rename`，显式保存），头部**保存状态四态**（已保存/保存中…/有未保存改动/保存失败，根节点 `data-workbench-save` 暴露，客户端测试覆盖 dirty→saving→saved 路径）。**待做**：自动保存（失焦/防抖）、状态与磁盘写入的联通提示（当前写盘是同步完成即"已保存"）｜R-PRJ-3｜T2-2
 - [~] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义（后果说明、可选删文件、不可恢复提示）｜插件｜**已实现**：把 outputs 里的产物登记进项目（幂等去重：已登记的路径不会被重复登记）、按项目列出、删除记录（二次确认；**只删记录不动磁盘文件**）；**待做**：按类型/时间筛选、引用检查（时间轴/画布引用）、"同时删除文件"选项与不可恢复提示｜R-MED-2、R-MED-6｜T2-2
-- [ ] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜`test:` CRUD 单测；`scope` 只写 `project`｜回滚：资源库整块摘除（素材库不受影响）｜R-MED-3、R-COL-1｜T2-4
+- [~] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜**已实现**：`ResourceRecord`（六种 `kind` + 名称/备注校验）、`resources/list|create|remove` 端点、按项目列出与按种类过滤、项目删除时级联资源记录（只删记录）、面板可建可删（二次确认）。**待做**：引用检查（被时间轴/画布引用时拒绝删除并给出引用位置）、音色试听（`D6` 本期只做元数据）｜R-MED-3、R-MED-5｜T2-2
 - [ ] **T2-6** 轨迹资源：关键帧校验 / 绑定 / 序列化 + 轨迹转约束文本｜插件｜`test:` 关键帧越界被拒；轨迹→约束文本可断言｜回滚：移除轨迹资源类型与绑定入口｜R-MED-4｜T2-5
 - [~] **T2-7** `TaskService`：状态机（排队/运行/成功/失败/取消/中断）+ 持久化 + 恢复；进程内执行可借 `ctx.jobs`｜插件｜**已实现**：`TaskRecord` + 五态枚举与校验、落盘/重载/`updateTask`、`tasks/list`（可按项目过滤）与 `tasks/assign`；生成工具经 `withTaskLedger` **自动入账**（成功带 provider/model/path/bytes，失败带错误原文），账本写失败只告警、绝不影响生成（`tests/workbench-ledger.test.ts` 5 例含该保证）。**待做**：执行中状态（queued/running）与取消/中断的真实状态机、`ctx.jobs` 进度、前端取消按钮｜R-TSK-1、R-TSK-2｜T2-2｜**现场验通（2026-10-14，宿主重启后）**：出图一次 → 账本自动出现该任务（`tsk-…`：`succeeded`/`threerouter`/`minimax-image-01`/`outputPath`/`bytes:74989`/完整 prompt，落盘于 `workbench.json`）；面板显示「🖼️ 成功 · minimax-image-01 · 73 KB · 19:43」；点「登记为素材」→ 当前项目素材 0→1；点素材 → 预览 `<img src="/outputs/…301eb49b.jpg">` 已加载。另：owner 自己已在用（`hello` 项目登记了 3 个素材）
 - [~] **T2-8** 快速创作登记适配：生成结果 → 素材登记 + 资源使用记录（幂等）｜插件｜**已实现**：生成即入账（对话里出图/出片都会在任务面板留痕）；任务行一键「登记为素材」→ `assets/attach` 再 `tasks/assign` 归档到当前项目；「登记最新产物」在 UI 侧按路径去重。**待做**：宿主侧幂等键（同一产物重复登记返回已有记录）、资源使用记录、自动归属当前项目（当前需点一下）｜R-MED-4、R-TSK-3｜T2-7
-- [~] **T2-9** 工作台四个面板：素材 / 资源 / 预览 / 任务（含跳转产出）；预览走 `/outputs` 通道，非本机宿主给可操作提示｜插件｜**已实现**：素材面板（登记产物/点选/删除）、预览面板（内联图片与视频，实测 `naturalWidth=1024`）、**任务面板（状态/模型/大小/时间 + 一键登记为素材）**、刷新与错误提示；`tests/workbench.client.test.tsx` 9 例。**待做**：资源面板、跳转产出、非本机宿主提示｜R-ENT-2｜T2-2｜**现场验通（2026-10-14，宿主重启后）**：出图一次 → 账本自动出现该任务（`tsk-…`：`succeeded`/`threerouter`/`minimax-image-01`/`outputPath`/`bytes:74989`/完整 prompt，落盘于 `workbench.json`）；面板显示「🖼️ 成功 · minimax-image-01 · 73 KB · 19:43」；点「登记为素材」→ 当前项目素材 0→1；点素材 → 预览 `<img src="/outputs/…301eb49b.jpg">` 已加载。另：owner 自己已在用（`hello` 项目登记了 3 个素材）
-- [~] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（**轮询/失效重查**，无推送通道）｜插件｜**已实现**：`projects/*`、`assets/*`、`tasks/list|assign`、`outputs/list` 端点 + 客户端 `createWorkbenchApi` + 手动刷新重查；错误一律走结构化 envelope。**待做**：资源端点、自动失效重查策略（无推送通道）｜R-AGT-1、R-NFR-2｜T2-2
+- [~] **T2-9** 工作台四个面板：素材 / 资源 / 预览 / 任务（含跳转产出）；预览走 `/outputs` 通道，非本机宿主给可操作提示｜插件｜**已实现**：四个面板**全部可用**（素材：登记/选中/删除；资源：六类 CRUD；预览：内联图片与视频；任务：账本 + 一键登记为素材），刷新与错误提示齐备；`tests/workbench.client.test.tsx` 11 例。**待做**：从任务/素材跳转到产出文件、非本机宿主的可操作提示｜R-ENT-2｜T2-2
+- [~] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（**轮询/失效重查**，无推送通道）｜插件｜**已实现**：`projects/list|create|remove|rename`、`assets/list|attach|remove`、`resources/list|create|remove`、`tasks/list|assign`、`outputs/list` 端点 + 客户端 `createWorkbenchApi` + 手动刷新重查；错误一律结构化 envelope。**待做**：自动失效重查策略（无推送通道）｜R-AGT-1、R-NFR-2｜T2-2
 - [ ] **T2-11** 配置口径对齐：复用 `src/config.ts` 与凭证缝（`apiKeyEnv`）；默认模型/尺寸/时长/水印/输出目录一律读宿主配置，不写死前端、不新增第二套 Key 入口｜插件｜`manual:` 桌面登录后工作台可直接生成（同一 Key）；改一次默认模型后对话与工作台两处都变｜回滚：工作台参数面板改回只读展示｜R-CFG-1、R-CFG-2｜T2-10
 
 ## 5. 阶段 3：预留能力边界（计划 §6.2）

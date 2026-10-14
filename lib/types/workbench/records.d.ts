@@ -64,8 +64,36 @@ export interface TaskRecord {
 }
 /** Media kinds the workbench distinguishes today. */
 export type MediaKind = 'image' | 'video';
+/**
+ * Kinds of reusable creative resource the workbench keeps per project.
+ *
+ * `voice` deliberately carries metadata only in this version (`D6`): the field is
+ * a name plus notes, no sample playback until a TTS provider is wired.
+ */
+export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice';
+/** One reusable creative resource inside a project. */
+export interface ResourceRecord {
+    readonly schemaVersion: number;
+    readonly id: string;
+    readonly projectId: string;
+    readonly kind: ResourceKind;
+    readonly name: string;
+    /** Free-form description (appearance, mood, usage notes). */
+    readonly note?: string;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+}
 /** Longest project name the store accepts (kept short enough for the tab header). */
 export declare const MAX_PROJECT_NAME_LENGTH = 60;
+/** Longest resource name the workbench accepts. */
+export declare const MAX_RESOURCE_NAME_LENGTH = 80;
+/**
+ * Validate a resource name.
+ * @param value - raw name.
+ * @returns the trimmed name.
+ * @throws {Error} when it is empty or too long.
+ */
+export declare function normalizeResourceName(value: unknown): string;
 /**
  * Mint a record id. Time-ordered prefix plus randomness keeps ids sortable and
  * collision-free without pulling in a uuid dependency.
@@ -80,6 +108,13 @@ export declare function newWorkbenchId(prefix: string): string;
  * @throws {Error} when the name is empty or too long.
  */
 export declare function normalizeProjectName(value: unknown): string;
+/**
+ * Validate a resource kind.
+ * @param value - raw kind.
+ * @returns the kind.
+ * @throws {Error} when it is none of the six known kinds.
+ */
+export declare function normalizeResourceKind(value: unknown): ResourceKind;
 /**
  * Validate a task status.
  * @param value - raw status.

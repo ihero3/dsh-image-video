@@ -78,6 +78,31 @@ describe('workbench store', () => {
     await expect(store.listProjects()).rejects.toThrow()
   })
 
+  it('manages creative resources and cascades them with the project', async () => {
+    const { store } = await makeStore()
+    const project = await store.createProject('资源')
+    const role = await store.createResource({ projectId: project.id, kind: 'role', name: '女主', note: '短发' })
+    await store.createResource({ projectId: project.id, kind: 'scene', name: '天台' })
+    // 冻结时钟下两条记录同一时间戳 → 只比较集合
+    expect((await store.listResources(project.id)).map(item => item.name).sort()).toEqual(['女主', '天台'].sort())
+    expect(await store.listResources(project.id, 'scene')).toHaveLength(1)
+    expect(await store.removeResource(role.id)).toBe(true)
+    expect(await store.removeResource(role.id)).toBe(false)
+    await expect(store.createResource({ projectId: 'nope', kind: 'role', name: 'x' })).rejects.toThrow(/unknown project/)
+    await expect(store.createResource({ projectId: project.id, kind: 'audio', name: 'x' })).rejects.toThrow(/resource kind/)
+    await expect(store.createResource({ projectId: project.id, kind: 'role', name: '   ' })).rejects.toThrow(/must not be empty/)
+    await store.removeProject(project.id)
+    expect(await store.listResources(project.id)).toEqual([])
+  })
+
+  it('renames a project', async () => {
+    const { store } = await makeStore()
+    const project = await store.createProject('旧名')
+    expect((await store.renameProject(project.id, '  新名 '))?.name).toBe('新名')
+    expect(await store.renameProject('missing', 'x')).toBeUndefined()
+    await expect(store.renameProject(project.id, '')).rejects.toThrow(/must not be empty/)
+  })
+
   it('records tasks, updates them and keeps them across a project removal', async () => {
     const { store, directory } = await makeStore()
     const project = await store.createProject('账本')

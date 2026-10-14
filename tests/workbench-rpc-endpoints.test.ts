@@ -56,6 +56,29 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ projects: ProjectRecord[] }>('projects/list')).toEqual({ projects: [] })
   })
 
+  it('renames projects and manages resources through the channel', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '旧名' })
+    expect((await ok<{ project: ProjectRecord }>('projects/rename', { id: created.project.id, name: '新名' })).project.name)
+      .toBe('新名')
+
+    const role = await ok<{ resource: { id: string; kind: string; name: string } }>('resources/create', {
+      projectId: created.project.id, kind: 'role', name: '女主', note: '短发',
+    })
+    expect(role.resource).toMatchObject({ kind: 'role', name: '女主' })
+    expect((await ok<{ resources: unknown[] }>('resources/list', { projectId: created.project.id })).resources).toHaveLength(1)
+    expect((await ok<{ resources: unknown[] }>('resources/list', { projectId: created.project.id, kind: 'scene' })).resources).toHaveLength(0)
+    expect(await ok<{ removed: boolean }>('resources/remove', { id: role.resource.id })).toEqual({ removed: true })
+
+    // 非法种类与非法项目都要报成载荷/失败错误，而不是静默
+    const badKind = await handler('resources/create', { projectId: created.project.id, kind: 'audio', name: 'x' }, new AbortController().signal, {} as never)
+    expect(badKind.ok).toBe(false)
+    if (!badKind.ok) expect(badKind.error.code).toBe('workbench/invalid-payload')
+    const badProject = await handler('resources/create', { projectId: 'nope', kind: 'role', name: 'x' }, new AbortController().signal, {} as never)
+    expect(badProject.ok).toBe(false)
+    if (!badProject.ok) expect(badProject.error.code).toBe('workbench/failed')
+  })
+
   it('files a recorded generation into a project through tasks endpoints', async () => {
     const { ok, store } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '账本项目' })

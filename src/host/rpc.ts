@@ -16,7 +16,9 @@ import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
-import { normalizeMediaKind, normalizeProjectName, type AssetRecord } from '../workbench/records.ts'
+import {
+  normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName, type AssetRecord,
+} from '../workbench/records.ts'
 
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
@@ -129,6 +131,32 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     case 'assets/remove':
       return { removed: await deps.store.removeAsset(text(payload, 'id')) }
+    case 'projects/rename': {
+      const id = text(payload, 'id')
+      const project = await deps.store.renameProject(id, validated(() => normalizeProjectName(field(payload, 'name'))))
+      if (project === undefined) throw new Error(`unknown project: ${id}`)
+      return { project }
+    }
+    // ---- 创作资源（阶段 2）------------------------------------------------------
+    case 'resources/list': {
+      const kind = optionalText(payload, 'kind')
+      const resources = await deps.store.listResources(
+        text(payload, 'projectId'),
+        kind === undefined ? undefined : validated(() => normalizeResourceKind(kind)),
+      )
+      return { resources }
+    }
+    case 'resources/create':
+      return {
+        resource: await deps.store.createResource({
+          projectId: text(payload, 'projectId'),
+          kind: validated(() => normalizeResourceKind(text(payload, 'kind'))),
+          name: validated(() => normalizeResourceName(field(payload, 'name'))),
+          note: optionalText(payload, 'note'),
+        }),
+      }
+    case 'resources/remove':
+      return { removed: await deps.store.removeResource(text(payload, 'id')) }
     case 'tasks/list': {
       const limit = optionalNumber(payload, 'limit')
       const projectId = optionalText(payload, 'projectId')

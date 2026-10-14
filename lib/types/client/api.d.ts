@@ -8,7 +8,7 @@
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client';
 import { type WorkbenchHealth } from '../workbench-contract.ts';
-import type { AssetRecord, MediaKind, ProjectRecord, TaskRecord } from '../workbench/records.ts';
+import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts';
 import type { OutputFile } from '../workbench/outputs.ts';
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
@@ -34,6 +34,19 @@ export interface WorkbenchApi {
     }) => Promise<AssetRecord>;
     /** Remove one asset record. */
     removeAsset: (id: string) => Promise<boolean>;
+    /** Rename a project. */
+    renameProject: (id: string, name: string) => Promise<ProjectRecord>;
+    /** One project's resources, newest first (optionally one kind). */
+    listResources: (projectId: string, kind?: ResourceKind) => Promise<ResourceRecord[]>;
+    /** Create a resource inside a project. */
+    createResource: (input: {
+        projectId: string;
+        kind: ResourceKind;
+        name: string;
+        note?: string;
+    }) => Promise<ResourceRecord>;
+    /** Remove one resource record. */
+    removeResource: (id: string) => Promise<boolean>;
     /** Recorded generations, newest first. */
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
     /** File a recorded generation into a project. */

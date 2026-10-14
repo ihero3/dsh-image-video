@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Workbench, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import type { WorkbenchApi } from '../src/client/api.ts'
-import type { AssetRecord, ProjectRecord, TaskRecord } from '../src/workbench/records.ts'
+import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
@@ -37,6 +37,7 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = []
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
+  const resources: ResourceRecord[] = []
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -84,6 +85,35 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
       assets.splice(index, 1)
       return true
     },
+    renameProject: async (id, name) => {
+      calls.push('projects/rename')
+      const index = projects.findIndex(project => project.id === id)
+      const updated = { ...projects[index]!, name }
+      projects[index] = updated
+      return updated
+    },
+    listResources: async (projectId, kind) => {
+      calls.push('resources/list')
+      return resources.filter(resource => resource.projectId === projectId && (kind === undefined || resource.kind === kind))
+    },
+    createResource: async input => {
+      calls.push('resources/create')
+      counter += 1
+      const resource: ResourceRecord = {
+        schemaVersion: 1, id: `res-${counter}`, projectId: input.projectId, kind: input.kind, name: input.name,
+        createdAt: `2026-10-14T02:00:0${counter}.000Z`, updatedAt: `2026-10-14T02:00:0${counter}.000Z`,
+        ...input.note === undefined ? {} : { note: input.note },
+      }
+      resources.push(resource)
+      return resource
+    },
+    removeResource: async (id) => {
+      calls.push('resources/remove')
+      const index = resources.findIndex(resource => resource.id === id)
+      if (index < 0) return false
+      resources.splice(index, 1)
+      return true
+    },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
     assignTask: async (id, projectId) => {
       calls.push('tasks/assign')
@@ -94,7 +124,7 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[] } = {}) {
     },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
   }
-  return { api, calls, projects, assets, tasks }
+  return { api, calls, projects, assets, tasks, resources }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -134,8 +164,11 @@ describe('workbench skeleton', () => {
     // 阶段 2 起：素材与预览面可交互，只剩创作资源与任务仍是占位
     expect(view.container.querySelector('[data-workbench-pane=paneAssets]')?.getAttribute('data-workbench-planned')).toBe('false')
     expect(view.container.querySelector('[data-workbench-pane=paneTasks]')?.getAttribute('data-workbench-planned')).toBe('false')
-    // 阶段 2 起只剩「创作资源」面仍是占位
-    expect(screen.getAllByText(en.panePlanned)).toHaveLength(1)
+    // 阶段 2 起四个面板都是真的（不再有"不可运行"占位）
+    expect(screen.queryByText(en.panePlanned)).toBeNull()
+    for (const pane of ['paneAssets', 'paneResources', 'panePreview', 'paneTasks']) {
+      expect(view.container.querySelector(`[data-workbench-pane=${pane}]`)?.getAttribute('data-workbench-planned')).toBe('false')
+    }
     expect(await screen.findByText('0.3.1 · threerouter')).toBeTruthy()
   })
 
@@ -234,6 +267,45 @@ describe('workbench project and asset flow', () => {
     expect(host.calls).toContain('tasks/assign')
     expect(host.assets[0]?.path).toBe(task.outputPath)
     expect(host.tasks[0]?.projectId).toBe(host.projects[0]?.id)
+  })
+
+  it('creates a creative resource in the active project', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '资源项目')
+
+    fireEvent.change(await screen.findByLabelText(en.resourceNamePlaceholder), { target: { value: '女主' } })
+    fireEvent.change(screen.getByLabelText(en.notePlaceholder), { target: { value: '短发' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addResource }))
+
+    await waitFor(() => { expect(host.resources).toHaveLength(1) })
+    expect(host.resources[0]).toMatchObject({ kind: 'role', name: '女主', note: '短发' })
+    expect(view.container.querySelector('[data-workbench-resources]')?.getAttribute('data-workbench-resources')).toBe('1')
+    expect(await screen.findByText(new RegExp(`${en.kindRole} · 女主`))).toBeTruthy()
+  })
+
+  it('renames a project through the save-state four states', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '旧名')
+
+    const root = view.container.querySelector('[data-workbench-kind]')!
+    expect(root.getAttribute('data-workbench-save')).toBe('saved')
+
+    fireEvent.click(screen.getByRole('button', { name: en.rename }))
+    const input = await screen.findByLabelText(en.rename)
+    expect((input as HTMLInputElement).value).toBe('旧名')
+
+    fireEvent.change(input, { target: { value: '新名字' } })
+    expect(root.getAttribute('data-workbench-save')).toBe('dirty')
+
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    await waitFor(() => { expect(host.calls).toContain('projects/rename') })
+    await waitFor(() => { expect(root.getAttribute('data-workbench-save')).toBe('saved') })
+    expect(host.projects[0]?.name).toBe('新名字')
+    expect(screen.getByRole('option', { name: '新名字' })).toBeTruthy()
   })
 
   it('surfaces a host failure as a notice instead of crashing', async () => {

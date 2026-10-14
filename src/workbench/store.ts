@@ -12,7 +12,9 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
-  type AssetRecord, type MediaKind, type ProjectRecord, type TaskRecord, type TaskStatus,
+  normalizeResourceKind, normalizeResourceName,
+  type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
+  type TaskRecord, type TaskStatus,
 } from './records.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
@@ -22,6 +24,8 @@ interface WorkbenchDocument {
   assets: AssetRecord[]
   /** Generation history; kept when a project is removed (the file still exists). */
   tasks: TaskRecord[]
+  /** Reusable creative resources (roles, scenes, props, brands, styles, voices). */
+  resources: ResourceRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -123,6 +127,7 @@ export class WorkbenchStore {
     document.projects = document.projects.filter(project => project.id !== id)
     if (document.projects.length === before) return false
     document.assets = document.assets.filter(asset => asset.projectId !== id)
+    document.resources = document.resources.filter(resource => resource.projectId !== id)
     await this.save(document)
     return true
   }
@@ -179,6 +184,84 @@ export class WorkbenchStore {
     const before = document.assets.length
     document.assets = document.assets.filter(asset => asset.id !== id)
     if (document.assets.length === before) return false
+    await this.save(document)
+    return true
+  }
+
+  /**
+   * Rename a project.
+   * @param id - project id.
+   * @param name - validated new name.
+   * @returns the updated record, or `undefined` when the id is unknown.
+   */
+  async renameProject(id: string, name: unknown): Promise<ProjectRecord | undefined> {
+    const document = await this.load()
+    const current = document.projects.find(project => project.id === id)
+    if (current === undefined) return undefined
+    const renamed: ProjectRecord = {
+      ...current, name: normalizeProjectName(name), updatedAt: this.now().toISOString(),
+    }
+    document.projects = document.projects.map(project => (project.id === id ? renamed : project))
+    await this.save(document)
+    return renamed
+  }
+
+  /**
+   * List a project's resources, newest first.
+   * @param projectId - project id.
+   * @param kind - optional kind filter.
+   * @returns the records.
+   */
+  async listResources(projectId: string, kind?: ResourceKind): Promise<ResourceRecord[]> {
+    const document = await this.load()
+    return document.resources
+      .filter(resource => resource.projectId === projectId && (kind === undefined || resource.kind === kind))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  }
+
+  /**
+   * Create a resource inside a project.
+   * @param input - project, kind, name and optional note.
+   * @returns the stored record.
+   * @throws {Error} when the project is unknown.
+   */
+  async createResource(input: {
+    projectId: string
+    kind: ResourceKind | string
+    name: unknown
+    note?: string
+  }): Promise<ResourceRecord> {
+    const document = await this.load()
+    const project = document.projects.find(candidate => candidate.id === input.projectId)
+    if (project === undefined) throw new Error(`unknown project: ${input.projectId}`)
+    const stamp = this.now().toISOString()
+    const resource: ResourceRecord = {
+      schemaVersion: WORKBENCH_SCHEMA_VERSION,
+      id: newWorkbenchId('res'),
+      projectId: project.id,
+      kind: normalizeResourceKind(input.kind),
+      name: normalizeResourceName(input.name),
+      createdAt: stamp,
+      updatedAt: stamp,
+      ...input.note === undefined || input.note === '' ? {} : { note: input.note },
+    }
+    document.resources.push(resource)
+    document.projects = document.projects.map(candidate =>
+      candidate.id === project.id ? { ...candidate, updatedAt: stamp } : candidate)
+    await this.save(document)
+    return resource
+  }
+
+  /**
+   * Remove one resource record.
+   * @param id - resource id.
+   * @returns `true` when a record was removed.
+   */
+  async removeResource(id: string): Promise<boolean> {
+    const document = await this.load()
+    const before = document.resources.length
+    document.resources = document.resources.filter(resource => resource.id !== id)
+    if (document.resources.length === before) return false
     await this.save(document)
     return true
   }
@@ -259,10 +342,11 @@ export class WorkbenchStore {
         projects: raw.projects ?? [],
         assets: raw.assets ?? [],
         tasks: raw.tasks ?? [],
+        resources: raw.resources ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      this.cache = { schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [] }
+      this.cache = { schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [] }
     }
     return this.cache
   }

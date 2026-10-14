@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { AssetRecord, ProjectRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
+import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
@@ -78,6 +78,21 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+/** Resource kinds in picker order. */
+const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice']
+
+/** Localized label for one resource kind. */
+function kindKey(kind: ResourceKind): WorkbenchLocaleKey {
+  switch (kind) {
+    case 'role': return 'kindRole'
+    case 'scene': return 'kindScene'
+    case 'prop': return 'kindProp'
+    case 'brand': return 'kindBrand'
+    case 'style': return 'kindStyle'
+    case 'voice': return 'kindVoice'
+  }
+}
+
 /** Localized label for one task status. */
 function statusKey(status: TaskStatus): WorkbenchLocaleKey {
   switch (status) {
@@ -120,6 +135,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [assets, setAssets] = useState<readonly AssetRecord[]>([])
   const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
   const [tasks, setTasks] = useState<readonly TaskRecord[]>([])
+  const [resources, setResources] = useState<readonly ResourceRecord[]>([])
+  const [resourceKind, setResourceKind] = useState<ResourceKind>('role')
+  const [resourceName, setResourceName] = useState('')
+  const [resourceNote, setResourceNote] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'dirty' | 'failed'>('saved')
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
@@ -156,6 +178,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setTasks(await apiRef.current.listTasks())
   }, [])
 
+  const loadResources = useCallback(async (projectId: string) => {
+    setResources(await apiRef.current.listResources(projectId))
+  }, [])
+
   useEffect(() => {
     void (async () => {
       try {
@@ -171,14 +197,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   useEffect(() => {
     void (async () => {
       setSelectedId(undefined)
-      if (activeId === undefined) { setAssets([]); return }
+      if (activeId === undefined) { setAssets([]); setResources([]); return }
       try {
         setAssets(await apiRef.current.listAssets(activeId))
+        await loadResources(activeId)
       } catch (error) {
         setNotice(error instanceof Error ? error.message : String(error))
       }
     })()
-  }, [activeId])
+  }, [activeId, loadResources])
 
   const healthText = health.status === 'checking'
     ? t('healthChecking')
@@ -193,9 +220,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       data-workbench-visible={tab.visible ? 'true' : 'false'}
       data-workbench-fullscreen={sidebar.fullscreen ? 'true' : 'false'}
       data-workbench-health={health.status}
+      data-workbench-save={saveState}
       data-workbench-projects={String(projects.length)}
       data-workbench-assets={String(assets.length)}
       data-workbench-tasks={String(tasks.length)}
+      data-workbench-resources={String(resources.length)}
     >
       <header style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: '13px' }}>{t('sectionProject')}</strong>
@@ -233,6 +262,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         >
           {t('create')}
         </button>
+        {activeProject === undefined || renaming ? null : (
+          <button
+            type="button"
+            style={BUTTON}
+            onClick={() => { setRenaming(true); setRenameValue(activeProject.name); setSaveState('saved') }}
+          >
+            {t('rename')}
+          </button>
+        )}
         {activeProject === undefined ? null : (
           <button
             type="button"
@@ -250,6 +288,52 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {confirming === activeProject.id ? t('confirmRemove') : t('remove')}
           </button>
         )}
+        <span
+          style={PILL}
+          title={saveState === 'failed' ? t('saveFailed') : undefined}
+        >
+          {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
+        </span>
+        {renaming && activeProject !== undefined
+          ? (
+            <>
+              <input
+                aria-label={t('rename')}
+                value={renameValue}
+                onChange={event => {
+                  setRenameValue(event.target.value)
+                  const next = event.target.value.trim()
+                  setSaveState(next === activeProject.name || next === '' ? 'saved' : 'dirty')
+                }}
+                style={INPUT}
+              />
+              <button
+                type="button"
+                style={BUTTON}
+                disabled={busy || renameValue.trim() === ''}
+                onClick={() => {
+                  void run(async () => {
+                    setSaveState('saving')
+                    try {
+                      await apiRef.current.renameProject(activeProject.id, renameValue.trim())
+                      await loadProjects()
+                      setRenaming(false)
+                      setSaveState('saved')
+                    } catch (error) {
+                      setSaveState('failed')
+                      throw error
+                    }
+                  })
+                }}
+              >
+                {t('save')}
+              </button>
+              <button type="button" style={BUTTON} onClick={() => { setRenaming(false); setSaveState('saved') }}>
+                {t('cancel')}
+              </button>
+            </>
+          )
+          : null}
         <span style={PILL} title={health.status === 'failed' ? health.message : undefined}>{healthText}</span>
         <span style={{ marginLeft: 'auto', fontSize: '12px', opacity: 0.55 }}>{kind}</span>
       </header>
@@ -377,9 +461,83 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               )}
         </section>
 
-        <section data-workbench-pane="paneResources" data-workbench-planned="true" style={PANE}>
+        <section data-workbench-pane="paneResources" data-workbench-planned="false" style={PANE}>
           <h3 style={PANE_TITLE}>{t('paneResources')}</h3>
-          <p style={MUTED}>{t('panePlanned')}</p>
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px' }}>
+            <select
+              aria-label={t('paneResources')}
+              value={resourceKind}
+              onChange={event => { setResourceKind(event.target.value as ResourceKind) }}
+              style={INPUT}
+            >
+              {RESOURCE_KINDS.map(kind => <option key={kind} value={kind}>{t(kindKey(kind))}</option>)}
+            </select>
+            <input
+              aria-label={t('resourceNamePlaceholder')}
+              placeholder={t('resourceNamePlaceholder')}
+              value={resourceName}
+              onChange={event => { setResourceName(event.target.value) }}
+              style={INPUT}
+            />
+            <input
+              aria-label={t('notePlaceholder')}
+              placeholder={t('notePlaceholder')}
+              value={resourceNote}
+              onChange={event => { setResourceNote(event.target.value) }}
+              style={INPUT}
+            />
+            <button
+              type="button"
+              style={BUTTON}
+              disabled={busy || activeProject === undefined || resourceName.trim() === ''}
+              onClick={() => {
+                void run(async () => {
+                  const project = activeProject
+                  if (project === undefined) return
+                  const note = resourceNote.trim()
+                  await apiRef.current.createResource({
+                    projectId: project.id, kind: resourceKind, name: resourceName.trim(),
+                    ...note === '' ? {} : { note },
+                  })
+                  setResourceName('')
+                  setResourceNote('')
+                  await loadResources(project.id)
+                })
+              }}
+            >
+              {t('addResource')}
+            </button>
+          </div>
+          {resources.length === 0
+            ? <p style={MUTED}>{t('noResources')}</p>
+            : (
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '4px' }}>
+                {resources.map(resource => (
+                  <li key={resource.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      title={resource.note ?? ''}>
+                      {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
+                    </span>
+                    <button
+                      type="button"
+                      style={BUTTON}
+                      aria-label={`${confirming === resource.id ? t('confirmRemove') : t('remove')} ${resource.name}`}
+                      disabled={busy}
+                      onClick={() => {
+                        if (confirming !== resource.id) { setConfirming(resource.id); return }
+                        setConfirming(undefined)
+                        void run(async () => {
+                          await apiRef.current.removeResource(resource.id)
+                          if (activeProject !== undefined) await loadResources(activeProject.id)
+                        })
+                      }}
+                    >
+                      {confirming === resource.id ? t('confirmRemove') : t('remove')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
         </section>
 
         <section data-workbench-pane="paneTasks" data-workbench-planned="false" style={PANE}>

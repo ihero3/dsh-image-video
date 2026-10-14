@@ -71,8 +71,48 @@ export interface TaskRecord {
 /** Media kinds the workbench distinguishes today. */
 export type MediaKind = 'image' | 'video'
 
+/**
+ * Kinds of reusable creative resource the workbench keeps per project.
+ *
+ * `voice` deliberately carries metadata only in this version (`D6`): the field is
+ * a name plus notes, no sample playback until a TTS provider is wired.
+ */
+export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice'
+
+/** One reusable creative resource inside a project. */
+export interface ResourceRecord {
+  readonly schemaVersion: number
+  readonly id: string
+  readonly projectId: string
+  readonly kind: ResourceKind
+  readonly name: string
+  /** Free-form description (appearance, mood, usage notes). */
+  readonly note?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
 /** Longest project name the store accepts (kept short enough for the tab header). */
 export const MAX_PROJECT_NAME_LENGTH = 60
+
+/** Longest resource name the workbench accepts. */
+export const MAX_RESOURCE_NAME_LENGTH = 80
+
+/**
+ * Validate a resource name.
+ * @param value - raw name.
+ * @returns the trimmed name.
+ * @throws {Error} when it is empty or too long.
+ */
+export function normalizeResourceName(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('resource name must be a string')
+  const name = value.trim()
+  if (name.length === 0) throw new Error('resource name must not be empty')
+  if (name.length > MAX_RESOURCE_NAME_LENGTH) {
+    throw new Error(`resource name must be at most ${MAX_RESOURCE_NAME_LENGTH} characters`)
+  }
+  return name
+}
 
 /**
  * Mint a record id. Time-ordered prefix plus randomness keeps ids sortable and
@@ -100,6 +140,18 @@ export function normalizeProjectName(value: unknown): string {
     throw new Error(`project name must be at most ${MAX_PROJECT_NAME_LENGTH} characters`)
   }
   return name
+}
+
+/**
+ * Validate a resource kind.
+ * @param value - raw kind.
+ * @returns the kind.
+ * @throws {Error} when it is none of the six known kinds.
+ */
+export function normalizeResourceKind(value: unknown): ResourceKind {
+  if (value === 'role' || value === 'scene' || value === 'prop'
+    || value === 'brand' || value === 'style' || value === 'voice') return value
+  throw new Error('resource kind must be one of role/scene/prop/brand/style/voice')
 }
 
 /**

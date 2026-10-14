@@ -40,6 +40,19 @@ export type WorkbenchLocaleKey =
   | 'statusSucceeded'
   | 'statusFailed'
   | 'statusCancelled'
+  | 'rename'
+  | 'save'
+  | 'cancel'
+  | 'resourceNamePlaceholder'
+  | 'notePlaceholder'
+  | 'noResources'
+  | 'addResource'
+  | 'kindRole'
+  | 'kindScene'
+  | 'kindProp'
+  | 'kindBrand'
+  | 'kindStyle'
+  | 'kindVoice'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -84,6 +97,19 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusSucceeded: 'Succeeded',
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
+  rename: 'Rename',
+  save: 'Save',
+  cancel: 'Cancel',
+  resourceNamePlaceholder: 'Name',
+  notePlaceholder: 'Note (optional)',
+  noResources: 'No resources in this project yet',
+  addResource: 'Add resource',
+  kindRole: 'Role',
+  kindScene: 'Scene',
+  kindProp: 'Prop',
+  kindBrand: 'Brand',
+  kindStyle: 'Style',
+  kindVoice: 'Voice',
 }
 
 /** Simplified Chinese copy. */
@@ -126,4 +152,17 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusSucceeded: '成功',
   statusFailed: '失败',
   statusCancelled: '已取消',
+  rename: '改名',
+  save: '保存',
+  cancel: '取消',
+  resourceNamePlaceholder: '名称',
+  notePlaceholder: '备注（可选）',
+  noResources: '这个项目还没有创作资源',
+  addResource: '新建资源',
+  kindRole: '角色',
+  kindScene: '场景',
+  kindProp: '道具',
+  kindBrand: '品牌',
+  kindStyle: '风格',
+  kindVoice: '音色',
 }
