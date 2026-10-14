@@ -158,6 +158,7 @@ node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 | 桌面启动报 `client entry ... is not built` | `private-plugins.ts:84` | 先 `pnpm run build`（插件仓库）产出 `lib/client.js` 再提交；二者必须原子 |
 | 右栏没有工作台 tab | ① 宿主是否在**启动后**扫过 `dsh.client`（实测：给已在跑的插件后加 `./client`，宿主不会重新扫描，重载渲染进程也没用）② `dsh.client` 声明与 `inject` ③ 注册是否在 `ctx.effect()` 内 | ① **重启宿主进程**（`pnpm run dev:desktop` / `start:desktop`）② 按审计 §4.1 两段式注册 ③ `--dump-config` 确认入口被解析；`__DSH_BOOT__.entries` 可确认宿主是否已在服务该客户端半边 |
 | RPC 调用报 `invalid RPC target` / `HTTP 405` | ① 通道名是否**单段**（连接层规则 `/^\/[A-Za-z0-9._~-]+$/`，且不得占用 `/api`）② 宿主是否在跑**修复后的** bundle（405 常来自 `web-document.ts:19` 的静态处理器，说明 POST 没匹配到任何 RPC 路由） | ① 改成单段通道（本项目用 `/image-video`；`tests/host-workbench-rpc.test.ts` 有守护测试）② **重启宿主**：客户端半边改完只需重载渲染进程，宿主半边改完必须重启宿主 |
+| RPC 通道已注册但浏览器仍 405（`GET /image-video/status` 显示 `rpc.registered=false` 且带 `error`） | `connection.rpc.handle()` 把 Web 路由注册在**读取该服务的 ctx**（`HostConnectionService.callerCtx`）上，该 ctx 里必须能看到 `webServer` | 注入时同时要两个服务：`ctx.inject(['connection', 'webServer'], …)`；改完**重启宿主**（宿主半边不热加载），再用 `/image-video/status` 或 `scripts/verify-workbench-tab.mjs` 复核 |
 | tab 出现但空白 | 组件抛错 / 主题变量缺失 / RPC 未就绪 | 先渲染骨架 + 健康检查，再挂业务；看宿主日志与 DevTools console |
 | 生成任务卡在"运行中" | 轮询超时、进程被杀 | 任务状态机必须有 `中断`；刷新后按项目账本恢复（`R-PRJ-6`、`R-TSK-2`） |
 | 工作台媒体预览 404 / 播放器空白 | `/outputs` 是否注册 | 该路由只在 `webServer.host === '127.0.0.1'` 注册；非本机宿主给"媒体预览不可用"提示（`R-NFR-6`），不要静默空白 |
