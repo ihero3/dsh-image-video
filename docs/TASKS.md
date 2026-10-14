@@ -26,7 +26,7 @@
 | 阶段 | 任务 | 已完成 | 阶段门禁（不过不进下一阶段） |
 |---|---|---|---|
 | 0 审计与方案（纯文档 + 环境可复现） | 6 | 6 | 决策 D2–D7 有结论；口径收敛完成 |
-| 1 右栏工作台（PR-1 / PR-2） | 10 | 5 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
+| 1 右栏工作台（PR-1 / PR-2） | 10 | 7 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
 | 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 0 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4` |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
 | 4 专业工作流 MVP | 7 | 0 | `R-FLW-1..8` |
@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **11** | — |
+| **合计** | **59** | **13** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -49,11 +49,11 @@
 
 - [x] **T1-1** 客户端产物面：`package.json` 加 `exports["./client"]`、`dsh.client`（`platform: web` + 5 个 `inject`）、**扩 `files` 纳入 `lib/client/**` 与 `lib/types/client/**`**、补 `react`/`react-dom`/`@types/react`/`@types/react-dom` 与 6 个 `@deepseek-ai/dsh-client-*` devDeps（peer 同步 optional）｜插件｜`cmd:` `pnpm run typecheck` 双程序 exit 0；`pnpm install` 后 client 包解析到 0.2.1-alpha.2、react 18.3.1｜回滚：撤销这三处声明并删 `lib/client` 重新构建｜R-ENT-1、R-BND-1、R-NFR-2｜T0-4
 - [x] **T1-2** tsdown 增加 client face：CJS/browser + `window.__ModuleLoader__.load({id, factory})` banner/footer/intro + `neverBundle`（react/react-dom/cordis/client-* 包）；`clean` 只留在 `build` 脚本，两个 face 都不 clean（避免互删）｜插件｜`cmd:` `pnpm run build` exit 0 → `lib/client/plugin.js`（8.19 kB）包装头尾正确；`grep` 确认 `require("react")` / `require("react/jsx-runtime")` 外置、无 react-dom 内联；`lib/types/client/plugin.d.ts` 由 `tsc -p tsconfig.client.json` 产出｜回滚：删 client face 与 `tsconfig.client.json`｜R-NFR-1｜T1-1
-- [~] **T1-3** 客户端入口：自有 `kind`（`dsh-image-video-workbench`）+ 全局唯一 `id`（`dsh-image-video`），两段式注册（`ctx.sidebarRightTabs.register(...)` → 以该 `id` 为 key 的 `sidebar.right.pane.tab` 座位）+ guide entry（`open-workbench`）+ locale 字典｜插件｜代码与类型已绿（`src/client/plugin.ts`）；**待 T1-7 桌面实测**：右栏出现 tab、guide 可见、卸载后消失｜回滚：移除两段式注册（tab 消失，宿主不受影响）｜R-ENT-1、R-ENT-6｜T1-2
-- [~] **T1-4** 工作台骨架：项目名称 / 保存状态 / 模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格；用 `useTabInfo()` 读座位信息并以 `data-*` 暴露可见性/是否全屏｜插件｜代码已绿（`src/client/Workbench.tsx`）；**待 T1-7 桌面实测**：分区与框架图一致、切模式不报错、空态有 guide 文案｜回滚：tab body 换成空组件（类型保留）｜R-ENT-2、R-ENT-3｜T1-3
-- [x] **T1-5** 宿主半边：`/image-video/workbench` RPC 健康检查 + 服务装配，`rpc.handle` 的 disposer 挂在本插件自己的 effect 上；只答 `health`，其余端点结构化拒绝｜插件｜`test:` `tests/host-workbench-rpc.test.ts`（4 例：健康值不含凭证、未知端点走 envelope、注册与撤销、无 connection 时空挂 disposer）；`cmd:` `lib/index.js` 含通道名，`src/index.ts` 经 `ctx.inject(['connection'])` 注册｜回滚：删 `src/host/rpc.ts` 与那一处 inject｜R-AGT-1、R-BND-2｜T1-4
+- [x] **T1-3** 客户端入口：自有 `kind`（`dsh-image-video-workbench`）+ 全局唯一 `id`（`dsh-image-video`），两段式注册（`ctx.sidebarRightTabs.register(...)` → 以该 `id` 为 key 的 `sidebar.right.pane.tab` 座位）+ guide entry（`open-workbench`）+ locale 字典｜插件｜**现场验通（2026-10-14 重启后）**：右栏出现 tab chip（`role=tab`，标题「dsh-image-video 工作台」）、guide 文案命中、骨架真实挂载；`node scripts/verify-workbench-tab.mjs` exit 0；卸载撤销由 `tests/client-lifecycle.test.ts` 覆盖｜回滚：移除两段式注册（tab 消失，宿主不受影响）｜R-ENT-1、R-ENT-6｜T1-2
+- [x] **T1-4** 工作台骨架：项目名称 / 保存状态 / 模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格；用 `useTabInfo()` 读座位信息并以 `data-*` 暴露可见性/是否全屏｜插件｜**现场验通**：三模式逐个点击 → `aria-pressed=true` 且当前模式区 `aria-label` 同步；文案与字典一致；窄窗 720px → `data-workbench-fullscreen=true`；主题见 T1-9｜回滚：tab body 换成空组件（类型保留）｜R-ENT-2、R-ENT-3｜T1-3
+- [x] **T1-5** 宿主半边：`/image-video` RPC 健康检查 + 服务装配，`rpc.handle` 的 disposer 挂在本插件自己的 effect 上；只答 `health`，其余端点结构化拒绝｜插件｜`test:` `tests/host-workbench-rpc.test.ts`（4 例：健康值不含凭证、未知端点走 envelope、注册与撤销、无 connection 时空挂 disposer）；`cmd:` `lib/index.js` 含通道名，`src/index.ts` 经 `ctx.inject(['connection'])` 注册｜回滚：删 `src/host/rpc.ts` 与那一处 inject｜R-AGT-1、R-BND-2｜T1-4
 - [x] **T1-6** 生命周期与骨架测试：字典 / tab 类型 / 座位三处注册随卸载撤销；骨架渲染与模式切换｜插件｜`test:` `tests/client-lifecycle.test.ts`、`tests/workbench.client.test.tsx`（jsdom）、`tests/version.test.ts` 全绿；全量 **260 passed / 5 skipped**；`cmd:` vitest 配 `jsx: automatic`、jsdom 30、`@testing-library/react` 16｜回滚：删四个测试与新 devDeps｜R-BND-1、R-NFR-2｜T1-5
-- [!] **T1-7** 桌面装载实测（**阻塞：需重启承载本会话的桌面 App**）：dev App 右栏出现工作台 tab、guide 可见、卸载后消失；RPC 健康检查同样要宿主重启后才生效｜插件（Harness 侧只 bump 子模块指针）｜**证据（2026-10-14 实测）**：`__DSH_BOOT__.entries` 里没有 `dsh-image-video`（`hasClientHalf: false`），**重载渲染进程后仍然没有**、无 boot 报错 → 宿主在插件首次装载时缓存了 `dsh.client` 扫描结果，后加 `./client` 必须**重启宿主进程**；桌面私有插件测试 10/10 绿（顺带更正：审计说该测试会因 client 半边变红是**误判**——它用自造 fixture，不读真实 manifest）；现场检查脚本 `node scripts/verify-workbench-tab.mjs`（默认只读、`--reload` 才重载；本机实测 exit 1 + 明确处置文案；装载链另有证据：`readPrivatePluginEntries` 解析出 host+client 入口、`materializePrivatePlugins` 复制为 host+client）｜**解除条件**：owner 决定由谁重启（我执行则会话 UI 重连一次）｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
+- [!] **T1-7** 桌面装载实测（**客户端半边已通过；宿主半边待第二次重启**）：右栏 tab + 骨架 + 模式切换 + 窄窗全屏已现场验通；RPC 健康检查未过｜插件｜**现场证据**：`__DSH_BOOT__.entries` 已含 `dsh-image-video`（`plugins/??dsh-image-video/client.js`）；骨架挂载、文案齐全、模式切换与窄窗全屏通过；健康检查显示「宿主未就绪」——**现场抓出真 bug**：原通道 `/image-video/workbench` 不合规（连接层通道必须单段且不得用 `/api`），宿主注册时抛错、浏览器调用被拒；已改 `/image-video` 并加守护测试。改完后客户端报 `transport failure for /image-video/health: HTTP 405`，405 来自 `apps/desktop/src/web-document.ts:19`（非 GET/HEAD 落静态处理器）→ **运行中的宿主仍跑修复前 bundle，需再重启一次宿主**｜**解除条件**：重启宿主（客户端半边只需重载渲染进程）｜回滚：摘掉 client 出口并重建（tab 消失）｜R-BND-2、R-NFR-2｜T1-5
 - [~] **T1-8** 现有能力零回归：对话出图/出片、composer 媒体 tab、`/image-video/defaults` 不变；左栏与中间对话区零新增控件｜插件｜**已取到的证据**：全量 **262 passed / 5 skipped**（原 255 + 新增 7）；`--dump-config` 的 `image-video` 配置块改动前后**逐字节一致**（24 行）；源码改动除新增 client/host 文件外只有注释/文案（T0-5）｜**待补**：真机走一次出图与一次出片（在 App 里做，同样等 T1-7 的重启决定；不想产生真实付费调用的话由 owner 自己走一次）｜回滚：发现回归则回退对应提交｜R-BND-5、R-QCK-1、R-ENT-4｜T1-5
 - [!] **T1-9** 右栏形态：窄窗口可用 + 展开入口 + 深浅主题，直接接线右栏既有呈现（视口 <768px 自动 fullscreen、`primary+alt+Enter`、右栏最小 300 / 中间最小 400 由 `ui-layout` 定）｜插件｜**阻塞于 T1-7**（宿主没认到 tab 前无法实测窄窗/主题）；代码侧已用主题中立色（`currentColor` + `color-mix`），无硬编码色板｜解除条件同 T1-7｜回滚：保留骨架，撤掉主题/窄窗微调｜R-ENT-5、R-NFR-3｜T1-4
 - [x] **T1-10** 产物与提交：`lib/`（含 client）+ `CHANGELOG.md` + 子模块指针对齐｜插件（+ Harness 指针）｜`cmd:` 插件仓库 `bd5064e` / `55e8e53` / `0d0f053` 已推 `origin/main`（含 `lib/client/plugin.js`、`lib/types/client/**`、CHANGELOG）；Harness `d9d21e050d` 只含子模块指针 + 台账 R08 补记｜回滚：`git revert` 对应提交并把 Harness 指针回退到上一 SHA｜R-NFR-2｜T1-7

@@ -12,7 +12,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
+import { inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
 
 /** The committed artifact under test (vitest runs with the package root as cwd). */
 const BUNDLE_PATH = resolve(process.cwd(), 'lib/client/plugin.js')
@@ -61,7 +61,8 @@ describe('client bundle (module-loader contract)', () => {
       throw new Error(`模块表没有应答 require(${request})`)
     })
     expect(typeof exports.apply).toBe('function')
-    expect(exports.inject).toEqual(['slots', 'locale', 'sidebarRightTabs'])
+    // 与源码对账，而不是写死清单：加/删服务时这里不会悄悄漂掉
+    expect(exports.inject).toEqual(inject)
     expect(exports.WORKBENCH_TAB_ID).toBe(WORKBENCH_TAB_ID)
     expect(exports.WORKBENCH_TAB_KIND).toBe(WORKBENCH_TAB_KIND)
     // 只允许请求宿主模块表里的东西；出现别的请求就是外置清单漏项

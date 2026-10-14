@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply, inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
-import { Workbench } from '../src/client/Workbench.tsx'
+import { Workbench, type WorkbenchInjected } from '../src/client/Workbench.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 /** One registered tab definition, narrowed to the fields this test asserts. */
@@ -73,7 +73,7 @@ describe('workbench browser half', () => {
     const stub = stubContext()
     apply(stub.ctx)
 
-    expect(inject).toEqual(['slots', 'locale', 'sidebarRightTabs'])
+    expect(inject).toEqual(['slots', 'locale', 'sidebarRightTabs', 'connection'])
     expect(stub.localeRegister).toHaveBeenCalledWith(NS, { zh, en })
 
     expect(stub.registerTab).toHaveBeenCalledOnce()
@@ -94,7 +94,10 @@ describe('workbench browser half', () => {
     // 座位 key 必须是定义自己的 id —— 右栏按定义 id 派发 body
     expect(seat.key).toBe(WORKBENCH_TAB_ID)
     expect(seat.locale).toBe(NS)
-    expect(seat.inject()).toEqual({ kind: WORKBENCH_TAB_KIND })
+    // 注入面：kind 是注册身份，health 是宿主通道的取数入口（惰性，不在注册时调用）
+    const face = seat.inject() as WorkbenchInjected
+    expect(face.kind).toBe(WORKBENCH_TAB_KIND)
+    expect(typeof face.health).toBe('function')
     expect(stub.component()).toBe(Workbench)
   })
 

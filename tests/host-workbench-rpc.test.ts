@@ -14,6 +14,13 @@ const SIGNAL = new AbortController().signal
 const PEER = {} as never
 
 describe('workbench RPC channel', () => {
+  it('names a channel the connection transport accepts', () => {
+    // 与 `rpc-host.ts` 的 assertChannel 同一条规则（单段、且不得占用 /api）。
+    // 曾用 `/image-video/workbench`：宿主注册时抛错、浏览器调用被拒，现场才发现。
+    expect(WORKBENCH_RPC_CHANNEL).toMatch(/^\/[A-Za-z0-9._~-]+$/)
+    expect(WORKBENCH_RPC_CHANNEL).not.toBe('/api')
+  })
+
   it('answers health with the host facts the client needs', async () => {
     const result = await createWorkbenchHandler(DEPS)('health', undefined, SIGNAL, PEER)
     expect(result.ok).toBe(true)

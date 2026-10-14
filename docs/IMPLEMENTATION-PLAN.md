@@ -24,7 +24,7 @@ src/
   index.ts                         # 现有兼容入口，继续导出当前公共 API
   host/
     plugin.ts                      # 新增宿主半边入口
-    rpc.ts                         # /image-video/workbench RPC 路由
+    rpc.ts                         # /image-video RPC 路由
     context.ts                     # 业务服务装配
   domain/
     project.ts
@@ -90,12 +90,12 @@ src/
 │  │  A 快速创作 | B 专业工作流 | C 时间轴精剪            │  │
 │  │  媒体素材 | 创作资源 | 预览 | 任务 | 导出             │  │
 │  └──────────────────────┬───────────────────────────────┘  │
-│                         │ connection.rpc.call('/image-video/workbench')│
+│                         │ connection.rpc.call('/image-video')│
 └─────────────────────────┼──────────────────────────────────┘
                           │
 ┌─────────────────────────▼──────────────────────────────────┐
 │ Harness host process                                       │
-│  /image-video/workbench RPC                                             │
+│  /image-video RPC                                             │
 │    ProjectService                                           │
 │    AssetService（媒体文件）                                 │
 │    ResourceService（角色/场景/道具/音色/风格/轨迹）          │
@@ -593,7 +593,7 @@ MVP：
 - guide entry。
 - A/B/C 模式切换骨架。
 - 项目名称、保存状态、媒体素材区、创作资源区、预览区、任务区、导出入口。
-- `/image-video/workbench` RPC 健康检查。
+- `/image-video` RPC 健康检查。
 
 验收：
 
@@ -938,7 +938,7 @@ pnpm dsh --profile desktop --dump-config
 
 1. 新右栏 tab 与 guide entry。
 2. 工作台三模式骨架。
-3. `/image-video/workbench` RPC 健康检查。
+3. `/image-video` RPC 健康检查。
 4. 插件生命周期测试。
 5. “媒体素材 / 创作资源”两个入口的占位布局和不可运行提示。
 6. 不接真实项目存储，不接生成调度，不改现有生成工具。

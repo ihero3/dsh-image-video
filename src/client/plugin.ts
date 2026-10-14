@@ -13,6 +13,8 @@
  * injected face grows with it.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+// Type-only: pulls the client connection merge (ctx.connection) and its handle type.
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the locale service merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the renderer's Context merge (ctx.slots).
@@ -23,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { Workbench, type WorkbenchInjected } from './Workbench.tsx'
 import { NS, en, zh, type WorkbenchLocaleKey } from './locales.ts'
+import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -38,7 +41,7 @@ export const WORKBENCH_TAB_ID = 'dsh-image-video'
 export const WORKBENCH_TAB_KIND = 'dsh-image-video-workbench'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'sidebarRightTabs']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'connection']
 
 /**
  * Register the workbench dictionaries, the tab type, and its body seat.
@@ -64,6 +67,20 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.right.pane.tab',
     key: WORKBENCH_TAB_ID,
     locale: NS,
-    inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND }),
+    inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND, health: () => workbenchHealth(ctx) }),
   }, Workbench))
 }
+
+/**
+ * Ask the host for the workbench health facts over the shared channel.
+ * @param ctx - client context carrying the `connection` service.
+ * @returns the host's answer, unwrapped; throws the reported message on refusal.
+ */
+async function workbenchHealth(ctx: ClientContext): Promise<WorkbenchHealth> {
+  const connection = ctx.get('connection') as ConnectionHandle | undefined
+  if (connection === undefined) throw new Error('image-video-workbench: connection service is unavailable')
+  const result = await connection.rpc.call(WORKBENCH_RPC_CHANNEL, 'health', {})
+  if (!result.ok) throw new Error(result.error?.message ?? 'workbench health check failed')
+  return result.value as WorkbenchHealth
+}
+

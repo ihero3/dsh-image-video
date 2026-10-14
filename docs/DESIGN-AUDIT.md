@@ -244,8 +244,8 @@ Harness 通过 `dsh.client` 扫描已启用 Loader 条目并提供 `/plugins` bu
 
 ```text
 右栏 client 插件
-  └─ connection.rpc.call('/image-video/workbench', method, payload)
-       └─ host 半边 connection.rpc.handle('/image-video/workbench', handler)
+  └─ connection.rpc.call('/image-video', method, payload)
+       └─ host 半边 connection.rpc.handle('/image-video', handler)
             └─ dsh-image-video 业务服务
                  ├─ project store
                  ├─ asset store
@@ -537,7 +537,7 @@ React Flow 负责交互，节点执行器负责真实调用：
 1. 产品插件增加 `dsh.client` 声明和 `./client` 构建出口。
 2. 客户端注册 `dsh-image-video` 右栏 tab 类型和 guide entry。
 3. tab body 实现完整工作台，使用 Harness CSS 变量和 primitives。
-4. 工作台通过 `/image-video/workbench` RPC 调宿主业务服务。
+4. 工作台通过 `/image-video` RPC 调宿主业务服务。
 5. 宿主在 `ctx.effect()` 中注册和撤销 RPC、工具、任务清理和文件协议。
 6. 卸载插件时，右栏 tab、RPC 和运行中的任务全部通过 disposer 释放。
 

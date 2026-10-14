@@ -8,6 +8,13 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Workbench, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
+import type { WorkbenchHealth } from '../src/workbench-contract.ts'
+
+/** The host answer the seat's injected face would resolve to. */
+const HEALTH: WorkbenchHealth = {
+  plugin: 'dsh-image-video', version: '0.3.1', channel: '/image-video',
+  provider: 'threerouter', outputsDir: '/tmp/outputs', at: '2026-10-14T00:00:00.000Z',
+}
 
 afterEach(cleanup)
 
@@ -16,7 +23,7 @@ afterEach(cleanup)
  * stores, actions). The test binds only the three the component consumes, which
  * is what the seat would supply for a render on its own.
  */
-function props(overrides: { visible?: boolean; fullscreen?: boolean } = {}): WorkbenchProps {
+function props(overrides: { visible?: boolean; fullscreen?: boolean; health?: () => Promise<WorkbenchHealth> } = {}): WorkbenchProps {
   const useTabInfo = () => ({
     sidebar: { expanded: true, fullscreen: overrides.fullscreen ?? false },
     panel: { id: 'pane-1' },
@@ -26,6 +33,7 @@ function props(overrides: { visible?: boolean; fullscreen?: boolean } = {}): Wor
     kind: 'dsh-image-video-workbench',
     t: (key: keyof typeof en) => en[key],
     useTabInfo,
+    health: overrides.health ?? (() => Promise.resolve(HEALTH)),
   } as unknown as WorkbenchProps
 }
 
@@ -55,6 +63,26 @@ describe('workbench skeleton', () => {
     expect(workflow.getAttribute('aria-pressed')).toBe('true')
     expect(quick.getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByRole('region', { name: en.modeWorkflow })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en.paneTasks })).toBeTruthy()
+  })
+
+  it('shows the host facts the injected face resolved', async () => {
+    const view = render(<Workbench {...props()} />)
+    const root = view.container.querySelector('[data-workbench-kind]')!
+    // 首帧是"连接中"，宿主答复落地后才变 ok
+    expect(root.getAttribute('data-workbench-health')).toBe('checking')
+    expect(await screen.findByText('0.3.1 · threerouter')).toBeTruthy()
+    expect(root.getAttribute('data-workbench-health')).toBe('ok')
+  })
+
+  it('reports a refused health check without breaking the surface', async () => {
+    const view = render(<Workbench {...props({ health: () => Promise.reject(new Error('boom')) })} />)
+    const root = view.container.querySelector('[data-workbench-kind]')!
+    await screen.findByText(en.healthFailed)
+    expect(root.getAttribute('data-workbench-health')).toBe('failed')
+    // 原始报错只放在 title 里，不进可见文案
+    expect(screen.getByTitle('boom')).toBeTruthy()
+    // 骨架其余部分照常
     expect(screen.getByRole('heading', { name: en.paneTasks })).toBeTruthy()
   })
 

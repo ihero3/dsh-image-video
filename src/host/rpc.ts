@@ -5,37 +5,18 @@
  * instead of thrown errors — and every answer stays free of credentials and of
  * paths beyond the configured output directory. Today it answers only the
  * health check; the project / asset / task endpoints join the same channel in
- * later phases, which is why the channel is defined here rather than inline in
- * the plugin entry.
+ * later phases. The channel name and the health shape live in
+ * `src/workbench-contract.ts`, which both halves import, so the browser bundle
+ * carries them without pulling in any host code.
  */
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import { PLUGIN_VERSION } from '../version.ts'
+import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 
-/**
- * Channel of the workbench RPC. The browser half hardcodes the same string
- * (cross-repo code cannot share a runtime constant), so the pair is asserted by
- * `tests/host-workbench-rpc.test.ts` on this side and by the client lifecycle
- * test on the other.
- */
-export const WORKBENCH_RPC_CHANNEL = '/image-video/workbench'
-
-/** Facts a freshly mounted workbench needs before it can show anything. */
-export interface WorkbenchHealth {
-  /** Stable plugin identity (the package name). */
-  plugin: 'dsh-image-video'
-  /** Plugin version, from {@link PLUGIN_VERSION}. */
-  version: string
-  /** The channel these facts came from, so the client can log the pair. */
-  channel: string
-  /** Active generation provider as configured for this deployment. */
-  provider: string
-  /** Absolute directory generated media lands in (already resolved by the entry). */
-  outputsDir: string
-  /** Answer timestamp (ISO 8601), for staleness checks in the client. */
-  at: string
-}
+export { WORKBENCH_RPC_CHANNEL }
+export type { WorkbenchHealth }
 
 /** Host facts the health check reports. */
 export interface WorkbenchRpcDeps {

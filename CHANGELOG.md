@@ -6,7 +6,8 @@
 
 ### 新增
 - **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）
-- **工作台 RPC 健康检查**：宿主侧注册 `/image-video/workbench` 通道（`connection.rpc.handle`，随 fiber 卸载撤销）；端点 `health` 回报插件名、版本、通道名、生效服务商与已解析的输出目录；未知端点按连接的 envelope 结构化拒绝，不抛异常、不泄漏凭证
+- **工作台 RPC 健康检查**：宿主侧注册 `/image-video` 通道（`connection.rpc.handle`，随 fiber 卸载撤销）；端点 `health` 回报插件名、版本、通道名、生效服务商与已解析的输出目录；未知端点按连接的 envelope 结构化拒绝，不抛异常、不泄漏凭证
+- **客户端 RPC 接线与健康状态展示**：`inject` 增加 `connection`；骨架挂载时调用 `/image-video` 通道的 `health`，头部显示「版本 · 服务商」（连接中/失败各有文案，原始报错只进 `title`），并以 `data-workbench-health` 暴露状态；通道名与健康结果类型抽到 `src/workbench-contract.ts`，两个半边共用，浏览器 bundle 不带宿主代码
 - **`PLUGIN_VERSION` 与一致性守卫**：版本常量集中一处，`tests/version.test.ts` 与 `package.json` 对账
 
 - **图片参考图体积守卫**：本地参考图解析出的 data URL 超过 4MB 时，先用 sharp 等比缩到长边 2560 并转 JPEG(q88) 再提交（媒体模式注入/图生图两组入口都走这条链）。手机原图直传时 data URL 比原文件还大约 1/3，此前会撞网关/上游的请求体上限或被拖到超时；压缩不可用时原样提交，交由服务端报错
@@ -26,6 +27,8 @@
 - `generate_image` 结果行的**生成模式**改由预检查结论驱动：参考图经 `images` 数组或对话粘贴传入时，不再误报为「文生图」（此前结果行只判断单图入参 `image`）
 - `generate_image` 结果行的**尺寸**改取始终提供的 `previewImage`：路由不支持图片输入（纯文本模型）时不再退化成「未知尺寸」
 - `generate_image` 的**对话参考图**只取最新一条用户消息：不再把历史轮次里粘贴过的图片静默当作本次参考图（此前实现会扫描整段历史，与本文件与工具描述声明的「只取本轮」不符）
+
+- **RPC 通道名不合规（现场抓出）**：原用 `/image-video/workbench`，而连接层的通道必须是单段路径（`/^\/[A-Za-z0-9._~-]+$/` 且不得占用 `/api`）——宿主 `rpc.handle` 在插件注册时即抛错、浏览器调用被 `invalid RPC target` 拒；改为 `/image-video` 并加守护测试。stub 版单测因替身 `handle` 不校验而漏掉，是桌面现场检查才暴露的
 
 ### 变更
 - **决策 D1–D7 全部落定**：D1（命名一律 `dsh-image-video`，不另起产品名/不加第三个包）已落地——全仓 `grep dsh-media` 为 0；D2–D7 采纳文档建议值（硬删除+二次确认+引用守卫 / V1 检测+提示、发布前再评 sidecar / 锁 `@xyflow/react` 精确版本 / JSON 清单+素材目录 / 只做音色元数据 / `video-generate` 承载参考视频编辑），并在 `docs/REQUIREMENTS.md` §14 写明各自最晚复核点

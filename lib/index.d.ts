@@ -2,6 +2,7 @@ import z from "@deepseek-ai/schemastery";
 import { ContextFormed } from "@deepseek-ai/dsh-llm";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { IncomingMessage, ServerResponse } from "node:http";
+
 //#region src/config.d.ts
 /** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threerouter 为聚合器（所有模型）。 */
 type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance';
@@ -262,7 +263,7 @@ interface VideoGenParams {
   /**
    * wan3.0-video 多关键帧：按时间点排列的参考图序列（如 position '0s' / '1s'…）。
    * 调用方经 media.resolveVideoMedia 统一解析（压缩 + 转 data URL），
-   * 适配器按文档转换为 type/url；存在时 image 字段忽略。
+  * 适配器按文档转换为 type/url；存在时 image 字段忽略。
    */
   media?: Array<{
     url: string;
@@ -422,19 +423,7 @@ type ImageTransport = 'async' | 'sync';
  */
 type UnknownStatePolicy = 'fail' | 'resubmit-same-key';
 /** 事务状态机取值。 */
-type TransactionStatus =
-/** 已创建，尚未提交。 */
-'idle' |
-/** 提交请求已发出。 */
-'submitting' |
-/** 服务端已接受任务（有 taskId）。 */
-'accepted' |
-/** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */
-'unknown' |
-/** 成功拿到结果。 */
-'succeeded' |
-/** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */
-'failed';
+type TransactionStatus = /** 已创建，尚未提交。 */'idle' /** 提交请求已发出。 */ | 'submitting' /** 服务端已接受任务（有 taskId）。 */ | 'accepted' /** 提交结果未知：可能已创建任务，也可能没有——只能反查，不能重提。 */ | 'unknown' /** 成功拿到结果。 */ | 'succeeded' /** 明确失败：服务端在创建任务之前拒绝，或任务本身执行失败。 */ | 'failed';
 /**
  * 事务账本：一次 `generate_image` 调用对应一个实例，记录提交/找回/结果的
  * 全部事实，作为结果元数据回给用户（「本次到底提交了几次」必须可核对）。
@@ -650,7 +639,7 @@ declare const seedanceAdapter: ProviderAdapter;
 /** Threerouter 适配器实例：统一入口同时支持文生图与文生视频。 */
 declare const threerouterAdapter: ProviderAdapter;
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-alpha.2_@deepseek-ai+cordis@4.0.1_@deepseek-ai+dsh-br_c30ea6e779b006019a4cd012fc1dcbe2/node_modules/@deepseek-ai/dsh-attachment/lib/types/error.d.ts
+//#region ../../packages/attachment/attachment/lib/types/error.d.ts
 declare const ATTACHMENT_ERROR_CODES: readonly ["TOO_MANY_IMAGES", "IMAGES_TOO_LARGE", "UNSUPPORTED_IMAGE_TYPE", "INVALID_IMAGE_BASE64", "INVALID_IMAGE", "IMAGE_TYPE_MISMATCH", "IMAGE_TOO_LARGE", "IMAGE_TOO_MANY_PIXELS", "IMAGE_DIMENSION_TOO_LARGE", "INVALID_FILE_BASE64", "INVALID_ATTACHMENT_REF", "ATTACHMENT_CORRUPT", "ATTACHMENT_WRITE_FAILED", "ATTACHMENT_NOT_FOUND", "ATTACHMENT_READ_FAILED", "ATTACHMENT_PROJECTION_UNSUPPORTED", "ATTACHMENT_FILES_UNSUPPORTED"];
 /** Stable attachment failure codes used for protocol error routing. */
 type AttachmentErrorCode = typeof ATTACHMENT_ERROR_CODES[number];
@@ -674,7 +663,7 @@ declare class AttachmentError extends Error {
   constructor(message: string, code: AttachmentErrorCode, options?: ErrorOptions);
 }
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-brand@0.2.1-alpha.2_@deepseek-ai+cordis@4.0.1/node_modules/@deepseek-ai/dsh-brand/lib/types/index.d.ts
+//#region ../../packages/util/brand/lib/types/index.d.ts
 /**
  * Duplicate-install-safe nominal primitive helpers.
  *
@@ -694,7 +683,7 @@ type Branded<B extends string> = string & {
   readonly [BRAND]: B;
 };
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-alpha.2_@deepseek-ai+cordis@4.0.1_@deepseek-ai+dsh-br_c30ea6e779b006019a4cd012fc1dcbe2/node_modules/@deepseek-ai/dsh-attachment/lib/types/brand.d.ts
+//#region ../../packages/attachment/attachment/lib/types/brand.d.ts
 /** Opaque content-addressed identifier for one immutable attachment object. */
 type AttachmentId = Branded<'AttachmentId'>;
 /**
@@ -712,7 +701,7 @@ type ImageVariantId = Branded<'ImageVariantId'>;
  */
 declare function ImageVariantId(value: string): ImageVariantId;
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-alpha.2_@deepseek-ai+cordis@4.0.1_@deepseek-ai+dsh-br_c30ea6e779b006019a4cd012fc1dcbe2/node_modules/@deepseek-ai/dsh-attachment/lib/types/types.d.ts
+//#region ../../packages/attachment/attachment/lib/types/types.d.ts
 /** Raster image formats accepted by the version-one attachment path. */
 type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 /** Durable, serializable reference to one immutable normalized image. */
@@ -856,7 +845,7 @@ interface RequestImageAttachment {
   hasAlpha: boolean;
 }
 //#endregion
-//#region node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-alpha.2_@deepseek-ai+cordis@4.0.1_@deepseek-ai+dsh-br_c30ea6e779b006019a4cd012fc1dcbe2/node_modules/@deepseek-ai/dsh-attachment/lib/types/index.d.ts
+//#region ../../packages/attachment/attachment/lib/types/index.d.ts
 declare module '@deepseek-ai/cordis' {
   interface Context {
     attachments: AttachmentStore;
@@ -1022,7 +1011,7 @@ interface RuntimeDefaults {
   videoDuration?: number;
 }
 /** POST /image-video/defaults 接受的单字段写入：null 清除覆盖，否则为合法值。 */
-type RuntimeDefaultsPatch = { [K in keyof RuntimeDefaults]: RuntimeDefaults[K] | null; };
+type RuntimeDefaultsPatch = { [K in keyof RuntimeDefaults]: RuntimeDefaults[K] | null };
 /** 内存态运行时默认值存储。 */
 interface RuntimeDefaultsStore {
   /** 当前覆盖值快照（只读视图；未覆盖字段不出现在对象上）。 */

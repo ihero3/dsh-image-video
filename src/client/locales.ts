@@ -18,6 +18,8 @@ export type WorkbenchLocaleKey =
   | 'panePreview'
   | 'paneTasks'
   | 'emptyHint'
+  | 'healthChecking'
+  | 'healthFailed'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -40,6 +42,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   panePreview: 'Preview',
   paneTasks: 'Tasks',
   emptyHint: 'Skeleton only — projects, assets, tasks and the node canvas arrive in later phases.',
+  healthChecking: 'Connecting to host…',
+  healthFailed: 'Host unavailable',
 }
 
 /** Simplified Chinese copy. */
@@ -60,4 +64,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   panePreview: '预览',
   paneTasks: '任务',
   emptyHint: '目前只是骨架——项目、素材、任务与节点画布在后续阶段落地。',
+  healthChecking: '正在连接宿主…',
+  healthFailed: '宿主未就绪',
 }
