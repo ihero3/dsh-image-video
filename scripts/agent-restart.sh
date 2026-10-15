@@ -59,7 +59,6 @@ if ! check_guards; then
   echo "守卫拦下：未做任何操作"
   exit 0
 fi
-mkdir "$LOCKDIR" 2>/dev/null || { echo "拿不到锁，退出"; exit 0; }
 
 # 真正干活的那一段（--dry-run 只打印）
 work() {
@@ -92,6 +91,7 @@ work() {
 
 # --dry-run：前台走完整流程，不杀不启
 if [ "$MODE" = "--dry-run" ]; then
+  mkdir "$LOCKDIR" 2>/dev/null || { echo "拿不到锁，退出"; exit 0; }
   DRY_RUN=1 work
   status=$?
   rm -rf "$LOCKDIR"
@@ -116,6 +116,7 @@ subprocess.Popen(['/bin/bash', sys.argv[1], '--run'],
   exit 0
 fi
 
+mkdir "$LOCKDIR" 2>/dev/null || { echo "拿不到锁（可能已有重启在跑）：未做任何操作"; exit 0; }
 work >>"$LOG" 2>&1
 status=$?
 rm -rf "$LOCKDIR"
