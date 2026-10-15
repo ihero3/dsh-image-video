@@ -26,6 +26,8 @@ export interface NodeParamField {
   readonly type: 'text' | 'textarea' | 'number' | 'select' | 'boolean'
   readonly default: NodeParamValue
   readonly options?: readonly { readonly value: string; readonly labelKey: string }[]
+  /** 运行前必须有值（空串/`false` 也算缺）——`T4-3` 的必填校验。 */
+  readonly required?: boolean
 }
 
 /** 目录里的一个节点种类。 */
@@ -107,26 +109,26 @@ const RESOLUTION_OPTIONS = [
 export const NODE_CATALOG: readonly NodeKindSpec[] = [
   {
     kind: 'creative-input', labelKey: 'nodeCreativeInput', availability: 'runnable', input: 'any', output: 'text',
-    params: [{ id: 'brief', labelKey: 'paramBrief', type: 'textarea', default: '' }],
+    params: [{ id: 'brief', labelKey: 'paramBrief', type: 'textarea', default: '', required: true }],
   },
   {
     kind: 'script', labelKey: 'nodeScript', availability: 'runnable', input: 'text', output: 'text',
-    params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '' }],
+    params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '', required: true }],
   },
   {
     kind: 'storyboard', labelKey: 'nodeStoryboard', availability: 'runnable', input: 'text', output: 'media',
     params: [
-      { id: 'shots', labelKey: 'paramShots', type: 'number', default: 4 },
+      { id: 'shots', labelKey: 'paramShots', type: 'number', default: 4, required: true },
       { id: 'note', labelKey: 'paramNote', type: 'text', default: '' },
     ],
   },
   {
     kind: 'asset-reference', labelKey: 'nodeAssetReference', availability: 'runnable', input: 'media', output: 'asset',
-    params: [{ id: 'assetId', labelKey: 'paramAsset', type: 'text', default: '' }],
+    params: [{ id: 'assetId', labelKey: 'paramAsset', type: 'text', default: '', required: true }],
   },
   {
     kind: 'resource-reference', labelKey: 'nodeResourceReference', availability: 'runnable', input: 'any', output: 'resource',
-    params: [{ id: 'resourceId', labelKey: 'paramResource', type: 'text', default: '' }],
+    params: [{ id: 'resourceId', labelKey: 'paramResource', type: 'text', default: '', required: true }],
   },
   {
     kind: 'motion-track', labelKey: 'nodeMotionTrack', availability: 'runnable', input: 'media', output: 'media',
@@ -136,7 +138,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
     kind: 'image-generate', labelKey: 'nodeImageGenerate', availability: 'runnable', input: 'text', output: 'media',
     params: [
       { id: 'model', labelKey: 'paramModel', type: 'text', default: '' },
-      { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '' },
+      { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
       { id: 'ratio', labelKey: 'paramRatio', type: 'select', default: '3:4', options: RATIO_OPTIONS },
     ],
   },
@@ -144,7 +146,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
     kind: 'video-generate', labelKey: 'nodeVideoGenerate', availability: 'runnable', input: 'media', output: 'media',
     params: [
       { id: 'model', labelKey: 'paramModel', type: 'text', default: '' },
-      { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '' },
+      { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
       { id: 'ratio', labelKey: 'paramRatio', type: 'select', default: '16:9', options: VIDEO_RATIO_OPTIONS },
       { id: 'duration', labelKey: 'paramDuration', type: 'number', default: 5 },
       { id: 'resolution', labelKey: 'paramResolution', type: 'select', default: '720P', options: RESOLUTION_OPTIONS },
@@ -162,7 +164,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
   },
   {
     kind: 'subtitle', labelKey: 'nodeSubtitle', availability: 'runnable', input: 'media', output: 'media',
-    params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '' }],
+    params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '', required: true }],
   },
   {
     kind: 'render', labelKey: 'nodeRender', availability: 'runnable', input: 'media', output: 'media',
@@ -274,6 +276,109 @@ export function isRunnable(kind: WorkflowNodeKind): boolean {
 export function defaultParams(kind: WorkflowNodeKind): Record<string, NodeParamValue> {
   const spec = nodeSpec(kind)
   return Object.fromEntries(spec.params.map(field => [field.id, field.default]))
+}
+
+/** 端口兼容表：目标输入能接受哪些来源输出。`any` 全收；`asset` 可当 `media` 用。 */
+const PORT_ACCEPTS: Record<PortKind, readonly PortKind[]> = {
+  any: ['any', 'text', 'media', 'resource', 'asset'],
+  text: ['any', 'text'],
+  media: ['any', 'media', 'asset'],
+  resource: ['any', 'resource'],
+  asset: ['any', 'asset', 'media'],
+}
+
+/** 一条图校验问题（`T4-3`）。 */
+export interface WorkflowIssue {
+  readonly code: 'missing-required' | 'port-mismatch' | 'self-loop' | 'dangling-edge' | 'cycle' | 'not-runnable'
+  readonly message: string
+  readonly nodeId?: string
+  readonly edgeId?: string
+}
+
+/** 图校验结果。 */
+export interface WorkflowValidation {
+  readonly ok: boolean
+  readonly issues: readonly WorkflowIssue[]
+}
+
+/**
+ * 校验整张图：必填参数、端口类型、自环、悬空连线、环、planned 节点不可运行。
+ *
+ * 纯函数、不碰 IO——画布用它做即时反馈，宿主在运行前用同一份逻辑拒绝（`R-FLW-3`）。
+ * @param nodes - 图里的节点。
+ * @param edges - 图里的连线。
+ * @returns 是否可运行，以及全部问题。
+ */
+export function validateWorkflow(
+  nodes: readonly WorkflowNode[],
+  edges: readonly WorkflowEdge[],
+): WorkflowValidation {
+  const issues: WorkflowIssue[] = []
+  const byId = new Map(nodes.map(node => [node.id, node]))
+
+  for (const node of nodes) {
+    const spec = nodeSpec(node.kind)
+    if (spec.availability !== 'runnable') {
+      issues.push({
+        code: 'not-runnable', nodeId: node.id,
+        message: `${node.kind} is planned and cannot run (${spec.reasonKey ?? 'no reason recorded'})`,
+      })
+    }
+    for (const field of spec.params) {
+      if (field.required !== true) continue
+      const value = node.params[field.id]
+      if (value === undefined || value === '' || value === false) {
+        issues.push({ code: 'missing-required', nodeId: node.id, message: `${node.kind}.${field.id} is required` })
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    const source = byId.get(edge.source)
+    const target = byId.get(edge.target)
+    if (source === undefined || target === undefined) {
+      issues.push({ code: 'dangling-edge', edgeId: edge.id, message: `edge ${edge.id} references a missing node` })
+      continue
+    }
+    if (edge.source === edge.target) {
+      issues.push({ code: 'self-loop', edgeId: edge.id, message: `edge ${edge.id} loops onto itself` })
+      continue
+    }
+    const from = nodeSpec(source.kind).output
+    const to = nodeSpec(target.kind).input
+    if (!PORT_ACCEPTS[to].includes(from)) {
+      issues.push({
+        code: 'port-mismatch', edgeId: edge.id,
+        message: `${source.kind}(${from}) cannot feed ${target.kind}(${to})`,
+      })
+    }
+  }
+
+  // 环检测：三色 DFS；遇到灰节点即回边，把回路写进消息
+  const colour = new Map<string, 'white' | 'grey' | 'black'>()
+  const outgoing = new Map<string, string[]>()
+  for (const edge of edges) {
+    if (!outgoing.has(edge.source)) outgoing.set(edge.source, [])
+    outgoing.get(edge.source)?.push(edge.target)
+  }
+  const stack: string[] = []
+  const walk = (id: string): void => {
+    colour.set(id, 'grey')
+    stack.push(id)
+    for (const next of outgoing.get(id) ?? []) {
+      const state = colour.get(next) ?? 'white'
+      if (state === 'grey') {
+        issues.push({ code: 'cycle', nodeId: next, message: `cycle: ${[...stack.slice(stack.indexOf(next)), next].join(' -> ')}` })
+        continue
+      }
+      if (state === 'white') walk(next)
+    }
+    stack.pop()
+    colour.set(id, 'black')
+  }
+  for (const node of nodes) if ((colour.get(node.id) ?? 'white') === 'white') walk(node.id)
+
+  return { ok: issues.length === 0, issues }
 }
 
 /** 目录里可用 / 预留的数量，供 UI 显示与测试断言。 */

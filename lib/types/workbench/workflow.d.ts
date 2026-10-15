@@ -25,6 +25,8 @@ export interface NodeParamField {
         readonly value: string;
         readonly labelKey: string;
     }[];
+    /** 运行前必须有值（空串/`false` 也算缺）——`T4-3` 的必填校验。 */
+    readonly required?: boolean;
 }
 /** 目录里的一个节点种类。 */
 export interface NodeKindSpec {
@@ -108,6 +110,27 @@ export declare function nodeSpec(kind: WorkflowNodeKind): NodeKindSpec;
 export declare function isRunnable(kind: WorkflowNodeKind): boolean;
 /** 新节点的默认参数（取自目录）。 */
 export declare function defaultParams(kind: WorkflowNodeKind): Record<string, NodeParamValue>;
+/** 一条图校验问题（`T4-3`）。 */
+export interface WorkflowIssue {
+    readonly code: 'missing-required' | 'port-mismatch' | 'self-loop' | 'dangling-edge' | 'cycle' | 'not-runnable';
+    readonly message: string;
+    readonly nodeId?: string;
+    readonly edgeId?: string;
+}
+/** 图校验结果。 */
+export interface WorkflowValidation {
+    readonly ok: boolean;
+    readonly issues: readonly WorkflowIssue[];
+}
+/**
+ * 校验整张图：必填参数、端口类型、自环、悬空连线、环、planned 节点不可运行。
+ *
+ * 纯函数、不碰 IO——画布用它做即时反馈，宿主在运行前用同一份逻辑拒绝（`R-FLW-3`）。
+ * @param nodes - 图里的节点。
+ * @param edges - 图里的连线。
+ * @returns 是否可运行，以及全部问题。
+ */
+export declare function validateWorkflow(nodes: readonly WorkflowNode[], edges: readonly WorkflowEdge[]): WorkflowValidation;
 /** 目录里可用 / 预留的数量，供 UI 显示与测试断言。 */
 export declare function catalogSummary(): {
     runnable: number;

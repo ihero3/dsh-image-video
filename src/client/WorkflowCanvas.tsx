@@ -17,8 +17,8 @@ import {
   type Connection, type Edge, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, defaultParams, nodeSpec,
-  type NodeParamValue, type WorkflowNodeKind, type WorkflowRecord,
+  NODE_CATALOG, defaultParams, nodeSpec, validateWorkflow,
+  type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
@@ -27,6 +27,8 @@ import type { WorkbenchLocaleKey } from './locales.ts'
 export interface CanvasNodeData extends Record<string, unknown> {
   kind: WorkflowNodeKind
   params: Record<string, NodeParamValue>
+  /** `T4-3` 校验把这个节点标记为有问题时置位（只影响样式）。 */
+  invalid?: boolean
 }
 
 /** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
@@ -100,9 +102,10 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
       data-workflow-node={data.kind}
       data-workflow-node-selected={selected ? 'true' : 'false'}
       data-workflow-node-availability={spec.availability}
+      data-workflow-node-invalid={data.invalid === true ? 'true' : 'false'}
       style={{
         minWidth: '132px', padding: '6px 8px', borderRadius: '8px', fontSize: '12px',
-        border: `1px ${planned ? 'dashed' : 'solid'} ${selected ? 'var(--dsh-accent, #4c8dff)' : 'var(--dsh-border, #3a3a3a)'}`,
+        border: `1px ${planned ? 'dashed' : 'solid'} ${data.invalid === true ? 'var(--dsh-danger, #e5534b)' : selected ? 'var(--dsh-accent, #4c8dff)' : 'var(--dsh-border, #3a3a3a)'}`,
         background: 'var(--dsh-surface, #1f1f22)', color: 'var(--dsh-text, #e8e8ea)',
         boxShadow: selected ? '0 0 0 2px rgba(76,141,255,0.35)' : 'none',
       }}
@@ -149,6 +152,30 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
   }, [nodes, edges, record, onChange])
 
   // 卡片要用当前语言渲染，所以 nodeTypes 跟着 t 走（t 变化才重建，避免每帧换组件）
+  // `T4-3`：每次图变化都跑一遍校验（纯函数），并把问题节点标到卡片上
+  const validation = useMemo(
+    () => validateWorkflow(merge(record, nodes, edges).nodes, merge(record, nodes, edges).edges),
+    [record, nodes, edges],
+  )
+  const invalidFingerprint = validation.issues
+    .filter(issue => issue.nodeId !== undefined)
+    .map(issue => issue.nodeId)
+    .join(',')
+  useEffect(() => {
+    const invalidIds = new Set(validation.issues.flatMap(issue => (issue.nodeId === undefined ? [] : [issue.nodeId])))
+    setNodes(current => {
+      let changed = false
+      const next = current.map(node => {
+        const invalid = invalidIds.has(node.id)
+        if ((node.data.invalid === true) === invalid) return node
+        changed = true
+        return { ...node, data: { ...node.data, invalid } }
+      })
+      return changed ? next : current
+    })
+    // 只在"问题节点集合"变化时同步，避免连环渲染
+  }, [invalidFingerprint, setNodes])
+
   const nodeTypes = useMemo(() => ({
     workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} />,
   }), [t])
@@ -229,6 +256,24 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
           <span style={{ fontSize: '11px', opacity: 0.7, marginLeft: 'auto' }}>
             {nodes.length} {t('canvasNodesCount')} · {edges.length} {t('canvasEdgesCount')}
           </span>
+        </div>
+
+        <div data-workflow-issues={String(validation.issues.length)} data-workflow-runnable={validation.ok ? 'true' : 'false'}
+          style={{ display: 'grid', gap: '2px', fontSize: '11px' }}>
+          <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('validationTitle')}</strong>
+          {validation.ok
+            ? <span data-workflow-validation="ok" style={{ opacity: 0.75 }}>✓ {t('validationOk')}</span>
+            : validation.issues.slice(0, 6).map((issue: WorkflowIssue, index) => (
+              <span key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? index}`} data-workflow-issue={issue.code}
+                title={issue.message} style={{ color: 'var(--dsh-danger, #e5534b)' }}>
+                ⚠ {issue.nodeId === undefined ? '' : `${issue.nodeId}: `}
+                {t(issue.code === 'missing-required' ? 'issueRequired'
+                  : issue.code === 'port-mismatch' ? 'issuePort'
+                    : issue.code === 'self-loop' ? 'issueSelfLoop'
+                      : issue.code === 'dangling-edge' ? 'issueDangling'
+                        : issue.code === 'cycle' ? 'issueCycle' : 'issuePlanned')}
+              </span>
+            ))}
         </div>
 
         <div data-workflow-flow="true" style={{ height: '260px', border: '1px solid var(--dsh-border, #3a3a3a)', borderRadius: '8px', overflow: 'hidden' }}>

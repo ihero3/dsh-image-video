@@ -41,6 +41,14 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'issuePlanned'
+  | 'issueCycle'
+  | 'issueDangling'
+  | 'issueSelfLoop'
+  | 'issuePort'
+  | 'issueRequired'
+  | 'validationOk'
+  | 'validationTitle'
   | 'canvasSaved'
   | 'compacted'
   | 'compactAssets'
@@ -159,6 +167,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  issuePlanned: 'planned node cannot run',
+  issueCycle: 'graph has a cycle',
+  issueDangling: 'edge points at a missing node',
+  issueSelfLoop: 'node connects to itself',
+  issuePort: 'port types do not match',
+  issueRequired: 'required parameter is empty',
+  validationOk: 'Graph is runnable',
+  validationTitle: 'Graph check',
   canvasSaved: 'Canvas saved',
   compacted: 'Merged duplicate records',
   compactAssets: 'Merge duplicate records',
@@ -275,6 +291,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  issuePlanned: '预留节点不可运行',
+  issueCycle: '图里有环',
+  issueDangling: '连线指向不存在的节点',
+  issueSelfLoop: '节点连到自己',
+  issuePort: '端口类型不匹配',
+  issueRequired: '必填参数为空',
+  validationOk: '图可运行',
+  validationTitle: '图校验',
   canvasSaved: '画布已保存',
   compacted: '已整理重复记录',
   compactAssets: '整理重复记录',

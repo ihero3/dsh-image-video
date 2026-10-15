@@ -97,6 +97,26 @@ describe('workflow canvas', () => {
     expect(text).not.toContain('duration=')
   })
 
+  it('shows validation issues and clears them once the parameter is filled', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-issues]')?.getAttribute('data-workflow-issues')).toBe('1')
+    })
+    expect(view.container.querySelector('[data-workflow-issue="missing-required"]')).toBeTruthy()
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="image-generate"]')?.getAttribute('data-workflow-node-invalid')).toBe('true')
+    })
+
+    // 填上必填提示词 → 校验通过
+    const prompt = await screen.findByLabelText(en.paramPrompt)
+    fireEvent.change(prompt, { target: { value: '一只猫在窗台' } })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-validation="ok"]')).toBeTruthy()
+    })
+    expect(view.container.querySelector('[data-workflow-issues]')?.getAttribute('data-workflow-runnable')).toBe('true')
+  })
+
   it('keeps the transient selection out of the record', async () => {
     const { current } = renderCanvas()
     fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))

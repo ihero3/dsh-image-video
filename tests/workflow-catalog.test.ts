@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  NODE_CATALOG, catalogSummary, defaultParams, isRunnable, nodeSpec,
-  type WorkflowNodeKind,
+  NODE_CATALOG, catalogSummary, defaultParams, isRunnable, nodeSpec, validateWorkflow,
+  type NodeParamValue, type WorkflowEdge, type WorkflowNode, type WorkflowNodeKind,
 } from '../src/workbench/workflow.ts'
 
 const V1: WorkflowNodeKind[] = [
@@ -51,5 +51,64 @@ describe('node catalog', () => {
 
   it('rejects an unknown kind loudly', () => {
     expect(() => nodeSpec('nope' as WorkflowNodeKind)).toThrow(/unknown workflow node kind/)
+  })
+})
+
+/** 造一个节点。 */
+function node(id: string, kind: WorkflowNodeKind, params: Record<string, NodeParamValue> = {}): WorkflowNode {
+  return { id, kind, position: { x: 0, y: 0 }, params }
+}
+
+/** 造一条连线。 */
+function edge(source: string, target: string): WorkflowEdge {
+  return { id: `${source}->${target}`, source, target }
+}
+
+describe('graph validation (T4-3)', () => {
+  it('accepts a well-formed chain', () => {
+    const result = validateWorkflow(
+      [node('a', 'script', { text: '开场白' }), node('b', 'image-generate', { prompt: '一只猫' })],
+      [edge('a', 'b')],
+    )
+    expect(result).toEqual({ ok: true, issues: [] })
+  })
+
+  it('flags empty required parameters', () => {
+    const result = validateWorkflow([node('a', 'image-generate', { prompt: '' })], [])
+    expect(result.issues.map(issue => issue.code)).toContain('missing-required')
+    expect(result.issues[0]?.nodeId).toBe('a')
+  })
+
+  it('flags port mismatches (media into text)', () => {
+    const result = validateWorkflow(
+      [node('a', 'storyboard', { shots: 3 }), node('b', 'script', { text: 'x' })],
+      [edge('a', 'b')],
+    )
+    expect(result.issues.some(issue => issue.code === 'port-mismatch')).toBe(true)
+  })
+
+  it('detects a cycle and names the loop', () => {
+    const result = validateWorkflow(
+      [node('a', 'script', { text: 'x' }), node('b', 'script', { text: 'y' })],
+      [edge('a', 'b'), edge('b', 'a')],
+    )
+    const cycle = result.issues.find(issue => issue.code === 'cycle')
+    expect(cycle?.message).toMatch(/a -> b -> a/)
+  })
+
+  it('flags self loops and dangling edges', () => {
+    const result = validateWorkflow(
+      [node('a', 'preview')],
+      [edge('a', 'a'), { id: 'ghost', source: 'a', target: 'missing' }],
+    )
+    const codes = result.issues.map(issue => issue.code)
+    expect(codes).toContain('self-loop')
+    expect(codes).toContain('dangling-edge')
+  })
+
+  it('marks planned nodes as not runnable so nothing can pretend to succeed', () => {
+    const result = validateWorkflow([node('a', 'lip-sync')], [])
+    expect(result.issues.map(issue => issue.code)).toEqual(['not-runnable'])
+    expect(result.ok).toBe(false)
   })
 })

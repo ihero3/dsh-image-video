@@ -5,6 +5,8 @@ import type { WorkbenchLocaleKey } from './locales.ts';
 export interface CanvasNodeData extends Record<string, unknown> {
     kind: WorkflowNodeKind;
     params: Record<string, NodeParamValue>;
+    /** `T4-3` 校验把这个节点标记为有问题时置位（只影响样式）。 */
+    invalid?: boolean;
 }
 /** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
 export type CanvasNode = Node<CanvasNodeData, 'workbench'>;
