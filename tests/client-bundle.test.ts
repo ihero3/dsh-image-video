@@ -11,6 +11,10 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import * as React from 'react'
+import * as ReactDOM from 'react-dom'
+import * as reactDomClient from 'react-dom/client'
+import * as jsxRuntime from 'react/jsx-runtime'
 import { describe, expect, it } from 'vitest'
 import { inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
 
@@ -23,12 +27,20 @@ interface Registration {
   factory: (require: (request: string) => unknown) => Record<string, unknown>
 }
 
-/** The host modules the bundle is allowed to request, as minimal stubs. */
+/**
+ * The host modules the bundle is allowed to request.
+ *
+ * react / react-dom are the real packages: the canvas pulls `@xyflow/react`
+ * inline, and that library calls React APIs at module scope (createContext …), so
+ * hand-written stubs would only test the stub. The DSH *service* modules stay
+ * stubs because their contract is "the loader provides them", not their behaviour.
+ */
 const HOST_MODULES: Record<string, unknown> = {
-  react: { useState: () => [undefined, () => {}], createElement: () => null },
-  'react/jsx-runtime': { jsx: () => null, jsxs: () => null, Fragment: Symbol('fragment') },
-  'react-dom': {},
-  'react-dom/client': {},
+  react: React,
+  'react/jsx-runtime': jsxRuntime,
+  'react-dom': ReactDOM,
+  'react-dom/client': reactDomClient,
+
 }
 
 function loadBundle(): Registration {
