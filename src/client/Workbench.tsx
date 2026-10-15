@@ -598,9 +598,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       onClick={() => {
                         const path = task.outputPath
                         if (path === undefined) return
-                        const registered = assets.find(asset => asset.path === path)
-                        if (registered === undefined) { setSelectedId(undefined); setPreviewPath({ path, kind: task.kind }) }
-                        else { setPreviewPath(undefined); setSelectedId(registered.id) }
+                        // 一律按路径预览：该产物可能登记在**别的项目**里，
+                        // 那样 assets（按当前项目过滤）里根本没有它。
+                        setPreviewPath({ path, kind: task.kind })
+                        setSelectedId(assets.find(asset => asset.path === path)?.id)
                       }}
                       style={{
                         flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

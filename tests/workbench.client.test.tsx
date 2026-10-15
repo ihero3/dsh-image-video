@@ -386,6 +386,27 @@ describe('workbench project and asset flow', () => {
     expect(host.calls.filter(call => call === 'assets/attach')).toHaveLength(1)
   })
 
+  it('previews a task output registered in another project by path', async () => {
+    const path = '/tmp/outputs/other-project.png'
+    const finished: TaskRecord = {
+      schemaVersion: 1, id: 'tsk-other', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      model: 'minimax-image-01', outputPath: path, bytes: 512,
+      createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
+    }
+    // 该产出登记在别的项目：当前项目的 assets 里没有它，预览仍应按路径显示
+    const host = fakeApi({ tasks: [finished] })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-other', name: '别的项目',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(new RegExp(en.statusSucceeded))
+
+    fireEvent.click(await screen.findByRole('button', { name: `${en.previewOutput} tsk-other` }))
+    const image = await screen.findByRole('img', { name: 'other-project.png' })
+    expect(image.getAttribute('src')).toBe('/outputs/other-project.png')
+  })
+
   it('previews a task output straight from the task row', async () => {
     const finished: TaskRecord = {
       schemaVersion: 1, id: 'tsk-out', kind: 'image', status: 'succeeded', provider: 'threerouter',
