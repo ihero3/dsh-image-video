@@ -148,7 +148,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<string | undefined>(undefined)
+  const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
   const activeProject = projects.find(project => project.id === activeId)
   const selectedAsset = assets.find(asset => asset.id === selectedId)
@@ -165,7 +165,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     try {
       await action()
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error))
+      setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
     } finally {
       setBusy(false)
     }
@@ -230,7 +230,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         setAssets(await apiRef.current.listAssets(activeId))
         await loadResources(activeId)
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error))
+        setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
       }
     })()
   }, [activeId, loadResources])
@@ -392,7 +392,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       </nav>
 
       {notice === undefined ? null : (
-        <p style={{ ...MUTED, opacity: 0.9 }} role="status">{t('failed')}: {notice}</p>
+        <p style={{ ...MUTED, opacity: 0.9 }} role="status">
+          {notice.tone === 'error' ? `${t('failed')}: ` : ''}{notice.text}
+        </p>
       )}
 
       <section aria-label={t(MODE_KEYS[mode])} style={PANE}>
@@ -417,14 +419,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 const known = new Set(assets.map(asset => asset.path))
                 const candidate = outputs.find(output => !known.has(output.path))
                 if (candidate === undefined) {
-                  // 目录里全登记过了 vs 目录里根本没有产物，是两件事
-                  setNotice(assets.length === 0 ? t('noOutputs') : t('alreadyRegistered'))
+                  // 目录里全登记过了 vs 目录里根本没有产物，是两件事（都是信息，不是失败）
+                  setNotice({
+                    text: assets.length === 0 ? t('noOutputs') : t('alreadyRegistered'),
+                    tone: 'info',
+                  })
                   return
                 }
                 const attached = await apiRef.current.attachAsset({
                   projectId: project.id, path: candidate.path, kind: candidate.kind, bytes: candidate.bytes,
                 })
-                if (!attached.created) setNotice(t('alreadyRegistered'))
+                if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
                 setAssets(await apiRef.current.listAssets(project.id))
               })
             }}
@@ -645,7 +650,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             projectId: project.id, path, kind: task.kind,
                             bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
                           })
-                          if (!attached.created) setNotice(t('alreadyRegistered'))
+                          if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
                           await apiRef.current.assignTask(task.id, project.id)
                           setAssets(await apiRef.current.listAssets(project.id))
                           await loadTasks()

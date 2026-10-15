@@ -361,6 +361,21 @@ describe('workbench project and asset flow', () => {
     expect(host.projects[0]?.name).toBe('自动保存后')
   })
 
+  it('shows an informational notice without the failure prefix', async () => {
+    const host = fakeApi()
+    render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '提示项目')
+    // 两条产出都登记完，再点一次 → 纯信息提示
+    fireEvent.click(await screen.findByRole('button', { name: en.registerLatest }))
+    await waitFor(() => { expect(host.assets).toHaveLength(1) })
+    fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
+    await waitFor(() => { expect(host.assets).toHaveLength(2) })
+    fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
+    const info = await screen.findByText(new RegExp(en.alreadyRegistered))
+    expect(info.textContent).not.toContain(en.failed)
+  })
+
   it('is idempotent when the same output is registered twice', async () => {
     const path = '/tmp/outputs/from-task.png'
     const finished: TaskRecord = {
@@ -447,6 +462,8 @@ describe('workbench project and asset flow', () => {
     await screen.findByText(en.projectNone)
     fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: '坏项目' } })
     fireEvent.click(screen.getByRole('button', { name: en.create }))
-    expect(await screen.findByText(/host said no/)).toBeTruthy()
+    const failure = await screen.findByText(new RegExp(`host said no`))
+    // 失败提示要带「操作失败」前缀（信息类提示不带，见下一条用例）
+    expect(failure.textContent).toContain(en.failed)
   })
 })
