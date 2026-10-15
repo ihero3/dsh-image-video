@@ -165,6 +165,24 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const projectId = optionalText(payload, 'projectId')
       return { tasks: await deps.store.listTasks(limit ?? undefined, projectId) }
     }
+    // ---- 工作流文档（阶段 4）----------------------------------------------------
+    case 'workflows/list':
+      return { workflows: await deps.store.listWorkflows(text(payload, 'projectId')) }
+    case 'workflows/save':
+      return {
+        workflow: await deps.store.saveWorkflow({
+          id: optionalText(payload, 'id'),
+          projectId: text(payload, 'projectId'),
+          name: optionalText(payload, 'name'),
+          nodes: field(payload, 'nodes') ?? [],
+          edges: field(payload, 'edges') ?? [],
+        }),
+      }
+    case 'workflows/remove':
+      return { removed: await deps.store.removeWorkflow(text(payload, 'id')) }
+    // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
+    case 'maintenance/compact':
+      return { removed: await deps.store.compactAssets() }
     case 'tasks/cancel':
       return { cancelled: deps.registry.cancel(text(payload, 'id')) }
     case 'tasks/running':

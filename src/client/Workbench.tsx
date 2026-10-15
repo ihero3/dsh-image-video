@@ -134,6 +134,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [mode, setMode] = useState<WorkbenchMode>('quick')
   // 工作流文档：画布维度的单一事实源（`T4-1`）。持久化随后端端点接入。
   const [workflow, setWorkflow] = useState<WorkflowRecord | undefined>(undefined)
+  const [workflowState, setWorkflowState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -156,18 +157,54 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
   const activeProject = projects.find(project => project.id === activeId)
-  // 进入工作流模式时为当前项目准备一份空文档（同项目复用，切项目换新）
+  // 进入工作流模式（或切项目）时读回该项目的流程文档；没有就准备一份空文档
   useEffect(() => {
     if (mode !== 'workflow' || activeProject === undefined) return
-    setWorkflow(current => {
-      if (current !== undefined && current.projectId === activeProject.id) return current
-      const stamp = new Date().toISOString()
-      return {
-        schemaVersion: 1, id: newWorkbenchId('wfl'), projectId: activeProject.id,
-        name: `${activeProject.name} 工作流`, nodes: [], edges: [], createdAt: stamp, updatedAt: stamp,
+    const project = activeProject
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listWorkflows(project.id)
+        const existing = rows[0]
+        if (existing !== undefined) { setWorkflow(existing); setWorkflowState('saved'); return }
+        setWorkflow(current => {
+          if (current !== undefined && current.projectId === project.id) return current
+          const stamp = new Date().toISOString()
+          return {
+            schemaVersion: 1, id: newWorkbenchId('wfl'), projectId: project.id,
+            name: `${project.name} 工作流`, nodes: [], edges: [], createdAt: stamp, updatedAt: stamp,
+          }
+        })
+        setWorkflowState('saved')
+      } catch (error) {
+        setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
       }
-    })
+    })()
   }, [mode, activeProject])
+
+  // 画布改动 → 去抖落库（`T4-1` 单一事实源 + 保存四态）
+  const workflowDirty = workflowState === 'dirty'
+  useEffect(() => {
+    if (mode !== 'workflow' || !workflowDirty || workflow === undefined) return
+    const pending = workflow
+    // 后台静默落库：不占全局 busy（用户还能继续拖节点），失败只反映在画布保存态上
+    const timer = setTimeout(() => {
+      void (async () => {
+        setWorkflowState('saving')
+        try {
+          const stored = await apiRef.current.saveWorkflow({
+            id: pending.id, projectId: pending.projectId, name: pending.name,
+            nodes: pending.nodes, edges: pending.edges,
+          })
+          setWorkflow(stored)
+          setWorkflowState('saved')
+        } catch (error) {
+          setWorkflowState('failed')
+          setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+        }
+      })()
+    }, 800)
+    return () => { clearTimeout(timer) }
+  }, [workflowDirty, workflow, mode])
 
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
@@ -427,7 +464,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         ? (
           <section data-workbench-pane="paneCanvas" data-workbench-planned="false" style={{ ...PANE, minHeight: '360px' }}>
             <h3 style={PANE_TITLE}>{t('paneCanvas')}</h3>
-            <WorkflowCanvas record={workflow} onChange={setWorkflow} t={t} />
+            <WorkflowCanvas
+              record={workflow}
+              onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
+              t={t}
+            />
+            <p style={MUTED} data-workflow-save={workflowState} role="status">
+              {t(workflowState === 'dirty' ? 'saveDirty' : workflowState === 'saving' ? 'saveSaving' : workflowState === 'failed' ? 'saveFailed' : 'saveSaved')}
+            </p>
           </section>
         )
         : null}
@@ -462,6 +506,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             }}
           >
             {t('registerLatest')}
+          </button>
+          <button
+            type="button"
+            style={{ ...BUTTON, marginBottom: '6px' }}
+            disabled={busy || activeProject === undefined}
+            aria-label={t('compactAssets')}
+            onClick={() => {
+              void run(async () => {
+                const project = activeProject
+                if (project === undefined) return
+                const removed = await apiRef.current.compactAssets()
+                setAssets(await apiRef.current.listAssets(project.id))
+                setNotice({ text: `${t('compacted')} · ${removed}`, tone: 'info' })
+              })
+            }}
+          >
+            {t('compactAssets')}
           </button>
           <select
             aria-label={t('filterAll')}

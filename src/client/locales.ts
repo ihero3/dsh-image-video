@@ -41,6 +41,9 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'canvasSaved'
+  | 'compacted'
+  | 'compactAssets'
   | 'paneCanvas'
   | 'canvasEdgesCount'
   | 'canvasNodesCount'
@@ -156,6 +159,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  canvasSaved: 'Canvas saved',
+  compacted: 'Merged duplicate records',
+  compactAssets: 'Merge duplicate records',
   paneCanvas: 'Workflow canvas',
   canvasEdgesCount: 'links',
   canvasNodesCount: 'nodes',
@@ -269,6 +275,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  canvasSaved: '画布已保存',
+  compacted: '已整理重复记录',
+  compactAssets: '整理重复记录',
   paneCanvas: '工作流画布',
   canvasEdgesCount: '条连线',
   canvasNodesCount: '个节点',

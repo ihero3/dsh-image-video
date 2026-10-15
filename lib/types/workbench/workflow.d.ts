@@ -77,6 +77,31 @@ export interface WorkflowRecord {
  * 参数语义与对话里的 `generate_video` 对齐（`R-FLW-4`）。
  */
 export declare const NODE_CATALOG: readonly NodeKindSpec[];
+/** 画布规模上限：挡住畸形载荷，也给前端一个明确的边界。 */
+export declare const MAX_WORKFLOW_NODES = 200;
+/** 连线数量上限。 */
+export declare const MAX_WORKFLOW_EDGES = 400;
+/**
+ * 校验一个节点种类。
+ * @param value - 原始值。
+ * @returns 目录里的种类。
+ * @throws {Error} 当它不是已知种类。
+ */
+export declare function normalizeNodeKind(value: unknown): WorkflowNodeKind;
+/**
+ * 校验画布的节点与连线。
+ *
+ * 只做"结构可信"这一层（种类存在、坐标是有限数、连线两端都在图里、不含自环、
+ * 不超规模）——语义校验（必填参数、端口类型、环检测）属于 `T4-3`，跑在图执行前。
+ * @param nodes - 待校验节点。
+ * @param edges - 待校验连线。
+ * @returns 归一化后的节点与连线。
+ * @throws {Error} 结构不合法时。
+ */
+export declare function normalizeGraph(nodes: unknown, edges: unknown): {
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+};
 /** 取一个节点种类的事实。 */
 export declare function nodeSpec(kind: WorkflowNodeKind): NodeKindSpec;
 /** 该种类当前能否加入画布。 */

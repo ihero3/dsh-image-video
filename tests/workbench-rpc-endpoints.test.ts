@@ -65,6 +65,27 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ projects: ProjectRecord[] }>('projects/list')).toEqual({ projects: [] })
   })
 
+  it('stores workflow documents and compacts duplicate assets through the channel', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '流程' })
+    const saved = await ok<{ workflow: { id: string; nodes: unknown[] } }>('workflows/save', {
+      projectId: created.project.id, name: '模板', edges: [],
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: {} }],
+    })
+    expect(saved.workflow.id).toMatch(/^wfl-/)
+    expect((await ok<{ workflows: unknown[] }>('workflows/list', { projectId: created.project.id })).workflows).toHaveLength(1)
+    expect(await ok<{ removed: boolean }>('workflows/remove', { id: saved.workflow.id })).toEqual({ removed: true })
+
+    // 结构不合法的图要报成载荷错误，而不是静默存下来
+    const bad = await handler('workflows/save', {
+      projectId: created.project.id, nodes: [{ id: 'a', kind: 'script', position: { x: 0, y: 0 } }],
+      edges: [{ source: 'a', target: 'a' }],
+    }, new AbortController().signal, {} as never)
+    expect(bad.ok).toBe(false)
+
+    expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
+  })
+
   it('renames projects and manages resources through the channel', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '旧名' })

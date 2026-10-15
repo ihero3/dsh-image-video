@@ -5,22 +5,11 @@
  * 只验"交互 + 单一事实源"这条边界：节点库能加节点、参数写进 `WorkflowRecord`、
  * 连线可删、**选择状态不进文档**（`R-FLW-1`）。
  */
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { WorkflowCanvas } from '../src/client/WorkflowCanvas.tsx'
 import { en, type WorkbenchLocaleKey } from '../src/client/locales.ts'
 import type { WorkflowRecord } from '../src/workbench/workflow.ts'
-
-// jsdom 没有 ResizeObserver，而 @xyflow/react 用它测量视口与节点
-beforeAll(() => {
-  if (typeof globalThis.ResizeObserver === 'undefined') {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    } as unknown as typeof ResizeObserver
-  }
-})
 
 // 每个用例互不干扰：上一次挂载的画布必须卸载，否则 screen 会查到重复元素
 afterEach(() => { cleanup() })

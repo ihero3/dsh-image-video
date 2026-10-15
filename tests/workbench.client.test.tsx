@@ -15,6 +15,7 @@ import { Workbench, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import type { WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
+import type { WorkflowRecord } from '../src/workbench/workflow.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
@@ -33,11 +34,17 @@ const OUTPUT_VIDEO: OutputFile = {
 }
 
 /** In-memory stand-in for the host API, recording the calls it received. */
-function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[]; assets?: AssetRecord[] } = {}) {
+function fakeApi(options: {
+  failHealth?: string
+  tasks?: TaskRecord[]
+  assets?: AssetRecord[]
+  workflows?: WorkflowRecord[]
+} = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const resources: ResourceRecord[] = []
+  const workflows: WorkflowRecord[] = [...(options.workflows ?? [])]
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -117,6 +124,46 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[]; assets?: 
       return true
     },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    listWorkflows: async (projectId) => {
+      calls.push('workflows/list')
+      return workflows.filter(workflow => workflow.projectId === projectId)
+    },
+    saveWorkflow: async input => {
+      calls.push('workflows/save')
+      const stamp = '2026-10-15T00:00:00.000Z'
+      const existing = workflows.find(workflow => workflow.id === input.id)
+      const record: WorkflowRecord = {
+        schemaVersion: 1,
+        id: existing?.id ?? `wfl-${workflows.length + 1}`,
+        projectId: input.projectId,
+        name: input.name ?? '未命名工作流',
+        nodes: input.nodes as WorkflowRecord['nodes'],
+        edges: input.edges as WorkflowRecord['edges'],
+        createdAt: existing?.createdAt ?? stamp,
+        updatedAt: stamp,
+      }
+      if (existing === undefined) workflows.push(record)
+      else workflows[workflows.indexOf(existing)] = record
+      return record
+    },
+    removeWorkflow: async (id) => {
+      calls.push('workflows/remove')
+      const index = workflows.findIndex(workflow => workflow.id === id)
+      if (index < 0) return false
+      workflows.splice(index, 1)
+      return true
+    },
+    compactAssets: async () => {
+      calls.push('maintenance/compact')
+      const seen = new Map<string, AssetRecord>()
+      let removed = 0
+      for (const asset of [...assets]) {
+        const key = `${asset.projectId}\u0000${asset.path}`
+        if (seen.has(key)) { removed += 1; assets.splice(assets.indexOf(asset), 1); continue }
+        seen.set(key, asset)
+      }
+      return removed
+    },
     cancelTask: async (id) => {
       calls.push('tasks/cancel')
       const index = tasks.findIndex(task => task.id === id)
@@ -133,7 +180,7 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[]; assets?: 
     },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
   }
-  return { api, calls, projects, assets, tasks, resources }
+  return { api, calls, projects, assets, tasks, resources, workflows }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -315,6 +362,66 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(root.getAttribute('data-workbench-save')).toBe('saved') })
     expect(host.projects[0]?.name).toBe('新名字')
     expect(screen.getByRole('option', { name: '新名字' })).toBeTruthy()
+  })
+
+  it('loads the stored workflow when entering the workflow mode', async () => {
+    const host = fakeApi({
+      workflows: [{
+        schemaVersion: 1, id: 'wfl-seed', projectId: 'prj-1', name: '既有流程',
+        nodes: [{ id: 'n1', kind: 'script', position: { x: 12, y: 34 }, params: { text: '第一句' } }],
+        edges: [],
+        createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+      }],
+    })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '流程项目',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-canvas]')?.getAttribute('data-workflow-nodes')).toBe('1')
+    })
+    expect(host.calls).toContain('workflows/list')
+    expect(view.container.querySelector('[data-workflow-node="script"]')).toBeTruthy()
+  })
+
+  it('auto-saves canvas edits into the stored workflow', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '画布项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-canvas]')).toBeTruthy() })
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(host.calls).toContain('workflows/save') }, { timeout: 4000 })
+    expect(host.workflows[0]?.nodes).toHaveLength(1)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-save]')?.getAttribute('data-workflow-save')).toBe('saved')
+    }, { timeout: 4000 })
+  })
+
+  it('merges duplicate asset records from the assets pane', async () => {
+    const duplicate = (id: string): AssetRecord => ({
+      schemaVersion: 1, id, projectId: 'prj-1', kind: 'image', path: '/tmp/outputs/dup.png',
+      bytes: 1024, createdAt: '2026-10-14T00:00:00.000Z',
+    })
+    const host = fakeApi({ assets: [duplicate('ast-a'), duplicate('ast-b')] })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '去重项目',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workbench-assets]')?.getAttribute('data-workbench-assets')).toBe('2')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.compactAssets }))
+    await waitFor(() => { expect(host.calls).toContain('maintenance/compact') })
+    expect(host.assets).toHaveLength(1)
+    expect(await screen.findByText(new RegExp(en.compacted))).toBeTruthy()
   })
 
   it('filters assets by media kind', async () => {

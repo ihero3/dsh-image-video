@@ -184,6 +184,80 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
 
 const BY_KIND = new Map(NODE_CATALOG.map(spec => [spec.kind, spec]))
 
+/** 画布规模上限：挡住畸形载荷，也给前端一个明确的边界。 */
+export const MAX_WORKFLOW_NODES = 200
+/** 连线数量上限。 */
+export const MAX_WORKFLOW_EDGES = 400
+
+/**
+ * 校验一个节点种类。
+ * @param value - 原始值。
+ * @returns 目录里的种类。
+ * @throws {Error} 当它不是已知种类。
+ */
+export function normalizeNodeKind(value: unknown): WorkflowNodeKind {
+  if (typeof value !== 'string' || !BY_KIND.has(value as WorkflowNodeKind)) {
+    throw new Error(`unknown workflow node kind: ${String(value)}`)
+  }
+  return value as WorkflowNodeKind
+}
+
+/**
+ * 校验画布的节点与连线。
+ *
+ * 只做"结构可信"这一层（种类存在、坐标是有限数、连线两端都在图里、不含自环、
+ * 不超规模）——语义校验（必填参数、端口类型、环检测）属于 `T4-3`，跑在图执行前。
+ * @param nodes - 待校验节点。
+ * @param edges - 待校验连线。
+ * @returns 归一化后的节点与连线。
+ * @throws {Error} 结构不合法时。
+ */
+export function normalizeGraph(
+  nodes: unknown,
+  edges: unknown,
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) throw new Error('workflow nodes/edges must be arrays')
+  if (nodes.length > MAX_WORKFLOW_NODES) throw new Error(`workflow has more than ${MAX_WORKFLOW_NODES} nodes`)
+  if (edges.length > MAX_WORKFLOW_EDGES) throw new Error(`workflow has more than ${MAX_WORKFLOW_EDGES} edges`)
+
+  const seen = new Set<string>()
+  const cleanNodes = nodes.map(raw => {
+    if (typeof raw !== 'object' || raw === null) throw new Error('workflow node must be an object')
+    const node = raw as Record<string, unknown>
+    const id = typeof node.id === 'string' && node.id !== '' ? node.id : undefined
+    if (id === undefined) throw new Error('workflow node needs a non-empty id')
+    if (seen.has(id)) throw new Error(`duplicate workflow node id: ${id}`)
+    seen.add(id)
+    const kind = normalizeNodeKind(node.kind)
+    const position = (typeof node.position === 'object' && node.position !== null ? node.position : {}) as Record<string, unknown>
+    const x = Number(position.x)
+    const y = Number(position.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`workflow node ${id} needs finite coordinates`)
+    const params = (typeof node.params === 'object' && node.params !== null ? node.params : {}) as Record<string, unknown>
+    const cleanParams: Record<string, NodeParamValue> = {}
+    for (const field of nodeSpec(kind).params) {
+      const value = params[field.id]
+      if (value === undefined || value === null) { cleanParams[field.id] = field.default; continue }
+      if (typeof value === 'string' || typeof value === 'boolean') { cleanParams[field.id] = value; continue }
+      if (typeof value === 'number' && Number.isFinite(value)) { cleanParams[field.id] = value; continue }
+      throw new Error(`workflow node ${id} parameter ${field.id} has an unsupported value`)
+    }
+    return { id, kind, position: { x: Math.round(x), y: Math.round(y) }, params: cleanParams }
+  })
+
+  const cleanEdges = edges.map(raw => {
+    if (typeof raw !== 'object' || raw === null) throw new Error('workflow edge must be an object')
+    const edge = raw as Record<string, unknown>
+    const source = typeof edge.source === 'string' ? edge.source : ''
+    const target = typeof edge.target === 'string' ? edge.target : ''
+    if (!seen.has(source) || !seen.has(target)) throw new Error('workflow edge must connect two nodes in the graph')
+    if (source === target) throw new Error(`workflow edge ${source} loops onto itself`)
+    const id = typeof edge.id === 'string' && edge.id !== '' ? edge.id : `${source}->${target}`
+    return { id, source, target }
+  })
+  return { nodes: cleanNodes, edges: cleanEdges }
+}
+
 /** 取一个节点种类的事实。 */
 export function nodeSpec(kind: WorkflowNodeKind): NodeKindSpec {
   const spec = BY_KIND.get(kind)

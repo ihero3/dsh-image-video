@@ -8,6 +8,8 @@ export default defineConfig({
   },
   test: {
     globals: false,
+    // jsdom 缺口（ResizeObserver 等）统一补，见 tests/setup-dom.ts
+    setupFiles: ['tests/setup-dom.ts'],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     resolve: {
       tsconfigPaths: true,

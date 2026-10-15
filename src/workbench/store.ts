@@ -16,6 +16,7 @@ import {
   type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
+import { normalizeGraph, type WorkflowRecord } from './workflow.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
 interface WorkbenchDocument {
@@ -26,6 +27,8 @@ interface WorkbenchDocument {
   tasks: TaskRecord[]
   /** Reusable creative resources (roles, scenes, props, brands, styles, voices). */
   resources: ResourceRecord[]
+  /** Workflow documents (one per project, plus copies the user made). */
+  workflows: WorkflowRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -128,6 +131,7 @@ export class WorkbenchStore {
     if (document.projects.length === before) return false
     document.assets = document.assets.filter(asset => asset.projectId !== id)
     document.resources = document.resources.filter(resource => resource.projectId !== id)
+    document.workflows = document.workflows.filter(workflow => workflow.projectId !== id)
     await this.save(document)
     return true
   }
@@ -273,6 +277,97 @@ export class WorkbenchStore {
   }
 
   /**
+   * List a project's workflow documents, newest first.
+   * @param projectId - project id.
+   * @returns the records.
+   */
+  async listWorkflows(projectId: string): Promise<WorkflowRecord[]> {
+    const document = await this.load()
+    return document.workflows
+      .filter(workflow => workflow.projectId === projectId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  }
+
+  /**
+   * Create or update a workflow document.
+   * @param input - id to update (optional), project, name, nodes and edges.
+   * @returns the stored record.
+   * @throws {Error} when the project is unknown or the graph is malformed.
+   */
+  async saveWorkflow(input: {
+    id?: string
+    projectId: string
+    name?: unknown
+    nodes: unknown
+    edges: unknown
+  }): Promise<WorkflowRecord> {
+    const document = await this.load()
+    const project = document.projects.find(candidate => candidate.id === input.projectId)
+    if (project === undefined) throw new Error(`unknown project: ${input.projectId}`)
+    const graph = normalizeGraph(input.nodes, input.edges)
+    const stamp = this.now().toISOString()
+    const existing = input.id === undefined ? undefined : document.workflows.find(row => row.id === input.id)
+    const name = input.name === undefined || input.name === '' ? '未命名工作流' : String(input.name).slice(0, 80)
+    const record: WorkflowRecord = {
+      schemaVersion: 1,
+      id: existing?.id ?? newWorkbenchId('wfl'),
+      projectId: project.id,
+      name,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      createdAt: existing?.createdAt ?? stamp,
+      updatedAt: stamp,
+    }
+    document.workflows = existing === undefined
+      ? [...document.workflows, record]
+      : document.workflows.map(row => (row.id === record.id ? record : row))
+    await this.save(document)
+    return record
+  }
+
+  /**
+   * Remove one workflow document.
+   * @param id - workflow id.
+   * @returns `true` when a record was removed.
+   */
+  async removeWorkflow(id: string): Promise<boolean> {
+    const document = await this.load()
+    const before = document.workflows.length
+    document.workflows = document.workflows.filter(workflow => workflow.id !== id)
+    if (document.workflows.length === before) return false
+    await this.save(document)
+    return true
+  }
+
+  /**
+   * Collapse duplicate asset records (same project + same path) into the earliest one.
+   *
+   * Idempotent registration landed after some duplicates were already written, and the
+   * panel showed one row per record. Deduplication has to happen *here* because the
+   * process caches the document in memory — an outside edit would be overwritten by
+   * the next save.
+   * @returns how many records were removed.
+   */
+  async compactAssets(): Promise<number> {
+    const document = await this.load()
+    const seen = new Map<string, AssetRecord>()
+    const kept: AssetRecord[] = []
+    for (const asset of document.assets) {
+      const key = `${asset.projectId}\u0000${asset.path}`
+      const previous = seen.get(key)
+      if (previous === undefined) { seen.set(key, asset); kept.push(asset); continue }
+      const earliest = asset.createdAt < previous.createdAt ? asset : previous
+      if (earliest === asset) kept[kept.indexOf(previous)] = asset
+      seen.set(key, earliest)
+    }
+    const removed = document.assets.length - kept.length
+    if (removed === 0) return 0
+    document.assets = kept
+    await this.save(document)
+    return removed
+  }
+
+  /**
    * Record one generation attempt.
    * @param input - what the tool reported.
    * @returns the stored record.
@@ -371,10 +466,13 @@ export class WorkbenchStore {
         assets: raw.assets ?? [],
         tasks: raw.tasks ?? [],
         resources: raw.resources ?? [],
+        workflows: raw.workflows ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      this.cache = { schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [] }
+      this.cache = {
+        schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
+      }
     }
     return this.cache
   }
