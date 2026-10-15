@@ -17,6 +17,7 @@ import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contra
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
+import type { WorkflowRunner } from '../workbench/runner.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
 } from '../workbench/records.ts'
@@ -61,6 +62,8 @@ export interface WorkbenchRpcDeps {
   store: WorkbenchStore
   /** In-flight generations the workbench may cancel. */
   registry: GenerationRegistry
+  /** 图运行器（`T4-4`）。 */
+  runner: WorkflowRunner
 }
 
 /**
@@ -180,6 +183,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
     case 'workflows/remove':
       return { removed: await deps.store.removeWorkflow(text(payload, 'id')) }
+    // ---- 运行（阶段 4，T4-4）----------------------------------------------------
+    case 'workflows/run': {
+      const workflowId = text(payload, 'workflowId')
+      const workflow = await deps.store.findWorkflow(workflowId)
+      if (workflow === undefined) throw new Error(`unknown workflow: ${workflowId}`)
+      return { run: await deps.runner.begin(workflow) }
+    }
+    case 'workflows/runs':
+      return {
+        runs: await deps.store.listRuns(text(payload, 'projectId'), optionalText(payload, 'workflowId')),
+      }
+    case 'workflows/run-cancel':
+      return { cancelled: deps.runner.cancel(text(payload, 'runId')) }
+    case 'workflows/run-retry': {
+      const runId = text(payload, 'runId')
+      const previous = await deps.store.findRun(runId)
+      if (previous === undefined) throw new Error(`unknown run: ${runId}`)
+      return { run: await deps.runner.retry(previous) }
+    }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
     case 'maintenance/compact':
       return { removed: await deps.store.compactAssets() }

@@ -5,10 +5,11 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 import { GenerationRegistry } from '../src/workbench/cancel.ts'
+import { WorkflowRunner } from '../src/workbench/runner.ts'
 import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
@@ -21,7 +22,14 @@ async function makeHandler() {
   await writeFile(join(outputsDir, 'notes.txt'), 'ignored')
   const store = new WorkbenchStore({ directory: dataDir, now: () => new Date('2026-10-14T00:00:00.000Z') })
   const registry = new GenerationRegistry()
-  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry })
+  let runSequence = 0
+  const runner = new WorkflowRunner({
+    store,
+    newRunId: () => `run-${++runSequence}`,
+    generateImage: { async execute() { return { localPath: '/tmp/out/shot.png', bytes: 10 } } },
+    generateVideo: { async execute() { return { videoPath: '/tmp/out/clip.mp4', bytes: 20 } } },
+  })
+  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry, runner })
   /** Call one endpoint and fail the test on a refused envelope. */
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
     const result = await handler(endpoint, payload, new AbortController().signal, {} as never)
@@ -84,6 +92,35 @@ describe('workbench channel endpoints', () => {
     expect(bad.ok).toBe(false)
 
     expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
+  })
+
+  it('runs a stored workflow and reports run records through the channel', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '运行' })
+    const saved = await ok<{ workflow: { id: string } }>('workflows/save', {
+      projectId: created.project.id, name: '跑', edges: [],
+      nodes: [{ id: 'i', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '猫' } }],
+    })
+
+    const started = await ok<{ run: { id: string; status: string } }>('workflows/run', { workflowId: saved.workflow.id })
+    expect(started.run).toMatchObject({ id: 'run-1', status: 'running' })
+
+    // 后台执行会逐节点落库：轮询到成功
+    await vi.waitFor(async () => {
+      const runs = await ok<{ runs: Array<{ status: string; nodeRuns: Array<{ outputPath?: string }> }> }>(
+        'workflows/runs', { projectId: created.project.id },
+      )
+      expect(runs.runs[0]?.status).toBe('succeeded')
+      expect(runs.runs[0]?.nodeRuns[0]?.outputPath).toBe('/tmp/out/shot.png')
+    })
+
+    // 已结束的运行取消不了；重试会新建一条记录
+    expect(await ok<{ cancelled: boolean }>('workflows/run-cancel', { runId: 'run-1' })).toEqual({ cancelled: false })
+    const retried = await ok<{ run: { id: string } }>('workflows/run-retry', { runId: 'run-1' })
+    expect(retried.run.id).toBe('run-2')
+
+    const unknown = await handler('workflows/run', { workflowId: 'nope' }, new AbortController().signal, {} as never)
+    expect(unknown.ok).toBe(false)
   })
 
   it('renames projects and manages resources through the channel', async () => {

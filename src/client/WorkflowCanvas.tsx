@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react'
 import {
   NODE_CATALOG, defaultParams, nodeSpec, validateWorkflow,
-  type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord,
+  type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
@@ -42,6 +42,35 @@ export interface WorkflowCanvasProps {
   readonly onChange: (record: WorkflowRecord) => void
   /** 文案取用。 */
   readonly t: (key: WorkbenchLocaleKey) => string
+  /** 运行控制（`T4-4`）：状态展示 + 起跑/取消/重试。 */
+  readonly run?: {
+    readonly latest?: WorkflowRunRecord
+    readonly busy: boolean
+    readonly onStart: () => void
+    readonly onCancel: () => void
+    readonly onRetry: () => void
+  }
+}
+
+/** 运行状态 → 文案键。 */
+function runStatusKey(status: 'running' | 'succeeded' | 'failed' | 'cancelled'): WorkbenchLocaleKey {
+  switch (status) {
+    case 'running': return 'statusRunning'
+    case 'succeeded': return 'statusSucceeded'
+    case 'failed': return 'statusFailed'
+    case 'cancelled': return 'statusCancelled'
+  }
+}
+
+/** 节点运行状态 → 文案键。 */
+function nodeStatusKey(status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped'): WorkbenchLocaleKey {
+  switch (status) {
+    case 'running': return 'statusRunning'
+    case 'succeeded': return 'statusSucceeded'
+    case 'failed': return 'statusFailed'
+    case 'cancelled': return 'statusCancelled'
+    case 'skipped': return 'statusSkipped'
+  }
 }
 
 /** 注入官方样式表（只注入一次；模块加载器不处理 CSS 文件）。 */
@@ -124,7 +153,7 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
@@ -275,6 +304,48 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
               </span>
             ))}
         </div>
+
+        {run === undefined ? null : (
+          <div data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}
+            style={{ display: 'grid', gap: '3px', fontSize: '11px' }}>
+            <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('runTitle')}</strong>
+            {run.latest === undefined
+              ? <span style={{ opacity: 0.75 }}>{t('runNone')}</span>
+              : (
+                <>
+                  <span>
+                    {t(runStatusKey(run.latest.status))}
+                    {' · '}
+                    {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+                    {run.latest.error === undefined ? '' : ` · ${run.latest.error.slice(0, 80)}`}
+                  </span>
+                  {run.latest.nodeRuns.map(node => (
+                    <span key={node.nodeId} data-workflow-node-run={node.nodeId} data-workflow-node-status={node.status}
+                      style={{ opacity: 0.85 }}>
+                      {node.nodeId} · {t(nodeStatusKey(node.status))}
+                      {node.outputPath === undefined ? '' : ` · ${node.outputPath.split('/').pop() ?? ''}`}
+                      {node.error === undefined ? '' : ` · ${node.error.slice(0, 60)}`}
+                    </span>
+                  ))}
+                </>
+              )}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              <button type="button" data-workflow-run-action="start" style={{ fontSize: '11px' }}
+                disabled={run.busy || !validation.ok || run.latest?.status === 'running'}
+                onClick={run.onStart}>
+                {t('runStart')}
+              </button>
+              <button type="button" data-workflow-run-action="cancel" style={{ fontSize: '11px' }}
+                disabled={run.latest?.status !== 'running'} onClick={run.onCancel}>
+                {t('runCancel')}
+              </button>
+              <button type="button" data-workflow-run-action="retry" style={{ fontSize: '11px' }}
+                disabled={run.latest?.status !== 'failed'} onClick={run.onRetry}>
+                {t('runRetry')}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div data-workflow-flow="true" style={{ height: '260px', border: '1px solid var(--dsh-border, #3a3a3a)', borderRadius: '8px', overflow: 'hidden' }}>
           <ReactFlow

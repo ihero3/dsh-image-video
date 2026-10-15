@@ -42,6 +42,7 @@ import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { withTaskLedger } from './workbench/ledger.ts'
 import { GenerationRegistry } from './workbench/cancel.ts'
+import { WorkflowRunner, type GenerationTool } from './workbench/runner.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -139,6 +140,7 @@ export function apply(ctx: Context, config: Config): void {
 
   // 上次进程留下的"运行中"条目本进程无法再取消，启动时如实收尾（避免永远显示运行中）。
   void workbenchStore.failStaleRunning('宿主重启中断（无法继续等待该任务）').catch(() => {})
+  void workbenchStore.failStaleRuns('宿主重启中断（无法继续执行这次运行）').catch(() => {})
 
   // 生效配置摘要（不含 key 明文）：把「哪个 profile/patch 生效、默认服务商与默认模型
   // 究竟是什么、图片提交走哪条传输、水印开没开、结果落到哪个绝对目录」一次性写进
@@ -182,6 +184,18 @@ export function apply(ctx: Context, config: Config): void {
   // settings 持久默认回落层：defaults 路由与媒体模式注入共用同一取值口径。
   const persistedDefaults = extractPersistedDefaults(config)
 
+  // 图运行器要复用**同一对**生成工具（参数语义、账本、取消都一致）。
+  // generate_image 只在 attachments 注入回调里注册，顺序不定，所以这里放槽位、
+  // 用惰性代理调用；服务缺失时给出诚实错误，而不是伪造成功。
+  const generationTools: { image?: GenerationTool; video?: GenerationTool } = {}
+  const proxyTool = (slot: 'image' | 'video'): GenerationTool => ({
+    async execute(args, exec) {
+      const tool = generationTools[slot]
+      if (tool === undefined) throw new Error(`generate_${slot} is unavailable in this host`)
+      return tool.execute(args, exec)
+    },
+  })
+
   // generate_image：显式声明 attachments 依赖。
   // callback 在 attachments 服务可用时执行，fiber-scoped 注册工具；
   // 服务撤销时 fiber dispose，工具自动注销。对齐官方 read-image 模式。
@@ -190,17 +204,21 @@ export function apply(ctx: Context, config: Config): void {
     // ctx.inject 回调保证 attachments 已注入；defensive check 仅防御直接调用方
     if (!attachments) return
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
-    imageCtx.tools.register(withTaskLedger(
+    const imageTool = withTaskLedger(
       createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }),
       { store: workbenchStore, registry: generationRegistry, kind: 'image' },
-    ))
+    )
+    imageCtx.tools.register(imageTool)
+    generationTools.image = imageTool as unknown as GenerationTool
   })
 
   // generate_video：不依赖 attachments，始终注册。
-  ctx.tools.register(withTaskLedger(
+  const videoTool = withTaskLedger(
     createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }),
     { store: workbenchStore, registry: generationRegistry, kind: 'video' },
-  ))
+  )
+  ctx.tools.register(videoTool)
+  generationTools.video = videoTool as unknown as GenerationTool
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -242,8 +260,16 @@ export function apply(ctx: Context, config: Config): void {
   // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
   // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
+    // 图运行器复用对话里的同一对生成工具（参数语义一致，账本/取消自动继承）
+    const workflowRunner = new WorkflowRunner({
+      store: workbenchStore,
+      generateImage: proxyTool('image'),
+      generateVideo: proxyTool('video'),
+      onError: message => { ctx.logger?.warn?.(`image-video workbench: ${message}`) },
+    })
     registerWorkbenchRpc(rpcCtx, {
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
+      runner: workflowRunner,
     })
   })
 }

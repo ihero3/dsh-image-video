@@ -16,7 +16,7 @@ import {
   type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
-import { normalizeGraph, type WorkflowRecord } from './workflow.ts'
+import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
 interface WorkbenchDocument {
@@ -29,6 +29,8 @@ interface WorkbenchDocument {
   resources: ResourceRecord[]
   /** Workflow documents (one per project, plus copies the user made). */
   workflows: WorkflowRecord[]
+  /** Workflow runs, newest last (bounded when written). */
+  runs: WorkflowRunRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -132,6 +134,7 @@ export class WorkbenchStore {
     document.assets = document.assets.filter(asset => asset.projectId !== id)
     document.resources = document.resources.filter(resource => resource.projectId !== id)
     document.workflows = document.workflows.filter(workflow => workflow.projectId !== id)
+    document.runs = document.runs.filter(run => run.projectId !== id)
     await this.save(document)
     return true
   }
@@ -340,6 +343,26 @@ export class WorkbenchStore {
   }
 
   /**
+   * Find one workflow document by id.
+   * @param id - workflow id.
+   * @returns the record, or `undefined`.
+   */
+  async findWorkflow(id: string): Promise<WorkflowRecord | undefined> {
+    const document = await this.load()
+    return document.workflows.find(workflow => workflow.id === id)
+  }
+
+  /**
+   * Find one workflow run by id.
+   * @param id - run id.
+   * @returns the record, or `undefined`.
+   */
+  async findRun(id: string): Promise<WorkflowRunRecord | undefined> {
+    const document = await this.load()
+    return document.runs.find(run => run.id === id)
+  }
+
+  /**
    * Collapse duplicate asset records (same project + same path) into the earliest one.
    *
    * Idempotent registration landed after some duplicates were already written, and the
@@ -365,6 +388,72 @@ export class WorkbenchStore {
     document.assets = kept
     await this.save(document)
     return removed
+  }
+
+  /**
+   * Append one workflow-run record.
+   * @param run - the record to store.
+   * @returns the stored record.
+   */
+  async recordRun(run: WorkflowRunRecord): Promise<WorkflowRunRecord> {
+    const document = await this.load()
+    document.runs.push(run)
+    // 只保留最近 50 次运行，避免台账本无界增长
+    if (document.runs.length > 50) document.runs = document.runs.slice(-50)
+    await this.save(document)
+    return run
+  }
+
+  /**
+   * Patch a workflow run in place.
+   * @param id - run id.
+   * @param patch - fields to replace.
+   * @returns the updated record, or `undefined` when the id is unknown.
+   */
+  async updateRun(id: string, patch: Partial<Omit<WorkflowRunRecord, 'id' | 'schemaVersion'>>): Promise<WorkflowRunRecord | undefined> {
+    const document = await this.load()
+    const current = document.runs.find(run => run.id === id)
+    if (current === undefined) return undefined
+    const updated: WorkflowRunRecord = { ...current, ...patch }
+    document.runs = document.runs.map(run => (run.id === id ? updated : run))
+    await this.save(document)
+    return updated
+  }
+
+  /**
+   * List workflow runs, newest first.
+   * @param projectId - project id.
+   * @param workflowId - optional workflow filter.
+   * @returns the records.
+   */
+  async listRuns(projectId: string, workflowId?: string): Promise<WorkflowRunRecord[]> {
+    const document = await this.load()
+    return document.runs
+      .filter(run => run.projectId === projectId && (workflowId === undefined || run.workflowId === workflowId))
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+  }
+
+  /**
+   * Close runs (and their in-flight nodes) left `running` by a process that went away.
+   * @param reason - message filed with each closed run.
+   * @returns how many runs were closed.
+   */
+  async failStaleRuns(reason: string): Promise<number> {
+    const document = await this.load()
+    const stamp = this.now().toISOString()
+    let closed = 0
+    document.runs = document.runs.map(run => {
+      if (run.status !== 'running') return run
+      closed += 1
+      return {
+        ...run, status: 'failed' as const, error: reason, finishedAt: stamp,
+        nodeRuns: run.nodeRuns.map(node => (node.status === 'succeeded' || node.status === 'failed' || node.status === 'cancelled' || node.status === 'skipped'
+          ? node
+          : { ...node, status: 'cancelled' as const, error: reason, finishedAt: stamp })) as readonly WorkflowRunNodeRecord[],
+      }
+    })
+    if (closed > 0) await this.save(document)
+    return closed
   }
 
   /**
@@ -467,11 +556,13 @@ export class WorkbenchStore {
         tasks: raw.tasks ?? [],
         resources: raw.resources ?? [],
         workflows: raw.workflows ?? [],
+        runs: raw.runs ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
+        runs: [],
       }
     }
     return this.cache

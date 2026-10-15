@@ -9,7 +9,7 @@
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
-import type { WorkflowRecord } from '../workbench/workflow.ts'
+import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 
 /** What the workbench UI may ask the host (phase 2, first slice). */
@@ -65,6 +65,14 @@ export interface WorkbenchApi {
   removeWorkflow: (id: string) => Promise<boolean>
   /** Merge duplicate asset records; returns how many were removed. */
   compactAssets: () => Promise<number>
+  /** Start a run of the stored workflow. */
+  runWorkflow: (workflowId: string) => Promise<WorkflowRunRecord>
+  /** Run records for a project (optionally one workflow), newest first. */
+  listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>
+  /** Cancel a running workflow run. */
+  cancelRun: (runId: string) => Promise<boolean>
+  /** Retry only the failed nodes of a run. */
+  retryRun: (runId: string) => Promise<WorkflowRunRecord>
   /** Cancel one running generation (aborts the provider call). */
   cancelTask: (id: string) => Promise<boolean>
   /** File a recorded generation into a project. */
@@ -104,6 +112,11 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     saveWorkflow: async input => (await call<{ workflow: WorkflowRecord }>('workflows/save', input)).workflow,
     removeWorkflow: async id => (await call<{ removed: boolean }>('workflows/remove', { id })).removed,
     compactAssets: async () => (await call<{ removed: number }>('maintenance/compact', {})).removed,
+    runWorkflow: async workflowId => (await call<{ run: WorkflowRunRecord }>('workflows/run', { workflowId })).run,
+    listRuns: async (projectId, workflowId) =>
+      (await call<{ runs: WorkflowRunRecord[] }>('workflows/runs', { projectId, workflowId })).runs,
+    cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,
+    retryRun: async runId => (await call<{ run: WorkflowRunRecord }>('workflows/run-retry', { runId })).run,
     cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,

@@ -1,5 +1,5 @@
 import { type Node } from '@xyflow/react';
-import { type NodeParamValue, type WorkflowNodeKind, type WorkflowRecord } from '../workbench/workflow.ts';
+import { type NodeParamValue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord } from '../workbench/workflow.ts';
 import type { WorkbenchLocaleKey } from './locales.ts';
 /** 画布节点携带的数据（xyflow 要求可索引）。 */
 export interface CanvasNodeData extends Record<string, unknown> {
@@ -18,6 +18,14 @@ export interface WorkflowCanvasProps {
     readonly onChange: (record: WorkflowRecord) => void;
     /** 文案取用。 */
     readonly t: (key: WorkbenchLocaleKey) => string;
+    /** 运行控制（`T4-4`）：状态展示 + 起跑/取消/重试。 */
+    readonly run?: {
+        readonly latest?: WorkflowRunRecord;
+        readonly busy: boolean;
+        readonly onStart: () => void;
+        readonly onCancel: () => void;
+        readonly onRetry: () => void;
+    };
 }
 /** 对外画布组件：套 `ReactFlowProvider` 并注入官方样式。 */
 export declare function WorkflowCanvas(props: WorkflowCanvasProps): JSX.Element;

@@ -15,7 +15,7 @@ import { Workbench, type WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import type { WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
-import type { WorkflowRecord } from '../src/workbench/workflow.ts'
+import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
@@ -45,6 +45,8 @@ function fakeApi(options: {
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const resources: ResourceRecord[] = []
   const workflows: WorkflowRecord[] = [...(options.workflows ?? [])]
+  const runs: WorkflowRunRecord[] = []
+  let runSequence = 0
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -124,6 +126,41 @@ function fakeApi(options: {
       return true
     },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    runWorkflow: async (workflowId) => {
+      calls.push('workflows/run')
+      runSequence += 1
+      const run: WorkflowRunRecord = {
+        schemaVersion: 1, id: `run-${runSequence}`, workflowId, projectId: 'prj-1', status: 'succeeded',
+        graph: { nodes: [], edges: [] },
+        nodeRuns: [{
+          nodeId: 'i', kind: 'image-generate', status: 'succeeded',
+          startedAt: '2026-10-15T00:00:00.000Z', outputPath: '/tmp/out/shot.png',
+        }],
+        startedAt: '2026-10-15T00:00:00.000Z', finishedAt: '2026-10-15T00:00:00.000Z',
+      }
+      runs.unshift(run)
+      return run
+    },
+    listRuns: async () => { calls.push('workflows/runs'); return [...runs] },
+    cancelRun: async (runId) => {
+      calls.push('workflows/run-cancel')
+      const run = runs.find(candidate => candidate.id === runId)
+      if (run === undefined) return false
+      runs[runs.indexOf(run)] = { ...run, status: 'cancelled' }
+      return true
+    },
+    retryRun: async (runId) => {
+      calls.push('workflows/run-retry')
+      const previous = runs.find(candidate => candidate.id === runId)
+      runSequence += 1
+      const run: WorkflowRunRecord = {
+        schemaVersion: 1, id: `run-${runSequence}`, workflowId: previous?.workflowId ?? 'wfl-1',
+        projectId: previous?.projectId ?? 'prj-1', status: 'running', graph: { nodes: [], edges: [] },
+        nodeRuns: [], startedAt: '2026-10-15T00:00:01.000Z',
+      }
+      runs.unshift(run)
+      return run
+    },
     listWorkflows: async (projectId) => {
       calls.push('workflows/list')
       return workflows.filter(workflow => workflow.projectId === projectId)
@@ -385,6 +422,34 @@ describe('workbench project and asset flow', () => {
     })
     expect(host.calls).toContain('workflows/list')
     expect(view.container.querySelector('[data-workflow-node="script"]')).toBeTruthy()
+  })
+
+  it('runs the workflow from the canvas once the graph validates', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '运行项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-canvas]')).toBeTruthy() })
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-run-action="start"]')).toBeTruthy()
+    })
+    // 图不合法（必填提示词为空）时不能起跑
+    expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.change(await screen.findByLabelText(en.paramPrompt), { target: { value: '一只猫' } })
+    await waitFor(() => {
+      expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLButtonElement).disabled).toBe(false)
+    })
+    fireEvent.click(view.container.querySelector('[data-workflow-run-action="start"]') as HTMLElement)
+
+    await waitFor(() => { expect(host.calls).toContain('workflows/run') })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-run]')?.getAttribute('data-workflow-run')).toBe('succeeded')
+    })
+    expect(view.container.querySelector('[data-workflow-node-run="i"]')?.getAttribute('data-workflow-node-status')).toBe('succeeded')
   })
 
   it('auto-saves canvas edits into the stored workflow', async () => {

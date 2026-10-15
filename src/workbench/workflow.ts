@@ -278,6 +278,33 @@ export function defaultParams(kind: WorkflowNodeKind): Record<string, NodeParamV
   return Object.fromEntries(spec.params.map(field => [field.id, field.default]))
 }
 
+/** 一次运行里单个节点的记录。 */
+export interface WorkflowRunNodeRecord {
+  readonly nodeId: string
+  readonly kind: WorkflowNodeKind
+  readonly status: 'succeeded' | 'failed' | 'skipped' | 'cancelled'
+  readonly startedAt: string
+  readonly finishedAt?: string
+  readonly outputPath?: string
+  readonly bytes?: number
+  readonly error?: string
+}
+
+/** 一次运行的记录（含图快照，`R-FLW-6`）。 */
+export interface WorkflowRunRecord {
+  readonly schemaVersion: 1
+  readonly id: string
+  readonly workflowId: string
+  readonly projectId: string
+  readonly status: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  /** 图快照：后续改图不影响已发生的运行记录 */
+  readonly graph: { readonly nodes: readonly WorkflowNode[]; readonly edges: readonly WorkflowEdge[] }
+  readonly nodeRuns: readonly WorkflowRunNodeRecord[]
+  readonly startedAt: string
+  readonly finishedAt?: string
+  readonly error?: string
+}
+
 /** 端口兼容表：目标输入能接受哪些来源输出。`any` 全收；`asset` 可当 `media` 用。 */
 const PORT_ACCEPTS: Record<PortKind, readonly PortKind[]> = {
   any: ['any', 'text', 'media', 'resource', 'asset'],

@@ -16,7 +16,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
-import type { WorkflowRecord } from '../workbench/workflow.ts'
+import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
@@ -135,6 +135,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 工作流文档：画布维度的单一事实源（`T4-1`）。持久化随后端端点接入。
   const [workflow, setWorkflow] = useState<WorkflowRecord | undefined>(undefined)
   const [workflowState, setWorkflowState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
+  const [latestRun, setLatestRun] = useState<WorkflowRunRecord | undefined>(undefined)
+  const [runBusy, setRunBusy] = useState(false)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -180,6 +182,44 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       }
     })()
   }, [mode, activeProject])
+
+  // 进入工作流模式（或切项目）读回该项目最近的运行记录
+  useEffect(() => {
+    if (mode !== 'workflow' || activeProject === undefined || workflow === undefined) {
+      setLatestRun(undefined)
+      return
+    }
+    const project = activeProject
+    const workflowId = workflow.id
+    let stale = false
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listRuns(project.id, workflowId)
+        if (!stale) setLatestRun(rows[0])
+      } catch (error) {
+        if (!stale) setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+      }
+    })()
+    return () => { stale = true }
+  }, [mode, activeProject, workflow?.id])
+
+  // 只在运行中轮询（没有宿主→客户端推送通道）
+  const runningRun = latestRun?.status === 'running'
+  useEffect(() => {
+    if (!runningRun || activeProject === undefined) return
+    const project = activeProject
+    const workflowId = workflow?.id
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          setLatestRun((await apiRef.current.listRuns(project.id, workflowId))[0])
+        } catch {
+          // 轮询失败不打扰用户；状态留给下一次或手动刷新
+        }
+      })()
+    }, 2500)
+    return () => { clearInterval(timer) }
+  }, [runningRun, activeProject, workflow?.id])
 
   // 画布改动 → 去抖落库（`T4-1` 单一事实源 + 保存四态）
   const workflowDirty = workflowState === 'dirty'
@@ -468,6 +508,46 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               record={workflow}
               onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
               t={t}
+              run={{
+                ...latestRun === undefined ? {} : { latest: latestRun },
+                busy: runBusy,
+                onStart: () => {
+                  void run(async () => {
+                    setRunBusy(true)
+                    try {
+                      // 起跑前先落库，保证宿主拿到的是当前这张图
+                      const stored = await apiRef.current.saveWorkflow({
+                        id: workflow.id, projectId: workflow.projectId, name: workflow.name,
+                        nodes: workflow.nodes, edges: workflow.edges,
+                      })
+                      setWorkflow(stored)
+                      setWorkflowState('saved')
+                      setLatestRun(await apiRef.current.runWorkflow(stored.id))
+                    } finally {
+                      setRunBusy(false)
+                    }
+                  })
+                },
+                onCancel: () => {
+                  void run(async () => {
+                    const id = latestRun?.id
+                    if (id === undefined) return
+                    await apiRef.current.cancelRun(id)
+                  })
+                },
+                onRetry: () => {
+                  void run(async () => {
+                    const id = latestRun?.id
+                    if (id === undefined) return
+                    setRunBusy(true)
+                    try {
+                      setLatestRun(await apiRef.current.retryRun(id))
+                    } finally {
+                      setRunBusy(false)
+                    }
+                  })
+                },
+              }}
             />
             <p style={MUTED} data-workflow-save={workflowState} role="status">
               {t(workflowState === 'dirty' ? 'saveDirty' : workflowState === 'saving' ? 'saveSaving' : workflowState === 'failed' ? 'saveFailed' : 'saveSaved')}

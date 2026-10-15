@@ -9,7 +9,7 @@
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client';
 import { type WorkbenchHealth } from '../workbench-contract.ts';
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts';
-import type { WorkflowRecord } from '../workbench/workflow.ts';
+import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts';
 import type { OutputFile } from '../workbench/outputs.ts';
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
@@ -67,6 +67,14 @@ export interface WorkbenchApi {
     removeWorkflow: (id: string) => Promise<boolean>;
     /** Merge duplicate asset records; returns how many were removed. */
     compactAssets: () => Promise<number>;
+    /** Start a run of the stored workflow. */
+    runWorkflow: (workflowId: string) => Promise<WorkflowRunRecord>;
+    /** Run records for a project (optionally one workflow), newest first. */
+    listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>;
+    /** Cancel a running workflow run. */
+    cancelRun: (runId: string) => Promise<boolean>;
+    /** Retry only the failed nodes of a run. */
+    retryRun: (runId: string) => Promise<WorkflowRunRecord>;
     /** Cancel one running generation (aborts the provider call). */
     cancelTask: (id: string) => Promise<boolean>;
     /** File a recorded generation into a project. */

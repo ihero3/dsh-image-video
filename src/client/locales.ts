@@ -41,6 +41,12 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'statusSkipped'
+  | 'runNone'
+  | 'runTitle'
+  | 'runRetry'
+  | 'runCancel'
+  | 'runStart'
   | 'issuePlanned'
   | 'issueCycle'
   | 'issueDangling'
@@ -167,6 +173,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  statusSkipped: 'Skipped',
+  runNone: 'No run yet',
+  runTitle: 'Run',
+  runRetry: 'Retry failed nodes',
+  runCancel: 'Cancel run',
+  runStart: 'Run workflow',
   issuePlanned: 'planned node cannot run',
   issueCycle: 'graph has a cycle',
   issueDangling: 'edge points at a missing node',
@@ -291,6 +303,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  statusSkipped: '已跳过',
+  runNone: '还没有运行记录',
+  runTitle: '运行',
+  runRetry: '重试失败节点',
+  runCancel: '取消运行',
+  runStart: '运行流程',
   issuePlanned: '预留节点不可运行',
   issueCycle: '图里有环',
   issueDangling: '连线指向不存在的节点',
