@@ -70,13 +70,15 @@ function fakeApi(options: { failHealth?: string; tasks?: TaskRecord[]; assets?: 
     },
     attachAsset: async input => {
       calls.push('assets/attach')
+      const existing = assets.find(asset => asset.projectId === input.projectId && asset.path === input.path)
+      if (existing !== undefined) return { asset: existing, created: false }
       counter += 1
       const asset: AssetRecord = {
         schemaVersion: 1, id: `ast-${counter}`, projectId: input.projectId, kind: input.kind,
         path: input.path, bytes: input.bytes ?? 0, createdAt: `2026-10-14T01:00:0${counter}.000Z`,
       }
       assets.push(asset)
-      return asset
+      return { asset, created: true }
     },
     removeAsset: async (id) => {
       calls.push('assets/remove')
@@ -340,6 +342,47 @@ describe('workbench project and asset flow', () => {
     fireEvent.change(screen.getByLabelText(en.filterAll), { target: { value: 'video' } })
     expect(await screen.findByRole('button', { name: `${en.panePreview} clip.mp4` })).toBeTruthy()
     expect(screen.queryByRole('button', { name: `${en.panePreview} shot.png` })).toBeNull()
+  })
+
+  it('is idempotent when the same output is registered twice', async () => {
+    const path = '/tmp/outputs/from-task.png'
+    const finished: TaskRecord = {
+      schemaVersion: 1, id: 'tsk-dup', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      model: 'minimax-image-01', outputPath: path, bytes: 512,
+      createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
+    }
+    const already: AssetRecord = {
+      schemaVersion: 1, id: 'ast-dup', projectId: 'prj-1', kind: 'image', path,
+      bytes: 512, createdAt: '2026-10-14T11:00:01.000Z',
+    }
+    const host = fakeApi({ tasks: [finished], assets: [already] })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '幂等项目',
+      createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
+    })
+    render(<Workbench {...props({ api: host.api })} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: `${en.registerAsAsset} tsk-dup` }))
+    // 同一路径第二次登记：不新增素材，并提示"已登记过"
+    expect(await screen.findByText(new RegExp(en.alreadyRegistered))).toBeTruthy()
+    expect(host.assets).toHaveLength(1)
+    expect(host.calls.filter(call => call === 'assets/attach')).toHaveLength(1)
+  })
+
+  it('previews a task output straight from the task row', async () => {
+    const finished: TaskRecord = {
+      schemaVersion: 1, id: 'tsk-out', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      model: 'minimax-image-01', outputPath: '/tmp/outputs/from-task.png', bytes: 512,
+      createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
+    }
+    const host = fakeApi({ tasks: [finished] })
+    render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(new RegExp(en.statusSucceeded))
+
+    // 未登记为素材时，点任务行也能直接看产出（走只读媒体路由）
+    fireEvent.click(await screen.findByRole('button', { name: `${en.previewOutput} tsk-out` }))
+    const image = await screen.findByRole('img', { name: 'from-task.png' })
+    expect(image.getAttribute('src')).toBe('/outputs/from-task.png')
   })
 
   it('offers cancel only for a running generation and files the result', async () => {

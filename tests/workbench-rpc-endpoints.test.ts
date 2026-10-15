@@ -47,9 +47,16 @@ describe('workbench channel endpoints', () => {
     const listed = await ok<{ projects: ProjectRecord[] }>('projects/list')
     expect(listed.projects.map(project => project.id)).toEqual([created.project.id])
 
-    const attached = await ok<{ asset: AssetRecord }>('assets/attach', {
+    const attached = await ok<{ asset: AssetRecord; created: boolean }>('assets/attach', {
       projectId: created.project.id, path: '/tmp/x/shot.png', kind: 'image', bytes: 2048,
     })
+    expect(attached.created).toBe(true)
+    // 第二次登记同一路径：幂等，`created` 为 false 且素材仍只有一条
+    const repeated = await ok<{ asset: AssetRecord; created: boolean }>('assets/attach', {
+      projectId: created.project.id, path: '/tmp/x/shot.png', kind: 'image',
+    })
+    expect(repeated.created).toBe(false)
+    expect(repeated.asset.id).toBe(attached.asset.id)
     expect((await ok<{ assets: AssetRecord[] }>('assets/list', { projectId: created.project.id })).assets)
       .toEqual([attached.asset])
 

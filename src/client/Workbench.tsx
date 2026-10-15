@@ -144,6 +144,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [renameValue, setRenameValue] = useState('')
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'dirty' | 'failed'>('saved')
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
+  const [previewPath, setPreviewPath] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
@@ -151,6 +152,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   const activeProject = projects.find(project => project.id === activeId)
   const selectedAsset = assets.find(asset => asset.id === selectedId)
+  // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
+  const previewTarget = selectedAsset === undefined
+    ? previewPath
+    : { path: selectedAsset.path, kind: selectedAsset.kind }
   const visibleAssets = assetFilter === 'all' ? assets : assets.filter(asset => asset.kind === assetFilter)
 
   /** Run one host action, surfacing failure as a notice instead of a crash. */
@@ -390,10 +395,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 if (project === undefined) return
                 const known = new Set(assets.map(asset => asset.path))
                 const candidate = outputs.find(output => !known.has(output.path))
-                if (candidate === undefined) { setNotice(t('noOutputs')); return }
-                await apiRef.current.attachAsset({
+                if (candidate === undefined) {
+                  // 目录里全登记过了 vs 目录里根本没有产物，是两件事
+                  setNotice(assets.length === 0 ? t('noOutputs') : t('alreadyRegistered'))
+                  return
+                }
+                const attached = await apiRef.current.attachAsset({
                   projectId: project.id, path: candidate.path, kind: candidate.kind, bytes: candidate.bytes,
                 })
+                if (!attached.created) setNotice(t('alreadyRegistered'))
                 setAssets(await apiRef.current.listAssets(project.id))
               })
             }}
@@ -420,7 +430,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       type="button"
                       aria-pressed={asset.id === selectedId}
                       aria-label={`${t('panePreview')} ${baseName(asset.path)}`}
-                      onClick={() => { setSelectedId(asset.id) }}
+                      onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}
                       style={{
                         ...BUTTON, flex: 1, textAlign: 'left', overflow: 'hidden',
                         textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -453,21 +463,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
         <section data-workbench-pane="panePreview" data-workbench-planned="false" style={PANE}>
           <h3 style={PANE_TITLE}>{t('panePreview')}</h3>
-          {selectedAsset === undefined
+          {previewTarget === undefined
             ? <p style={MUTED}>{t('previewEmpty')}</p>
-            : selectedAsset.kind === 'video'
+            : previewTarget.kind === 'video'
               ? (
                 <video
-                  key={selectedAsset.id}
-                  src={`/outputs/${encodeURIComponent(baseName(selectedAsset.path))}`}
+                  key={previewTarget.path}
+                  src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
                   controls
                   style={{ width: '100%', borderRadius: '6px' }}
                 />
               )
               : (
                 <img
-                  alt={baseName(selectedAsset.path)}
-                  src={`/outputs/${encodeURIComponent(baseName(selectedAsset.path))}`}
+                  alt={baseName(previewTarget.path)}
+                  src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
                   style={{ width: '100%', borderRadius: '6px' }}
                 />
               )}
@@ -560,11 +570,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: '4px' }}>
                 {tasks.map(task => (
                   <li key={task.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={task.error ?? task.prompt ?? task.outputPath ?? ''}>
+                    <button
+                      type="button"
+                      aria-label={`${t('previewOutput')} ${task.id}`}
+                      disabled={task.outputPath === undefined}
+                      onClick={() => {
+                        const path = task.outputPath
+                        if (path === undefined) return
+                        const registered = assets.find(asset => asset.path === path)
+                        if (registered === undefined) { setSelectedId(undefined); setPreviewPath({ path, kind: task.kind }) }
+                        else { setPreviewPath(undefined); setSelectedId(registered.id) }
+                      }}
+                      style={{
+                        flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        border: 'none', background: 'transparent', color: 'inherit', textAlign: 'left',
+                        cursor: task.outputPath === undefined ? 'default' : 'pointer', fontSize: '12px', padding: 0,
+                      }}
+                      title={task.error ?? task.prompt ?? task.outputPath ?? ''}
+                    >
                       {task.kind === 'video' ? '🎬' : '🖼️'} {t(statusKey(task.status))}
                       {' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
-                    </span>
+                    </button>
                     {task.status === 'running'
                       ? (
                         <button
@@ -593,10 +619,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           const project = activeProject
                           const path = task.outputPath
                           if (project === undefined || path === undefined) return
-                          await apiRef.current.attachAsset({
+                          const attached = await apiRef.current.attachAsset({
                             projectId: project.id, path, kind: task.kind,
                             bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
                           })
+                          if (!attached.created) setNotice(t('alreadyRegistered'))
                           await apiRef.current.assignTask(task.id, project.id)
                           setAssets(await apiRef.current.listAssets(project.id))
                           await loadTasks()

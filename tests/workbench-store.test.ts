@@ -43,12 +43,19 @@ describe('workbench store', () => {
   it('attaches assets to a project and refuses unknown projects', async () => {
     const { store } = await makeStore()
     const project = await store.createProject('素材')
-    const asset = await store.attachAsset({
+    const { asset, created } = await store.attachAsset({
       projectId: project.id, path: '/tmp/outputs/shot.png', kind: 'image', bytes: 2048, provider: 'threerouter',
     })
+    expect(created).toBe(true)
     expect(asset.kind).toBe('image')
     expect(asset.bytes).toBe(2048)
     expect((await store.listAssets(project.id)).map(item => item.id)).toEqual([asset.id])
+
+    // 幂等：同一路径重复登记返回已有记录，不产生第二条
+    const again = await store.attachAsset({ projectId: project.id, path: '/tmp/outputs/shot.png', kind: 'image' })
+    expect(again.created).toBe(false)
+    expect(again.asset.id).toBe(asset.id)
+    expect(await store.listAssets(project.id)).toHaveLength(1)
     await expect(store.attachAsset({ projectId: 'nope', path: '/tmp/x.png', kind: 'image' }))
       .rejects.toThrow(/unknown project/)
     await expect(store.attachAsset({ projectId: project.id, path: '/tmp/x.bin', kind: 'audio' }))

@@ -48,6 +48,8 @@ export type WorkbenchLocaleKey =
   | 'notePlaceholder'
   | 'noResources'
   | 'addResource'
+  | 'alreadyRegistered'
+  | 'previewOutput'
   | 'filterAll'
   | 'filterImage'
   | 'filterVideo'
@@ -109,6 +111,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   notePlaceholder: 'Note (optional)',
   noResources: 'No resources in this project yet',
   addResource: 'Add resource',
+  alreadyRegistered: 'Already registered in this project',
+  previewOutput: 'Preview output',
   filterAll: 'All media',
   filterImage: 'Images',
   filterVideo: 'Videos',
@@ -168,6 +172,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   notePlaceholder: '备注（可选）',
   noResources: '这个项目还没有创作资源',
   addResource: '新建资源',
+  alreadyRegistered: '该产物已登记过',
+  previewOutput: '预览产出',
   filterAll: '全部素材',
   filterImage: '只看图片',
   filterVideo: '只看视频',

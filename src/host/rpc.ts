@@ -18,7 +18,7 @@ import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import {
-  normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName, type AssetRecord,
+  normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
 } from '../workbench/records.ts'
 
 export { WORKBENCH_RPC_CHANNEL }
@@ -121,7 +121,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'assets/list':
       return { assets: await deps.store.listAssets(text(payload, 'projectId')) }
     case 'assets/attach': {
-      const asset: AssetRecord = await deps.store.attachAsset({
+      const attached = await deps.store.attachAsset({
         projectId: text(payload, 'projectId'),
         path: text(payload, 'path'),
         kind: validated(() => normalizeMediaKind(text(payload, 'kind'))),
@@ -130,7 +130,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         model: optionalText(payload, 'model'),
         prompt: optionalText(payload, 'prompt'),
       })
-      return { asset }
+      return attached
     }
     case 'assets/remove':
       return { removed: await deps.store.removeAsset(text(payload, 'id')) }

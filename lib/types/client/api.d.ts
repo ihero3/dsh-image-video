@@ -31,7 +31,10 @@ export interface WorkbenchApi {
         provider?: string;
         model?: string;
         prompt?: string;
-    }) => Promise<AssetRecord>;
+    }) => Promise<{
+        asset: AssetRecord;
+        created: boolean;
+    }>;
     /** Remove one asset record. */
     removeAsset: (id: string) => Promise<boolean>;
     /** Rename a project. */

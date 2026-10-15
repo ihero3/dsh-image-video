@@ -32,7 +32,7 @@ export interface WorkbenchApi {
     provider?: string
     model?: string
     prompt?: string
-  }) => Promise<AssetRecord>
+  }) => Promise<{ asset: AssetRecord; created: boolean }>
   /** Remove one asset record. */
   removeAsset: (id: string) => Promise<boolean>
   /** Rename a project. */
@@ -76,7 +76,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     createProject: async name => (await call<{ project: ProjectRecord }>('projects/create', { name })).project,
     removeProject: async id => (await call<{ removed: boolean }>('projects/remove', { id })).removed,
     listAssets: async projectId => (await call<{ assets: AssetRecord[] }>('assets/list', { projectId })).assets,
-    attachAsset: async input => (await call<{ asset: AssetRecord }>('assets/attach', input)).asset,
+    attachAsset: input => call<{ asset: AssetRecord; created: boolean }>('assets/attach', input),
     removeAsset: async id => (await call<{ removed: boolean }>('assets/remove', { id })).removed,
     renameProject: async (id, name) => (await call<{ project: ProjectRecord }>('projects/rename', { id, name })).project,
     listResources: async (projectId, kind) =>

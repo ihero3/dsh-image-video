@@ -146,14 +146,20 @@ export class WorkbenchStore {
 
   /**
    * Register an existing file as an asset of a project.
+   *
+   * Idempotent per (project, path): registering the same file twice returns the
+   * existing record, so double-clicking "register" cannot produce two assets for
+   * one file.
    * @param input - project, path and media facts.
-   * @returns the stored record.
+   * @returns the record, plus whether this call created it.
    * @throws {Error} when the project is unknown.
    */
-  async attachAsset(input: AssetInput): Promise<AssetRecord> {
+  async attachAsset(input: AssetInput): Promise<{ asset: AssetRecord; created: boolean }> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
     if (project === undefined) throw new Error(`unknown project: ${input.projectId}`)
+    const existing = document.assets.find(asset => asset.projectId === project.id && asset.path === input.path)
+    if (existing !== undefined) return { asset: existing, created: false }
     const asset: AssetRecord = {
       schemaVersion: WORKBENCH_SCHEMA_VERSION,
       id: newWorkbenchId('ast'),
@@ -171,7 +177,7 @@ export class WorkbenchStore {
     document.projects = document.projects.map(candidate =>
       candidate.id === project.id ? { ...candidate, updatedAt: asset.createdAt } : candidate)
     await this.save(document)
-    return asset
+    return { asset, created: true }
   }
 
   /**
