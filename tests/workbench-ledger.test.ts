@@ -9,7 +9,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { GenerationRegistry } from '../src/workbench/cancel.ts'
-import { extractOutcome, withTaskLedger } from '../src/workbench/ledger.ts'
+import { extractOutcome, extractRequest, withTaskLedger } from '../src/workbench/ledger.ts'
 import type { TaskInput, TaskPatch, WorkbenchStore } from '../src/workbench/store.ts'
 
 /** Store stand-in that records how the ledger was written. */
@@ -105,6 +105,20 @@ describe('withTaskLedger', () => {
     await expect(wrapped.execute({} as never, {} as never)).resolves.toEqual({ provider: 'threerouter' })
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('disk full'))
     expect(updated).toEqual([])
+  })
+
+  it('files the requested model and prompt while the call is still running', async () => {
+    const { store, opened } = fakeStore()
+    const wrapped = withTaskLedger(tool(async () => ({ provider: 'threerouter' })),
+      { store, registry: new GenerationRegistry(), kind: 'image' })
+    await wrapped.execute({ model: 'minimax-image-01', prompt: '一张图' } as never, {} as never)
+    expect(opened[0]).toMatchObject({ status: 'running', model: 'minimax-image-01', prompt: '一张图' })
+  })
+
+  it('reads only well-formed request fields', () => {
+    expect(extractRequest({ model: 'minimax-h3', prompt: 'x' })).toEqual({ model: 'minimax-h3', prompt: 'x' })
+    expect(extractRequest({ model: '', prompt: 42 })).toEqual({})
+    expect(extractRequest('nope')).toEqual({})
   })
 
   it('keeps extractOutcome tolerant of unknown shapes', () => {

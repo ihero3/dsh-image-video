@@ -23,6 +23,24 @@ export interface GenerationOutcome {
   bytes?: number
 }
 
+/**
+ * Details the ledger can read off a tool *request*.
+ *
+ * A running row that says only "running" is useless in the panel, and the model /
+ * prompt are known the moment the call starts — recording them makes the row
+ * informative while the provider is still working.
+ * @param args - the tool's validated arguments.
+ * @returns the fields worth filing up front.
+ */
+export function extractRequest(args: unknown): { model?: string; prompt?: string } {
+  if (typeof args !== 'object' || args === null) return {}
+  const record = args as Record<string, unknown>
+  const out: { model?: string; prompt?: string } = {}
+  if (typeof record.model === 'string' && record.model !== '') out.model = record.model
+  if (typeof record.prompt === 'string' && record.prompt !== '') out.prompt = record.prompt
+  return out
+}
+
 /** First string value among the keys a tool might use for its produced file. */
 const PATH_KEYS = ['localPath', 'outputPath', 'path', 'videoPath', 'filePath'] as const
 
@@ -97,7 +115,9 @@ export function withTaskLedger<T extends ToolDefinition>(tool: T, options: TaskL
       let taskId: string | undefined
       let controller: AbortController | undefined
       try {
-        const running = await options.store.recordTask({ kind: options.kind, status: 'running', startedAt })
+        const running = await options.store.recordTask({
+          kind: options.kind, status: 'running', startedAt, ...extractRequest(args),
+        })
         taskId = running.id
         controller = options.registry.register(running.id, options.kind, startedAt)
       } catch (error) {
