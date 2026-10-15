@@ -174,6 +174,34 @@ node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 | 禁用插件后 tab / RPC 残留 | 返回的 disposer 没被释放 | `ctx.sidebarRightTabs.register()` 内部已经用 effect 托管：**调用放在插件 apply 顶层，不要再包一层 `ctx.effect`**——父包注释明确写着"从别的插件 apply 里在活动 effect 作用域内注册会无错卡住浏览器启动"；RPC 与监听器各自的 disposer 由本插件的 effect 释放 |
 | 任务进度 / 项目列表不刷新 | 以为有宿主→客户端推送 | **`rpc.handle` 只有"客户端发起的单次调用"，没有通用推送通道**（`/plugins/events` 是 HMR 专用）。一致刷新走轮询/失效重查，或由插件自己开一条宿主 HTTP 长连接（`webServer` 允许挂住 `text/event-stream`） |
 
+### Agent 自重启：唯一安全用法 + 紧急停止（2026-10-15 事故记录）
+
+**事故**：把"一次性重启脚本"交给 `launchctl submit` 托管。launchd 会在脚本退出后**重跑**该任务，于是脚本每轮都杀一次 App 再拉起，形成每 ~30 秒一次的循环，持续 8.5 小时（日志里 164 轮），期间界面基本不可用。教训：`launchctl submit` 只适合**常驻**任务；任何会自行退出的一次性脚本交给它 = 无限循环。
+
+**安全用法**（两个脚本都已入库，同内容副本放在 `~/`，方便直接敲）：
+
+| 脚本 | 作用 | 关键点 |
+|---|---|---|
+| `scripts/agent-restart.sh`（`~/dsh-agent-restart.sh`） | 安全的一次性自重启 | **不经 launchd**：`setsid` 脱离会话的一次性进程；三层守卫——900 秒冷却标记（`/private/tmp/dsh-agent-restart.done`）、并发锁（`.lock`，>10 分钟自动清）、`--check` 只自检不杀任何进程；`--force` 才跳冷却；成功后写冷却标记，失败**不自动重试** |
+| `scripts/agent-stop.sh`（`~/dsh-agent-stop.sh`） | 紧急停止 | 移除 Agent 的 launchd 任务、杀掉重启脚本进程、清守卫标记；**不触碰 App**（只读地报告 App 是否还在） |
+
+**紧急停止一条命令**：
+
+```bash
+bash ~/dsh-agent-stop.sh
+```
+
+**出问题时的诊断**：
+
+```bash
+launchctl list | grep dsh              # 应为空；有输出就 launchctl remove <label>
+tail -20 /private/tmp/dsh-agent-restart.log   # 自重启日志
+tail -20 /private/tmp/dsh-self-restart.log    # 2026-10-15 那次事故日志（已停用）
+ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
+```
+
+**唤醒继续**：重启后要"自动继续"，用会话内一次性提醒（`schedule_*` 工具），**不要**用系统级定时任务或 launchd。
+
 ## 9. 文档与任务的维护规则
 
 - 需求变更：改 `REQUIREMENTS.md` 的 `R-*`（编号不复用；废弃写原因），并同步 `TASKS.md` 的覆盖关系。
