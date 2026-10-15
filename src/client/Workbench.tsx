@@ -201,6 +201,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })()
   }, [loadOutputs, loadProjects, loadTasks, run])
 
+  // 自动保存：改名输入停下约 0.9 秒后落盘（手动"保存"仍在，四态照旧）。
+  // 依赖里只放"是否处于未保存"，避免每次按键都重建定时器。
+  const dirtyRename = renaming && saveState === 'dirty'
+  useEffect(() => {
+    if (!dirtyRename || activeProject === undefined) return
+    const timer = setTimeout(() => {
+      void run(async () => {
+        setSaveState('saving')
+        try {
+          await apiRef.current.renameProject(activeProject.id, renameValue.trim())
+          await loadProjects()
+          setSaveState('saved')
+        } catch (error) {
+          setSaveState('failed')
+          throw error
+        }
+      })
+    }, 900)
+    return () => { clearTimeout(timer) }
+  }, [dirtyRename, activeProject, renameValue, loadProjects, run])
+
   useEffect(() => {
     void (async () => {
       setSelectedId(undefined)

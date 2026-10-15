@@ -344,6 +344,23 @@ describe('workbench project and asset flow', () => {
     expect(screen.queryByRole('button', { name: `${en.panePreview} shot.png` })).toBeNull()
   })
 
+  it('auto-saves the rename shortly after typing stops', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '自动保存前')
+    const root = view.container.querySelector('[data-workbench-kind]')!
+
+    fireEvent.click(screen.getByRole('button', { name: en.rename }))
+    fireEvent.change(await screen.findByLabelText(en.rename), { target: { value: '自动保存后' } })
+    expect(root.getAttribute('data-workbench-save')).toBe('dirty')
+
+    // 不点「保存」：等去抖自己落盘
+    await waitFor(() => { expect(host.calls).toContain('projects/rename') }, { timeout: 4000 })
+    await waitFor(() => { expect(root.getAttribute('data-workbench-save')).toBe('saved') }, { timeout: 4000 })
+    expect(host.projects[0]?.name).toBe('自动保存后')
+  })
+
   it('is idempotent when the same output is registered twice', async () => {
     const path = '/tmp/outputs/from-task.png'
     const finished: TaskRecord = {
