@@ -95,6 +95,8 @@ pnpm run dev:desktop            # 起桌面 dev（DSH_HOME=apps/desktop/.desktop
 
 ## 5. 验证命令与证据口径
 
+现场读取类脚本（只读，退出码 0=通过 / 1=断言不过 / 2=探测失败）：`scripts/verify-workbench-tab.mjs`（右栏 tab 是否挂载 + 健康检查）、`scripts/verify-canvas-layout.mjs`（画布几何：内容不越界、不与下方面板重叠）。
+
 产品仓库（插件）：
 
 ```sh

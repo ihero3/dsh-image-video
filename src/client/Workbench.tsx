@@ -425,7 +425,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
       {mode === 'workflow' && workflow !== undefined
         ? (
-          <section data-workbench-pane="paneCanvas" data-workbench-planned="false" style={PANE}>
+          <section data-workbench-pane="paneCanvas" data-workbench-planned="false" style={{ ...PANE, minHeight: '360px' }}>
             <h3 style={PANE_TITLE}>{t('paneCanvas')}</h3>
             <WorkflowCanvas record={workflow} onChange={setWorkflow} t={t} />
           </section>

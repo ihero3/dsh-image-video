@@ -82,7 +82,7 @@
 
 ## 6. 阶段 4：专业工作流 MVP（flow 节点流，计划 §6）
 
-- [~] **T4-1** 画布接入：`@xyflow/react` 精确版本 + `WorkflowRecord` 单一事实源 + 保存/重开｜插件｜**已实现**：`@xyflow/react@12.12.0`（精确版本，随客户端产物内联；官方样式表由 `scripts/sync-canvas-style.mjs` 内嵌注入——客户端模块加载器只加载 JS）；`WorkflowRecord` 是画布维度唯一事实源，**选择状态不入库**（测试断言文档字段集合）；缩放平移 + 「适配窗口」+ 节点拖拽/连线/删除。**待做**：保存与重开（需宿主的项目存储端点）｜R-FLW-1、R-FLW-8｜T3-3
+- [~] **T4-1** 画布接入：`@xyflow/react` 精确版本 + `WorkflowRecord` 单一事实源 + 保存/重开｜插件｜**已实现**：`@xyflow/react@12.12.0`（精确版本，随客户端产物内联；官方样式表由 `scripts/sync-canvas-style.mjs` 内嵌注入——客户端模块加载器只加载 JS）；`WorkflowRecord` 是画布维度唯一事实源，**选择状态不入库**（测试断言文档字段集合）；缩放平移 + 「适配窗口」+ 节点拖拽/连线/删除。**待做**：保存与重开（需宿主的项目存储端点）｜R-FLW-1、R-FLW-8｜T3-3｜**现场几何守护**：`scripts/verify-canvas-layout.mjs`（画布内容不得越出区块、不得与下方面板重叠；现场抓到并修掉过一次 118px 溢出）
 - [~] **T4-2** 节点实现：`creative-input`/`script`/`storyboard`/`asset-reference`/`resource-reference`/`motion-track`/`image-generate`/`video-generate`/`preview`/`publish-asset`｜插件｜**已实现**：节点目录（`src/workbench/workflow.ts`，画布与宿主共用）——12 个可运行（V1 十个 + `subtitle`/`render`）、3 个 `planned`（`lip-sync`/`face-swap`/`voice-synthesize`，列表可见但禁用并给出原因）；每个节点有参数面板与默认值；`video-generate` 按 `D7` 显式承载参考视频与 `compare`，模型名留空走宿主默认（不硬编码）。**待做**：节点的真实执行语义与产出落库（T4-4/T4-5）｜R-FLW-2｜T4-1
 - [ ] **T4-3** 图校验：必填 / 端口类型匹配 / 环检测｜插件｜`test:` 含环图被拒并指明回路｜回滚：只保留 schema 校验（去掉拓扑校验）｜R-FLW-3｜T4-2
 - [ ] **T4-4** `WorkflowRunner`：拓扑执行 + 节点记录 + 成功结果缓存 / 重试 / 取消；重试只重跑失败节点及其下游｜插件｜`test:` 失败重试时前序成功节点不重新调外部 API（以日志/运行记录为证）｜回滚：运行只允许"单节点试跑"｜R-FLW-3、R-FLW-5｜T4-3

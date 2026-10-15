@@ -194,9 +194,9 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
       data-workflow-nodes={String(nodes.length)}
       data-workflow-edges={String(edges.length)}
       data-workflow-selected={selectedId ?? ''}
-      style={{ display: 'grid', gridTemplateColumns: '132px 1fr', gap: '8px', minHeight: '320px' }}
+      style={{ display: 'grid', gridTemplateColumns: '132px 1fr', gap: '8px', minHeight: '340px', alignItems: 'start' }}
     >
-      <div data-workflow-palette="true" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div data-workflow-palette="true" style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '320px', overflowY: 'auto' }}>
         <strong style={{ fontSize: '11px', opacity: 0.75 }}>{t('canvasPalette')}</strong>
         {NODE_CATALOG.map(spec => (
           <button
