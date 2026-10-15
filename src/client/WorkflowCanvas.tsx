@@ -86,14 +86,14 @@ function nextNodeId(kind: WorkflowNodeKind): string {
   return `${kind}-${Date.now().toString(36)}-${nodeSequence.toString(36)}`
 }
 
-/** 节点卡片：种类名 + 参数摘要 + 左右连接点。 */
-function WorkflowNodeCard({ data, selected }: NodeProps<CanvasNode>): JSX.Element {
+/** 节点卡片：本地化种类名 + 参数摘要（用参数标签而不是键名）+ 左右连接点。 */
+function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (key: WorkbenchLocaleKey) => string }): JSX.Element {
   const spec = nodeSpec(data.kind)
   const planned = spec.availability !== 'runnable'
-  const summary = Object.entries(data.params)
-    .filter(([, value]) => value !== '' && value !== false)
+  const summary = spec.params
+    .filter(field => data.params[field.id] !== '' && data.params[field.id] !== false && data.params[field.id] !== undefined)
     .slice(0, 2)
-    .map(([key, value]) => `${key}=${String(value).slice(0, 14)}`)
+    .map(field => `${t(field.labelKey as WorkbenchLocaleKey)}=${String(data.params[field.id]).slice(0, 14)}`)
     .join(' · ')
   return (
     <div
@@ -108,9 +108,9 @@ function WorkflowNodeCard({ data, selected }: NodeProps<CanvasNode>): JSX.Elemen
       }}
     >
       <Handle type="target" position={Position.Left} style={{ width: 9, height: 9 }} />
-      <div style={{ fontWeight: 600 }}>{spec.labelKey.replace('node', '')} · {data.kind}</div>
+      <div style={{ fontWeight: 600 }}>{t(spec.labelKey as WorkbenchLocaleKey)}</div>
       {planned
-        ? <div data-workflow-planned-tag="true" style={{ opacity: 0.75, fontSize: '9px', marginTop: '2px' }}>⚠ {data.kind}</div>
+        ? <div data-workflow-planned-tag="true" style={{ opacity: 0.8, fontSize: '9px', marginTop: '2px' }}>⚠ {t('canvasPlannedTag')}</div>
         : null}
       {summary === '' ? null : (
         <div style={{ opacity: 0.7, fontSize: '10px', marginTop: '2px' }}>{summary}</div>
@@ -148,7 +148,10 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
     onChange(merged)
   }, [nodes, edges, record, onChange])
 
-  const nodeTypes = useMemo(() => ({ workbench: WorkflowNodeCard }), [])
+  // 卡片要用当前语言渲染，所以 nodeTypes 跟着 t 走（t 变化才重建，避免每帧换组件）
+  const nodeTypes = useMemo(() => ({
+    workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} />,
+  }), [t])
   const selected = nodes.find(node => node.id === selectedId)
 
   // planned 节点按 `T3-2` 可以放进图并保存，只是**不可运行**（执行侧由 `T3-3` 拒绝）；

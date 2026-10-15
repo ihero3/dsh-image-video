@@ -94,6 +94,20 @@ describe('workflow canvas', () => {
     expect(current().nodes[0]?.kind).toBe('video-generate')
   })
 
+  it('renders the card with the localized name and parameter labels', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} video-generate` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="video-generate"]')).toBeTruthy()
+    })
+    const text = view.container.querySelector('[data-workflow-node="video-generate"]')?.textContent ?? ''
+    expect(text).toContain(en.nodeVideoGenerate)
+    expect(text).toContain(en.paramRatio)
+    expect(text).not.toContain('video-generate')
+    // 参数用标签而不是原始键名（键名是小写 `duration`，标签是 `Duration`）
+    expect(text).not.toContain('duration=')
+  })
+
   it('keeps the transient selection out of the record', async () => {
     const { current } = renderCanvas()
     fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
