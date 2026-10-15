@@ -153,6 +153,12 @@ node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 
 ## 8. 排错速查
 
+### 插件依赖变更必须在**仓库根**安装（否则 React 双实例）
+
+`plugins/dsh-image-video` 既是根 workspace 成员（根 `pnpm-workspace.yaml` 的 `plugins/*`），又带自己的 `pnpm-lock.yaml`。在**插件目录里**跑 `pnpm add`/`pnpm install` 会额外生成一份插件侧虚拟 store：`node_modules/react` 指向插件 store，而 `node_modules/@testing-library/react`、`react-dom` 仍指向根 store，于是全部客户端测试以 `TypeError: Cannot read properties of null (reading 'useRef')`（dispatcher 为 null）失败。
+
+做法：改插件 `package.json` → 在仓库根跑 `pnpm install --no-frozen-lockfile`（根 lockfile 与插件侧 lockfile 一起更新，见 `FORK-FEATURES.md` R08）。已经搞混时：删掉 `plugins/dsh-image-video/node_modules` 再跑根 install，即回到单实例。
+
 | 症状 | 首查 | 处理 |
 |---|---|---|
 | 桌面启动报 `client entry ... is not built` | `private-plugins.ts:84` | 先 `pnpm run build`（插件仓库）产出 `lib/client.js` 再提交；二者必须原子 |
@@ -173,3 +179,5 @@ node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 - 设计变化（数据模型/节点表/阶段边界）：改 `IMPLEMENTATION-PLAN.md`，并检查需求验收是否仍成立。
 - 进度：只在 `TASKS.md` 勾状态，并附 commit/任务 ID；**不把进度散落到需求与设计文档里**。
 - 完成定义（DoD）：任务验收全过 + 单测/契约测试绿 + 真机走过一遍 + `CHANGELOG.md` 有记录 + `TASKS.md` 已勾选。
+
+## 故障排查

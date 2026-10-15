@@ -49,7 +49,7 @@ const canvas = (view: ReturnType<typeof render>): HTMLElement => {
 }
 
 describe('workflow canvas', () => {
-  it('lists every catalog node and keeps planned ones disabled with a reason', () => {
+  it('lists every catalog node and marks the planned ones', () => {
     const { view } = renderCanvas()
     const items = view.container.querySelectorAll('[data-workflow-palette-item]')
     expect(items).toHaveLength(15)
@@ -57,10 +57,27 @@ describe('workflow canvas', () => {
     const planned = view.container.querySelectorAll('[data-workflow-availability="planned"]')
     expect(planned).toHaveLength(3)
     for (const item of planned) {
-      expect((item as HTMLButtonElement).disabled).toBe(true)
+      // `T3-2`：planned 可以放进图并保存，所以按钮**不是**禁用；原因靠 title/文案交代
+      expect((item as HTMLButtonElement).disabled).toBe(false)
       expect(item.getAttribute('title')).toBeTruthy()
     }
-    expect(view.container.querySelector('[data-workflow-availability="runnable"]')).toBeTruthy()
+    expect(view.container.querySelectorAll('[data-workflow-availability="runnable"]')).toHaveLength(12)
+  })
+
+  it('lets a planned node be placed but marks it as not runnable', async () => {
+    const { view, current } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+
+    // 节点卡片由 xyflow 量完尺寸后渲染，等它出现
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="lip-sync"]')?.getAttribute('data-workflow-node-availability'))
+        .toBe('planned')
+    })
+    expect(view.container.querySelector('[data-workflow-node="lip-sync"] [data-workflow-planned-tag]')).toBeTruthy()
+    // 参数面板给出不可运行的原因，而不是假装能跑
+    expect(view.container.querySelector('[data-workflow-planned-note]')?.textContent).toContain(en.plannedLipSync)
+    expect(current().nodes[0]?.kind).toBe('lip-sync')
   })
 
   it('adds a node and writes its parameters into the record', async () => {

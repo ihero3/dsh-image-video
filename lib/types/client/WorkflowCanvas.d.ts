@@ -6,8 +6,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
     kind: WorkflowNodeKind;
     params: Record<string, NodeParamValue>;
 }
-/** 画布节点类型。 */
-export type CanvasNode = Node<CanvasNodeData>;
+/** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
+export type CanvasNode = Node<CanvasNodeData, 'workbench'>;
 /** 画布组件的对外属性。 */
 export interface WorkflowCanvasProps {
     /** 唯一事实源；画布只读取它做初始化。 */

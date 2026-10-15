@@ -76,8 +76,8 @@
 
 ## 5. 阶段 3：预留能力边界（计划 §6.2）
 
-- [ ] **T3-1** `availability: 'runnable' | 'planned'` 机制 + UI 禁用态与原因文案｜插件｜`test:` 面板可见两种标记；planned 的运行按钮禁用且有原因｜回滚：删 `availability` 字段与禁用样式｜R-BND-4｜T2-10
-- [ ] **T3-2** planned 节点/资源位：`lip-sync` / `face-swap` / `voice-synthesize`（音色只存元数据）｜插件｜`test:` 节点可放进图并保存，但不可运行｜回滚：从节点目录与模板里移除 planned 条目｜R-BND-4、R-MED-3｜T3-1
+- [~] **T3-1** `availability: 'runnable' | 'planned'` 机制 + UI 禁用态与原因文案｜插件｜**已实现**：节点目录带 `availability`（12 runnable / 3 planned），planned 在节点库与卡片上有独立标记（`data-workflow-availability`、虚线边框、⚠ 标记），参数面板给出原因文案；**测试**断言两种标记可见、planned 的 title 有原因。**待做**：执行侧的「运行按钮」禁用态随运行器一起做（T4-4）｜R-BND-4｜T2-2
+- [~] **T3-2** planned 节点/资源位：`lip-sync` / `face-swap` / `voice-synthesize`（音色只存元数据）｜插件｜**已实现**：三个 planned 节点**可放进图并保存**（进 `WorkflowRecord`，有测试），卡片与面板如实标注「未提供」与原因，不做任何假装可运行的 UI。**待做**：`voice-synthesize` 的音色元数据字段（等阶段 2 资源侧的音色资源用法明确后接）｜R-BND-4、R-MED-5｜T2-2
 - [ ] **T3-3** 防伪造测试：planned 不执行、不跳过、不伪造成功｜插件｜`test:` `tests/planned-capability.test.ts`：全量运行遇到 planned 节点必须报错停下｜回滚：删测试与 planned 条目｜R-BND-4｜T3-2
 
 ## 6. 阶段 4：专业工作流 MVP（flow 节点流，计划 §6）

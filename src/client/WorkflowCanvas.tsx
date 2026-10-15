@@ -29,8 +29,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
   params: Record<string, NodeParamValue>
 }
 
-/** 画布节点类型。 */
-export type CanvasNode = Node<CanvasNodeData>
+/** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
+export type CanvasNode = Node<CanvasNodeData, 'workbench'>
 
 /** 画布组件的对外属性。 */
 export interface WorkflowCanvasProps {
@@ -55,7 +55,7 @@ function useCanvasStyle(): void {
 
 function toCanvasNodes(record: WorkflowRecord): CanvasNode[] {
   return record.nodes.map(node => ({
-    id: node.id, position: { x: node.position.x, y: node.position.y },
+    id: node.id, type: 'workbench', position: { x: node.position.x, y: node.position.y },
     data: { kind: node.kind, params: { ...node.params } },
   }))
 }
@@ -89,6 +89,7 @@ function nextNodeId(kind: WorkflowNodeKind): string {
 /** 节点卡片：种类名 + 参数摘要 + 左右连接点。 */
 function WorkflowNodeCard({ data, selected }: NodeProps<CanvasNode>): JSX.Element {
   const spec = nodeSpec(data.kind)
+  const planned = spec.availability !== 'runnable'
   const summary = Object.entries(data.params)
     .filter(([, value]) => value !== '' && value !== false)
     .slice(0, 2)
@@ -98,15 +99,19 @@ function WorkflowNodeCard({ data, selected }: NodeProps<CanvasNode>): JSX.Elemen
     <div
       data-workflow-node={data.kind}
       data-workflow-node-selected={selected ? 'true' : 'false'}
+      data-workflow-node-availability={spec.availability}
       style={{
         minWidth: '132px', padding: '6px 8px', borderRadius: '8px', fontSize: '12px',
-        border: `1px solid ${selected ? 'var(--dsh-accent, #4c8dff)' : 'var(--dsh-border, #3a3a3a)'}`,
+        border: `1px ${planned ? 'dashed' : 'solid'} ${selected ? 'var(--dsh-accent, #4c8dff)' : 'var(--dsh-border, #3a3a3a)'}`,
         background: 'var(--dsh-surface, #1f1f22)', color: 'var(--dsh-text, #e8e8ea)',
         boxShadow: selected ? '0 0 0 2px rgba(76,141,255,0.35)' : 'none',
       }}
     >
       <Handle type="target" position={Position.Left} style={{ width: 9, height: 9 }} />
       <div style={{ fontWeight: 600 }}>{spec.labelKey.replace('node', '')} · {data.kind}</div>
+      {planned
+        ? <div data-workflow-planned-tag="true" style={{ opacity: 0.75, fontSize: '9px', marginTop: '2px' }}>⚠ {data.kind}</div>
+        : null}
       {summary === '' ? null : (
         <div style={{ opacity: 0.7, fontSize: '10px', marginTop: '2px' }}>{summary}</div>
       )}
@@ -146,12 +151,13 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
   const nodeTypes = useMemo(() => ({ workbench: WorkflowNodeCard }), [])
   const selected = nodes.find(node => node.id === selectedId)
 
+  // planned 节点按 `T3-2` 可以放进图并保存，只是**不可运行**（执行侧由 `T3-3` 拒绝）；
+  // 因此这里不拦，只在卡片与参数面板上如实标注。
   const addNode = useCallback((kind: WorkflowNodeKind) => {
-    if (nodeSpec(kind).availability !== 'runnable') return
     setNodes(current => {
       const index = current.length
       const node: CanvasNode = {
-        id: nextNodeId(kind),
+        id: nextNodeId(kind), type: 'workbench',
         position: { x: 40 + (index % 4) * 190, y: 40 + Math.floor(index / 4) * 120 },
         data: { kind, params: defaultParams(kind) },
       }
@@ -195,17 +201,15 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
             type="button"
             data-workflow-palette-item={spec.kind}
             data-workflow-availability={spec.availability}
-            aria-label={spec.availability === 'runnable'
-              ? `${t('canvasAdd')} ${spec.kind}`
-              : `${t(spec.labelKey as WorkbenchLocaleKey)} ${t('canvasPlannedTag')}`}
+            aria-label={`${t('canvasAdd')} ${spec.kind}`}
             title={spec.reasonKey === undefined ? spec.kind : t(spec.reasonKey as WorkbenchLocaleKey)}
-            disabled={spec.availability !== 'runnable'}
             onClick={() => { addNode(spec.kind) }}
             style={{
               fontSize: '11px', textAlign: 'left', padding: '3px 6px', borderRadius: '6px',
               border: '1px solid var(--dsh-border, #3a3a3a)', background: 'transparent',
-              color: 'var(--dsh-text, #e8e8ea)', opacity: spec.availability === 'runnable' ? 1 : 0.45,
-              cursor: spec.availability === 'runnable' ? 'pointer' : 'not-allowed',
+              color: 'var(--dsh-text, #e8e8ea)', opacity: spec.availability === 'runnable' ? 1 : 0.6,
+              borderStyle: spec.availability === 'runnable' ? 'solid' : 'dashed',
+              cursor: 'pointer',
             }}
           >
             {t(spec.labelKey as WorkbenchLocaleKey)}{spec.availability === 'runnable' ? '' : ` · ${t('canvasPlannedTag')}`}
@@ -247,6 +251,13 @@ function CanvasSurface({ record, onChange, t }: WorkflowCanvasProps): JSX.Elemen
           : (
             <div data-workflow-inspector={selected.id} style={{ display: 'grid', gap: '4px' }}>
               <strong style={{ fontSize: '11px' }}>{t('canvasParams')} · {selected.data.kind}</strong>
+              {nodeSpec(selected.data.kind).availability !== 'runnable'
+                ? (
+                  <span data-workflow-planned-note="true" style={{ fontSize: '11px', color: 'var(--dsh-warning, #d08c00)' }}>
+                    ⚠ {t(nodeSpec(selected.data.kind).reasonKey as WorkbenchLocaleKey)}
+                  </span>
+                )
+                : null}
               {nodeSpec(selected.data.kind).params.length === 0
                 ? <span style={{ fontSize: '11px', opacity: 0.7 }}>{t('canvasNoParams')}</span>
                 : nodeSpec(selected.data.kind).params.map(field => (
