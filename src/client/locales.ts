@@ -245,7 +245,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   paneResources: '创作资源',
   panePreview: '预览',
   paneTasks: '任务',
-  emptyHint: '目前只是骨架——项目、素材、任务与节点画布在后续阶段落地。',
+  emptyHint: '项目、素材、资源与任务账本已可用；「专业工作流」模式里是节点画布（执行与项目存储随后端接入）。',
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
   panePlanned: '暂不可运行——排在后续阶段',
