@@ -15,6 +15,9 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
+import { newWorkbenchId } from '../workbench/records.ts'
+import type { WorkflowRecord } from '../workbench/workflow.ts'
+import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
@@ -129,6 +132,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   apiRef.current = api
 
   const [mode, setMode] = useState<WorkbenchMode>('quick')
+  // 工作流文档：画布维度的单一事实源（`T4-1`）。持久化随后端端点接入。
+  const [workflow, setWorkflow] = useState<WorkflowRecord | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -151,6 +156,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
   const activeProject = projects.find(project => project.id === activeId)
+  // 进入工作流模式时为当前项目准备一份空文档（同项目复用，切项目换新）
+  useEffect(() => {
+    if (mode !== 'workflow' || activeProject === undefined) return
+    setWorkflow(current => {
+      if (current !== undefined && current.projectId === activeProject.id) return current
+      const stamp = new Date().toISOString()
+      return {
+        schemaVersion: 1, id: newWorkbenchId('wfl'), projectId: activeProject.id,
+        name: `${activeProject.name} 工作流`, nodes: [], edges: [], createdAt: stamp, updatedAt: stamp,
+      }
+    })
+  }, [mode, activeProject])
+
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
   const previewTarget = selectedAsset === undefined
@@ -404,6 +422,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           {outputs.length === 0 ? t('noOutputs') : `${outputs.length} output(s)`}
         </p>
       </section>
+
+      {mode === 'workflow' && workflow !== undefined
+        ? (
+          <section data-workbench-pane="paneCanvas" data-workbench-planned="false" style={PANE}>
+            <h3 style={PANE_TITLE}>{t('paneCanvas')}</h3>
+            <WorkflowCanvas record={workflow} onChange={setWorkflow} t={t} />
+          </section>
+        )
+        : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
         <section data-workbench-pane="paneAssets" data-workbench-planned="false" style={PANE}>

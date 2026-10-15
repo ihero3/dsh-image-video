@@ -41,6 +41,58 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'paneCanvas'
+  | 'canvasEdgesCount'
+  | 'canvasNodesCount'
+  | 'canvasNoParams'
+  | 'canvasSelfLoop'
+  | 'nodeCreativeInput'
+  | 'nodeScript'
+  | 'nodeStoryboard'
+  | 'nodeAssetReference'
+  | 'nodeResourceReference'
+  | 'nodeMotionTrack'
+  | 'nodeImageGenerate'
+  | 'nodeVideoGenerate'
+  | 'nodePreview'
+  | 'nodePublishAsset'
+  | 'nodeSubtitle'
+  | 'nodeRender'
+  | 'nodeLipSync'
+  | 'nodeFaceSwap'
+  | 'nodeVoiceSynthesize'
+  | 'plannedLipSync'
+  | 'plannedFaceSwap'
+  | 'plannedVoice'
+  | 'canvasPalette'
+  | 'canvasAdd'
+  | 'canvasParams'
+  | 'canvasDeleteNode'
+  | 'canvasFit'
+  | 'canvasEmpty'
+  | 'canvasPlannedTag'
+  | 'canvasTransient'
+  | 'paramBrief'
+  | 'paramScript'
+  | 'paramShots'
+  | 'paramNote'
+  | 'paramAsset'
+  | 'paramResource'
+  | 'paramModel'
+  | 'paramPrompt'
+  | 'paramRatio'
+  | 'paramDuration'
+  | 'paramResolution'
+  | 'paramReferenceVideo'
+  | 'paramCompare'
+  | 'paramAssetName'
+  | 'ratioSquare'
+  | 'ratioPortrait'
+  | 'ratioLandscape'
+  | 'ratioVertical'
+  | 'resolution480'
+  | 'resolution720'
+  | 'resolution1080'
   | 'rename'
   | 'save'
   | 'cancel'
@@ -104,6 +156,58 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  paneCanvas: 'Workflow canvas',
+  canvasEdgesCount: 'links',
+  canvasNodesCount: 'nodes',
+  canvasNoParams: 'This node has no parameters yet',
+  canvasSelfLoop: 'A node cannot connect to itself',
+  nodeCreativeInput: 'Creative input',
+  nodeScript: 'Script',
+  nodeStoryboard: 'Storyboard',
+  nodeAssetReference: 'Asset reference',
+  nodeResourceReference: 'Resource reference',
+  nodeMotionTrack: 'Motion track',
+  nodeImageGenerate: 'Image generate',
+  nodeVideoGenerate: 'Video generate',
+  nodePreview: 'Preview',
+  nodePublishAsset: 'Publish asset',
+  nodeSubtitle: 'Subtitle',
+  nodeRender: 'Render',
+  nodeLipSync: 'Lip sync',
+  nodeFaceSwap: 'Face swap',
+  nodeVoiceSynthesize: 'Voice synthesize',
+  plannedLipSync: 'Host does not expose lip-sync yet',
+  plannedFaceSwap: 'Host does not expose face swap yet',
+  plannedVoice: 'Per D6 this release keeps voice metadata only; no TTS yet',
+  canvasPalette: 'Node library',
+  canvasAdd: 'Add to canvas',
+  canvasParams: 'Node parameters',
+  canvasDeleteNode: 'Delete node',
+  canvasFit: 'Fit view',
+  canvasEmpty: 'Add nodes from the library on the left',
+  canvasPlannedTag: 'not available',
+  canvasTransient: 'Workflow is kept on this machine; project storage lands with the host endpoint',
+  paramBrief: 'Creative brief',
+  paramScript: 'Copy',
+  paramShots: 'Shots',
+  paramNote: 'Note',
+  paramAsset: 'Asset',
+  paramResource: 'Resource',
+  paramModel: 'Model (blank = host default)',
+  paramPrompt: 'Prompt',
+  paramRatio: 'Aspect ratio',
+  paramDuration: 'Duration (s)',
+  paramResolution: 'Resolution',
+  paramReferenceVideo: 'Reference video',
+  paramCompare: 'Also render a comparison clip',
+  paramAssetName: 'Asset name',
+  ratioSquare: '1:1',
+  ratioPortrait: '3:4',
+  ratioLandscape: '16:9',
+  ratioVertical: '9:16',
+  resolution480: '480P',
+  resolution720: '720P',
+  resolution1080: '1080P',
   rename: 'Rename',
   save: 'Save',
   cancel: 'Cancel',
@@ -165,6 +269,58 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  paneCanvas: '工作流画布',
+  canvasEdgesCount: '条连线',
+  canvasNodesCount: '个节点',
+  canvasNoParams: '这个节点暂时没有参数',
+  canvasSelfLoop: '节点不能连到自己',
+  nodeCreativeInput: '创作输入',
+  nodeScript: '脚本',
+  nodeStoryboard: '分镜',
+  nodeAssetReference: '素材引用',
+  nodeResourceReference: '资源引用',
+  nodeMotionTrack: '运动轨迹',
+  nodeImageGenerate: '图片生成',
+  nodeVideoGenerate: '视频生成',
+  nodePreview: '预览',
+  nodePublishAsset: '发布素材',
+  nodeSubtitle: '字幕',
+  nodeRender: '渲染',
+  nodeLipSync: '口型同步',
+  nodeFaceSwap: '换脸',
+  nodeVoiceSynthesize: '语音合成',
+  plannedLipSync: '宿主尚未提供口型/唇形能力',
+  plannedFaceSwap: '宿主尚未提供换脸能力',
+  plannedVoice: 'D6 本期只做音色元数据，未接 TTS',
+  canvasPalette: '节点库',
+  canvasAdd: '加入画布',
+  canvasParams: '节点参数',
+  canvasDeleteNode: '删除节点',
+  canvasFit: '适配窗口',
+  canvasEmpty: '从左侧节点库添加节点',
+  canvasPlannedTag: '未提供',
+  canvasTransient: '工作流暂存在本机（项目存储随宿主端点接入）',
+  paramBrief: '创作诉求',
+  paramScript: '文案',
+  paramShots: '分镜数',
+  paramNote: '备注',
+  paramAsset: '素材',
+  paramResource: '资源',
+  paramModel: '模型（留空用宿主默认）',
+  paramPrompt: '提示词',
+  paramRatio: '比例',
+  paramDuration: '时长（秒）',
+  paramResolution: '分辨率',
+  paramReferenceVideo: '参考视频',
+  paramCompare: '同时生成对比片',
+  paramAssetName: '素材名',
+  ratioSquare: '1:1',
+  ratioPortrait: '3:4',
+  ratioLandscape: '16:9',
+  ratioVertical: '9:16',
+  resolution480: '480P',
+  resolution720: '720P',
+  resolution1080: '1080P',
   rename: '改名',
   save: '保存',
   cancel: '取消',
