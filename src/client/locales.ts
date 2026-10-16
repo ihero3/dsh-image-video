@@ -41,6 +41,8 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'resourceMotionTrack'
+  | 'paramTrack'
   | 'forceRemove'
   | 'hostHintRemote'
   | 'none'
@@ -220,6 +222,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  resourceMotionTrack: 'Motion track',
+  paramTrack: 'Track resource',
   forceRemove: 'Delete anyway',
   hostHintRemote: 'Preview needs a local host: /outputs is only served on loopback. Open this app via http://127.0.0.1:… instead.',
   none: 'not set',
@@ -397,6 +401,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  resourceMotionTrack: '轨迹',
+  paramTrack: '轨迹资源',
   forceRemove: '仍要删除',
   hostHintRemote: '预览需要本机访问宿主：/outputs 只在回环地址注册。请改用 http://127.0.0.1:… 打开本应用。',
   none: '未设置',

@@ -12,7 +12,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
-  normalizeResourceKind, normalizeResourceName,
+  normalizeKeyframes, normalizeResourceKind, normalizeResourceName,
   type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
@@ -253,6 +253,7 @@ export class WorkbenchStore {
     kind: ResourceKind | string
     name: unknown
     note?: string
+    keyframes?: unknown
   }): Promise<ResourceRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -264,6 +265,9 @@ export class WorkbenchStore {
       projectId: project.id,
       kind: normalizeResourceKind(input.kind),
       name: normalizeResourceName(input.name),
+      // 轨迹资源必须带合法关键帧；其它资源给了关键帧也一并校验（越界一律拒）
+      ...input.keyframes === undefined && normalizeResourceKind(input.kind) !== 'motion-track' ? {}
+        : { keyframes: normalizeKeyframes(input.keyframes) },
       createdAt: stamp,
       updatedAt: stamp,
       ...input.note === undefined || input.note === '' ? {} : { note: input.note },

@@ -168,6 +168,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           kind: validated(() => normalizeResourceKind(text(payload, 'kind'))),
           name: validated(() => normalizeResourceName(field(payload, 'name'))),
           note: optionalText(payload, 'note'),
+          ...field(payload, 'keyframes') === undefined ? {} : { keyframes: field(payload, 'keyframes') },
         }),
       }
     case 'resources/remove':

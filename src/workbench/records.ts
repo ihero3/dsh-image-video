@@ -77,9 +77,25 @@ export type MediaKind = 'image' | 'video'
  * `voice` deliberately carries metadata only in this version (`D6`): the field is
  * a name plus notes, no sample playback until a TTS provider is wired.
  */
-export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice'
+export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice' | 'motion-track'
 
 /** One reusable creative resource inside a project. */
+/**
+ * 轨迹关键帧（`T2-6`，`R-MED-4`）：归一化坐标 + 时间点，只存数字，序列化即 JSON。
+ * `x`/`y` 取画面比例（0 = 左边/上边，1 = 右边/下边），`scale` 是相对缩放。
+ */
+export interface MotionKeyframe {
+  readonly tMs: number
+  readonly x: number
+  readonly y: number
+  readonly scale?: number
+}
+
+/** 一条轨迹最多多少个关键帧。 */
+export const MAX_MOTION_KEYFRAMES = 120
+/** 轨迹最长覆盖 10 分钟。 */
+export const MAX_MOTION_DURATION_MS = 600_000
+
 export interface ResourceRecord {
   readonly schemaVersion: number
   readonly id: string
@@ -88,6 +104,8 @@ export interface ResourceRecord {
   readonly name: string
   /** Free-form description (appearance, mood, usage notes). */
   readonly note?: string
+  /** 轨迹资源的关键帧（只有 `motion-track` 用）。 */
+  readonly keyframes?: readonly MotionKeyframe[]
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -150,8 +168,71 @@ export function normalizeProjectName(value: unknown): string {
  */
 export function normalizeResourceKind(value: unknown): ResourceKind {
   if (value === 'role' || value === 'scene' || value === 'prop'
-    || value === 'brand' || value === 'style' || value === 'voice') return value
-  throw new Error('resource kind must be one of role/scene/prop/brand/style/voice')
+    || value === 'brand' || value === 'style' || value === 'voice' || value === 'motion-track') return value
+  throw new Error('resource kind must be one of role/scene/prop/brand/style/voice/motion-track')
+}
+
+/**
+ * 校验并归一化轨迹关键帧。
+ * @param value - 待校验的关键帧数组。
+ * @returns 归一化后的关键帧。
+ * @throws {Error} 数量、时间点、坐标或缩放越界时（越界一律拒，不做静默截断）。
+ */
+export function normalizeKeyframes(value: unknown): MotionKeyframe[] {
+  if (!Array.isArray(value)) throw new Error('motion keyframes must be an array')
+  if (value.length === 0) throw new Error('motion track needs at least one keyframe')
+  if (value.length > MAX_MOTION_KEYFRAMES) {
+    throw new Error(`motion track supports at most ${MAX_MOTION_KEYFRAMES} keyframes, got ${value.length}`)
+  }
+  let previous = -1
+  return value.map((raw, index) => {
+    if (typeof raw !== 'object' || raw === null) throw new Error(`keyframe ${index} must be an object`)
+    const frame = raw as Record<string, unknown>
+    const number = (key: string, min: number, max: number): number => {
+      const candidate = frame[key]
+      if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
+        throw new Error(`keyframe ${index} ${key} must be a finite number`)
+      }
+      if (candidate < min || candidate > max) {
+        throw new Error(`keyframe ${index} ${key} must be between ${min} and ${max}`)
+      }
+      return candidate
+    }
+    const tMs = Math.round(number('tMs', 0, MAX_MOTION_DURATION_MS))
+    if (index > 0 && tMs < previous) throw new Error(`keyframe ${index} tMs must not go backwards`)
+    previous = tMs
+    const x = number('x', 0, 1)
+    const y = number('y', 0, 1)
+    const scale = frame.scale === undefined ? undefined : number('scale', 0.1, 10)
+    return { tMs, x, y, ...scale === undefined ? {} : { scale } }
+  })
+}
+
+/** 把坐标说成"人话"（供约束文本用）。 */
+function describePosition(x: number, y: number): string {
+  const horizontal = x < 0.34 ? '左' : x > 0.66 ? '右' : '中'
+  const vertical = y < 0.34 ? '上' : y > 0.66 ? '下' : '中'
+  return `${vertical}${horizontal}`
+}
+
+/**
+ * 轨迹 → 约束文本（`T2-6` 的可断言产物）：把关键帧翻译成供给模型的运动约束。
+ * @param keyframes - 归一化关键帧。
+ * @returns 一行行"时间段 + 运动"的自然语言约束。
+ */
+export function describeMotionTrack(keyframes: readonly MotionKeyframe[]): string {
+  if (keyframes.length === 0) return '无轨迹约束'
+  return keyframes
+    .map((frame, index) => {
+      const from = (frame.tMs / 1000).toFixed(1)
+      const where = describePosition(frame.x, frame.y)
+      const scale = frame.scale === undefined ? '' : `，缩放 ${frame.scale.toFixed(2)}x`
+      if (index === 0) return `${from}s 起：主体位于画面${where}${scale}`
+      const previous = keyframes[index - 1]!
+      const to = (previous.tMs / 1000).toFixed(1)
+      return `${to}s→${from}s：移动到画面${where}${scale}`
+    })
+    .join('；')
 }
 
 /**

@@ -70,8 +70,22 @@ export type MediaKind = 'image' | 'video';
  * `voice` deliberately carries metadata only in this version (`D6`): the field is
  * a name plus notes, no sample playback until a TTS provider is wired.
  */
-export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice';
+export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice' | 'motion-track';
 /** One reusable creative resource inside a project. */
+/**
+ * 轨迹关键帧（`T2-6`，`R-MED-4`）：归一化坐标 + 时间点，只存数字，序列化即 JSON。
+ * `x`/`y` 取画面比例（0 = 左边/上边，1 = 右边/下边），`scale` 是相对缩放。
+ */
+export interface MotionKeyframe {
+    readonly tMs: number;
+    readonly x: number;
+    readonly y: number;
+    readonly scale?: number;
+}
+/** 一条轨迹最多多少个关键帧。 */
+export declare const MAX_MOTION_KEYFRAMES = 120;
+/** 轨迹最长覆盖 10 分钟。 */
+export declare const MAX_MOTION_DURATION_MS = 600000;
 export interface ResourceRecord {
     readonly schemaVersion: number;
     readonly id: string;
@@ -80,6 +94,8 @@ export interface ResourceRecord {
     readonly name: string;
     /** Free-form description (appearance, mood, usage notes). */
     readonly note?: string;
+    /** 轨迹资源的关键帧（只有 `motion-track` 用）。 */
+    readonly keyframes?: readonly MotionKeyframe[];
     readonly createdAt: string;
     readonly updatedAt: string;
 }
@@ -115,6 +131,19 @@ export declare function normalizeProjectName(value: unknown): string;
  * @throws {Error} when it is none of the six known kinds.
  */
 export declare function normalizeResourceKind(value: unknown): ResourceKind;
+/**
+ * 校验并归一化轨迹关键帧。
+ * @param value - 待校验的关键帧数组。
+ * @returns 归一化后的关键帧。
+ * @throws {Error} 数量、时间点、坐标或缩放越界时（越界一律拒，不做静默截断）。
+ */
+export declare function normalizeKeyframes(value: unknown): MotionKeyframe[];
+/**
+ * 轨迹 → 约束文本（`T2-6` 的可断言产物）：把关键帧翻译成供给模型的运动约束。
+ * @param keyframes - 归一化关键帧。
+ * @returns 一行行"时间段 + 运动"的自然语言约束。
+ */
+export declare function describeMotionTrack(keyframes: readonly MotionKeyframe[]): string;
 /**
  * Validate a task status.
  * @param value - raw status.

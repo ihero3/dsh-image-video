@@ -85,7 +85,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Resource kinds in picker order. */
-const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice']
+const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice', 'motion-track']
 
 /** Localized label for one timeline track kind. */
 function trackKindKey(kind: TrackKind): WorkbenchLocaleKey {
@@ -104,6 +104,7 @@ function kindKey(kind: ResourceKind): WorkbenchLocaleKey {
     case 'prop': return 'kindProp'
     case 'brand': return 'kindBrand'
     case 'style': return 'kindStyle'
+    case 'motion-track': return 'resourceMotionTrack'
     case 'voice': return 'kindVoice'
   }
 }

@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **46** | — |
+| **合计** | **59** | **52** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -62,22 +62,22 @@
 
 ## 4. 阶段 2：项目、媒体素材、创作资源与任务统一（计划 §5）
 
-- [~] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已实现**：`ProjectRecord`、`AssetRecord`（含 `schemaVersion`）、`newWorkbenchId`、`normalizeProjectName`/`normalizeMediaKind`，`tests/workbench-store.test.ts` 覆盖校验边界；**待做**：`ResourceRecord`/`TrackResourceRecord`/`TaskRecord`｜R-PRJ-1、R-MED-1｜T1-10
+- [x] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已完成**：项目/素材/任务/资源（含 `motion-track` 轨迹的关键帧校验）/工作流与运行/时间轴都已就位；`newWorkbenchId(prefix)` 统一 id；校验覆盖名称、媒体类型、资源种类、任务状态、关键帧与轨道结构。测试分布在 `workbench-store`/`workbench-timeline`/`motion-track` 等｜R-PRJ-1、R-MED-1｜T1-10
 - [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目、素材与**任务账本**，写入为 tmp+rename 原子、重启可重载、损坏文件不静默；`tests/workbench-store.test.ts` 8 例。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目与账本需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 包格式一致），KV 更适合会话级易变元数据；阶段 8 前复核｜**待做**：资源记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
 - [x] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除（二次确认）、改名（手动保存 + **停止输入约 0.9 秒自动保存**）、保存状态四态（已保存 / 保存中… / 有未保存改动 / 保存失败，根节点 `data-workbench-save`）；`tests/workbench.client.test.tsx` 覆盖 dirty→自动落盘→saved 与手动保存两条路径｜R-PRJ-3｜T2-2
 - [x] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义｜插件｜**已完成**：登记（按路径去重）、按媒体类型筛选、按项目列出、删除记录（只删记录不动文件）。**引用检查落地**：删素材前扫描时间轴 clip 与流程节点参数，被引用则**默认拒绝**并把位置说清楚（`时间轴「成片」的 video 轨 · 片段 c1（0ms 起）` / `流程图「图」的节点 n1`），用户点「仍要删除」才带 `force` 执行（三步确认）。测试：引用扫描纯函数 + 存储守卫（拒/强制各一）+ 端点（无 force 拒绝、带 force 删除）｜R-MED-2、R-MED-6｜T2-2
 - [x] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜**已完成**：六种 `kind` + 名称/备注校验、端点、按项目与种类过滤、项目删除级联。**引用检查落地**：删资源前扫描流程节点参数里的资源 id（真正的 `resource-reference` 节点），被引用即拒绝并指出节点，点「仍要删除」才 force。**说明**：音色试听按 `D6` 本期只做元数据。测试同 T2-4｜R-MED-3、R-MED-5｜T2-2
-- [ ] **T2-6** 轨迹资源：关键帧校验 / 绑定 / 序列化 + 轨迹转约束文本｜插件｜`test:` 关键帧越界被拒；轨迹→约束文本可断言｜回滚：移除轨迹资源类型与绑定入口｜R-MED-4｜T2-5
+- [x] **T2-6** 轨迹资源：关键帧校验 / 绑定 / 序列化 + 轨迹转约束文本｜插件｜**已完成**：轨迹做成**资源类型**（`kind: motion-track`），于是复用资源 CRUD、面板与引用检查；关键帧是 `{tMs,x,y,scale?}`（归一化坐标，只存数字、序列化即 JSON）——`normalizeKeyframes()` **越界一律拒**（空数组、tMs 越 0–600000、时间倒流、x/y 越 0–1、scale 越 0.1–10、超 120 帧都报错，不静默截断）；`describeMotionTrack()` 输出可断言的**运动约束文本**（`0.0s 起：主体位于画面中左；2.0s→…画面中右，缩放 1.15x`）；画布 `motion-track` 节点新增 `trackId` 参数完成绑定。测试 3 例｜R-MED-4｜T2-5
 - [x] **T2-7** `TaskService`：状态机（排队/运行/成功/失败/取消/中断）+ 持久化 + 恢复｜插件｜**已实现**：五态枚举与校验、**生成开始即写 `running`**（工作台立刻可见）、结束写 `succeeded`/`failed`（带错误原文）、**真实取消**（`GenerationRegistry` 把取消信号与工具执行信号取并集交给工具，`tasks/cancel` 中止提交/轮询，账本落 `cancelled`）、**重启恢复**（启动时把上次进程遗留的 `running` 收尾为 `failed`，避免永远"运行中"并幂等）；`tests/workbench-ledger.test.ts` 与存储测试覆盖。**说明**：`queued` 在枚举中保留但当前没有排队场景（工具调用即时开始），未使用 `ctx.jobs` 进度｜R-TSK-1、R-TSK-2、R-TSK-3｜T2-2｜**现场验通（2026-10-15）**：后台脚本盯梢 + 前台发起 `minimax-image-01` 出图 → 面板先出现「🖼️ 运行中 · minimax-image-01 · 08:14 取消任务」→ 脚本点「取消任务」→ 该行变「已取消」，且**发起方的工具调用直接返回 `任务已被取消`**（取消信号确实穿到工具，不是只改账本）；随后的改动让 running 行带上请求里的模型与提示词
 - [x] **T2-8** 快速创作登记适配：生成结果 → 素材登记 + 资源使用记录（幂等）｜插件｜**已完成**：生成即入账；一键「登记为素材」；幂等键（同一（项目, 路径）返回已有记录并透出 `created`）；`maintenance/compact` 去重端点 + 面板「整理重复记录」（宿主机缓存文档，去重必须在进程内做），离线场景留 `scripts/compact-workbench.mjs`。**现场验通（2026-10-15）**：连点两次素材数不变并提示「已登记过」；「整理重复记录」现场把 14 条合并为 4 条。**说明**：资源使用记录并入 T4-6 运行记录一起做｜R-MED-4、R-TSK-3｜T2-7
 - [x] **T2-9** 工作台四个面板：素材 / 资源 / 预览 / 任务（含跳转产出）；预览走 `/outputs` 通道，非本机宿主给可操作提示｜插件｜**已完成**：四面板全部可用；任务行可直接点开产出（已登记则选中素材，未登记则按路径临时预览）；**非本机宿主**时预览面板顶部给出可操作提示（`data-workbench-host-hint="remote"`：`/outputs` 仅回环注册，请改用 `http://127.0.0.1:…` 打开），有客户端测试（stub `window.location.hostname`）｜R-ENT-2｜T2-2
-- [~] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（**轮询/失效重查**，无推送通道）｜插件｜**已实现**：`projects/list|create|remove|rename`、`assets/list|attach|remove`、`resources/list|create|remove`、`tasks/list|assign`、`outputs/list` 端点 + 客户端 `createWorkbenchApi` + 手动刷新重查；错误一律结构化 envelope。**待做**：自动失效重查策略（无推送通道）｜R-AGT-1、R-NFR-2｜T2-2
+- [x] **T2-10** RPC 面与客户端 store：项目/素材/资源/任务 CRUD + 客户端一致性刷新（轮询/失效重查，无推送通道）｜插件｜**已完成**：端点 `projects/list|create|remove|rename`、`assets/list|attach|remove`、`resources/list|create|remove`、`tasks/list|assign|cancel`、`outputs/list`、`workflows/*`、`timelines/*`（含 `render|renders|render-cancel`）、`media/ffmpeg`、`maintenance/compact` + 客户端 `createWorkbenchApi`；**一致性刷新策略**（`T6-4` 落地）：面板可见时每 5 秒轮询项目/素材/任务，本地 dirty/saving 文档不覆盖，失败静默重试；错误一律结构化 envelope｜R-AGT-1、R-NFR-2｜T2-2
 - [x] **T2-11** 配置口径对齐：复用 `src/config.ts` 与凭证缝；默认值一律读宿主配置，不写死前端｜插件｜**已完成**：工作台不硬编码任何部署值（事实来自 `health`）；**`health` 现在带上 7 字段生效默认值视图**（`resolveDefaultsView`：运行时覆盖 ?? settings 持久默认，与 composer 注入同一口径），工作台只读展示「当前生效参数」（`data-workbench-defaults` + 每字段 `data-workbench-default`，未设置显示"未设置"）；守护测试 `client-no-hardcoding`（产物里不得出现绝对路径与任何服务商/模型名）+ 端点断言 + 客户端断言 7 行｜R-NFR-1、R-BIND-3｜T2-2
 
 ## 5. 阶段 3：预留能力边界（计划 §6.2）
 
-- [~] **T3-1** `availability: 'runnable' | 'planned'` 机制 + UI 禁用态与原因文案｜插件｜**已实现**：节点目录带 `availability`（12 runnable / 3 planned），planned 在节点库与卡片上有独立标记（`data-workflow-availability`、虚线边框、⚠ 标记），参数面板给出原因文案；**测试**断言两种标记可见、planned 的 title 有原因。**待做**：执行侧的「运行按钮」禁用态随运行器一起做（T4-4）｜R-BND-4｜T2-2
-- [~] **T3-2** planned 节点/资源位：`lip-sync` / `face-swap` / `voice-synthesize`（音色只存元数据）｜插件｜**已实现**：三个 planned 节点**可放进图并保存**（进 `WorkflowRecord`，有测试），卡片与面板如实标注「未提供」与原因，不做任何假装可运行的 UI。**待做**：`voice-synthesize` 的音色元数据字段（等阶段 2 资源侧的音色资源用法明确后接）｜R-BND-4、R-MED-5｜T2-2
+- [x] **T3-1** `availability: runnable | planned` 机制 + UI 禁用态与原因文案｜插件｜**已完成**：节点目录带 `availability`（12 runnable / 3 planned）；planned 在节点库与卡片上有独立标记（`data-workflow-availability`、虚线边框、⚠）且参数面板给出原因；**执行侧**由运行器兜底（`T4-4`/`T3-3`：图里含 planned 直接拒绝整次运行）｜R-BND-4｜T2-2
+- [x] **T3-2** planned 节点/资源位：`lip-sync` / `face-swap` / `voice-synthesize`（音色只存元数据）｜插件｜**已完成**：三种 planned 类型进目录、可放置可保存但标"未提供"且不参与执行；`T3-3` 的防伪造测试断言它们**不被执行、不被静默跳过、不被标成成功**（含 planned 的图整次运行拒绝，零外部调用）｜R-BND-4、R-MED-5｜T3-1
 - [x] **T3-3** 防伪造测试：planned 不执行、不跳过、不伪造成功｜插件｜**已完成**：`tests/planned-capability.test.ts` 三例——① 三种 planned 类型在校验里都被标 `not-runnable` 并带上原因；② 图里一旦含 planned 节点，运行**整次拒绝**（`failed` + 错误里含 planned），**一个外部调用都没发出**、没有任何节点被标成成功、该节点是 `skipped` 且注明"validation"；③ 纯可运行图正常跑通。重试同样拒绝｜R-BND-4｜T3-2
 
 ## 6. 阶段 4：专业工作流 MVP（flow 节点流，计划 §6）

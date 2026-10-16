@@ -136,7 +136,10 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
   },
   {
     kind: 'motion-track', labelKey: 'nodeMotionTrack', availability: 'runnable', input: 'media', output: 'media',
-    params: [{ id: 'note', labelKey: 'paramNote', type: 'text', default: '' }],
+    params: [
+      { id: 'trackId', labelKey: 'paramTrack', type: 'text', default: '' },
+      { id: 'note', labelKey: 'paramNote', type: 'text', default: '' },
+    ],
   },
   {
     kind: 'image-generate', labelKey: 'nodeImageGenerate', availability: 'runnable', input: 'text', output: 'media',
