@@ -117,6 +117,7 @@ function statusKey(status: TaskStatus): WorkbenchLocaleKey {
     case 'succeeded': return 'statusSucceeded'
     case 'failed': return 'statusFailed'
     case 'cancelled': return 'statusCancelled'
+    case 'imported-idle': return 'statusImportedIdle'
   }
 }
 

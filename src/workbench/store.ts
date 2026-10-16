@@ -455,6 +455,28 @@ export class WorkbenchStore {
   }
 
   /**
+   * 导入外来的任务记录（`T8-2`）：**一律转 `imported-idle`**，绝不自动续跑。
+   * @param projectId - 归属项目。
+   * @param tasks - 包里的任务记录。
+   * @returns 导入条数。
+   */
+  async importTasks(projectId: string, tasks: readonly TaskRecord[]): Promise<number> {
+    const document = await this.load()
+    const stamp = this.now().toISOString()
+    for (const task of tasks) {
+      document.tasks.push({
+        ...task,
+        id: newWorkbenchId('task'),
+        projectId,
+        status: 'imported-idle',
+        updatedAt: stamp,
+      })
+    }
+    if (tasks.length > 0) await this.save(document)
+    return tasks.length
+  }
+
+  /**
    * Collapse duplicate asset records (same project + same path) into the earliest one.
    *
    * Idempotent registration landed after some duplicates were already written, and the

@@ -41,6 +41,7 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'statusImportedIdle'
   | 'resourceMotionTrack'
   | 'paramTrack'
   | 'forceRemove'
@@ -222,6 +223,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  statusImportedIdle: 'Imported (not running)',
   resourceMotionTrack: 'Motion track',
   paramTrack: 'Track resource',
   forceRemove: 'Delete anyway',
@@ -401,6 +403,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  statusImportedIdle: '已导入（未运行）',
   resourceMotionTrack: '轨迹',
   paramTrack: '轨迹资源',
   forceRemove: '仍要删除',

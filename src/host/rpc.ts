@@ -17,6 +17,7 @@ import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contra
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
+import { exportProjectPackage, importProjectPackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
@@ -213,6 +214,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const previous = await deps.store.findRun(runId)
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
+    }
+    // ---- 项目包（阶段 8，T8-1）---------------------------------------------------
+    case 'packages/export': {
+      const projectId = text(payload, 'projectId')
+      const target = optionalText(payload, 'targetDir')
+      const { manifestPath, manifest } = await exportProjectPackage({
+        store: deps.store, projectId,
+        targetDir: target === undefined || target === '' ? `${deps.outputsDir}/../packages/${projectId}` : target,
+      })
+      return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
+    }
+    case 'packages/import': {
+      const result = await importProjectPackage({
+        store: deps.store,
+        packageDir: text(payload, 'packageDir'),
+        outputsDir: deps.outputsDir,
+        ...field(payload, 'mode') === 'structure-only' ? { mode: 'structure-only' as const } : {},
+      })
+      return { imported: result }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
     case 'media/ffmpeg': {

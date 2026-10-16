@@ -42,7 +42,7 @@ export interface AssetRecord {
  * answers (a long video job outlives the tab), and `cancelled` is distinct from
  * `failed` because the user asked for it.
  */
-export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'imported-idle'
 
 /** One generation attempt, recorded by the host when a tool call finishes. */
 export interface TaskRecord {
