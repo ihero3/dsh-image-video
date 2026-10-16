@@ -145,6 +145,22 @@ describe('workbench channel endpoints', () => {
     await rm(work, { recursive: true, force: true })
   }, 60_000)
 
+  it('refuses an unforced delete of a referenced asset through the channel (T2-4)', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '引用检查' })
+    const asset = await ok<{ asset: { id: string } }>('assets/attach', {
+      projectId: created.project.id, path: '/tmp/referenced.mp4', kind: 'video',
+    })
+    await ok('timelines/save', {
+      projectId: created.project.id, name: '引用它的时间轴',
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: '/tmp/referenced.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    const refused = await handler('assets/remove', { id: asset.asset.id }, new AbortController().signal, {} as never)
+    expect(refused.ok).toBe(false)
+    expect(JSON.stringify(refused)).toContain('正被引用')
+    expect(await ok<{ removed: boolean }>('assets/remove', { id: asset.asset.id, force: true })).toEqual({ removed: true })
+  })
+
   it('reports the effective defaults in the health payload (T2-11)', async () => {
     const { ok } = await makeHandler()
     const health = await ok<{ defaults?: Record<string, string | number | null> }>('health', {})

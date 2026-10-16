@@ -40,7 +40,7 @@ export interface WorkbenchApi {
         created: boolean;
     }>;
     /** Remove one asset record. */
-    removeAsset: (id: string) => Promise<boolean>;
+    removeAsset: (id: string, force?: boolean) => Promise<boolean>;
     /** Rename a project. */
     renameProject: (id: string, name: string) => Promise<ProjectRecord>;
     /** One project's resources, newest first (optionally one kind). */
@@ -53,7 +53,7 @@ export interface WorkbenchApi {
         note?: string;
     }) => Promise<ResourceRecord>;
     /** Remove one resource record. */
-    removeResource: (id: string) => Promise<boolean>;
+    removeResource: (id: string, force?: boolean) => Promise<boolean>;
     /** Recorded generations, newest first. */
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
     /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */

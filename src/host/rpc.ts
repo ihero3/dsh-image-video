@@ -143,7 +143,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return attached
     }
     case 'assets/remove':
-      return { removed: await deps.store.removeAsset(text(payload, 'id')) }
+      return {
+        removed: await deps.store.removeAsset(text(payload, 'id'), field(payload, 'force') === true ? { force: true } : {}),
+      }
     case 'projects/rename': {
       const id = text(payload, 'id')
       const project = await deps.store.renameProject(id, validated(() => normalizeProjectName(field(payload, 'name'))))
@@ -169,7 +171,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         }),
       }
     case 'resources/remove':
-      return { removed: await deps.store.removeResource(text(payload, 'id')) }
+      return {
+        removed: await deps.store.removeResource(text(payload, 'id'), field(payload, 'force') === true ? { force: true } : {}),
+      }
     case 'tasks/list': {
       const limit = optionalNumber(payload, 'limit')
       const projectId = optionalText(payload, 'projectId')

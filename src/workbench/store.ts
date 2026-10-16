@@ -18,6 +18,7 @@ import {
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { DEFAULT_FRAME_RATE, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
 interface WorkbenchDocument {
@@ -196,11 +197,16 @@ export class WorkbenchStore {
    * @param id - asset id.
    * @returns `true` when a record was removed.
    */
-  async removeAsset(id: string): Promise<boolean> {
+  async removeAsset(id: string, options: { force?: boolean } = {}): Promise<boolean> {
     const document = await this.load()
-    const before = document.assets.length
-    document.assets = document.assets.filter(asset => asset.id !== id)
-    if (document.assets.length === before) return false
+    const asset = document.assets.find(candidate => candidate.id === id)
+    if (asset === undefined) return false
+    // 被引用就先拦下，并把"谁在引用"说清楚（`R-MED-2`）
+    const hits = findAssetReferences(document, asset)
+    if (hits.length > 0 && options.force !== true) {
+      throw new Error(`素材 ${asset.path} 正被引用：${describeReferences(hits)}。确认要删就在界面上再确认一次（force）。`)
+    }
+    document.assets = document.assets.filter(candidate => candidate.id !== id)
     await this.save(document)
     return true
   }
@@ -274,11 +280,15 @@ export class WorkbenchStore {
    * @param id - resource id.
    * @returns `true` when a record was removed.
    */
-  async removeResource(id: string): Promise<boolean> {
+  async removeResource(id: string, options: { force?: boolean } = {}): Promise<boolean> {
     const document = await this.load()
-    const before = document.resources.length
-    document.resources = document.resources.filter(resource => resource.id !== id)
-    if (document.resources.length === before) return false
+    const resource = document.resources.find(candidate => candidate.id === id)
+    if (resource === undefined) return false
+    const hits = findResourceReferences(document, id)
+    if (hits.length > 0 && options.force !== true) {
+      throw new Error(`创作资源「${resource.name}」正被引用：${describeReferences(hits)}。确认要删就在界面上再确认一次（force）。`)
+    }
+    document.resources = document.resources.filter(candidate => candidate.id !== id)
     await this.save(document)
     return true
   }

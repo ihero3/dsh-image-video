@@ -177,6 +177,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [previewPath, setPreviewPath] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
+  // 被引用的素材/资源：首次删除被拒后，亮出"仍要删除"（force）让用户明确承担后果
+  const [forceTarget, setForceTarget] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
@@ -1084,16 +1086,44 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       style={BUTTON}
                       disabled={busy}
                       onClick={() => {
-                        if (confirming !== asset.id) { setConfirming(asset.id); return }
+                        if (confirming !== asset.id) { setConfirming(asset.id); setForceTarget(undefined); return }
                         setConfirming(undefined)
+                        const force = forceTarget === asset.id
                         void run(async () => {
-                          await apiRef.current.removeAsset(asset.id)
-                          setAssets(await apiRef.current.listAssets(asset.projectId))
+                          try {
+                            await apiRef.current.removeAsset(asset.id, force)
+                            setForceTarget(undefined)
+                            setAssets(await apiRef.current.listAssets(asset.projectId))
+                          } catch (error) {
+                            // 宿主会说明"谁在引用"；这里再给一次明确的二次确认
+                            if (!force) setForceTarget(asset.id)
+                            throw error
+                          }
                         })
                       }}
                     >
                       {confirming === asset.id ? t('confirmRemove') : t('remove')}
                     </button>
+                    {forceTarget === asset.id
+                      ? (
+                        <button
+                          type="button"
+                          data-workbench-force-remove={asset.id}
+                          aria-label={`${t('forceRemove')} ${baseName(asset.path)}`}
+                          style={BUTTON}
+                          disabled={busy}
+                          onClick={() => {
+                            void run(async () => {
+                              await apiRef.current.removeAsset(asset.id, true)
+                              setForceTarget(undefined)
+                              setAssets(await apiRef.current.listAssets(asset.projectId))
+                            })
+                          }}
+                        >
+                          {t('forceRemove')}
+                        </button>
+                      )
+                      : null}
                   </li>
                 ))}
               </ul>
@@ -1188,16 +1218,43 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       aria-label={`${confirming === resource.id ? t('confirmRemove') : t('remove')} ${resource.name}`}
                       disabled={busy}
                       onClick={() => {
-                        if (confirming !== resource.id) { setConfirming(resource.id); return }
+                        if (confirming !== resource.id) { setConfirming(resource.id); setForceTarget(undefined); return }
                         setConfirming(undefined)
+                        const force = forceTarget === resource.id
                         void run(async () => {
-                          await apiRef.current.removeResource(resource.id)
-                          if (activeProject !== undefined) await loadResources(activeProject.id)
+                          try {
+                            await apiRef.current.removeResource(resource.id, force)
+                            setForceTarget(undefined)
+                            if (activeProject !== undefined) await loadResources(activeProject.id)
+                          } catch (error) {
+                            if (!force) setForceTarget(resource.id)
+                            throw error
+                          }
                         })
                       }}
                     >
                       {confirming === resource.id ? t('confirmRemove') : t('remove')}
                     </button>
+                    {forceTarget === resource.id
+                      ? (
+                        <button
+                          type="button"
+                          data-workbench-force-remove={resource.id}
+                          aria-label={`${t('forceRemove')} ${resource.name}`}
+                          style={BUTTON}
+                          disabled={busy}
+                          onClick={() => {
+                            void run(async () => {
+                              await apiRef.current.removeResource(resource.id, true)
+                              setForceTarget(undefined)
+                              if (activeProject !== undefined) await loadResources(activeProject.id)
+                            })
+                          }}
+                        >
+                          {t('forceRemove')}
+                        </button>
+                      )
+                      : null}
                   </li>
                 ))}
               </ul>

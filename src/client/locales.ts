@@ -41,6 +41,7 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'forceRemove'
   | 'hostHintRemote'
   | 'none'
   | 'defaultMediaMode'
@@ -219,6 +220,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  forceRemove: 'Delete anyway',
   hostHintRemote: 'Preview needs a local host: /outputs is only served on loopback. Open this app via http://127.0.0.1:… instead.',
   none: 'not set',
   defaultMediaMode: 'Composer mode',
@@ -395,6 +397,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  forceRemove: '仍要删除',
   hostHintRemote: '预览需要本机访问宿主：/outputs 只在回环地址注册。请改用 http://127.0.0.1:… 打开本应用。',
   none: '未设置',
   defaultMediaMode: '输入模式',

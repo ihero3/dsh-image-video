@@ -38,7 +38,7 @@ export interface WorkbenchApi {
     prompt?: string
   }) => Promise<{ asset: AssetRecord; created: boolean }>
   /** Remove one asset record. */
-  removeAsset: (id: string) => Promise<boolean>
+  removeAsset: (id: string, force?: boolean) => Promise<boolean>
   /** Rename a project. */
   renameProject: (id: string, name: string) => Promise<ProjectRecord>
   /** One project's resources, newest first (optionally one kind). */
@@ -51,7 +51,7 @@ export interface WorkbenchApi {
     note?: string
   }) => Promise<ResourceRecord>
   /** Remove one resource record. */
-  removeResource: (id: string) => Promise<boolean>
+  removeResource: (id: string, force?: boolean) => Promise<boolean>
   /** Recorded generations, newest first. */
   listTasks: (limit?: number) => Promise<TaskRecord[]>
   /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
@@ -124,12 +124,12 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     removeProject: async id => (await call<{ removed: boolean }>('projects/remove', { id })).removed,
     listAssets: async projectId => (await call<{ assets: AssetRecord[] }>('assets/list', { projectId })).assets,
     attachAsset: input => call<{ asset: AssetRecord; created: boolean }>('assets/attach', input),
-    removeAsset: async id => (await call<{ removed: boolean }>('assets/remove', { id })).removed,
+    removeAsset: async (id, force) => (await call<{ removed: boolean }>('assets/remove', force === true ? { id, force: true } : { id })).removed,
     renameProject: async (id, name) => (await call<{ project: ProjectRecord }>('projects/rename', { id, name })).project,
     listResources: async (projectId, kind) =>
       (await call<{ resources: ResourceRecord[] }>('resources/list', { projectId, kind })).resources,
     createResource: async input => (await call<{ resource: ResourceRecord }>('resources/create', input)).resource,
-    removeResource: async id => (await call<{ removed: boolean }>('resources/remove', { id })).removed,
+    removeResource: async (id, force) => (await call<{ removed: boolean }>('resources/remove', force === true ? { id, force: true } : { id })).removed,
     listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
     probeFfmpeg: async path => (await call<{ ffmpeg: FfmpegProbe }>('media/ffmpeg', path === undefined ? {} : { path })).ffmpeg,
     renderTimeline: async (timelineId, projectId) =>
