@@ -156,6 +156,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [clipAssetPath, setClipAssetPath] = useState('')
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [previewMs, setPreviewMs] = useState(0)
+  const [refreshTick, setRefreshTick] = useState(0)
   const [ffmpeg, setFfmpeg] = useState<FfmpegProbe | undefined>(undefined)
   const [renderJob, setRenderJob] = useState<RenderJob | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
@@ -450,12 +451,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       try {
         const facts = await apiRef.current.health()
         setHealth({ status: 'ok', version: facts.version, provider: facts.provider, ...facts.defaults === undefined ? {} : { defaults: facts.defaults } })
+
       } catch (error) {
         setHealth({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
       }
       await run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() })
     })()
   }, [loadOutputs, loadProjects, loadTasks, run])
+
+  // 双向一致性（`T6-4`）：宿主→客户端没有通用推送通道，所以按**固定 5 秒**节奏轮询
+  // 项目/素材/任务，让 Agent（工具）那边的改动自动出现；口径与取舍：
+  //   · 延迟 ≤ 5 秒（面板不可见时不轮询，省掉无意义的往返）
+  //   · 本地正在编辑的文档（画布/时间轴处于 dirty/saving）**不覆盖**，避免打断输入
+  //     —— 这些面的"Agent 改名后工具能读到"方向本来就是宿主权威，无需客户端推送
+  //   · 轮询失败静默重试，不弹错
+  useEffect(() => {
+    if (!tab.visible) return
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          await loadProjects()
+          await loadTasks()
+          if (activeProject !== undefined) setAssets(await apiRef.current.listAssets(activeProject.id))
+          setRefreshTick(current => current + 1)
+        } catch {
+          // 下一轮再试
+        }
+      })()
+    }, 5000)
+    return () => { clearInterval(timer) }
+  }, [tab.visible, activeProject?.id, loadProjects, loadTasks])
 
   // 自动保存：改名输入停下约 0.9 秒后落盘（手动"保存"仍在，四态照旧）。
   // 依赖里只放"是否处于未保存"，避免每次按键都重建定时器。
@@ -523,6 +548,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       style={SURFACE}
       data-workbench-kind={kind}
       data-workbench-visible={tab.visible ? 'true' : 'false'}
+      data-workbench-refreshed={String(refreshTick)}
       data-workbench-fullscreen={sidebar.fullscreen ? 'true' : 'false'}
       data-workbench-health={health.status}
       data-workbench-save={saveState}

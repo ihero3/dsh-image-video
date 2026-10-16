@@ -590,6 +590,27 @@ describe('workbench project and asset flow', () => {
     expect(host.projects).toHaveLength(1)
   })
 
+  it('polls the host so changes made by the agent show up without a manual refresh (T6-4)', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    // 先有一个项目，项目下拉才会出现
+    await createProject(host, '我的项目')
+    await waitFor(() => { expect(view.container.querySelector('select[aria-label="Project"]')).toBeTruthy() })
+    const before = view.container.querySelector('select[aria-label="Project"]')?.textContent ?? ''
+    expect(before).toContain('我的项目')
+    expect(before).not.toContain('Agent 建的项目')
+
+    // 模拟 Agent（工具）在宿主侧新建了一个项目：客户端不点刷新也该看到（口径：≤5 秒）
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-agent', name: 'Agent 建的项目',
+      createdAt: '2026-10-16T05:00:00.000Z', updatedAt: '2026-10-16T05:00:00.000Z',
+    })
+    await waitFor(() => {
+      expect(view.container.querySelector('select[aria-label="Project"]')?.textContent).toContain('Agent 建的项目')
+    }, { timeout: 9000 })
+  }, 15_000)
+
   it('shows the seven effective defaults from the host (T2-11)', async () => {
     const host = fakeApi({
       defaults: {
