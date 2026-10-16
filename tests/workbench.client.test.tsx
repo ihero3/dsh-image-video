@@ -176,6 +176,7 @@ function fakeApi(options: {
       const record: TimelineRecord = {
         schemaVersion: 1, id: existing?.id ?? `tml-${timelines.length + 1}`, projectId: input.projectId,
         name: input.name ?? '未命名时间轴', frameRate: input.frameRate ?? 30,
+        burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
         tracks: input.tracks as TimelineTrack[], createdAt: existing?.createdAt ?? stamp, updatedAt: stamp,
       }
       const index = timelines.findIndex(row => row.id === record.id)
@@ -482,6 +483,25 @@ describe('workbench project and asset flow', () => {
     })
     fireEvent.click(view.container.querySelector('[aria-label="Add subtitle"]') as HTMLElement)
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+
+    // 顺序预览：播放头移动会切换"当前片段"（字幕）
+    const firstSubtitle = view.container.querySelector('[data-timeline-active-subtitle]')?.getAttribute('data-timeline-active-subtitle')
+    expect(firstSubtitle).toBeTruthy()
+    fireEvent.change(view.container.querySelector('[data-timeline-playhead]') as HTMLElement, { target: { value: '3500' } })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-timeline-active-subtitle]')?.getAttribute('data-timeline-active-subtitle')).not.toBe(firstSubtitle)
+    })
+
+    // 字幕样式 + 烧录开关都会落库
+    fireEvent.change(view.container.querySelector('[data-timeline-track="subtitle"] input[type="color"]') as HTMLElement, {
+      target: { value: '#ffcc00' },
+    })
+    fireEvent.click(view.container.querySelector('[data-timeline-burn]') as HTMLElement)
+    // 去抖 800ms + 异步保存，给足时间
+    await waitFor(() => {
+      expect(host.timelines[0]?.burnSubtitles).toBe(false)
+      expect(host.timelines[0]?.tracks[2]?.clips[0]?.style?.color).toBe('#ffcc00')
+    }, { timeout: 4000 })
 
     // 自动保存：文档落库且是三轨结构
     await waitFor(() => { expect(host.calls).toContain('timelines/save') })

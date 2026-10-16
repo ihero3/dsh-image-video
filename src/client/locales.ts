@@ -41,6 +41,14 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'stylePosition'
+  | 'styleColor'
+  | 'styleFontSize'
+  | 'playhead'
+  | 'previewNote'
+  | 'previewIdle'
+  | 'previewTitle'
+  | 'burnSubtitles'
   | 'pickAsset'
   | 'timelineTitle'
   | 'subtitlePlaceholder'
@@ -193,6 +201,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  stylePosition: 'Position',
+  styleColor: 'Color',
+  styleFontSize: 'Size',
+  playhead: 'Playhead',
+  previewNote: 'Sequence preview: picks the clip at the playhead, no transcoding. Export may differ by a frame or two.',
+  previewIdle: 'No clip at this time',
+  previewTitle: 'Sequence preview',
+  burnSubtitles: 'Burn subtitles into the video',
   pickAsset: 'Asset',
   timelineTitle: 'Timeline',
   subtitlePlaceholder: 'Subtitle text',
@@ -343,6 +359,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  stylePosition: '位置',
+  styleColor: '颜色',
+  styleFontSize: '字号',
+  playhead: '播放头',
+  previewNote: '顺序预览：按播放头取当前片段，不做转码；导出（T5-5）可能有一两帧差异。',
+  previewIdle: '这个时间点没有画面',
+  previewTitle: '顺序预览',
+  burnSubtitles: '导出时烧录字幕',
   pickAsset: '选择素材',
   timelineTitle: '时间轴',
   subtitlePlaceholder: '字幕文本',

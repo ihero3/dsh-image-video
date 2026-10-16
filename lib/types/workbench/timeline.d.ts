@@ -43,6 +43,8 @@ export interface TimelineRecord {
     readonly name: string;
     readonly frameRate: number;
     readonly tracks: readonly TimelineTrack[];
+    /** 导出时是否把字幕烧进画面（`T5-3`）：关掉时字幕数据仍保留，只是不烧录。 */
+    readonly burnSubtitles: boolean;
     readonly createdAt: string;
     readonly updatedAt: string;
 }
@@ -63,5 +65,18 @@ export declare function looksInlinedBytes(value: string): boolean;
  * @throws {Error} 结构不合法、含内联字节、或超出规模上限时。
  */
 export declare function normalizeTimelineTracks(raw: unknown): TimelineTrack[];
+/** 字幕样式允许的取值范围（越界即拒绝，避免风格面板把畸值写进文档）。 */
+export declare const SUBTITLE_FONT_SIZE_RANGE: {
+    readonly min: 8;
+    readonly max: 200;
+};
+/**
+ * 校验并归一化字幕样式。
+ * @param raw - 待校验的样式对象。
+ * @param clipId - 出错时用于定位的 clip id。
+ * @returns 归一化样式，未给字段时返回空对象。
+ * @throws {Error} 取值越界或类型不对时。
+ */
+export declare function normalizeSubtitleStyle(raw: unknown, clipId: string): SubtitleStyle;
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export declare function timelineDurationMs(tracks: readonly TimelineTrack[]): number;

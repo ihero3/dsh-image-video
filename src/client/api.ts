@@ -61,6 +61,7 @@ export interface WorkbenchApi {
     name?: string
     tracks: unknown
     frameRate?: number
+    burnSubtitles?: boolean
   }) => Promise<TimelineRecord>
   /** Remove one timeline document. */
   removeTimeline: (id: string) => Promise<boolean>

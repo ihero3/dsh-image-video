@@ -153,6 +153,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [timelineState, setTimelineState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [clipAssetPath, setClipAssetPath] = useState('')
   const [subtitleDraft, setSubtitleDraft] = useState('')
+  const [previewMs, setPreviewMs] = useState(0)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -265,6 +266,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               { id: 'track-audio', kind: 'audio', clips: [] },
               { id: 'track-subtitle', kind: 'subtitle', clips: [] },
             ],
+            burnSubtitles: true,
             createdAt: stamp, updatedAt: stamp,
           }
         })
@@ -287,7 +289,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         try {
           const stored = await apiRef.current.saveTimeline({
             id: pending.id, projectId: pending.projectId, name: pending.name,
-            tracks: pending.tracks, frameRate: pending.frameRate,
+            tracks: pending.tracks, frameRate: pending.frameRate, burnSubtitles: pending.burnSubtitles,
           })
           setTimeline(stored)
           setTimelineState('saved')
@@ -324,6 +326,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }, 800)
     return () => { clearTimeout(timer) }
   }, [workflowDirty, workflow, mode])
+
+  /** 时间轴总时长与当前播放头处的活动片段（顺序预览用）。 */
+  const timelineTotal = timeline === undefined ? 0 : timelineDurationMs(timeline.tracks)
+  const playheadMs = Math.max(0, Math.min(previewMs, timelineTotal))
+  const activeAt = (kind: TrackKind): { id: string; assetPath?: string; text?: string; style?: { fontSize?: number; color?: string; position?: 'top' | 'middle' | 'bottom' } } | undefined =>
+    timeline?.tracks
+      .filter(track => track.kind === kind)
+      .flatMap(track => track.clips)
+      .find(clip => playheadMs >= clip.startMs && playheadMs < clip.startMs + clip.durationMs)
+  const activeVideo = activeAt('video')
+  const activeSubtitle = activeAt('subtitle')
 
   /** 时间轴通用改法：换掉某条轨道。 */
   const patchTrack = (trackId: string, update: (track: TimelineTrack) => TimelineTrack): void => {
@@ -679,7 +692,47 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             </h3>
             <p style={MUTED} data-timeline-save={timelineState}>
               {t(timelineState === 'dirty' ? 'saveDirty' : timelineState === 'saving' ? 'saveSaving' : timelineState === 'failed' ? 'saveFailed' : 'saveSaved')}
+              {' · '}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <input type="checkbox" data-timeline-burn="true" checked={timeline.burnSubtitles}
+                  aria-label={t('burnSubtitles')}
+                  onChange={event => {
+                    const burnSubtitles = event.target.checked
+                    setTimeline(current => current === undefined ? current : { ...current, burnSubtitles })
+                    setTimelineState('dirty')
+                  }} />
+                {t('burnSubtitles')}
+              </label>
             </p>
+            <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('previewTitle')}</strong>
+            <div data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
+              data-timeline-active-subtitle={activeSubtitle?.id ?? ''}
+              style={{ position: 'relative', minHeight: '120px', background: '#101014', borderRadius: '6px', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+              {activeVideo?.assetPath === undefined
+                ? <span style={{ ...MUTED, fontSize: '11px' }}>{t('previewIdle')}</span>
+                : /\.(png|jpe?g|webp|gif)$/i.test(activeVideo.assetPath)
+                  ? <img src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} alt="" style={{ maxWidth: '100%', maxHeight: '200px' }} />
+                  : <video src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} muted
+                    style={{ maxWidth: '100%', maxHeight: '200px' }} />}
+              {activeSubtitle?.text === undefined ? null : (
+                <span data-timeline-subtitle-preview="true"
+                  style={{
+                    position: 'absolute', left: 0, right: 0, padding: '0 8px', textAlign: 'center',
+                    color: activeSubtitle.style?.color ?? '#ffffff',
+                    fontSize: `${Math.max(11, Math.min(26, Math.round((activeSubtitle.style?.fontSize ?? 32) / 2)))}px`,
+                    ...(activeSubtitle.style?.position ?? 'bottom') === 'bottom' ? { bottom: '6px' } : {},
+                    ...activeSubtitle.style?.position === 'top' ? { top: '6px' } : {},
+                    ...activeSubtitle.style?.position === 'middle' ? { top: '50%', transform: 'translateY(-50%)' } : {},
+                    textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+                  }}>
+                  {activeSubtitle.text}
+                </span>
+              )}
+            </div>
+            <input type="range" data-timeline-playhead="true" min={0} max={Math.max(1, timelineTotal)}
+              value={playheadMs} aria-label={t('playhead')}
+              onChange={event => { setPreviewMs(Number(event.target.value)) }} />
+            <p style={{ ...MUTED, fontSize: '10px' }}>{t('previewNote')}</p>
             {timeline.tracks.map(track => (
               <div key={track.id} data-timeline-track={track.kind} style={{ marginBottom: '8px' }}>
                 <strong style={{ fontSize: '11px' }}>{t(trackKindKey(track.kind))}</strong>
@@ -712,6 +765,49 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                 clips: current.clips.map(item => (item.id === clip.id ? { ...item, durationMs } : item)),
                               }))
                             }} />
+                          {track.kind === 'subtitle'
+                            ? (
+                              <>
+                                <input type="number" min={8} max={200} value={clip.style?.fontSize ?? 32}
+                                  aria-label={`${t('styleFontSize')} ${clip.id}`} style={{ ...INPUT, minWidth: '54px' }}
+                                  onChange={event => {
+                                    const fontSize = Number(event.target.value)
+                                    patchTrack(track.id, current => ({
+                                      ...current,
+                                      clips: current.clips.map(item => (item.id === clip.id
+                                        ? { ...item, style: { ...item.style, fontSize } }
+                                        : item)),
+                                    }))
+                                  }} />
+                                <input type="color" value={clip.style?.color ?? '#ffffff'}
+                                  aria-label={`${t('styleColor')} ${clip.id}`} style={{ width: '26px', padding: 0 }}
+                                  onChange={event => {
+                                    const color = event.target.value
+                                    patchTrack(track.id, current => ({
+                                      ...current,
+                                      clips: current.clips.map(item => (item.id === clip.id
+                                        ? { ...item, style: { ...item.style, color } }
+                                        : item)),
+                                    }))
+                                  }} />
+                                <select value={clip.style?.position ?? 'bottom'}
+                                  aria-label={`${t('stylePosition')} ${clip.id}`} style={{ ...INPUT, minWidth: '72px' }}
+                                  onChange={event => {
+                                    const position = event.target.value as 'top' | 'middle' | 'bottom'
+                                    patchTrack(track.id, current => ({
+                                      ...current,
+                                      clips: current.clips.map(item => (item.id === clip.id
+                                        ? { ...item, style: { ...item.style, position } }
+                                        : item)),
+                                    }))
+                                  }}>
+                                  <option value="top">top</option>
+                                  <option value="middle">middle</option>
+                                  <option value="bottom">bottom</option>
+                                </select>
+                              </>
+                            )
+                            : null}
                           <button type="button" style={BUTTON} aria-label={`${t('remove')} ${clip.id}`}
                             onClick={() => {
                               patchTrack(track.id, current => ({

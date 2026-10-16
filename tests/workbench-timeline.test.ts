@@ -10,7 +10,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 import {
-  MAX_TIMELINE_CLIPS, looksInlinedBytes, normalizeTimelineTracks, timelineDurationMs, type TimelineTrack,
+  MAX_TIMELINE_CLIPS, SUBTITLE_FONT_SIZE_RANGE, looksInlinedBytes, normalizeSubtitleStyle,
+  normalizeTimelineTracks, timelineDurationMs, type TimelineTrack,
 } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
@@ -85,6 +86,36 @@ describe('timeline model (T5-1)', () => {
         id: `c-${index}`, assetPath: '/a.mp4', startMs: 0, durationMs: 1,
       })),
     }])).toThrow(/more than/)
+  })
+})
+
+describe('subtitle style and burn switch (T5-3)', () => {
+  it('normalizes a valid style and rejects out-of-range values', () => {
+    expect(normalizeSubtitleStyle({ fontSize: 48, color: '#ffcc00', position: 'top' }, 'c1'))
+      .toEqual({ fontSize: 48, color: '#ffcc00', position: 'top' })
+    expect(normalizeSubtitleStyle(undefined, 'c1')).toEqual({})
+    expect(() => normalizeSubtitleStyle({ fontSize: 4 }, 'c1')).toThrow(new RegExp(`between ${SUBTITLE_FONT_SIZE_RANGE.min}`))
+    expect(() => normalizeSubtitleStyle({ fontSize: 500 }, 'c1')).toThrow(/fontSize must be between/)
+    expect(() => normalizeSubtitleStyle({ color: 'red' }, 'c1')).toThrow(/#rrggbb/)
+    expect(() => normalizeSubtitleStyle({ position: 'left' }, 'c1')).toThrow(/top\/middle\/bottom/)
+  })
+
+  it('round-trips the burn switch through the store', async () => {
+    const { store, directory } = await makeStore()
+    const project = await store.createProject('烧录')
+    const saved = await store.saveTimeline({
+      projectId: project.id,
+      tracks: [{ id: 's1', kind: 'subtitle', clips: [{ id: 'c1', text: '字幕', startMs: 0, durationMs: 1000, style: { fontSize: 40, color: '#00ff88', position: 'middle' } }] }],
+    })
+    expect(saved.burnSubtitles).toBe(true)
+    const off = await store.saveTimeline({ id: saved.id, projectId: project.id, tracks: saved.tracks, burnSubtitles: false })
+    expect(off.burnSubtitles).toBe(false)
+    // 关掉烧录后字幕数据仍在（只是不烧进画面）
+    expect(off.tracks[0]?.clips[0]?.text).toBe('字幕')
+    const reopened = new WorkbenchStore({ directory })
+    const restored = (await reopened.listTimelines(project.id))[0]
+    expect(restored?.burnSubtitles).toBe(false)
+    expect(restored?.tracks[0]?.clips[0]?.style).toEqual({ fontSize: 40, color: '#00ff88', position: 'middle' })
   })
 })
 

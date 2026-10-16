@@ -400,6 +400,7 @@ export class WorkbenchStore {
     name?: string
     tracks: unknown
     frameRate?: number
+    burnSubtitles?: boolean
   }): Promise<TimelineRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -414,6 +415,7 @@ export class WorkbenchStore {
       name: input.name === undefined || input.name === '' ? '未命名时间轴' : input.name.slice(0, 80),
       frameRate: input.frameRate ?? existing?.frameRate ?? DEFAULT_FRAME_RATE,
       tracks,
+      burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }

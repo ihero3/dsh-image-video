@@ -48,6 +48,8 @@ export interface TimelineRecord {
   readonly name: string
   readonly frameRate: number
   readonly tracks: readonly TimelineTrack[]
+  /** 导出时是否把字幕烧进画面（`T5-3`）：关掉时字幕数据仍保留，只是不烧录。 */
+  readonly burnSubtitles: boolean
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -120,7 +122,12 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
         const text = typeof clip.text === 'string' ? clip.text : ''
         if (text.trim() === '') throw new Error(`subtitle clip ${id} needs text`)
         if (text.length > MAX_SUBTITLE_LENGTH) throw new Error(`subtitle clip ${id} text is too long`)
-        return { id, text, startMs, durationMs, ...inMs === undefined ? {} : { inMs } }
+        const style = normalizeSubtitleStyle(clip.style, id)
+        return {
+          id, text, startMs, durationMs,
+          ...inMs === undefined ? {} : { inMs },
+          ...Object.keys(style).length === 0 ? {} : { style },
+        }
       }
 
       const assetPath = typeof clip.assetPath === 'string' ? clip.assetPath : ''
@@ -138,6 +145,46 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
     }
   })
   return tracks
+}
+
+/** 字幕样式允许的取值范围（越界即拒绝，避免风格面板把畸值写进文档）。 */
+export const SUBTITLE_FONT_SIZE_RANGE = { min: 8, max: 200 } as const
+const SUBTITLE_POSITIONS: readonly NonNullable<SubtitleStyle['position']>[] = ['top', 'middle', 'bottom']
+
+/**
+ * 校验并归一化字幕样式。
+ * @param raw - 待校验的样式对象。
+ * @param clipId - 出错时用于定位的 clip id。
+ * @returns 归一化样式，未给字段时返回空对象。
+ * @throws {Error} 取值越界或类型不对时。
+ */
+export function normalizeSubtitleStyle(raw: unknown, clipId: string): SubtitleStyle {
+  if (raw === undefined || raw === null) return {}
+  if (typeof raw !== 'object') throw new Error(`subtitle clip ${clipId} style must be an object`)
+  const style = raw as Record<string, unknown>
+  const normalized: { fontSize?: number; color?: string; position?: SubtitleStyle['position'] } = {}
+  if (style.fontSize !== undefined) {
+    if (typeof style.fontSize !== 'number' || !Number.isFinite(style.fontSize)) {
+      throw new Error(`subtitle clip ${clipId} fontSize must be a number`)
+    }
+    if (style.fontSize < SUBTITLE_FONT_SIZE_RANGE.min || style.fontSize > SUBTITLE_FONT_SIZE_RANGE.max) {
+      throw new Error(`subtitle clip ${clipId} fontSize must be between ${SUBTITLE_FONT_SIZE_RANGE.min} and ${SUBTITLE_FONT_SIZE_RANGE.max}`)
+    }
+    normalized.fontSize = Math.round(style.fontSize)
+  }
+  if (style.color !== undefined) {
+    if (typeof style.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(style.color)) {
+      throw new Error(`subtitle clip ${clipId} color must be a #rrggbb value`)
+    }
+    normalized.color = style.color
+  }
+  if (style.position !== undefined) {
+    if (typeof style.position !== 'string' || !SUBTITLE_POSITIONS.includes(style.position as NonNullable<SubtitleStyle['position']>)) {
+      throw new Error(`subtitle clip ${clipId} position must be one of top/middle/bottom`)
+    }
+    normalized.position = style.position as SubtitleStyle['position']
+  }
+  return normalized
 }
 
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
