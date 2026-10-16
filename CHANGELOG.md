@@ -12,6 +12,8 @@
 - **测试素材与烧钱边界（owner 口径）**：测试默认跳过真实视频生成，必要时先与 owner 确认；需要人像时用大众审美的美女素材；生成类调用**绝不自动重试**（避免重复计费），只有只读/幂等操作才套 3 次重试
 
 ### 新增
+- **跨运行成功结果缓存（`R-FLW-5`）**：按节点**实际发给工具的参数**算 sha256 指纹（与画布坐标/节点 id 无关），命中且缓存文件仍在时直接用上次产物、**不再调外部生成**；节点记录标 `cached: true`；换参数、文件被删、或显式 `refresh`（工具面 `workbench_workflow action=run refresh=true` / 运行器 `bypassCache`）都真的重跑；缓存有界（上限 200 条，按时间淘汰）。测试 2 例覆盖四种情形
+
 - **planned 能力防伪造（T3-3 收口）**：图里只要含 `lip-sync`/`face-swap`/`voice-synthesize` 这类 `planned` 节点，运行侧**整次拒绝**且不发出任何外部调用、不把任何节点标成成功（`tests/planned-capability.test.ts` 三例）；重试也不会绕过
 
 ### 新增
@@ -45,9 +47,6 @@
 
 ### 新增
 - **对话卡片入口（T6-1）**：媒体卡片新增「发送到工作台 / 放入时间轴」，卡片只传路径、宿主决定项目与时间轴（`assets/quick-add`）；未装工作台时按钮不渲染；跨包改动登记 FORK-FEATURES R10
-
-### 已知缺口
-- **跨运行的成功结果缓存未做**：重试只保证"同一次运行里不重跑已成功节点、只重跑失败节点及其下游"（`R-FLW-5` 的省钱语义），另起一次运行仍会重新调用外部生成
 
 ### 新增
 - **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）

@@ -17,6 +17,7 @@ import {
   type TaskRecord, type TaskStatus,
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
+import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import { DEFAULT_FRAME_RATE, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
@@ -35,6 +36,8 @@ interface WorkbenchDocument {
   runs: WorkflowRunRecord[]
   /** Timeline documents (阶段 5). */
   timelines: TimelineRecord[]
+  /** 跨运行的成功结果缓存（`R-FLW-5`），按 at 淘汰。 */
+  nodeCache: CachedNodeResult[]
 }
 
 /** Facts the store is constructed with. */
@@ -477,6 +480,29 @@ export class WorkbenchStore {
   }
 
   /**
+   * 查一条成功结果缓存。
+   * @param key - 指纹。
+   * @returns 命中的记录，或 `undefined`。
+   */
+  async lookupNodeCache(key: string): Promise<CachedNodeResult | undefined> {
+    const document = await this.load()
+    return document.nodeCache.find(entry => entry.key === key)
+  }
+
+  /**
+   * 记一条成功结果缓存（有界：超过上限淘汰最旧的）。
+   * @param entry - 缓存记录。
+   */
+  async rememberNodeCache(entry: CachedNodeResult): Promise<void> {
+    const document = await this.load()
+    document.nodeCache = [
+      entry,
+      ...document.nodeCache.filter(existing => existing.key !== entry.key),
+    ].slice(0, MAX_NODE_CACHE)
+    await this.save(document)
+  }
+
+  /**
    * Collapse duplicate asset records (same project + same path) into the earliest one.
    *
    * Idempotent registration landed after some duplicates were already written, and the
@@ -672,6 +698,7 @@ export class WorkbenchStore {
         workflows: raw.workflows ?? [],
         runs: raw.runs ?? [],
         timelines: raw.timelines ?? [],
+        nodeCache: raw.nodeCache ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -686,7 +713,7 @@ export class WorkbenchStore {
       }
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [], timelines: [],
+        runs: [], timelines: [], nodeCache: [],
       }
     }
     return this.cache

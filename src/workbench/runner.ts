@@ -10,6 +10,8 @@
  * - **逐节点落库**：每执行完一个节点就更新运行记录，界面靠轮询就能看到进度（没有推送通道）。
  */
 import { extractOutcome } from './ledger.ts'
+import { nodeCacheKey } from './node-cache.ts'
+import { stat } from 'node:fs/promises'
 import {
   validateWorkflow,
   type WorkflowEdge, type WorkflowNode, type WorkflowRecord,
@@ -60,6 +62,8 @@ export interface WorkflowRunnerDeps {
   readonly onError?: (message: string) => void
   /** 结构化日志钩子（`T7-3`）。 */
   readonly log?: (entry: Record<string, unknown>) => void
+  /** 是否启用跨运行成功结果缓存（默认启用，`R-FLW-5`）。 */
+  readonly cache?: boolean
   /** 单个节点的最大尝试次数（默认 3：首发 + 两次重试，仅对瞬时失败生效）。 */
   readonly nodeAttempts?: number
   /** 重试之间的等待毫秒（默认 800，按次数线性退避）。 */
@@ -69,6 +73,8 @@ export interface WorkflowRunnerDeps {
 /** 起跑选项：`only` 用于"重试只重跑失败节点及其下游"。 */
 export interface RunOptions {
   readonly only?: readonly string[]
+  /** 跳过成功结果缓存，强制真的重新生成（用户在界面上点"重新生成"时用）。 */
+  readonly bypassCache?: boolean
 }
 
 /** 拓扑排序（Kahn）。存在环时按输入顺序返回——环已由校验拦下。 */
@@ -180,7 +186,7 @@ export class WorkflowRunner {
     await this.deps.store.recordRun(run)
     const controller = new AbortController()
     this.controllers.set(runId, controller)
-    void this.execute(run, workflow, controller.signal, selected)
+    void this.execute(run, workflow, controller.signal, selected, options)
       .catch((error: unknown) => {
         this.deps.onError?.(`workflow run ${runId} crashed: ${error instanceof Error ? error.message : String(error)}`)
       })
@@ -208,6 +214,7 @@ export class WorkflowRunner {
     workflow: WorkflowRecord,
     signal: AbortSignal,
     selected: Set<string>,
+    options: RunOptions,
   ): Promise<void> {
     const nodeRuns = new Map(run.nodeRuns.map(node => [node.nodeId, node]))
     const order = topologicalOrder(workflow.nodes, workflow.edges)
@@ -224,7 +231,7 @@ export class WorkflowRunner {
       })
       await this.persist(run, nodeRuns, 'running')
       const nodeStartedAt = Date.now()
-      const record = await this.runNode(node, workflow, nodeRuns, signal)
+      const record = await this.runNode(node, workflow, nodeRuns, signal, run, options)
       this.deps.log?.({
         event: 'workflow-node', runId: run.id, nodeId: node.id, kind: node.kind,
         status: record.status, attempt: record.attempts ?? 1, durationMs: Date.now() - nodeStartedAt,
@@ -255,6 +262,8 @@ export class WorkflowRunner {
     workflow: WorkflowRecord,
     done: Map<string, WorkflowRunNodeRecord>,
     signal: AbortSignal,
+    run: WorkflowRunRecord,
+    options: RunOptions,
   ): Promise<WorkflowRunNodeRecord> {
     const startedAt = (this.deps.now?.() ?? new Date()).toISOString()
     const executor = EXECUTORS[node.kind as keyof typeof EXECUTORS]
@@ -267,11 +276,35 @@ export class WorkflowRunner {
     }
     const tool = executor === 'image' ? this.deps.generateImage : this.deps.generateVideo
     const maxAttempts = Math.max(1, this.deps.nodeAttempts ?? DEFAULT_NODE_ATTEMPTS)
+    const args = this.buildArgs(node, workflow, done)
+
+    // 跨运行缓存（`R-FLW-5`）：同参数同上游 → 直接复用上次产物，不再调外部生成
+    const cacheKey = nodeCacheKey({ kind: node.kind, args })
+    if (this.deps.cache !== false && options.bypassCache !== true) {
+      const hit = await this.deps.store.lookupNodeCache(cacheKey)
+      const stillThere = hit === undefined ? false : await stat(hit.outputPath).then(() => true).catch(() => false)
+      if (hit !== undefined && stillThere) {
+        const finishedAt = (this.deps.now?.() ?? new Date()).toISOString()
+        return {
+          nodeId: node.id, kind: node.kind, status: 'succeeded', startedAt, finishedAt,
+          attempts: 1, cached: true, outputPath: hit.outputPath,
+          ...hit.bytes === undefined ? {} : { bytes: hit.bytes },
+        }
+      }
+    }
+
     let lastMessage = ''
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
-        const value = await tool.execute(this.buildArgs(node, workflow, done), { signal })
+        const value = await tool.execute(args, { signal })
         const extracted = extractOutcome(value)
+        if (this.deps.cache !== false && typeof extracted.outputPath === 'string') {
+          await this.deps.store.rememberNodeCache({
+            key: cacheKey, kind: node.kind, args, outputPath: extracted.outputPath,
+            ...extracted.bytes === undefined ? {} : { bytes: extracted.bytes },
+            runId: run.id, nodeId: node.id, at: (this.deps.now?.() ?? new Date()).toISOString(),
+          }).catch(() => undefined)
+        }
         return {
           nodeId: node.id, kind: node.kind, status: 'succeeded', startedAt,
           finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: attempt, ...extracted,

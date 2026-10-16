@@ -257,7 +257,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     name: 'workbench_workflow',
     description:
       '专业工作流（画布图）：list（列项目的流程）、save（创建/覆盖一张图；节点 kind 必须来自节点目录）、'
-      + 'run（跑起来，返回 runId）、runs（查运行记录与每个节点的状态/产物）。'
+      + 'run（跑起来，返回 runId；默认**复用同参数上次的成功产物**，refresh=true 才强制重新生成）、'
+      + 'runs（查运行记录与每个节点的状态/产物）。'
       + '跑之前宿主会用与画布同一份校验拒绝非法图（必填/端口/环），所以先 save 再 run。',
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -291,6 +292,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         items: { type: 'object', description: '连线', additionalProperties: true },
       },
       limit: { type: 'integer', description: `list / runs 最多返回多少行（默认 ${MAX_TOOL_ROWS}）` },
+      refresh: { type: 'boolean', description: 'run 时是否跳过成功结果缓存、强制重新生成（默认复用缓存，省钱）' },
     },
     async execute(args) {
       const input = asRecord(args)
@@ -326,7 +328,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const workflowId = requireString(input, 'workflowId', 'workbench_workflow run')
         const doc = await store.findWorkflow(workflowId)
         if (doc === undefined) throw new Error(`找不到流程 ${workflowId}；先用 action=list`)
-        const run = await runner.begin(doc)
+        const run = await runner.begin(doc, input.refresh === true ? { bypassCache: true } : {})
         return json({ run: { id: run.id, status: run.status, ...run.error === undefined ? {} : { error: run.error } } })
       }
       if (action === 'runs') {

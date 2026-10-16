@@ -297,6 +297,8 @@ export interface WorkflowRunNodeRecord {
   readonly error?: string
   /** 实际尝试次数（瞬时失败会自动重试，`T4-4`/上游中断类错误的兜底）。 */
   readonly attempts?: number
+  /** 这条结果来自跨运行缓存（没有真的调外部生成，`R-FLW-5`）。 */
+  readonly cached?: boolean
 }
 
 /** 一次运行的记录（含图快照，`R-FLW-6`）。 */
