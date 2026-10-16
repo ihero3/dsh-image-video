@@ -79,6 +79,8 @@ export declare const defaultRenderRunner: RenderRunner;
 /** 渲染服务。 */
 export declare class RenderService {
     private readonly deps;
+    /** 输出目录统一解析成绝对路径：素材记录里存相对路径会让后续 ffmpeg/预览都找不到文件。 */
+    private readonly outputsDir;
     constructor(deps: {
         readonly outputsDir: string;
         readonly now?: () => Date;

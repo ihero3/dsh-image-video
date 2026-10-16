@@ -40,6 +40,22 @@ function timelineWith(path: string, fileName?: string): TimelineRecord {
 const AVAILABLE = { available: true as const, path: '/usr/bin/true', version: '8.0', encoders: { h264: true, aac: true } }
 
 describe('export failure surfaces (T5-6)', () => {
+  it('resolves a relative outputsDir so assets never store relative paths (T5-5)', async () => {
+    const work = await tempDir('dsh-render-relative-')
+    const asset = join(work, 'asset.mp4')
+    await writeFile(asset, 'x')
+    const argv: string[] = []
+    const service = new RenderService({
+      outputsDir: 'outputs', probe: async () => AVAILABLE,
+      run: async ({ args }) => { argv.push(String(args[args.length - 1])) },
+    })
+    // 起 ffmpeg 之前会因为产物不存在/校验失败而报错，这里只关心它写出的路径是绝对的
+    await service.render(timelineWith(asset), { fileName: 'out.mp4' }).catch(() => undefined)
+    expect(argv[0]).toBeDefined()
+    expect(argv[0]).toMatch(/^\//)
+    expect(argv[0]?.endsWith('/outputs/out.mp4')).toBe(true)
+  })
+
   it('says what to do when ffmpeg is missing', async () => {
     const outputs = await tempDir('dsh-fail-ffmpeg-')
     const service = new RenderService({

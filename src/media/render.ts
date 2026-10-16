@@ -10,7 +10,7 @@
  */
 import { spawn } from 'node:child_process'
 import { mkdir, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
 
@@ -265,13 +265,18 @@ export const defaultRenderRunner: RenderRunner = async ({ ffmpegPath, args, sign
 
 /** 渲染服务。 */
 export class RenderService {
+  /** 输出目录统一解析成绝对路径：素材记录里存相对路径会让后续 ffmpeg/预览都找不到文件。 */
+  private readonly outputsDir: string
+
   constructor(private readonly deps: {
     readonly outputsDir: string
     readonly now?: () => Date
     readonly run?: RenderRunner
     /** ffmpeg 探测（测试可注入；默认探测本机）。 */
     readonly probe?: () => Promise<FfmpegProbe>
-  }) {}
+  }) {
+    this.outputsDir = isAbsolute(deps.outputsDir) ? deps.outputsDir : resolve(deps.outputsDir)
+  }
 
   /**
    * 把一个时间轴渲染成 mp4。
@@ -304,7 +309,7 @@ export class RenderService {
 
     const stamp = this.deps.now?.() ?? new Date()
     const fileName = options.fileName ?? `${stamp.getTime()}-${Math.random().toString(36).slice(2, 8)}.mp4`
-    const outputPath = join(this.deps.outputsDir, fileName)
+    const outputPath = join(this.outputsDir, fileName)
     await mkdir(dirname(outputPath), { recursive: true })
     const fontFile = snapshot.burnSubtitles && (snapshot.tracks.find(track => track.kind === 'subtitle')?.clips.length ?? 0) > 0
       ? await firstExisting(SUBTITLE_FONT_CANDIDATES)

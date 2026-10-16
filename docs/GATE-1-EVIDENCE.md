@@ -39,3 +39,20 @@
 | 截图 | `/private/tmp/pr3-export.png` |
 
 > 说明：本次导出用的是**之前跑出来的真实视频产物**（登记为素材后放进时间轴），渲染由本机 ffmpeg 完成，因此**没有额外生成花费**。
+
+## 阶段 6 现场证据（2026-10-16，零生成花费）
+
+**T6-3 Agent 工具面**：整条链路在**对话里**跑通（不是单元测试，而是真实调用插件注册的工具）：
+
+| 步骤 | 调用 | 结果 |
+| --- | --- | --- |
+| 列项目 | `workbench_projects action=list` | 返回 5 个真实项目（含 `导出台 11:37:30`） |
+| 列时间轴 | `workbench_timeline action=list projectId=prj-mvaf2u8t-gs0s6q` | `tml-mvaf2zgu-vbbq2f`，1 片段 / 3000ms |
+| 列素材 | `workbench_assets action=list` | 2 条视频素材（其中一条路径被记成相对的 `outputs/…` —— **当日修复：输出目录统一绝对化**） |
+| 加片段 | `workbench_timeline action=add-clip`（2 个片段 × 2000ms） | 视频轨 1 → 3 片段 |
+| 起导出 | `workbench_timeline action=export` | `render-mvaj8rwa-2ch5b`（running） |
+| 查导出 | `workbench_tasks action=renders` | `succeeded`、`percent=100`、产物 `outputs/1792128846545-61h1j9.mp4` |
+
+> 本次导出用**已有真实产物**作素材、本机 ffmpeg 渲染，**没有产生任何生成费用**。
+
+**T6-4 双向一致刷新**：客户端在面板可见时每 5 秒轮询项目/素材/任务；测试模拟 Agent 侧新建项目后自动出现在下拉（≤5 秒口径写进实现注释）。

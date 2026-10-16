@@ -265,7 +265,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
     // 导出服务：成功产物自动登记成素材，出现在素材面板里（`T5-5`）
   const renderService = new RenderService({
-    outputsDir: config.outputsDir ?? outputsDir,
+    // 用插件已经解析好的绝对目录，不要回落到可能是相对路径的 config 字段
+    outputsDir,
   })
   const renderRegistry = new RenderRegistry({
     render: renderService,
