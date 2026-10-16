@@ -94,6 +94,25 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
   })
 
+  it('stores timelines through the channel and rejects inlined bytes', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '时间轴' })
+    const saved = await ok<{ timeline: { id: string; tracks: unknown[] } }>('timelines/save', {
+      projectId: created.project.id, name: '成片',
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: '/tmp/outputs/a.mp4', startMs: 0, durationMs: 5000 }] }],
+    })
+    expect(saved.timeline.id).toMatch(/^tml-/)
+    expect(saved.timeline.tracks).toHaveLength(1)
+    expect((await ok<{ timelines: unknown[] }>('timelines/list', { projectId: created.project.id })).timelines).toHaveLength(1)
+    expect(await ok<{ removed: boolean }>('timelines/remove', { id: saved.timeline.id })).toEqual({ removed: true })
+
+    const inlined = await handler('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: 'data:video/mp4;base64,AAAA', startMs: 0, durationMs: 1 }] }],
+    }, new AbortController().signal, {} as never)
+    expect(inlined.ok).toBe(false)
+  })
+
   it('runs a stored workflow and reports run records through the channel', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '运行' })

@@ -41,6 +41,18 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'pickAsset'
+  | 'timelineTitle'
+  | 'subtitlePlaceholder'
+  | 'timelineTotal'
+  | 'clipDuration'
+  | 'clipStart'
+  | 'timelineEmpty'
+  | 'addSubtitle'
+  | 'addClip'
+  | 'trackSubtitle'
+  | 'trackAudio'
+  | 'trackVideo'
   | 'templateReferenceRemake'
   | 'templateImageToVideo'
   | 'templateCopyToVideo'
@@ -181,6 +193,18 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  pickAsset: 'Asset',
+  timelineTitle: 'Timeline',
+  subtitlePlaceholder: 'Subtitle text',
+  timelineTotal: 'Total',
+  clipDuration: 'Duration (ms)',
+  clipStart: 'Start (ms)',
+  timelineEmpty: 'No clips yet — add from the assets on the right',
+  addSubtitle: 'Add subtitle',
+  addClip: 'Add to track',
+  trackSubtitle: 'Subtitle track',
+  trackAudio: 'Audio track',
+  trackVideo: 'Video track',
   templateReferenceRemake: 'Reference video remake (compare)',
   templateImageToVideo: 'Image -> video -> subtitle -> render',
   templateCopyToVideo: 'Copy -> storyboard -> image -> video',
@@ -319,6 +343,18 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  pickAsset: '选择素材',
+  timelineTitle: '时间轴',
+  subtitlePlaceholder: '字幕文本',
+  timelineTotal: '总时长',
+  clipDuration: '时长(ms)',
+  clipStart: '起点(ms)',
+  timelineEmpty: '还没有片段——从右侧素材里加入',
+  addSubtitle: '加入字幕',
+  addClip: '加入轨道',
+  trackSubtitle: '字幕轨',
+  trackAudio: '音频轨',
+  trackVideo: '视频轨',
   templateReferenceRemake: '参考视频复刻（含对比片）',
   templateImageToVideo: '图片→视频→字幕→渲染',
   templateCopyToVideo: '文案→分镜→图→视频',

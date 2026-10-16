@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
+import { timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
@@ -84,6 +85,15 @@ function formatBytes(bytes: number): string {
 /** Resource kinds in picker order. */
 const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice']
 
+/** Localized label for one timeline track kind. */
+function trackKindKey(kind: TrackKind): WorkbenchLocaleKey {
+  switch (kind) {
+    case 'video': return 'trackVideo'
+    case 'audio': return 'trackAudio'
+    case 'subtitle': return 'trackSubtitle'
+  }
+}
+
 /** Localized label for one resource kind. */
 function kindKey(kind: ResourceKind): WorkbenchLocaleKey {
   switch (kind) {
@@ -138,6 +148,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [runs, setRuns] = useState<readonly WorkflowRunRecord[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined)
   const [runBusy, setRunBusy] = useState(false)
+  // 时间轴（阶段 5）：三轨 + clip，改动去抖落库
+  const [timeline, setTimeline] = useState<TimelineRecord | undefined>(undefined)
+  const [timelineState, setTimelineState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
+  const [clipAssetPath, setClipAssetPath] = useState('')
+  const [subtitleDraft, setSubtitleDraft] = useState('')
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -225,6 +240,66 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return () => { clearInterval(timer) }
   }, [runningRun, activeProject, workflow?.id])
 
+  // 进入时间轴模式（或切项目）读回该项目的成片时间轴；没有就准备一份空的三轨文档
+  useEffect(() => {
+    if (mode !== 'timeline' || activeProject === undefined) {
+      setTimeline(undefined)
+      return
+    }
+    const project = activeProject
+    let stale = false
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listTimelines(project.id)
+        if (stale) return
+        const existing = rows[0]
+        if (existing !== undefined) { setTimeline(existing); setTimelineState('saved'); return }
+        const stamp = new Date().toISOString()
+        setTimeline(current => {
+          if (current !== undefined && current.projectId === project.id) return current
+          return {
+            schemaVersion: 1, id: newWorkbenchId('tml'), projectId: project.id, name: `${project.name} 成片`,
+            frameRate: 30,
+            tracks: [
+              { id: 'track-video', kind: 'video', clips: [] },
+              { id: 'track-audio', kind: 'audio', clips: [] },
+              { id: 'track-subtitle', kind: 'subtitle', clips: [] },
+            ],
+            createdAt: stamp, updatedAt: stamp,
+          }
+        })
+        setTimelineState('saved')
+      } catch (error) {
+        if (!stale) setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+      }
+    })()
+    return () => { stale = true }
+  }, [mode, activeProject])
+
+  // 时间轴改动 → 去抖落库
+  const timelineDirty = timelineState === 'dirty'
+  useEffect(() => {
+    if (mode !== 'timeline' || !timelineDirty || timeline === undefined) return
+    const pending = timeline
+    const timer = setTimeout(() => {
+      void (async () => {
+        setTimelineState('saving')
+        try {
+          const stored = await apiRef.current.saveTimeline({
+            id: pending.id, projectId: pending.projectId, name: pending.name,
+            tracks: pending.tracks, frameRate: pending.frameRate,
+          })
+          setTimeline(stored)
+          setTimelineState('saved')
+        } catch (error) {
+          setTimelineState('failed')
+          setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+        }
+      })()
+    }, 800)
+    return () => { clearTimeout(timer) }
+  }, [timelineDirty, timeline, mode])
+
   // 画布改动 → 去抖落库（`T4-1` 单一事实源 + 保存四态）
   const workflowDirty = workflowState === 'dirty'
   useEffect(() => {
@@ -249,6 +324,32 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }, 800)
     return () => { clearTimeout(timer) }
   }, [workflowDirty, workflow, mode])
+
+  /** 时间轴通用改法：换掉某条轨道。 */
+  const patchTrack = (trackId: string, update: (track: TimelineTrack) => TimelineTrack): void => {
+    setTimeline(current => current === undefined
+      ? current
+      : { ...current, tracks: current.tracks.map(track => (track.id === trackId ? update(track) : track)) })
+    setTimelineState('dirty')
+  }
+
+  /** 末尾追加一个 clip（起点接在该轨当前末尾）。 */
+  const appendClip = (trackId: string, clip: { assetPath?: string; text?: string }): void => {
+    const stamp = new Date().toISOString()
+    patchTrack(trackId, track => {
+      const end = track.clips.reduce((longest, existing) => Math.max(longest, existing.startMs + existing.durationMs), 0)
+      const id = `clip-${Date.now().toString(36)}-${track.clips.length}`
+      return {
+        ...track,
+        clips: [...track.clips, {
+          id, startMs: end, durationMs: 3000,
+          ...clip.assetPath === undefined ? {} : { assetPath: clip.assetPath },
+          ...clip.text === undefined ? {} : { text: clip.text },
+        }],
+      }
+    })
+    void stamp
+  }
 
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
@@ -565,6 +666,97 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <p style={MUTED} data-workflow-save={workflowState} role="status">
               {t(workflowState === 'dirty' ? 'saveDirty' : workflowState === 'saving' ? 'saveSaving' : workflowState === 'failed' ? 'saveFailed' : 'saveSaved')}
             </p>
+          </section>
+        )
+        : null}
+
+      {mode === 'timeline' && timeline !== undefined
+        ? (
+          <section data-workbench-pane="paneTimeline" data-workbench-planned="false" style={PANE}>
+            <h3 style={PANE_TITLE}>
+              {t('timelineTitle')}
+              {' · '}{t('timelineTotal')} {Math.round(timelineDurationMs(timeline.tracks) / 1000)}s
+            </h3>
+            <p style={MUTED} data-timeline-save={timelineState}>
+              {t(timelineState === 'dirty' ? 'saveDirty' : timelineState === 'saving' ? 'saveSaving' : timelineState === 'failed' ? 'saveFailed' : 'saveSaved')}
+            </p>
+            {timeline.tracks.map(track => (
+              <div key={track.id} data-timeline-track={track.kind} style={{ marginBottom: '8px' }}>
+                <strong style={{ fontSize: '11px' }}>{t(trackKindKey(track.kind))}</strong>
+                {track.clips.length === 0
+                  ? <p style={{ ...MUTED, fontSize: '11px' }}>{t('timelineEmpty')}</p>
+                  : (
+                    <ul style={{ margin: '2px 0 4px', padding: 0, listStyle: 'none', display: 'grid', gap: '2px' }}>
+                      {track.clips.map(clip => (
+                        <li key={clip.id} data-timeline-clip={clip.id} data-timeline-clip-kind={track.kind}
+                          style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={clip.assetPath ?? clip.text ?? ''}>
+                            {track.kind === 'subtitle' ? (clip.text ?? '') : baseName(clip.assetPath ?? '')}
+                          </span>
+                          <input type="number" value={clip.startMs} aria-label={`${t('clipStart')} ${clip.id}`}
+                            style={{ ...INPUT, minWidth: '64px' }}
+                            onChange={event => {
+                              const startMs = Number(event.target.value)
+                              patchTrack(track.id, current => ({
+                                ...current,
+                                clips: current.clips.map(item => (item.id === clip.id ? { ...item, startMs } : item)),
+                              }))
+                            }} />
+                          <input type="number" value={clip.durationMs} aria-label={`${t('clipDuration')} ${clip.id}`}
+                            style={{ ...INPUT, minWidth: '64px' }}
+                            onChange={event => {
+                              const durationMs = Number(event.target.value)
+                              patchTrack(track.id, current => ({
+                                ...current,
+                                clips: current.clips.map(item => (item.id === clip.id ? { ...item, durationMs } : item)),
+                              }))
+                            }} />
+                          <button type="button" style={BUTTON} aria-label={`${t('remove')} ${clip.id}`}
+                            onClick={() => {
+                              patchTrack(track.id, current => ({
+                                ...current, clips: current.clips.filter(item => item.id !== clip.id),
+                              }))
+                            }}>
+                            {t('remove')}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                {track.kind === 'subtitle'
+                  ? (
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <input placeholder={t('subtitlePlaceholder')} aria-label={t('subtitlePlaceholder')}
+                        value={subtitleDraft} style={INPUT}
+                        onChange={event => { setSubtitleDraft(event.target.value) }} />
+                      <button type="button" style={BUTTON} disabled={subtitleDraft.trim() === ''}
+                        aria-label={t('addSubtitle')}
+                        onClick={() => { appendClip(track.id, { text: subtitleDraft.trim() }); setSubtitleDraft('') }}>
+                        {t('addSubtitle')}
+                      </button>
+                    </div>
+                  )
+                  : (
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <select aria-label={`${t('pickAsset')} ${track.kind}`} value={clipAssetPath} style={INPUT}
+                        onChange={event => { setClipAssetPath(event.target.value) }}>
+                        <option value=''>{t('pickAsset')}</option>
+                        {assets
+                          .filter(candidate => track.kind === 'audio' ? candidate.kind === 'video' : candidate.kind === track.kind)
+                          .map(candidate => (
+                            <option key={candidate.id} value={candidate.path}>{baseName(candidate.path)}</option>
+                          ))}
+                      </select>
+                      <button type="button" style={BUTTON} disabled={clipAssetPath === ''}
+                        aria-label={`${t('addClip')} ${track.kind}`}
+                        onClick={() => { appendClip(track.id, { assetPath: clipAssetPath }); setClipAssetPath('') }}>
+                        {t('addClip')}
+                      </button>
+                    </div>
+                  )}
+              </div>
+            ))}
           </section>
         )
         : null}

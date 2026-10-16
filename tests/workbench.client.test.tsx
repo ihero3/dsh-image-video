@@ -16,6 +16,7 @@ import { en } from '../src/client/locales.ts'
 import type { WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
+import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
@@ -40,6 +41,7 @@ function fakeApi(options: {
   assets?: AssetRecord[]
   workflows?: WorkflowRecord[]
   runs?: WorkflowRunRecord[]
+  timelines?: TimelineRecord[]
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -47,6 +49,7 @@ function fakeApi(options: {
   const resources: ResourceRecord[] = []
   const workflows: WorkflowRecord[] = [...(options.workflows ?? [])]
   const runs: WorkflowRunRecord[] = [...(options.runs ?? [])]
+  const timelines: TimelineRecord[] = [...(options.timelines ?? [])]
   let runSequence = 0
   const calls: string[] = []
   let counter = 0
@@ -162,6 +165,31 @@ function fakeApi(options: {
       runs.unshift(run)
       return run
     },
+    listTimelines: async () => {
+      calls.push('timelines/list')
+      return [...timelines]
+    },
+    saveTimeline: async (input) => {
+      calls.push('timelines/save')
+      const stamp = '2026-10-16T00:00:00.000Z'
+      const existing = input.id === undefined ? undefined : timelines.find(row => row.id === input.id)
+      const record: TimelineRecord = {
+        schemaVersion: 1, id: existing?.id ?? `tml-${timelines.length + 1}`, projectId: input.projectId,
+        name: input.name ?? '未命名时间轴', frameRate: input.frameRate ?? 30,
+        tracks: input.tracks as TimelineTrack[], createdAt: existing?.createdAt ?? stamp, updatedAt: stamp,
+      }
+      const index = timelines.findIndex(row => row.id === record.id)
+      if (index < 0) timelines.push(record)
+      else timelines[index] = record
+      return record
+    },
+    removeTimeline: async (id) => {
+      calls.push('timelines/remove')
+      const index = timelines.findIndex(row => row.id === id)
+      if (index < 0) return false
+      timelines.splice(index, 1)
+      return true
+    },
     listWorkflows: async (projectId) => {
       calls.push('workflows/list')
       return workflows.filter(workflow => workflow.projectId === projectId)
@@ -218,7 +246,7 @@ function fakeApi(options: {
     },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -423,6 +451,50 @@ describe('workbench project and asset flow', () => {
     })
     expect(host.calls).toContain('workflows/list')
     expect(view.container.querySelector('[data-workflow-node="script"]')).toBeTruthy()
+  })
+
+  it('edits a three-track timeline, autosaves it and restores it on reopen', async () => {
+    const clip: AssetRecord = {
+      schemaVersion: 1, id: 'ast-v', projectId: 'prj-1', kind: 'video',
+      path: '/tmp/outputs/clip.mp4', bytes: 1024, createdAt: '2026-10-16T00:00:00.000Z',
+    }
+    const host = fakeApi({ assets: [clip] })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '时间轴项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-pane="paneTimeline"]')).toBeTruthy() })
+
+    // 三轨齐全
+    expect(view.container.querySelectorAll('[data-timeline-track]')).toHaveLength(3)
+
+    // 视频轨：从素材里加入一个 clip
+    const picker = view.container.querySelector('[data-timeline-track="video"] select') as HTMLSelectElement
+    fireEvent.change(picker, { target: { value: '/tmp/outputs/clip.mp4' } })
+    fireEvent.click(view.container.querySelector('[data-timeline-track="video"] button[aria-label^="Add to track"]') as HTMLElement)
+    await waitFor(() => {
+      expect(view.container.querySelectorAll('[data-timeline-track="video"] [data-timeline-clip]')).toHaveLength(1)
+    })
+
+    // 字幕轨：加一条字幕
+    fireEvent.change(view.container.querySelector('[data-timeline-track="subtitle"] input') as HTMLElement, {
+      target: { value: '第一句字幕' },
+    })
+    fireEvent.click(view.container.querySelector('[aria-label="Add subtitle"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+
+    // 自动保存：文档落库且是三轨结构
+    await waitFor(() => { expect(host.calls).toContain('timelines/save') })
+    await waitFor(() => {
+      expect(host.timelines[0]?.tracks.map(track => track.clips.length)).toEqual([1, 0, 1])
+    })
+    expect(host.timelines[0]?.tracks.map(track => track.kind)).toEqual(['video', 'audio', 'subtitle'])
+
+    // 重开（重新挂载）后恢复：重新进入时间轴模式读回文档
+    view.unmount()
+    const reopened = render(<Workbench {...props({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(reopened.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
   })
 
   it('applies a built-in template into the canvas', async () => {

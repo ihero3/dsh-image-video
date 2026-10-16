@@ -17,6 +17,7 @@ import {
   type TaskRecord, type TaskStatus,
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
+import { DEFAULT_FRAME_RATE, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
 interface WorkbenchDocument {
@@ -31,6 +32,8 @@ interface WorkbenchDocument {
   workflows: WorkflowRecord[]
   /** Workflow runs, newest last (bounded when written). */
   runs: WorkflowRunRecord[]
+  /** Timeline documents (阶段 5). */
+  timelines: TimelineRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -135,6 +138,7 @@ export class WorkbenchStore {
     document.resources = document.resources.filter(resource => resource.projectId !== id)
     document.workflows = document.workflows.filter(workflow => workflow.projectId !== id)
     document.runs = document.runs.filter(run => run.projectId !== id)
+    document.timelines = document.timelines.filter(timeline => timeline.projectId !== id)
     await this.save(document)
     return true
   }
@@ -363,6 +367,78 @@ export class WorkbenchStore {
   }
 
   /**
+   * List a project's timelines, newest first.
+   * @param projectId - project id.
+   * @returns the records.
+   */
+  async listTimelines(projectId: string): Promise<TimelineRecord[]> {
+    const document = await this.load()
+    return document.timelines
+      .filter(timeline => timeline.projectId === projectId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  }
+
+  /**
+   * Find one timeline by id.
+   * @param id - timeline id.
+   * @returns the record, or `undefined`.
+   */
+  async findTimeline(id: string): Promise<TimelineRecord | undefined> {
+    const document = await this.load()
+    return document.timelines.find(timeline => timeline.id === id)
+  }
+
+  /**
+   * Create or update a timeline document.
+   * @param input - id (update), project, name, tracks and frame rate.
+   * @returns the stored record.
+   * @throws {Error} when the project is unknown or the tracks are malformed.
+   */
+  async saveTimeline(input: {
+    id?: string
+    projectId: string
+    name?: string
+    tracks: unknown
+    frameRate?: number
+  }): Promise<TimelineRecord> {
+    const document = await this.load()
+    const project = document.projects.find(candidate => candidate.id === input.projectId)
+    if (project === undefined) throw new Error(`unknown project: ${input.projectId}`)
+    const tracks: readonly TimelineTrack[] = normalizeTimelineTracks(input.tracks)
+    const stamp = this.now().toISOString()
+    const existing = input.id === undefined ? undefined : document.timelines.find(row => row.id === input.id)
+    const record: TimelineRecord = {
+      schemaVersion: 1,
+      id: existing?.id ?? newWorkbenchId('tml'),
+      projectId: project.id,
+      name: input.name === undefined || input.name === '' ? '未命名时间轴' : input.name.slice(0, 80),
+      frameRate: input.frameRate ?? existing?.frameRate ?? DEFAULT_FRAME_RATE,
+      tracks,
+      createdAt: existing?.createdAt ?? stamp,
+      updatedAt: stamp,
+    }
+    document.timelines = existing === undefined
+      ? [...document.timelines, record]
+      : document.timelines.map(row => (row.id === record.id ? record : row))
+    await this.save(document)
+    return record
+  }
+
+  /**
+   * Remove one timeline.
+   * @param id - timeline id.
+   * @returns `true` when a record was removed.
+   */
+  async removeTimeline(id: string): Promise<boolean> {
+    const document = await this.load()
+    const before = document.timelines.length
+    document.timelines = document.timelines.filter(timeline => timeline.id !== id)
+    if (document.timelines.length === before) return false
+    await this.save(document)
+    return true
+  }
+
+  /**
    * Collapse duplicate asset records (same project + same path) into the earliest one.
    *
    * Idempotent registration landed after some duplicates were already written, and the
@@ -557,12 +633,13 @@ export class WorkbenchStore {
         resources: raw.resources ?? [],
         workflows: raw.workflows ?? [],
         runs: raw.runs ?? [],
+        timelines: raw.timelines ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [],
+        runs: [], timelines: [],
       }
     }
     return this.cache

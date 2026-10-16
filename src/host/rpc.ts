@@ -202,6 +202,21 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
     }
+    // ---- 时间轴（阶段 5）--------------------------------------------------------
+    case 'timelines/list':
+      return { timelines: await deps.store.listTimelines(text(payload, 'projectId')) }
+    case 'timelines/save':
+      return {
+        timeline: await deps.store.saveTimeline({
+          id: optionalText(payload, 'id'),
+          projectId: text(payload, 'projectId'),
+          name: optionalText(payload, 'name'),
+          tracks: field(payload, 'tracks') ?? [],
+          ...typeof field(payload, 'frameRate') === 'number' ? { frameRate: field(payload, 'frameRate') as number } : {},
+        }),
+      }
+    case 'timelines/remove':
+      return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
     case 'maintenance/compact':
       return { removed: await deps.store.compactAssets() }

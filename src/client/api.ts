@@ -10,6 +10,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
+import type { TimelineRecord } from '../workbench/timeline.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 
 /** What the workbench UI may ask the host (phase 2, first slice). */
@@ -51,6 +52,18 @@ export interface WorkbenchApi {
   removeResource: (id: string) => Promise<boolean>
   /** Recorded generations, newest first. */
   listTasks: (limit?: number) => Promise<TaskRecord[]>
+  /** One project's timeline documents, newest first. */
+  listTimelines: (projectId: string) => Promise<TimelineRecord[]>
+  /** Create or update a timeline document. */
+  saveTimeline: (input: {
+    id?: string
+    projectId: string
+    name?: string
+    tracks: unknown
+    frameRate?: number
+  }) => Promise<TimelineRecord>
+  /** Remove one timeline document. */
+  removeTimeline: (id: string) => Promise<boolean>
   /** One project's workflow documents, newest first. */
   listWorkflows: (projectId: string) => Promise<WorkflowRecord[]>
   /** Create or update a workflow document. */
@@ -107,6 +120,10 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     createResource: async input => (await call<{ resource: ResourceRecord }>('resources/create', input)).resource,
     removeResource: async id => (await call<{ removed: boolean }>('resources/remove', { id })).removed,
     listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
+    listTimelines: async projectId =>
+      (await call<{ timelines: TimelineRecord[] }>('timelines/list', { projectId })).timelines,
+    saveTimeline: async input => (await call<{ timeline: TimelineRecord }>('timelines/save', input)).timeline,
+    removeTimeline: async id => (await call<{ removed: boolean }>('timelines/remove', { id })).removed,
     listWorkflows: async projectId =>
       (await call<{ workflows: WorkflowRecord[] }>('workflows/list', { projectId })).workflows,
     saveWorkflow: async input => (await call<{ workflow: WorkflowRecord }>('workflows/save', input)).workflow,
