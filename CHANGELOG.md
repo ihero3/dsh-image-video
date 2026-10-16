@@ -34,6 +34,9 @@
 - **客户端产物体积门禁（T7-1）**：基线 = 首次可发布构建实测 **raw 548,282 B / gzip 121,161 B**（2026-10-16，`lib/client/plugin.js`），预算 = 基线 +20%（raw 657,938 B / gzip 145,393 B）；`pnpm run check:bundle` 在超预算时列出超支明细并以非零退出
 - **CI 补门禁（T7-7）**：`.github/workflows/ci.yml` 增加 `pnpm run test` 与 `pnpm run check:bundle`（此前只有 typecheck + build）
 
+### 新增
+- **结构化日志（T7-3）**：生成 / 工作流节点 / 导出三类事件各一行 JSON，字段含 taskId、runId+nodeId、renderId 与服务商、模型、耗时、状态，可按 id 串联；钩子可选注入，宿主输出到 `ctx.logger.info`
+
 ### 已知缺口
 - **跨运行的成功结果缓存未做**：重试只保证"同一次运行里不重跑已成功节点、只重跑失败节点及其下游"（`R-FLW-5` 的省钱语义），另起一次运行仍会重新调用外部生成
 

@@ -35,6 +35,8 @@ export class RenderRegistry {
     readonly registerAsset?: (job: RenderJob) => Promise<void>
     readonly now?: () => Date
     readonly onError?: (message: string) => void
+    /** 结构化日志钩子（`T7-3`）。 */
+    readonly log?: (entry: Record<string, unknown>) => void
   }) {}
 
   private stamp(): string {
@@ -99,6 +101,10 @@ export class RenderRegistry {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
+      this.deps.log?.({
+        event: 'render', renderId: id, timelineId: job.timelineId, status: 'succeeded',
+        durationMs: Date.now() - Date.parse(job.startedAt), bytes: result.bytes, outputPath: result.outputPath,
+      })
       const finished = this.jobs.get(id)
       if (finished !== undefined && this.deps.registerAsset !== undefined) {
         await this.deps.registerAsset(finished).catch(error => {
@@ -107,11 +113,17 @@ export class RenderRegistry {
       }
     }).catch((error: unknown) => {
       const cancelled = error instanceof RenderError && error.code === 'MEDIA_RENDER_CANCELLED'
+      const message = error instanceof Error ? error.message : String(error)
       this.patch(id, {
         status: cancelled ? 'cancelled' : 'failed',
         finishedAt: this.stamp(),
         ...error instanceof RenderError ? { code: error.code } : {},
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
+      })
+      this.deps.log?.({
+        event: 'render', renderId: id, timelineId: job.timelineId,
+        status: cancelled ? 'cancelled' : 'failed', durationMs: Date.now() - Date.parse(job.startedAt),
+        ...error instanceof RenderError ? { code: error.code } : {}, error: message,
       })
     }).finally(() => { this.controllers.delete(id) })
 

@@ -76,6 +76,8 @@ export interface TaskLedgerOptions {
   readonly projectId?: string
   /** Failure reporter; defaults to `console.warn`. */
   readonly onError?: (message: string) => void
+  /** 结构化日志钩子（`T7-3`）：一条事件一行，字段可串联。 */
+  readonly log?: (entry: Record<string, unknown>) => void
 }
 
 /** Report a ledger problem, never letting it break the call it describes. */
@@ -112,6 +114,8 @@ export function withTaskLedger<T extends ToolDefinition>(tool: T, options: TaskL
     ...tool,
     async execute(args: Parameters<typeof execute>[0], exec: Parameters<typeof execute>[1]) {
       const startedAt = new Date().toISOString()
+      // 请求参数只解析一次：既是账本字段，也是日志里可串联的服务商/模型
+      const meta = extractRequest(args) as Record<string, unknown>
       let taskId: string | undefined
       let controller: AbortController | undefined
       try {
@@ -131,18 +135,26 @@ export function withTaskLedger<T extends ToolDefinition>(tool: T, options: TaskL
         ? exec
         : { ...exec, signal: AbortSignal.any([execSignal, controller.signal]) }
 
+      // 结构化事件：taskId / 种类 / 服务商 / 模型 / 耗时 / 状态 —— 一条日志能串起整条链
+      const emit = (status: string, extra: Record<string, unknown> = {}): void => {
+        options.log?.({
+          event: 'generation', taskId, kind: options.kind, status,
+          durationMs: Math.max(0, Date.now() - Date.parse(startedAt)), ...meta, ...extra,
+        })
+      }
+
       try {
         const value = await execute(args, toolExec)
-        await finish(options, taskId, {
-          status: (controller?.signal.aborted ?? false) ? 'cancelled' : 'succeeded',
-          ...extractOutcome(value),
-        })
+        const status = (controller?.signal.aborted ?? false) ? 'cancelled' : 'succeeded'
+        const outcome = extractOutcome(value)
+        await finish(options, taskId, { status, ...outcome })
+        emit(status, outcome as Record<string, unknown>)
         return value
       } catch (error) {
-        await finish(options, taskId, {
-          status: (controller?.signal.aborted ?? false) ? 'cancelled' : 'failed',
-          error: error instanceof Error ? error.message : String(error),
-        })
+        const status = (controller?.signal.aborted ?? false) ? 'cancelled' : 'failed'
+        const message = error instanceof Error ? error.message : String(error)
+        await finish(options, taskId, { status, error: message })
+        emit(status, { error: message })
         throw error
       } finally {
         if (taskId !== undefined) options.registry.release(taskId)

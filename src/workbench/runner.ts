@@ -58,6 +58,8 @@ export interface WorkflowRunnerDeps {
   readonly now?: () => Date
   /** 后台执行里的意外异常上报。 */
   readonly onError?: (message: string) => void
+  /** 结构化日志钩子（`T7-3`）。 */
+  readonly log?: (entry: Record<string, unknown>) => void
   /** 单个节点的最大尝试次数（默认 3：首发 + 两次重试，仅对瞬时失败生效）。 */
   readonly nodeAttempts?: number
   /** 重试之间的等待毫秒（默认 800，按次数线性退避）。 */
@@ -221,7 +223,14 @@ export class WorkflowRunner {
         startedAt: (this.deps.now?.() ?? new Date()).toISOString(),
       })
       await this.persist(run, nodeRuns, 'running')
+      const nodeStartedAt = Date.now()
       const record = await this.runNode(node, workflow, nodeRuns, signal)
+      this.deps.log?.({
+        event: 'workflow-node', runId: run.id, nodeId: node.id, kind: node.kind,
+        status: record.status, attempt: record.attempts ?? 1, durationMs: Date.now() - nodeStartedAt,
+        ...record.outputPath === undefined ? {} : { outputPath: record.outputPath },
+        ...record.error === undefined ? {} : { error: record.error },
+      })
       nodeRuns.set(node.id, record)
       if (record.status === 'failed') { status = 'failed'; error = record.error; break }
       if (record.status === 'cancelled') { status = 'cancelled'; error = record.error; break }

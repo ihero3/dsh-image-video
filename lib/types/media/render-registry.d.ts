@@ -33,6 +33,8 @@ export declare class RenderRegistry {
         readonly registerAsset?: (job: RenderJob) => Promise<void>;
         readonly now?: () => Date;
         readonly onError?: (message: string) => void;
+        /** 结构化日志钩子（`T7-3`）。 */
+        readonly log?: (entry: Record<string, unknown>) => void;
     });
     private stamp;
     private patch;

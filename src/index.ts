@@ -185,6 +185,10 @@ export function apply(ctx: Context, config: Config): void {
   const runtimeDefaults = createRuntimeDefaultsStore()
 
   // settings 持久默认回落层：defaults 路由与媒体模式注入共用同一取值口径。
+  // 结构化日志（`T7-3`）：一行一个 JSON 事件，字段（taskId/runId/renderId/服务商/耗时）可串联
+  const logEntry = (entry: Record<string, unknown>): void => {
+    ctx.logger?.info?.(`image-video ${JSON.stringify(entry)}`)
+  }
   const persistedDefaults = extractPersistedDefaults(config)
 
   // 图运行器要复用**同一对**生成工具（参数语义、账本、取消都一致）。
@@ -209,7 +213,7 @@ export function apply(ctx: Context, config: Config): void {
     // 传入插件根 ctx 供 generate_image 在 execute 内解析 llm 服务以判定图片能力门。
     const imageTool = withTaskLedger(
       createGenerateImageTool({ config, taskManager, attachments, ctx, runtimeDefaults, outputsDir, resolveApiKey }),
-      { store: workbenchStore, registry: generationRegistry, kind: 'image' },
+      { store: workbenchStore, registry: generationRegistry, kind: 'image', log: logEntry },
     )
     imageCtx.tools.register(imageTool)
     generationTools.image = imageTool as unknown as GenerationTool
@@ -218,7 +222,7 @@ export function apply(ctx: Context, config: Config): void {
   // generate_video：不依赖 attachments，始终注册。
   const videoTool = withTaskLedger(
     createGenerateVideoTool({ config, taskManager, runtimeDefaults, outputsDir, resolveApiKey }),
-    { store: workbenchStore, registry: generationRegistry, kind: 'video' },
+    { store: workbenchStore, registry: generationRegistry, kind: 'video', log: logEntry },
   )
   ctx.tools.register(videoTool)
   generationTools.video = videoTool as unknown as GenerationTool
@@ -282,11 +286,12 @@ export function apply(ctx: Context, config: Config): void {
   // 进程重启后遗留的"运行中"导出按失败收尾，避免永远转圈
   renderRegistry.failStale('宿主重启中断（无法继续这次导出）')
 
-  // 图运行器复用对话里的同一对生成工具（参数语义一致，账本/取消自动继承）
+    // 图运行器复用对话里的同一对生成工具（参数语义一致，账本/取消自动继承）
     const workflowRunner = new WorkflowRunner({
       store: workbenchStore,
       generateImage: proxyTool('image'),
       generateVideo: proxyTool('video'),
+      log: logEntry,
       onError: message => { ctx.logger?.warn?.(`image-video workbench: ${message}`) },
     })
     registerWorkbenchRpc(rpcCtx, {
