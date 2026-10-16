@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **41** | — |
+| **合计** | **59** | **43** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -109,13 +109,13 @@
 
 ## 9. 阶段 7：稳定性与发布
 
-- [ ] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜`cmd:` 超限使 `pnpm run build`/CI 红｜回滚：删门禁脚本（体积仍记录在 CHANGELOG）｜R-NFR-1｜T1-2
+- [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；当前实测占预算 83%｜R-NFR-3｜T2-11
 - [ ] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜`test:` 五类失败文案都含"原因 + 下一步"｜回滚：删该类断言（保留主流程）｜R-NFR-4｜T5-6
 - [ ] **T7-3** 结构化日志：任务 ID / 节点 ID / 耗时 / 服务商可串联｜插件｜`test:` 一次完整流程能按任务 ID 串起日志｜回滚：退回现有 console 口径｜R-NFR-5｜T6-5
 - [ ] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜`manual:` 8 步全过，导出成片可播放｜回滚：无（只产证据）｜R-TML-5、R-NFR-2｜T6-5
 - [ ] **T7-5** ffmpeg 交付口径结论（sidecar 打包 vs 安装检测）并回填需求 §14-D3｜插件·docs（+ 可能 Harness 打包）｜`manual:` 发布前有明确结论与真机证据，或明确列为已知限制｜回滚：维持"检测 + 提示"口径｜R-TML-7｜T7-4
 - [ ] **T7-6** 发布门禁清单 + 打 tag（`v0.x.y-workbench-N`）｜插件｜`cmd:` 门禁全绿、tag 已推、回滚点可用｜回滚：删 tag，回退到上一发布点｜R-NFR-2｜T7-1..T7-5
-- [ ] **T7-7** CI 补测试步骤：`.github/workflows/ci.yml` 增加 `pnpm run test`（当前只 typecheck+build），并接入体积门禁｜插件｜`cmd:` CI 上能看到测试与体积两项；缺产物/超限能拦住｜回滚：移除该 CI 步骤｜R-NFR-1、R-NFR-2｜T7-1
+- [x] **T7-7** CI 补测试步骤：`.github/workflows/ci.yml` 增加 `pnpm run test`（当前只 typecheck+build），并接入体积门禁｜插件｜**已完成**：CI 在 Build 之前跑 `pnpm run test`，Build 之后跑 `pnpm run check:bundle`（体积门禁）｜R-NFR-2｜T7-1
 
 ## 10. 阶段 8：本地项目包与资源包（计划 §5.6、§9 阶段 8）
 

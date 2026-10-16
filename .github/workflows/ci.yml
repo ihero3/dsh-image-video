@@ -28,8 +28,14 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit
 
+      - name: Test
+        run: pnpm run test
+
       - name: Build
         run: pnpm run build
+
+      - name: Bundle size budget
+        run: pnpm run check:bundle
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
