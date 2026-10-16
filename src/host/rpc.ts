@@ -143,6 +143,53 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       })
       return attached
     }
+    // 对话卡片入口的后端（`T6-1`）：卡片只给一个文件路径，由宿主决定放进哪个项目/时间轴
+    case 'assets/quick-add': {
+      const path = text(payload, 'path')
+      const explicit = optionalText(payload, 'projectId')
+      const listed = await deps.store.listProjects()
+      const project = explicit !== undefined && explicit !== ''
+        ? listed.find(candidate => candidate.id === explicit)
+        : listed[0]
+      const target = project ?? await deps.store.createProject('对话素材')
+      const kind = field(payload, 'kind') === 'image' || field(payload, 'kind') === 'video'
+        ? field(payload, 'kind') as 'image' | 'video'
+        : /\.(png|jpe?g|webp|gif)$/i.test(path) ? 'image' as const : 'video' as const
+      const attached = await deps.store.attachAsset({
+        projectId: target.id, path, kind,
+        ...optionalText(payload, 'prompt') === undefined ? {} : { prompt: optionalText(payload, 'prompt') },
+        ...optionalText(payload, 'model') === undefined ? {} : { model: optionalText(payload, 'model') },
+        ...optionalText(payload, 'provider') === undefined ? {} : { provider: optionalText(payload, 'provider') },
+      })
+      if (field(payload, 'intoTimeline') !== true) {
+        return { projectId: target.id, projectName: target.name, asset: attached.asset, created: attached.created }
+      }
+      // 放进时间轴：用该项目最近的时间轴；没有就建一条三轨的
+      const stamp = Date.now().toString(36)
+      const timelines = await deps.store.listTimelines(target.id)
+      const existing = timelines[0]
+      const base = existing ?? await deps.store.saveTimeline({
+        projectId: target.id, name: `${target.name} 成片`,
+        tracks: [
+          { id: 'v1', kind: 'video', clips: [] },
+          { id: 'a1', kind: 'audio', clips: [] },
+          { id: 's1', kind: 'subtitle', clips: [] },
+        ],
+      })
+      const durationMs = typeof field(payload, 'durationMs') === 'number' ? Math.max(1, Math.round(field(payload, 'durationMs') as number)) : 3000
+      let clipId = ''
+      const tracks = base.tracks.map(track => {
+        if (track.kind !== 'video') return { ...track, clips: [...track.clips] }
+        const end = track.clips.reduce((longest, clip) => Math.max(longest, clip.startMs + clip.durationMs), 0)
+        clipId = `clip-${stamp}-quick`
+        return { ...track, clips: [...track.clips, { id: clipId, assetPath: attached.asset.path, startMs: end, durationMs }] }
+      })
+      const saved = await deps.store.saveTimeline({
+        id: base.id, projectId: base.projectId, name: base.name,
+        tracks, frameRate: base.frameRate, burnSubtitles: base.burnSubtitles,
+      })
+      return { projectId: target.id, projectName: target.name, asset: attached.asset, created: attached.created, timelineId: saved.id, clipId }
+    }
     case 'assets/remove':
       return {
         removed: await deps.store.removeAsset(text(payload, 'id'), field(payload, 'force') === true ? { force: true } : {}),

@@ -187,6 +187,35 @@ describe('workbench channel endpoints', () => {
     expect(bogus.code).toBe('MEDIA_FFMPEG_UNAVAILABLE')
   })
 
+  it('quick-adds a conversation artifact into the workbench (T6-1 backend)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '对话素材' })
+    const path = '/tmp/outputs/card-artifact.mp4'
+
+    // 只要素材
+    const attached = await ok<{ projectId: string; created: boolean; asset: { path: string; kind: string } }>(
+      'assets/quick-add', { path, kind: 'video', projectId: created.project.id, prompt: '卡片来的' },
+    )
+    expect(attached.projectId).toBe(created.project.id)
+    expect(attached.asset).toMatchObject({ path, kind: 'video' })
+    expect(attached.created).toBe(true)
+
+    // 再点一次只登记不算新建（幂等）
+    expect((await ok<{ created: boolean }>('assets/quick-add', { path, projectId: created.project.id })).created).toBe(false)
+
+    // 放进时间轴：没有时间轴就自动建一条，并在视频轨末尾加片段
+    const intoTimeline = await ok<{ timelineId: string; clipId: string }>('assets/quick-add', {
+      path, projectId: created.project.id, intoTimeline: true, durationMs: 2500,
+    })
+    expect(intoTimeline.clipId).toMatch(/^clip-/)
+    const timelines = await ok<{ timelines: Array<{ id: string; tracks: Array<{ kind: string; clips: Array<{ id: string; assetPath?: string; durationMs: number }> }> }> }>(
+      'timelines/list', { projectId: created.project.id },
+    )
+    const timeline = timelines.timelines.find(row => row.id === intoTimeline.timelineId)
+    const clip = timeline?.tracks.find(track => track.kind === 'video')?.clips.at(-1)
+    expect(clip).toMatchObject({ assetPath: path, durationMs: 2500 })
+  })
+
   it('stores timelines through the channel and rejects inlined bytes', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '时间轴' })

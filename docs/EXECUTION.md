@@ -174,6 +174,16 @@ node scripts/verify-workbench-tab.mjs --reload --shot /tmp/workbench.png
 | 禁用插件后 tab / RPC 残留 | 返回的 disposer 没被释放 | `ctx.sidebarRightTabs.register()` 内部已经用 effect 托管：**调用放在插件 apply 顶层，不要再包一层 `ctx.effect`**——父包注释明确写着"从别的插件 apply 里在活动 effect 作用域内注册会无错卡住浏览器启动"；RPC 与监听器各自的 disposer 由本插件的 effect 释放 |
 | 任务进度 / 项目列表不刷新 | 以为有宿主→客户端推送 | **`rpc.handle` 只有"客户端发起的单次调用"，没有通用推送通道**（`/plugins/events` 是 HMR 专用）。一致刷新走轮询/失效重查，或由插件自己开一条宿主 HTTP 长连接（`webServer` 允许挂住 `text/event-stream`） |
 
+### 重启后的第一件事：扫自己的待办（owner 口径，2026-10-16）
+
+每次宿主重启（自重启、owner 手动重启、崩溃恢复）后，Agent **先做这三步再谈别的**：
+
+1. 读 `docs/TASKS.md`，看 `- [ ]` 与 `- [~]` 项（`grep -nE "^- \[[ ~]\]" docs/TASKS.md`）。
+2. 有未完成的 → **直接继续执行**，不等待指令、不重复问"要继续吗"。
+3. 顺带确认上一次重启是否成功（`tail -3 /private/tmp/dsh-agent-restart.log`）与宿主健康（`node scripts/verify-workbench-tab.mjs`）。
+
+> 同理：`~/.dsh-agent-restart.sh` 的注释里也写了这条，避免以后忘。
+
 ### 测试素材与"烧钱"边界（owner 口径，2026-10-16）
 
 1. **少测生成视频**：视频生成是付费能力，测试默认**跳过真实视频生成**。视频相关验收要么用
