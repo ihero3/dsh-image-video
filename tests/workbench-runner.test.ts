@@ -34,6 +34,8 @@ function fakeStore() {
   const runs: WorkflowRunRecord[] = []
   const store = {
     async recordRun(run: WorkflowRunRecord) { runs.push(run); return run },
+    async lookupNodeCache() { return undefined },
+    async rememberNodeCache() { /* 测试替身不落缓存 */ },
     async updateRun(id: string, patch: Partial<WorkflowRunRecord>) {
       const index = runs.findIndex(run => run.id === id)
       if (index < 0) return undefined

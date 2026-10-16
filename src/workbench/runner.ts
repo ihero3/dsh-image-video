@@ -280,8 +280,12 @@ export class WorkflowRunner {
 
     // 跨运行缓存（`R-FLW-5`）：同参数同上游 → 直接复用上次产物，不再调外部生成
     const cacheKey = nodeCacheKey({ kind: node.kind, args })
-    if (this.deps.cache !== false && options.bypassCache !== true) {
-      const hit = await this.deps.store.lookupNodeCache(cacheKey)
+    // 防御：缓存是 store 的可选能力，缺了也不该让整次运行崩掉（测试替身就没有）
+    const cacheLookup = this.deps.cache === false || options.bypassCache === true
+      ? undefined
+      : this.deps.store.lookupNodeCache?.bind(this.deps.store)
+    if (cacheLookup !== undefined) {
+      const hit = await cacheLookup(cacheKey).catch(() => undefined)
       const stillThere = hit === undefined ? false : await stat(hit.outputPath).then(() => true).catch(() => false)
       if (hit !== undefined && stillThere) {
         const finishedAt = (this.deps.now?.() ?? new Date()).toISOString()
@@ -299,7 +303,7 @@ export class WorkflowRunner {
         const value = await tool.execute(args, { signal })
         const extracted = extractOutcome(value)
         if (this.deps.cache !== false && typeof extracted.outputPath === 'string') {
-          await this.deps.store.rememberNodeCache({
+          await this.deps.store.rememberNodeCache?.({
             key: cacheKey, kind: node.kind, args, outputPath: extracted.outputPath,
             ...extracted.bytes === undefined ? {} : { bytes: extracted.bytes },
             runId: run.id, nodeId: node.id, at: (this.deps.now?.() ?? new Date()).toISOString(),

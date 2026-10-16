@@ -25,6 +25,8 @@ function fakeStore() {
   const runs: WorkflowRunRecord[] = []
   const store = {
     async recordRun(run: WorkflowRunRecord) { runs.push(run); return run },
+    async lookupNodeCache() { return undefined },
+    async rememberNodeCache() { /* 测试替身不落缓存 */ },
     async updateRun(id: string, patch: Partial<WorkflowRunRecord>) {
       const index = runs.findIndex(run => run.id === id)
       if (index < 0) return undefined
@@ -92,7 +94,8 @@ describe('planned capabilities cannot pretend to succeed (T3-3)', () => {
       nodes: [node('v', 'video-generate', { prompt: '正常节点' })], edges: [],
       createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z',
     })
-    await vi.waitFor(() => { expect(latest().status).toBe('succeeded') })
+    // 运行器现在还会先查一次成功结果缓存，给足时间（避免时序脆弱）
+    await vi.waitFor(() => { expect(latest().status).toBe('succeeded') }, { timeout: 5000 })
     expect(calls).toHaveLength(1)
   })
 })

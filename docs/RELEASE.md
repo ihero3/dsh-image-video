@@ -11,6 +11,9 @@
 | 3 | `pnpm run build` | 产出 `lib/**`，且 `lib` 已入库（私有插件只复制 `lib/`） |
 | 4 | `pnpm run check:bundle` | 客户端产物在预算内（基线 +20%，超了就说明原因并同步抬基线） |
 
+> **推之前先跑 `bash scripts/gate.sh`**：它把上面四道门串成一条命令，任何一步失败就非零退出。
+> 这条纪律是被两次"测试还红着就推"逼出来的（git 的 pre-commit 钩子只做 whitespace/清单检查，不跑测试）。
+
 ## 2. 真机证据（阶段门禁要求）
 
 - `docs/GATE-1-EVIDENCE.md` 里有**本阶段**的现场记录：真实调用、真实文件、真实任务 ID。
