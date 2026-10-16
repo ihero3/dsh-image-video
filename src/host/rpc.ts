@@ -155,8 +155,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const kind = field(payload, 'kind') === 'image' || field(payload, 'kind') === 'video'
         ? field(payload, 'kind') as 'image' | 'video'
         : /\.(png|jpe?g|webp|gif)$/i.test(path) ? 'image' as const : 'video' as const
+      // 卡片只给路径，字节数由宿主补：先量一下，量不到就不写
+      const { stat } = await import('node:fs/promises')
+      const size = await stat(path).then(info => info.size).catch(() => undefined)
       const attached = await deps.store.attachAsset({
         projectId: target.id, path, kind,
+        ...size === undefined ? {} : { bytes: size },
         ...optionalText(payload, 'prompt') === undefined ? {} : { prompt: optionalText(payload, 'prompt') },
         ...optionalText(payload, 'model') === undefined ? {} : { model: optionalText(payload, 'model') },
         ...optionalText(payload, 'provider') === undefined ? {} : { provider: optionalText(payload, 'provider') },
