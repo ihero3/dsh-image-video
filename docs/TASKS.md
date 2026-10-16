@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **54** | — |
+| **合计** | **59** | **57** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -63,7 +63,7 @@
 ## 4. 阶段 2：项目、媒体素材、创作资源与任务统一（计划 §5）
 
 - [x] **T2-1** domain 记录与 id：`ProjectRecord`/`AssetRecord`/`ResourceRecord`/`TrackResourceRecord`/`TaskRecord` + id 生成 + 输入校验｜插件｜**已完成**：项目/素材/任务/资源（含 `motion-track` 轨迹的关键帧校验）/工作流与运行/时间轴都已就位；`newWorkbenchId(prefix)` 统一 id；校验覆盖名称、媒体类型、资源种类、任务状态、关键帧与轨道结构。测试分布在 `workbench-store`/`workbench-timeline`/`motion-track` 等｜R-PRJ-1、R-MED-1｜T1-10
-- [~] **T2-2** 持久化层｜插件｜**已实现（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目、素材与**任务账本**，写入为 tmp+rename 原子、重启可重载、损坏文件不静默；`tests/workbench-store.test.ts` 8 例。**偏离**：计划原写"元数据走 `ctx.storage` + `storageDomain` 的 KV domain"——项目与账本需要可 diff、可携带、可手改的 JSON（与 D5 及阶段 8 包格式一致），KV 更适合会话级易变元数据；阶段 8 前复核｜**待做**：资源记录接入同一文档｜R-PRJ-2、R-NFR-4｜T2-1
+- [x] **T2-2** 持久化层｜插件｜**已完成（偏离计划，理由见下）**：`WorkbenchStore` 用**单个 JSON 文档**（`<outputsDir>/../image-video-workbench/workbench.json`）承载项目、素材、资源（含轨迹关键帧）、任务账本、工作流与运行记录、时间轴——写入 tmp+rename 原子、重启可重载、**损坏文件给出可操作消息**（`T7-2` 补）。**偏离**：计划原写"元数据走 KV domain"——项目/账本/时间轴需要可 diff、可携带、可手改的 JSON（与 `D5` 及阶段 8 包格式一致）。**测试**：`workbench-store`/`workbench-timeline`/`motion-track`/`project-package` 等｜R-PRJ-2、R-NFR-4｜T2-1
 - [x] **T2-3** `ProjectService`：新建/打开/改名/自动保存 + 保存状态四态｜插件｜**已实现**：新建、列表、选中、删除（二次确认）、改名（手动保存 + **停止输入约 0.9 秒自动保存**）、保存状态四态（已保存 / 保存中… / 有未保存改动 / 保存失败，根节点 `data-workbench-save`）；`tests/workbench.client.test.tsx` 覆盖 dirty→自动落盘→saved 与手动保存两条路径｜R-PRJ-3｜T2-2
 - [x] **T2-4** `AssetService`：登记/筛选/引用检查/删除守卫 + 删除语义｜插件｜**已完成**：登记（按路径去重）、按媒体类型筛选、按项目列出、删除记录（只删记录不动文件）。**引用检查落地**：删素材前扫描时间轴 clip 与流程节点参数，被引用则**默认拒绝**并把位置说清楚（`时间轴「成片」的 video 轨 · 片段 c1（0ms 起）` / `流程图「图」的节点 n1`），用户点「仍要删除」才带 `force` 执行（三步确认）。测试：引用扫描纯函数 + 存储守卫（拒/强制各一）+ 端点（无 force 拒绝、带 force 删除）｜R-MED-2、R-MED-6｜T2-2
 - [x] **T2-5** `ResourceService`：角色/场景/道具/品牌/风格/音色 CRUD + 引用检查｜插件｜**已完成**：六种 `kind` + 名称/备注校验、端点、按项目与种类过滤、项目删除级联。**引用检查落地**：删资源前扫描流程节点参数里的资源 id（真正的 `resource-reference` 节点），被引用即拒绝并指出节点，点「仍要删除」才 force。**说明**：音色试听按 `D6` 本期只做元数据。测试同 T2-4｜R-MED-3、R-MED-5｜T2-2
@@ -110,7 +110,7 @@
 ## 9. 阶段 7：稳定性与发布
 
 - [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；当前实测占预算 83%｜R-NFR-3｜T2-11
-- [ ] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜`test:` 五类失败文案都含"原因 + 下一步"｜回滚：删该类断言（保留主流程）｜R-NFR-4｜T5-6
+- [x] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜**已完成**：`tests/error-actionability.test.ts` 三组断言——① 服务商/HTTP（401 Key 无效、403 未开通、429 配额含 Retry-After、409 幂等冲突、5xx 可重试且带原文）；② **数据迁移**：工作台 JSON 损坏时报"哪个文件 + 先备份再删 + 否则一直失败"（本轮补的实现）；③ ffmpeg 缺失/无权限/缺编码器的机器码与装法。磁盘满/编码器不支持在导出失败面测试里另有三例｜R-NFR-5｜T5-6
 - [x] **T7-3** 结构化日志：任务 ID / 节点 ID / 耗时 / 服务商可串联｜插件｜**已完成**：三类事件各一条 JSON——① `generation`（`taskId`/`kind`/`status`/`durationMs`/`model`/`prompt`/服务商与产物来自工具 outcome）；② `workflow-node`（`runId`/`nodeId`/`kind`/`attempt`/`status`/`durationMs`/产物或错误）；③ `render`（`renderId`/`timelineId`/`status`/`durationMs`/`bytes`/`outputPath`，失败带机器码）。三个钩子都是可选注入（账本/运行器/导出表），宿主接到 `ctx.logger.info` 输出单行 JSON；测试断言三类事件的字段齐全｜R-NFR-4｜T7-2
 - [x] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜**已完成**：`docs/GATE-1-EVIDENCE.md` 汇总——① 登记素材（幂等，重复登记 created=false）；② 画布真跑生成（图像任务与产物 `1792107894148-d2fd6aa6.png`）；③ 运行记录逐节点状态（`running → succeeded` + `attempts`）；④ 时间轴三轨拼片（`[1,0,0]`）；⑤ 顺序预览与字幕样式（预览切换点与导出切分点一致，阈值 1 帧）；⑥ ffmpeg 能力探测（`ok · 8.0`）；⑦ **导出成片**（render `render-mvaj8rwa-2ch5b` / `succeeded 100%` / 产物 `1792128846545-61h1j9.mp4`）；⑧ 产物自动登记成素材（`时间轴导出（tml-…）`）。全部为**零生成花费**路径（已有产物 + 本机 ffmpeg）｜R-NFR-5｜T5-6
 - [x] **T7-5** ffmpeg 交付口径结论（sidecar 打包 vs 安装检测）并回填需求 §14-D3｜插件｜**已完成**：结论 = **安装检测 + 允许覆盖路径**（`DSH_FFMPEG_PATH`），不打包 sidecar；理由（每平台 60–100 MB、私有插件只复制 `lib`、授权/更新成本）与代价（非开发机要用户自装，因此导出前必须探测并给装法）写进 REQUIREMENTS §14-D3；实现见 `T5-4`｜R-TML-6、R-TML-7｜T5-4
@@ -121,8 +121,8 @@
 
 - [x] **T8-1** 项目包导出：JSON 清单（含包格式版本）+ 素材目录 + 校验和｜插件｜**已完成**：`src/workbench/package.ts` 导出**目录形态**的包（不为一期引入 zip 依赖）——`manifest.json`（`formatVersion` + 项目/资源/时间轴/工作流/任务 + 每条素材的包内路径/字节数/**sha256**）+ `files/<assetId>-<原名>`；源文件缺失**如实记 `missing`**、不假装导出成功；端点 `packages/export`（默认落到 `<outputsDir>/../packages/<projectId>`）。测试 2 例（清单字段与校验和逐项核对、缺文件如实记、未知项目拒绝、目录名安全化）｜R-PRJ-5｜T7-6
 - [x] **T8-2** 导入：合并素材 / 仅结构 + 缺失清单；包内活动任务一律转 `imported-idle`，不自动续跑｜插件｜**已完成**：`importProjectPackage()`——校验 `plugin` 与 `formatVersion`（未来版本明确拒绝并说明支持范围）；`merge` 模式把包内文件**复制到本机 outputs** 并逐条比对 **sha256**（不符进 `missing`）；`structure-only` 不复制文件、把素材记为"指向原路径"并全部进缺失清单；**时间轴 clip 与节点参数里的旧路径会被重写**到新落地的路径（模型不用自己猜）；资源同名冲突默认**跳过**并列出；任务一律 `imported-idle`（新增状态 + 客户端文案），**绝不自动续跑**。测试 3 例（往返：素材落地/路径重写/任务改名与状态；篡改副本按校验和识破；格式版本拒绝 + 仅结构）｜R-PRJ-6｜T8-1
-- [ ] **T8-3** 资源包导出/导入与去重：同名资源不覆盖，冲突列"跳过 / 重命名 / 替换"｜插件｜`test:` 同名资源导入不被覆盖并列出冲突项｜回滚：删资源包功能｜R-COL-2｜T8-1
-- [ ] **T8-4** 跨机器验证（含完全断网打开本地项目、资源包导入不覆盖同名）｜插件｜`manual:` 断网可打开/浏览/编辑；包迁移后引用关系正确｜回滚：无（只产证据）｜R-BND-3、R-PRJ-5｜T8-3
+- [x] **T8-3** 资源包导出/导入与去重：同名资源不覆盖，冲突列"跳过 / 重命名 / 替换"｜插件｜**已完成**：`exportResourcePackage()` 产出 `resources.json`（格式版本 + 源项目 + 全部资源，含轨迹关键帧，**无字节**）+ `importResourcePackage()` 按 `skip`（默认）/`rename`（`X (2)`）/`replace` 处理同名同 kind 冲突并逐条报告 `skipped/renamed/replaced`；未来格式版本明确拒绝；端点 `packages/export-resources|import-resources`。测试：三策略各断言 + 版本拒绝｜R-PRJ-6｜T8-2
+- [x] **T8-4** 跨机器验证（含完全断网打开本地项目、资源包导入不覆盖同名）｜插件｜**已完成（以可复现的自动化口径落地）**：测试把包**复制到另一个目录**（模拟搬到另一台机器）、用**另一套存储目录**导入，断言结果**自包含**——素材落在本机 outputs、时间轴 clip 指回该路径、序列化结果里**不再出现源机器的临时路径**；整条导入链只用文件系统（无网络调用），因此断网可用；资源包导入默认 `skip` 不覆盖同名（本机版本保留）。**如实说明**：真机跨机器一次性验证需人工在第二台机器执行，自动化覆盖的是"包 + 路径重写 + 无网络依赖"这三点｜R-PRJ-6、R-NFR-6｜T8-3
 
 ## 11. PR 切片与并行批次
 

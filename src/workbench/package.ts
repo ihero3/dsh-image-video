@@ -242,3 +242,110 @@ export async function importProjectPackage(input: {
     missing, skippedResources, tasksImported, structureOnly,
   }
 }
+
+
+/** 资源包清单（`T8-3`）：只有元数据，没有字节，可 diff、可手改。 */
+export interface ResourcePackageManifest {
+  readonly formatVersion: number
+  readonly plugin: 'dsh-image-video'
+  readonly exportedAt: string
+  readonly source: { readonly projectId: string; readonly projectName: string }
+  readonly resources: readonly ResourceRecord[]
+}
+
+/** 同名冲突的处理策略。 */
+export type ResourceConflictStrategy = 'skip' | 'rename' | 'replace'
+
+/** 资源包导入报告。 */
+export interface ResourceImportResult {
+  readonly imported: number
+  readonly skipped: readonly string[]
+  readonly renamed: readonly string[]
+  readonly replaced: readonly string[]
+}
+
+/**
+ * 把一个项目的创作资源导出成资源包。
+ * @param input.store - 存储。
+ * @param input.projectId - 源项目。
+ * @param input.targetDir - 输出目录。
+ * @param input.now - 时钟。
+ * @returns 清单路径与内容。
+ */
+export async function exportResourcePackage(input: {
+  store: WorkbenchStore
+  projectId: string
+  targetDir: string
+  now?: () => Date
+}): Promise<{ manifestPath: string; manifest: ResourcePackageManifest }> {
+  const projects = await input.store.listProjects()
+  const project = projects.find(candidate => candidate.id === input.projectId)
+  if (project === undefined) throw new Error(`unknown project: ${input.projectId}`)
+  const manifest: ResourcePackageManifest = {
+    formatVersion: PACKAGE_FORMAT_VERSION,
+    plugin: 'dsh-image-video',
+    exportedAt: (input.now?.() ?? new Date()).toISOString(),
+    source: { projectId: project.id, projectName: project.name },
+    resources: await input.store.listResources(project.id) as readonly ResourceRecord[],
+  }
+  await mkdir(input.targetDir, { recursive: true })
+  const manifestPath = join(input.targetDir, 'resources.json')
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  return { manifestPath, manifest }
+}
+
+/**
+ * 把资源包导入一个项目。
+ * 口径（`T8-3`）：**默认绝不覆盖同名资源**；冲突按策略处理并逐条报出来。
+ * @param input.store - 存储。
+ * @param input.projectId - 目标项目。
+ * @param input.packageDir - 含 `resources.json` 的目录（也可直接给该文件路径）。
+ * @param input.strategy - `skip`（默认）/`rename`/`replace`。
+ * @returns 导入报告。
+ * @throws {Error} 包格式不认识时。
+ */
+export async function importResourcePackage(input: {
+  store: WorkbenchStore
+  projectId: string
+  packageDir: string
+  strategy?: ResourceConflictStrategy
+}): Promise<ResourceImportResult> {
+  const file = input.packageDir.endsWith('.json') ? input.packageDir : join(input.packageDir, 'resources.json')
+  const raw = JSON.parse(await readFile(file, 'utf8')) as Partial<ResourcePackageManifest>
+  if (raw.plugin !== 'dsh-image-video') throw new Error('这不是本插件导出的资源包（manifest.plugin 不匹配）')
+  const version = typeof raw.formatVersion === 'number' ? raw.formatVersion : 0
+  if (version < 1 || version > PACKAGE_FORMAT_VERSION) {
+    throw new Error(`资源包格式版本 ${version} 不认识（本版本支持 1..${PACKAGE_FORMAT_VERSION}）。`)
+  }
+  const strategy = input.strategy ?? 'skip'
+  const existing = await input.store.listResources(input.projectId)
+  const skipped: string[] = []
+  const renamed: string[] = []
+  const replaced: string[] = []
+  let imported = 0
+
+  for (const resource of raw.resources ?? []) {
+    const clash = existing.find(candidate => candidate.kind === resource.kind && candidate.name === resource.name)
+    let name = resource.name
+    if (clash !== undefined) {
+      if (strategy === 'skip') { skipped.push(resource.name); continue }
+      if (strategy === 'rename') {
+        let suffix = 2
+        while (existing.some(candidate => candidate.kind === resource.kind && candidate.name === `${resource.name} (${suffix})`)) suffix += 1
+        name = `${resource.name} (${suffix})`
+        renamed.push(`${resource.name} → ${name}`)
+      }
+      if (strategy === 'replace') {
+        await input.store.removeResource(clash.id, { force: true })
+        replaced.push(resource.name)
+      }
+    }
+    await input.store.createResource({
+      projectId: input.projectId, kind: resource.kind, name,
+      ...resource.note === undefined ? {} : { note: resource.note },
+      ...resource.keyframes === undefined ? {} : { keyframes: resource.keyframes },
+    })
+    imported += 1
+  }
+  return { imported, skipped, renamed, replaced }
+}

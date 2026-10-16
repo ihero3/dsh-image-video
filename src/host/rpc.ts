@@ -17,7 +17,7 @@ import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contra
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
-import { exportProjectPackage, importProjectPackage } from '../workbench/package.ts'
+import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
@@ -231,6 +231,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         packageDir: text(payload, 'packageDir'),
         outputsDir: deps.outputsDir,
         ...field(payload, 'mode') === 'structure-only' ? { mode: 'structure-only' as const } : {},
+      })
+      return { imported: result }
+    }
+    case 'packages/export-resources': {
+      const projectId = text(payload, 'projectId')
+      const target = optionalText(payload, 'targetDir')
+      const { manifestPath, manifest } = await exportResourcePackage({
+        store: deps.store, projectId,
+        targetDir: target === undefined || target === '' ? `${deps.outputsDir}/../packages/${projectId}-resources` : target,
+      })
+      return { package: { manifestPath, formatVersion: manifest.formatVersion, resources: manifest.resources.length } }
+    }
+    case 'packages/import-resources': {
+      const strategy = field(payload, 'strategy')
+      const result = await importResourcePackage({
+        store: deps.store,
+        projectId: text(payload, 'projectId'),
+        packageDir: text(payload, 'packageDir'),
+        ...strategy === 'rename' || strategy === 'replace' || strategy === 'skip' ? { strategy } : {},
       })
       return { imported: result }
     }
