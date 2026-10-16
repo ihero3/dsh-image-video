@@ -8,6 +8,12 @@
 - **Agent 自重启的安全化 + 紧急停止**：`scripts/agent-restart.sh`（一次性 detached 进程、900 秒冷却、并发锁、`--check` 自检、不经 launchd）与 `scripts/agent-stop.sh`（紧急停止，不触碰 App）。2026-10-15 用 `launchctl submit` 托管一次性脚本造成 164 轮循环重启，根因与处置写入 `EXECUTION.md` 事故记录
 
 
+### 口径
+- **测试素材与烧钱边界（owner 口径）**：测试默认跳过真实视频生成，必要时先与 owner 确认；需要人像时用大众审美的美女素材；生成类调用**绝不自动重试**（避免重复计费），只有只读/幂等操作才套 3 次重试
+
+### 新增
+- **planned 能力防伪造（T3-3 收口）**：图里只要含 `lip-sync`/`face-swap`/`voice-synthesize` 这类 `planned` 节点，运行侧**整次拒绝**且不发出任何外部调用、不把任何节点标成成功（`tests/planned-capability.test.ts` 三例）；重试也不会绕过
+
 ### 已知缺口
 - **跨运行的成功结果缓存未做**：重试只保证"同一次运行里不重跑已成功节点、只重跑失败节点及其下游"（`R-FLW-5` 的省钱语义），另起一次运行仍会重新调用外部生成
 
