@@ -545,6 +545,51 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(reopened.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
   })
 
+  it('keeps project, canvas nodes and timeline clips across mode round-trips (T6-2)', async () => {
+    const seededWorkflow: WorkflowRecord = {
+      schemaVersion: 1, id: 'wfl-1', projectId: 'prj-1', name: '往返', edges: [],
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 123, y: 45 }, params: { prompt: '猫' } }],
+      createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z',
+    }
+    const seededTimeline: TimelineRecord = {
+      schemaVersion: 1, id: 'tml-1', projectId: 'prj-1', name: '往返成片', frameRate: 30, burnSubtitles: true,
+      tracks: [
+        { id: 'v1', kind: 'video', clips: [{ id: 'clip-1', assetPath: '/tmp/outputs/a.mp4', startMs: 0, durationMs: 1000 }] },
+        { id: 'a1', kind: 'audio', clips: [] },
+        { id: 's1', kind: 'subtitle', clips: [{ id: 'clip-2', text: '字幕', startMs: 0, durationMs: 800 }] },
+      ],
+      createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z',
+    }
+    const host = fakeApi({ workflows: [seededWorkflow], timelines: [seededTimeline] })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '往返项目')
+
+    const switchTo = async (label: string): Promise<void> => {
+      fireEvent.click(await screen.findByRole('button', { name: label }))
+      await new Promise(resolve => { setTimeout(resolve, 50) })
+    }
+
+    // A：画布
+    await switchTo(en.modeWorkflow)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-workflow-node]')).toHaveLength(1) })
+    // C：时间轴
+    await switchTo(en.modeTimeline)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+    // B：快速创作（离开两个编辑面）
+    await switchTo(en.modeQuick)
+    // 回到画布与时间轴：节点位置与 clip 必须一模一样
+    await switchTo(en.modeWorkflow)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-workflow-node]')).toHaveLength(1) })
+    expect(host.workflows[0]?.nodes[0]?.position).toEqual({ x: 123, y: 45 })
+    await switchTo(en.modeTimeline)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+    expect(host.timelines[0]?.tracks[0]?.clips[0]?.id).toBe('clip-1')
+    expect(host.timelines[0]?.tracks[2]?.clips[0]?.id).toBe('clip-2')
+    // 项目本身也还在
+    expect(host.projects).toHaveLength(1)
+  })
+
   it('shows the seven effective defaults from the host (T2-11)', async () => {
     const host = fakeApi({
       defaults: {
