@@ -17,6 +17,7 @@ LOG=/private/tmp/dsh-agent-restart.log
 STAMP=/private/tmp/dsh-agent-restart.done
 LOCKDIR=/private/tmp/dsh-agent-restart.lock
 COOLDOWN=${DSH_RESTART_COOLDOWN_SECONDS:-900}
+DELAY=${DSH_RESTART_DELAY_SECONDS:-0}
 MODE=${1:-run}
 
 if [ "$MODE" = "--stop" ]; then
@@ -62,7 +63,11 @@ fi
 
 # 真正干活的那一段（--dry-run 只打印）
 work() {
-  echo "=== [$(date '+%F %T')] 安全自重启开始（dry-run=${DRY_RUN:-0}） ==="
+  echo "=== [$(date '+%F %T')] 安全自重启开始（dry-run=${DRY_RUN:-0}, delay=${DELAY}s） ==="
+  if [ "${DRY_RUN:-0}" != "1" ] && [ "$DELAY" -gt 0 ] 2>/dev/null; then
+    echo "先等 ${DELAY} 秒（留时间给 Agent 把消息发出去）"
+    sleep "$DELAY"
+  fi
   echo "监听 9222 的进程: $(lsof -iTCP:9222 -sTCP:LISTEN -t 2>/dev/null | tr '\n' ' ')"
   if [ "${DRY_RUN:-0}" = "1" ]; then
     echo "DRY-RUN：到这一步会执行 pkill App/dev、sleep 7、在仓库根跑 pnpm run dev:desktop 并轮询 9222"
