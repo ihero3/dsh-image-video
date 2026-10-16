@@ -41,6 +41,8 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'ffmpegRecheck'
+  | 'ffmpegOk'
   | 'stylePosition'
   | 'styleColor'
   | 'styleFontSize'
@@ -201,6 +203,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  ffmpegRecheck: 'Re-check ffmpeg',
+  ffmpegOk: 'ffmpeg',
   stylePosition: 'Position',
   styleColor: 'Color',
   styleFontSize: 'Size',
@@ -359,6 +363,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  ffmpegRecheck: '重新检查 ffmpeg',
+  ffmpegOk: 'ffmpeg',
   stylePosition: '位置',
   styleColor: '颜色',
   styleFontSize: '字号',

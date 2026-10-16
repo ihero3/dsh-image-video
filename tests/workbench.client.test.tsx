@@ -42,6 +42,7 @@ function fakeApi(options: {
   workflows?: WorkflowRecord[]
   runs?: WorkflowRunRecord[]
   timelines?: TimelineRecord[]
+  ffmpeg?: { available: boolean; code?: string; message?: string; version?: string; path?: string }
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -164,6 +165,10 @@ function fakeApi(options: {
       }
       runs.unshift(run)
       return run
+    },
+    probeFfmpeg: async () => {
+      calls.push('media/ffmpeg')
+      return options.ffmpeg ?? { available: true, version: '7.1.1', path: '/opt/homebrew/bin/ffmpeg', encoders: { h264: true, aac: true } }
     },
     listTimelines: async () => {
       calls.push('timelines/list')
@@ -515,6 +520,26 @@ describe('workbench project and asset flow', () => {
     const reopened = render(<Workbench {...props({ api: host.api })} />)
     fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
     await waitFor(() => { expect(reopened.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+  })
+
+  it('shows an actionable ffmpeg status in the timeline pane', async () => {
+    const host = fakeApi({
+      ffmpeg: { available: false, code: 'MEDIA_FFMPEG_UNAVAILABLE', message: '未找到可用的 ffmpeg。macOS 可执行 `brew install ffmpeg`；已装在别处就设 DSH_FFMPEG_PATH=/path/to/ffmpeg 后重试。' },
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, 'ffmpeg 项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-timeline-ffmpeg]')?.getAttribute('data-timeline-ffmpeg')).toBe('MEDIA_FFMPEG_UNAVAILABLE')
+    })
+    // 文案里必须给出下一步动作，而不是一句看不出怎么办的英文
+    expect(view.container.querySelector('[data-timeline-ffmpeg]')?.textContent).toContain('brew install ffmpeg')
+    const before = host.calls.filter(call => call === 'media/ffmpeg').length
+    fireEvent.click(screen.getByRole('button', { name: en.ffmpegRecheck }))
+    await waitFor(() => {
+      expect(host.calls.filter(call => call === 'media/ffmpeg').length).toBeGreaterThan(before)
+    })
   })
 
   it('applies a built-in template into the canvas', async () => {

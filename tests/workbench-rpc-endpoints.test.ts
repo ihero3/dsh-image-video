@@ -94,6 +94,22 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
   })
 
+  it('reports ffmpeg capability through the channel (T5-4)', async () => {
+    const { ok } = await makeHandler()
+    // 默认探测：本机装了应是 ok，没装也要给出可操作原因
+    const probe = (await ok<{ ffmpeg: { available: boolean; code?: string; message?: string; path?: string } }>('media/ffmpeg', {})).ffmpeg
+    if (probe.available) {
+      expect(probe.path).toBeTruthy()
+    } else {
+      expect(probe.code).toMatch(/^MEDIA_FFMPEG_/)
+      expect(probe.message).toBeTruthy()
+    }
+    // 诊断指定副本：严格模式，查不存在的路径必须报 MEDIA_FFMPEG_UNAVAILABLE
+    const bogus = (await ok<{ ffmpeg: { available: boolean; code?: string } }>('media/ffmpeg', { path: '/definitely/not/here/ffmpeg' })).ffmpeg
+    expect(bogus.available).toBe(false)
+    expect(bogus.code).toBe('MEDIA_FFMPEG_UNAVAILABLE')
+  })
+
   it('stores timelines through the channel and rejects inlined bytes', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '时间轴' })

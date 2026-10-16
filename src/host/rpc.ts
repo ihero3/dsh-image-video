@@ -16,6 +16,7 @@ import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
+import { probeFfmpeg } from '../media/ffmpeg.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import {
@@ -201,6 +202,16 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const previous = await deps.store.findRun(runId)
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
+    }
+    // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
+    case 'media/ffmpeg': {
+      // 允许带一个 path 做"检查指定副本"的诊断（UI 的重新检查按钮用默认路径）
+      const candidate = optionalText(payload, 'path')
+      return {
+        ffmpeg: await probeFfmpeg(candidate === undefined || candidate === ''
+          ? {}
+          : { candidates: [candidate], strict: true }),
+      }
     }
     // ---- 时间轴（阶段 5）--------------------------------------------------------
     case 'timelines/list':

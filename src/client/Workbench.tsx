@@ -18,6 +18,7 @@ import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskReco
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import { timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
+import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
@@ -154,6 +155,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [clipAssetPath, setClipAssetPath] = useState('')
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [previewMs, setPreviewMs] = useState(0)
+  const [ffmpeg, setFfmpeg] = useState<FfmpegProbe | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -277,6 +279,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })()
     return () => { stale = true }
   }, [mode, activeProject])
+
+  // 时间轴模式下探测一次 ffmpeg（导出能力的前置条件，`T5-4`）
+  const recheckFfmpeg = useCallback(async (): Promise<void> => {
+    try {
+      setFfmpeg(await apiRef.current.probeFfmpeg())
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mode !== 'timeline') return
+    let stale = false
+    void (async () => {
+      try {
+        const probe = await apiRef.current.probeFfmpeg()
+        if (!stale) setFfmpeg(probe)
+      } catch {
+        // 探测失败不阻塞时间轴编辑（导出前会再拦一次）
+      }
+    })()
+    return () => { stale = true }
+  }, [mode])
 
   // 时间轴改动 → 去抖落库
   const timelineDirty = timelineState === 'dirty'
@@ -703,6 +728,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   }} />
                 {t('burnSubtitles')}
               </label>
+            </p>
+            <p style={{ ...MUTED, fontSize: '10px' }} data-timeline-ffmpeg={ffmpeg === undefined ? 'unknown' : ffmpeg.available ? 'ok' : ffmpeg.code ?? 'unavailable'}>
+              {ffmpeg === undefined
+                ? '…'
+                : ffmpeg.available
+                  ? `${t('ffmpegOk')} ${ffmpeg.version ?? ''} · ${ffmpeg.path ?? ''}`
+                  : ffmpeg.message ?? ''}
+              {' '}
+              <button type="button" style={{ ...BUTTON, fontSize: '10px' }} onClick={() => { void recheckFfmpeg() }}>
+                {t('ffmpegRecheck')}
+              </button>
             </p>
             <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('previewTitle')}</strong>
             <div data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
