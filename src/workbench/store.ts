@@ -648,7 +648,16 @@ export class WorkbenchStore {
         timelines: raw.timelines ?? [],
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        // 文件坏了要**说清楚是哪个文件、下一步做什么**，不能把 SyntaxError 直接甩给上层
+        const reason = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `工作台数据文件读不出来（${this.file}）：${reason}。`
+          + `先备份成 ${this.file}.bak 再删掉原文件，插件会以空工作台重新开始；`
+          + '别让它一直坏着，否则每次读写都会失败。',
+          { cause: error },
+        )
+      }
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
         runs: [], timelines: [],

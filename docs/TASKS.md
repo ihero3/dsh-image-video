@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **43** | — |
+| **合计** | **59** | **45** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -112,9 +112,9 @@
 - [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；当前实测占预算 83%｜R-NFR-3｜T2-11
 - [ ] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜`test:` 五类失败文案都含"原因 + 下一步"｜回滚：删该类断言（保留主流程）｜R-NFR-4｜T5-6
 - [ ] **T7-3** 结构化日志：任务 ID / 节点 ID / 耗时 / 服务商可串联｜插件｜`test:` 一次完整流程能按任务 ID 串起日志｜回滚：退回现有 console 口径｜R-NFR-5｜T6-5
-- [ ] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜`manual:` 8 步全过，导出成片可播放｜回滚：无（只产证据）｜R-TML-5、R-NFR-2｜T6-5
-- [ ] **T7-5** ffmpeg 交付口径结论（sidecar 打包 vs 安装检测）并回填需求 §14-D3｜插件·docs（+ 可能 Harness 打包）｜`manual:` 发布前有明确结论与真机证据，或明确列为已知限制｜回滚：维持"检测 + 提示"口径｜R-TML-7｜T7-4
-- [ ] **T7-6** 发布门禁清单 + 打 tag（`v0.x.y-workbench-N`）｜插件｜`cmd:` 门禁全绿、tag 已推、回滚点可用｜回滚：删 tag，回退到上一发布点｜R-NFR-2｜T7-1..T7-5
+- [x] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜**已完成**：`docs/GATE-1-EVIDENCE.md` 汇总——① 登记素材（幂等，重复登记 created=false）；② 画布真跑生成（图像任务与产物 `1792107894148-d2fd6aa6.png`）；③ 运行记录逐节点状态（`running → succeeded` + `attempts`）；④ 时间轴三轨拼片（`[1,0,0]`）；⑤ 顺序预览与字幕样式（预览切换点与导出切分点一致，阈值 1 帧）；⑥ ffmpeg 能力探测（`ok · 8.0`）；⑦ **导出成片**（render `render-mvaj8rwa-2ch5b` / `succeeded 100%` / 产物 `1792128846545-61h1j9.mp4`）；⑧ 产物自动登记成素材（`时间轴导出（tml-…）`）。全部为**零生成花费**路径（已有产物 + 本机 ffmpeg）｜R-NFR-5｜T5-6
+- [x] **T7-5** ffmpeg 交付口径结论（sidecar 打包 vs 安装检测）并回填需求 §14-D3｜插件｜**已完成**：结论 = **安装检测 + 允许覆盖路径**（`DSH_FFMPEG_PATH`），不打包 sidecar；理由（每平台 60–100 MB、私有插件只复制 `lib`、授权/更新成本）与代价（非开发机要用户自装，因此导出前必须探测并给装法）写进 REQUIREMENTS §14-D3；实现见 `T5-4`｜R-TML-6、R-TML-7｜T5-4
+- [~] **T7-6** 发布门禁清单 + 打 tag（`v0.x.y-workbench-N`）｜插件｜**清单已落地**：`docs/RELEASE.md` 四道门（typecheck / test / build / 体积门禁）+ 真机证据要求 + 交付面检查 + tag 命名与流程（**打 tag/推 tag 需 owner 明确指令**）+ 事后冒烟。**待 owner**：确认版本号与是否现在打 tag｜R-NFR-2｜T7-4
 - [x] **T7-7** CI 补测试步骤：`.github/workflows/ci.yml` 增加 `pnpm run test`（当前只 typecheck+build），并接入体积门禁｜插件｜**已完成**：CI 在 Build 之前跑 `pnpm run test`，Build 之后跑 `pnpm run check:bundle`（体积门禁）｜R-NFR-2｜T7-1
 
 ## 10. 阶段 8：本地项目包与资源包（计划 §5.6、§9 阶段 8）
