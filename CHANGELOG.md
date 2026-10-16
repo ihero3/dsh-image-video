@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+（下一轮的改动写这里）
+
+## [0.3.1-workbench-1] - 2026-10-16
+
 ### 工程
 - **Agent 自重启的安全化 + 紧急停止**：`scripts/agent-restart.sh`（一次性 detached 进程、900 秒冷却、并发锁、`--check` 自检、不经 launchd）与 `scripts/agent-stop.sh`（紧急停止，不触碰 App）。2026-10-15 用 `launchctl submit` 托管一次性脚本造成 164 轮循环重启，根因与处置写入 `EXECUTION.md` 事故记录
 
