@@ -120,6 +120,8 @@ export interface WorkflowRunNodeRecord {
     readonly outputPath?: string;
     readonly bytes?: number;
     readonly error?: string;
+    /** 实际尝试次数（瞬时失败会自动重试，`T4-4`/上游中断类错误的兜底）。 */
+    readonly attempts?: number;
 }
 /** 一次运行的记录（含图快照，`R-FLW-6`）。 */
 export interface WorkflowRunRecord {
