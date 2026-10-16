@@ -27,3 +27,15 @@
 
 1. `tests/manifest-contract.test.ts`：清单 ⟷ 代码契约（每个注入服务都有对应客户端包且在 `dsh.client.inject`；`exports["./client"]` 指向的入库产物存在；`files` 覆盖产物；`schemastery`/`sharp` 必须留在 `dependencies`）。
 2. `tests/client-rpc-transport.test.ts`：通道名与提交路由按**真实传输**校验——单测用替身 `handle` 时抓不到"通道名不合规"这类问题（本阶段实际踩过）。
+
+## 阶段 5 现场证据（2026-10-16，零生成花费）
+
+| 验收点 | 现场结果 |
+| --- | --- |
+| ffmpeg 能力探测（T5-4） | 时间轴面板显示 `data-timeline-ffmpeg="ok"`，文案 `ffmpeg 8.0 · /opt/homebrew/bin/ffmpeg` |
+| 三轨时间轴（T5-1） | 面板渲染 `["video","audio","subtitle"]` 三轨；素材可加入视频轨；落库 `tracks=[1,0,0]`、`burnSubtitles=true` |
+| 导出成片（T5-5） | 点「导出成片」后：`running 0%` → `succeeded 100%`，产物 `1792121858521-9mcgve.mp4`（644,243 字节） |
+| 产物自动登记 | `workbench.json` 中出现 video 素材 `1792121858521-9mcgve.mp4`，提示词 `时间轴导出（tml-…）` |
+| 截图 | `/private/tmp/pr3-export.png` |
+
+> 说明：本次导出用的是**之前跑出来的真实视频产物**（登记为素材后放进时间轴），渲染由本机 ffmpeg 完成，因此**没有额外生成花费**。
