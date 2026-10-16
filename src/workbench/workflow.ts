@@ -94,12 +94,8 @@ const VIDEO_RATIO_OPTIONS = [
   { value: '1:1', labelKey: 'ratioSquare' },
 ] as const
 
-const RESOLUTION_OPTIONS = [
-  { value: '480P', labelKey: 'resolution480' },
-  { value: '720P', labelKey: 'resolution720' },
-  { value: '1080P', labelKey: 'resolution1080' },
-] as const
-
+// 分辨率**不写死枚举**：各模型支持的档位不同（现场跑出过 HTTP 400
+// "resolution 720P is not supported"），留空即用宿主/模型默认（`T2-11`）。
 /**
  * 节点目录。顺序即画布左侧节点库的展示顺序（先能用的，后 planned）。
  *
@@ -149,7 +145,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
       { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
       { id: 'ratio', labelKey: 'paramRatio', type: 'select', default: '16:9', options: VIDEO_RATIO_OPTIONS },
       { id: 'duration', labelKey: 'paramDuration', type: 'number', default: 5 },
-      { id: 'resolution', labelKey: 'paramResolution', type: 'select', default: '720P', options: RESOLUTION_OPTIONS },
+      { id: 'resolution', labelKey: 'paramResolution', type: 'text', default: '' },
       { id: 'referenceVideo', labelKey: 'paramReferenceVideo', type: 'text', default: '' },
       { id: 'compare', labelKey: 'paramCompare', type: 'boolean', default: false },
     ],

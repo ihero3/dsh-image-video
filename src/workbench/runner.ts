@@ -272,14 +272,16 @@ export class WorkflowRunner {
     }
 
     const reference = typeof node.params.referenceVideo === 'string' ? node.params.referenceVideo : ''
+    const resolution = typeof node.params.resolution === 'string' ? node.params.resolution : ''
     const firstFrame = this.upstreamOutput(node, workflow, done)
     return {
       prompt,
       duration: typeof node.params.duration === 'number' ? node.params.duration : 5,
-      resolution: typeof node.params.resolution === 'string' ? node.params.resolution : '720P',
       aspectRatio: typeof node.params.ratio === 'string' ? node.params.ratio : '16:9',
       compare: node.params.compare === true,
       ...model === '' ? {} : { model },
+      // 留空就不发：分辨率这类取值各模型不同，交给宿主/模型默认（现场踩过 400）
+      ...resolution === '' ? {} : { resolution },
       ...firstFrame === undefined ? {} : { image: firstFrame },
       ...reference === '' ? {} : { media: [{ video: reference }] },
     }

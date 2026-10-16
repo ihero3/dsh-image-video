@@ -123,6 +123,29 @@ describe('WorkflowRunner', () => {
     expect(states).toContain('running')
   })
 
+  it('omits blank model-specific parameters instead of sending them', async () => {
+    const videoCalls: Array<{ args: Record<string, unknown> }> = []
+    const { store } = fakeStore()
+    const runner = new WorkflowRunner({
+      store, newRunId: () => 'run-args',
+      generateImage: tool({}, []), generateVideo: tool({ videoPath: '/tmp/out/clip.mp4' }, videoCalls),
+    })
+    await runner.begin(workflow([node('v', 'video-generate', { prompt: '齿轮', resolution: '' })]))
+    await vi.waitFor(() => { expect(videoCalls).toHaveLength(1) })
+    // 现场踩过：给模型发它不支持的 720P 会 400，所以留空必须"不发"
+    expect(videoCalls[0]?.args).not.toHaveProperty('resolution')
+    expect(videoCalls[0]?.args).not.toHaveProperty('model')
+
+    const explicit: Array<{ args: Record<string, unknown> }> = []
+    const second = new WorkflowRunner({
+      store, newRunId: () => 'run-args-2',
+      generateImage: tool({}, []), generateVideo: tool({ videoPath: '/tmp/out/clip.mp4' }, explicit),
+    })
+    await second.begin(workflow([node('v', 'video-generate', { prompt: '齿轮', resolution: '768P', model: 'x-model' })]))
+    await vi.waitFor(() => { expect(explicit).toHaveLength(1) })
+    expect(explicit[0]?.args).toMatchObject({ resolution: '768P', model: 'x-model' })
+  })
+
   it('refuses to start when the graph fails validation', async () => {
     const imageCalls: Array<{ args: Record<string, unknown> }> = []
     const { store } = fakeStore()
