@@ -29,12 +29,12 @@
 | 1 右栏工作台（PR-1 / PR-2） | 10 | 10 | 计划 §15 六条 + 生命周期测试绿 + 现有能力零回归 |
 | 2 项目 / 媒体素材 / 创作资源 / 任务 | 11 | 3 | `R-PRJ-1..4`、`R-MED-1..3`、`R-TSK-1..3`、`R-QCK-2..4`（T2-3/T2-7/T2-8 完成；四面板与任务账本均**已现场验通**；剩余 8 项进行中：资源引用检查与轨迹资源等阶段 4/5 的引用面出现后再做，T2-11 待把 defaults 展示进工作台） |
 | 3 预留能力边界 | 3 | 0 | `R-BND-4`（不可运行、不可伪造成功） |
-| 4 专业工作流 MVP | 7 | 3 | `R-FLW-1..8` |
+| 4 专业工作流 MVP | 7 | 6 | `R-FLW-1..8`（T4-1/2/3/4/6/7 完成；**T4-5 只差画布跑一次真视频**核对与对话产出等价。**已知缺口**：跨运行的"成功结果缓存"未做——重试复用是同一次运行内"不重跑已成功节点"，新起一次运行仍会重新调外部 API，已在 T4-4 备注） |
 | 5 时间轴精剪 MVP | 6 | 0 | `R-TML-1..7` |
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **22** | — |
+| **合计** | **59** | **25** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -83,8 +83,8 @@
 ## 6. 阶段 4：专业工作流 MVP（flow 节点流，计划 §6）
 
 - [x] **T4-1** 画布接入：`@xyflow/react` 精确版本 + `WorkflowRecord` 单一事实源 + 保存/重开｜插件｜**已完成**：`@xyflow/react@12.12.0`（精确版本；官方样式表经 `scripts/sync-canvas-style.mjs` 内嵌注入）；`WorkflowRecord` 唯一事实源、**选择不入库**；加/选/拖/连/删/适配窗口；保存/重开＝`workflows/list|save|remove` + 进入工作流模式读回 + 改动 0.8s 去抖静默落库（画布保存四态 `data-workflow-save`）；结构校验（种类/坐标/连线两端/自环/规模上限）；现场几何守护 `scripts/verify-canvas-layout.mjs`。**现场验通（2026-10-15）**：进模式读回 0 节点 → 加 2 节点 → 保存态 saved → **刷新页面重进读回 2 节点**；素材面板「整理重复记录」把历史重复 14→4 条｜R-FLW-1、R-FLW-8｜T3-3
-- [~] **T4-2** 节点实现：`creative-input`/`script`/`storyboard`/`asset-reference`/`resource-reference`/`motion-track`/`image-generate`/`video-generate`/`preview`/`publish-asset`｜插件｜**已实现**：节点目录（`src/workbench/workflow.ts`，画布与宿主共用）——12 个可运行（V1 十个 + `subtitle`/`render`）、3 个 `planned`（`lip-sync`/`face-swap`/`voice-synthesize`，列表可见但禁用并给出原因）；每个节点有参数面板与默认值；`video-generate` 按 `D7` 显式承载参考视频与 `compare`，模型名留空走宿主默认（不硬编码）。**待做**：节点的真实执行语义与产出落库（T4-4/T4-5）｜R-FLW-2｜T4-1
-- [~] **T4-3** 图校验：必填 / 端口类型匹配 / 环检测｜插件｜**已实现（共享模块 + 画布即时反馈）**：`validateWorkflow()` 纯函数——必填参数（目录里 8 个 `required` 字段）、端口兼容表（`any` 全收、`asset` 当 `media` 用）、自环、悬空连线、**环检测（三色 DFS，消息里给出回路）**、`planned` 节点标记为不可运行（`T3-3` 的口径）；画布顶部显示「图校验」结果（`data-workflow-issues` / `data-workflow-validation` / `data-workflow-issue=<code>`），问题节点卡片标红（`data-workflow-node-invalid`）。**待做**：宿主在**运行前**用同一份逻辑拒绝（随 T4-4 运行器接线）｜R-FLW-3｜T4-2｜**现场验通（2026-10-15）**：进图即有 1 个必填问题（旧节点空提示词），新增空提示词的 `image-generate` → 2 个问题且该卡片标红，填上提示词 → 该节点问题清零（`data-workflow-node-invalid` 回 false）
+- [x] **T4-2** 节点实现：`creative-input`/`script`/`storyboard`/`asset-reference`/`resource-reference`/`motion-track`/`image-generate`/`video-generate`/`preview`/`publish-asset`｜插件｜**已完成**：节点目录（`src/workbench/workflow.ts`，画布与宿主共用）——12 可运行（V1 十个 + `subtitle`/`render`）+ 3 `planned`（禁用标记与原因）；每个节点有参数面板与目录默认值（缺省参数在保存/运行时按目录补齐，有测试）；`video-generate` 按 `D7` 承载参考视频与 `compare`，模型名留空走宿主默认。**说明**：本期只有生成节点有执行器，其余节点在运行记录里如实记 `skipped`（不伪造成功），语义随阶段 5/6 补全｜R-FLW-2｜T4-1
+- [x] **T4-3** 图校验：必填 / 端口类型匹配 / 环检测｜插件｜**已完成**：`validateWorkflow()` 纯函数（必填 8 字段、端口兼容表、自环、悬空连线、三色 DFS 环检测并给出回路、`planned` 不可运行）；画布即时反馈 + 问题节点标红；**宿主在运行前用同一份逻辑拒绝**（运行器单元测试 `refuses to start when the graph fails validation` 断言：校验不过则不调任何工具、整次运行记 failed 并带问题清单）；**现场验通（2026-10-15/16）**｜R-FLW-3｜T4-2
 - [x] **T4-4** `WorkflowRunner`：拓扑执行 + 节点记录 + 成功结果缓存 / 重试 / 取消；重试只重跑失败节点及其下游｜插件｜**已完成**：校验不过直接失败并带问题清单；Kahn 拓扑序；生成节点复用对话同一对工具（账本/取消继承）；节点开始即写 `running`（界面看到"正在跑哪个节点"）；上游文本并入提示词、上游产物作首帧；无执行器节点记 `skipped`（不伪造成功）；失败即停 + 下游标"被上游阻断"；**重试只重跑失败节点及下游**（断言前序成功节点不再调外部 API）；取消连带中止在飞生成；`workflows/run|runs|run-cancel|run-retry` + 启动收尾遗留 `running`；画布「运行流程/取消运行/重试失败节点」+ 节点级状态（运行中 2.5s 轮询）。**现场验通（2026-10-16）**：画布上真跑一张图 → `running`（取消可用）→ `succeeded`，节点行显示真实产物 `1792107894148-d2fd6aa6.png`｜R-FLW-3、R-FLW-5｜T4-3
 - [~] **T4-5** `video-generate` 复用现有生成链（参数语义与对话一致，含参考视频/`compare`；按 D7 由本节点承载）｜插件｜**已实现（参数层面等价，待真机出片）**：运行器把节点参数映射成与对话**同名同义**的工具参数（`model`/`prompt`/`duration`/`resolution`/`aspectRatio`/`image`/`media[].video`/`compare`），单元测试断言了这份映射与"上游产物作首帧"；`compare` 与参考视频按 `D7` 由 `video-generate` 显式承载（不另立节点）。**待做**：画布上跑一次真视频，核对产出与对话一致｜R-FLW-4｜T4-4
 - [x] **T4-6** 运行记录与回看：`WorkflowRunRecord` 持久化 + 图快照｜插件｜**已完成**：每次运行落库（含**图快照**与逐节点记录：状态/开始结束/产物路径/字节/错误），只保留最近 50 次；画布顶部「运行」区列出历史运行（时间 · 状态 · 产物数），点任意一条即回看它当时的节点结果（默认看最新）；运行记录随项目删除级联清理。测试：存储级（图快照/去重/级联）+ 客户端（列表 2 条 → 点旧的切到它的失败节点与原因）｜R-FLW-6｜T4-4

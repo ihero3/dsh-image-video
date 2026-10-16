@@ -8,6 +8,9 @@
 - **Agent 自重启的安全化 + 紧急停止**：`scripts/agent-restart.sh`（一次性 detached 进程、900 秒冷却、并发锁、`--check` 自检、不经 launchd）与 `scripts/agent-stop.sh`（紧急停止，不触碰 App）。2026-10-15 用 `launchctl submit` 托管一次性脚本造成 164 轮循环重启，根因与处置写入 `EXECUTION.md` 事故记录
 
 
+### 已知缺口
+- **跨运行的成功结果缓存未做**：重试只保证"同一次运行里不重跑已成功节点、只重跑失败节点及其下游"（`R-FLW-5` 的省钱语义），另起一次运行仍会重新调用外部生成
+
 ### 新增
 - **浏览器半边与右栏工作台骨架**：插件首次提供 `./client` 出口（`dsh.client = { platform: 'web', inject: […] }`），在 Harness 右侧工作区注册自有 tab 类型（`kind: dsh-image-video-workbench`、`id: dsh-image-video`）与 guide 入口，并渲染工作台骨架：项目名称 / 保存状态 / 三模式切换（快速创作·专业工作流·时间轴精剪）+ 当前模式工作区 + 素材·资源·预览·任务四格。骨架用 `useTabInfo()` 读座位事实（可见性、是否全屏）并以 `data-*` 暴露。客户端 bundle 是模块加载器的 CJS factory 包装，react/react-dom/cordis 与 `@deepseek-ai/dsh-client-*` 全部外置（由宿主模块表解析）
 - **运行记录回看与内置模板（T4-6/T4-7）**：每次运行落库（含图快照与逐节点状态/产物/错误，保留最近 50 次），画布运行区列出历史运行并可点选回看；三个内置模板（文案→分镜→图→视频 / 图片→视频→字幕→渲染 / 参考视频复刻）自带示例值，实例化后直接通过图校验即可跑。同时修正分镜节点的端口语义（分镜表是文字输出）
