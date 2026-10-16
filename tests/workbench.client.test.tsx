@@ -43,6 +43,7 @@ function fakeApi(options: {
   runs?: WorkflowRunRecord[]
   timelines?: TimelineRecord[]
   ffmpeg?: { available: boolean; code?: string; message?: string; version?: string; path?: string }
+  defaults?: Record<string, string | number | null>
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -60,7 +61,7 @@ function fakeApi(options: {
     health: async () => {
       calls.push('health')
       if (options.failHealth !== undefined) throw new Error(options.failHealth)
-      return HEALTH
+      return options.defaults === undefined ? HEALTH : { ...HEALTH, defaults: options.defaults }
     },
     listProjects: async () => { calls.push('projects/list'); return [...projects] },
     createProject: async (name) => {
@@ -542,6 +543,43 @@ describe('workbench project and asset flow', () => {
     const reopened = render(<Workbench {...props({ api: host.api })} />)
     fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
     await waitFor(() => { expect(reopened.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+  })
+
+  it('shows the seven effective defaults from the host (T2-11)', async () => {
+    const host = fakeApi({
+      defaults: {
+        mediaMode: 'video', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
+        videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+      },
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy()
+    })
+    const rows = [...view.container.querySelectorAll('[data-workbench-default]')]
+    expect(rows).toHaveLength(7)
+    expect(view.container.textContent).toContain('1024*1024')
+    expect(view.container.textContent).toContain('16:9')
+    // 没设的字段要明确说"未设置"，而不是留空
+    expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.none)
+  })
+
+  it('tells the user what to do when the host is not loopback (T2-9)', async () => {
+    const original = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { hostname: '192.168.1.9', href: 'http://192.168.1.9:65323/', protocol: 'http:' },
+    })
+    try {
+      const host = fakeApi()
+      const view = render(<Workbench {...props({ api: host.api })} />)
+      await waitFor(() => {
+        expect(view.container.querySelector('[data-workbench-host-hint="remote"]')).toBeTruthy()
+      })
+      expect(view.container.querySelector('[data-workbench-host-hint="remote"]')?.textContent).toContain('127.0.0.1')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
   })
 
   it('exports the timeline, shows progress and then the artifact', async () => {

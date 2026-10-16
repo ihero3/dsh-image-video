@@ -45,7 +45,7 @@ export type WorkbenchProps =
 /** What the header can say about the host. */
 type HealthState =
   | { status: 'checking' }
-  | { status: 'ok'; version: string; provider: string }
+  | { status: 'ok'; version: string; provider: string; defaults?: Record<string, string | number | null> }
   | { status: 'failed'; message: string }
 
 /** Mode → dictionary key, in switch order. */
@@ -449,7 +449,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     void (async () => {
       try {
         const facts = await apiRef.current.health()
-        setHealth({ status: 'ok', version: facts.version, provider: facts.provider })
+        setHealth({ status: 'ok', version: facts.version, provider: facts.provider, ...facts.defaults === undefined ? {} : { defaults: facts.defaults } })
       } catch (error) {
         setHealth({ status: 'failed', message: error instanceof Error ? error.message : String(error) })
       }
@@ -490,6 +490,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       }
     })()
   }, [activeId, loadResources])
+
+  // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
+  const defaultRows: Array<{ key: WorkbenchLocaleKey; value: string }> = health.status === 'ok' && health.defaults !== undefined
+    ? ([
+      ['defaultMediaMode', health.defaults.mediaMode],
+      ['defaultImageProvider', health.defaults.imageProvider],
+      ['defaultImageSize', health.defaults.imageSize],
+      ['defaultImageStyle', health.defaults.imageStyle],
+      ['defaultVideoProvider', health.defaults.videoProvider],
+      ['defaultVideoAspectRatio', health.defaults.videoAspectRatio],
+      ['defaultVideoDuration', health.defaults.videoDuration],
+    ] as Array<[WorkbenchLocaleKey, string | number | null | undefined]>)
+      .map(([key, value]) => ({ key, value: value === null || value === undefined || value === '' ? t('none') : String(value) }))
+    : []
+
+  // 非本机宿主：`/outputs` 只在回环注册，预览会打不开——先告诉用户怎么办（`T2-9`）
+  const hostIsLoopback = (() => {
+    if (typeof window === 'undefined') return true
+    const host = window.location?.hostname ?? ''
+    return host === '' || host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]'
+  })()
 
   const healthText = health.status === 'checking'
     ? t('healthChecking')
@@ -619,6 +640,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           )
           : null}
         <span style={PILL} title={health.status === 'failed' ? health.message : undefined}>{healthText}</span>
+        {defaultRows.length === 0
+          ? null
+          : (
+            <div data-workbench-defaults="true" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '10px', opacity: 0.85 }}>
+              <strong style={{ fontWeight: 500 }}>{t('defaultsTitle')}：</strong>
+              {defaultRows.map(row => (
+                <span key={row.key} data-workbench-default={row.key}>
+                  {t(row.key)} {row.value}
+                </span>
+              ))}
+            </div>
+          )}
         <span style={{ marginLeft: 'auto', fontSize: '12px', opacity: 0.55 }}>{kind}</span>
       </header>
 
@@ -1043,6 +1076,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
         <section data-workbench-pane="panePreview" data-workbench-planned="false" style={PANE}>
           <h3 style={PANE_TITLE}>{t('panePreview')}</h3>
+          {hostIsLoopback
+            ? null
+            : <p style={MUTED} data-workbench-host-hint="remote">{t('hostHintRemote')}</p>}
           {previewTarget === undefined
             ? <p style={MUTED}>{t('previewEmpty')}</p>
             : previewTarget.kind === 'video'

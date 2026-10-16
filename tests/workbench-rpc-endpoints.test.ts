@@ -39,7 +39,13 @@ async function makeHandler() {
       await store.attachAsset({ projectId: job.projectId, path: job.outputPath, kind: 'video', bytes: job.bytes })
     },
   })
-  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry, runner, renders })
+  const handler = createWorkbenchHandler({
+    provider: 'threerouter', outputsDir, store, registry, runner, renders,
+    defaults: () => ({
+      mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
+      videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+    }),
+  })
   /** Call one endpoint and fail the test on a refused envelope. */
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
     const result = await handler(endpoint, payload, new AbortController().signal, {} as never)
@@ -138,6 +144,16 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ cancelled: boolean }>('timelines/render-cancel', { renderId: started.render.id })).toEqual({ cancelled: false })
     await rm(work, { recursive: true, force: true })
   }, 60_000)
+
+  it('reports the effective defaults in the health payload (T2-11)', async () => {
+    const { ok } = await makeHandler()
+    const health = await ok<{ defaults?: Record<string, string | number | null> }>('health', {})
+    // 端点测试的 handler 注入了 defaults，字段名应与 composer 侧同一口径
+    expect(health.defaults).toBeDefined()
+    expect(Object.keys(health.defaults ?? {})).toEqual(
+      expect.arrayContaining(['mediaMode', 'imageProvider', 'imageSize', 'imageStyle', 'videoProvider', 'videoAspectRatio', 'videoDuration']),
+    )
+  })
 
   it('reports ffmpeg capability through the channel (T5-4)', async () => {
     const { ok } = await makeHandler()

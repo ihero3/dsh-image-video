@@ -30,4 +30,9 @@ export interface WorkbenchHealth {
     outputsDir: string;
     /** Answer timestamp (ISO 8601), for staleness checks in the client. */
     at: string;
+    /**
+     * 当前生效的默认值（运行时覆盖 ?? settings 持久默认，7 字段）。
+     * 工作台只读展示，避免"界面上看不出这一轮到底按什么参数生成"（`R-NFR-1`/`R-BIND-3`）。
+     */
+    defaults?: Record<string, string | number | null>;
 }

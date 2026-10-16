@@ -35,7 +35,7 @@ import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
-import { createRuntimeDefaultsStore } from './runtime-defaults.ts'
+import { createRuntimeDefaultsStore, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc } from './host/rpc.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
@@ -290,6 +290,8 @@ export function apply(ctx: Context, config: Config): void {
     registerWorkbenchRpc(rpcCtx, {
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
       runner: workflowRunner, renders: renderRegistry,
+      // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
+      defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
     })
   })
 }

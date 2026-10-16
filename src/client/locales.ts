@@ -41,6 +41,16 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'hostHintRemote'
+  | 'none'
+  | 'defaultMediaMode'
+  | 'defaultVideoDuration'
+  | 'defaultVideoAspectRatio'
+  | 'defaultVideoProvider'
+  | 'defaultImageStyle'
+  | 'defaultImageSize'
+  | 'defaultImageProvider'
+  | 'defaultsTitle'
   | 'exportResult'
   | 'exportFailed'
   | 'exportDone'
@@ -209,6 +219,16 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  hostHintRemote: 'Preview needs a local host: /outputs is only served on loopback. Open this app via http://127.0.0.1:… instead.',
+  none: 'not set',
+  defaultMediaMode: 'Composer mode',
+  defaultVideoDuration: 'Video duration',
+  defaultVideoAspectRatio: 'Video ratio',
+  defaultVideoProvider: 'Video provider',
+  defaultImageStyle: 'Image style',
+  defaultImageSize: 'Image size',
+  defaultImageProvider: 'Image provider',
+  defaultsTitle: 'Effective defaults',
   exportResult: 'Result',
   exportFailed: 'Export failed',
   exportDone: 'Exported',
@@ -375,6 +395,16 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  hostHintRemote: '预览需要本机访问宿主：/outputs 只在回环地址注册。请改用 http://127.0.0.1:… 打开本应用。',
+  none: '未设置',
+  defaultMediaMode: '输入模式',
+  defaultVideoDuration: '视频时长',
+  defaultVideoAspectRatio: '视频比例',
+  defaultVideoProvider: '视频服务商',
+  defaultImageStyle: '图片风格',
+  defaultImageSize: '图片尺寸',
+  defaultImageProvider: '图片服务商',
+  defaultsTitle: '当前生效参数',
   exportResult: '产物',
   exportFailed: '导出失败',
   exportDone: '导出完成',

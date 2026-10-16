@@ -68,6 +68,8 @@ export interface WorkbenchRpcDeps {
   runner: WorkflowRunner
   /** 导出任务表（`T5-5`）。 */
   renders: RenderRegistry
+  /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
+  defaults?: () => Record<string, string | number | null>
 }
 
 /**
@@ -114,6 +116,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         provider: deps.provider,
         outputsDir: deps.outputsDir,
         at: new Date().toISOString(),
+        ...deps.defaults === undefined ? {} : { defaults: deps.defaults() },
       }
       return value
     }
