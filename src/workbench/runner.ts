@@ -193,6 +193,12 @@ export class WorkflowRunner {
     for (const node of order) {
       if (!selected.has(node.id)) continue
       if (signal.aborted) { status = 'cancelled'; error = 'cancelled'; break }
+      // 先把节点标成 running 并落库：界面靠轮询，这样"正在跑哪个节点"是真实的
+      nodeRuns.set(node.id, {
+        nodeId: node.id, kind: node.kind, status: 'running',
+        startedAt: (this.deps.now?.() ?? new Date()).toISOString(),
+      })
+      await this.persist(run, nodeRuns, 'running')
       const record = await this.runNode(node, workflow, nodeRuns, signal)
       nodeRuns.set(node.id, record)
       if (record.status === 'failed') { status = 'failed'; error = record.error; break }

@@ -41,6 +41,13 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'templateReferenceRemake'
+  | 'templateImageToVideo'
+  | 'templateCopyToVideo'
+  | 'templateApply'
+  | 'templateTitle'
+  | 'runHistory'
+  | 'runArtifacts'
   | 'statusSkipped'
   | 'runNone'
   | 'runTitle'
@@ -173,6 +180,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  templateReferenceRemake: 'Reference video remake (compare)',
+  templateImageToVideo: 'Image -> video -> subtitle -> render',
+  templateCopyToVideo: 'Copy -> storyboard -> image -> video',
+  templateApply: 'Apply template',
+  templateTitle: 'Template',
+  runHistory: 'History',
+  runArtifacts: 'artifacts',
   statusSkipped: 'Skipped',
   runNone: 'No run yet',
   runTitle: 'Run',
@@ -303,6 +317,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  templateReferenceRemake: '参考视频复刻（含对比片）',
+  templateImageToVideo: '图片→视频→字幕→渲染',
+  templateCopyToVideo: '文案→分镜→图→视频',
+  templateApply: '套用模板',
+  templateTitle: '模板',
+  runHistory: '历史运行',
+  runArtifacts: '个产物',
   statusSkipped: '已跳过',
   runNone: '还没有运行记录',
   runTitle: '运行',

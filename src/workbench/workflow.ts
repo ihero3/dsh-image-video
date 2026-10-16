@@ -116,7 +116,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
     params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '', required: true }],
   },
   {
-    kind: 'storyboard', labelKey: 'nodeStoryboard', availability: 'runnable', input: 'text', output: 'media',
+    kind: 'storyboard', labelKey: 'nodeStoryboard', availability: 'runnable', input: 'text', output: 'text',
     params: [
       { id: 'shots', labelKey: 'paramShots', type: 'number', default: 4, required: true },
       { id: 'note', labelKey: 'paramNote', type: 'text', default: '' },
@@ -282,7 +282,7 @@ export function defaultParams(kind: WorkflowNodeKind): Record<string, NodeParamV
 export interface WorkflowRunNodeRecord {
   readonly nodeId: string
   readonly kind: WorkflowNodeKind
-  readonly status: 'succeeded' | 'failed' | 'skipped' | 'cancelled'
+  readonly status: 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled'
   readonly startedAt: string
   readonly finishedAt?: string
   readonly outputPath?: string
@@ -304,6 +304,53 @@ export interface WorkflowRunRecord {
   readonly finishedAt?: string
   readonly error?: string
 }
+
+/** 一个内置模板（`R-FLW-7`）：实例化后应当**可直接跑**，所以必填项都带示例值。 */
+export interface WorkflowTemplate {
+  readonly id: string
+  readonly labelKey: string
+  readonly nodes: readonly { readonly kind: WorkflowNodeKind; readonly params?: Record<string, NodeParamValue> }[]
+  /** 连线用节点下标表示，实例化时再换成真实 id。 */
+  readonly edges: readonly (readonly [number, number])[]
+}
+
+/**
+ * 内置模板：文案→分镜→图→视频 / 图片→视频→字幕→渲染 / 参考视频复刻（`compare`）。
+ *
+ * 示例值只求"能跑通并看清链路"，用户改提示词即可；端口类型与必填项都满足校验。
+ */
+export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
+  {
+    id: 'copy-to-video', labelKey: 'templateCopyToVideo',
+    nodes: [
+      { kind: 'creative-input', params: { brief: '一支 15 秒的咖啡广告：清晨窗边，热气升腾' } },
+      { kind: 'script', params: { text: '镜头一：晨光落在杯口；镜头二：热气缓慢升腾；镜头三：字幕收尾。' } },
+      { kind: 'storyboard', params: { shots: 3, note: '每镜 5 秒，暖色调' } },
+      { kind: 'image-generate', params: { prompt: '清晨窗边的咖啡杯特写，暖色调，柔和顶光，浅景深' } },
+      { kind: 'video-generate', params: { prompt: '镜头缓慢推近，热气升腾，光影流动', duration: 5, compare: false } },
+      { kind: 'preview', params: {} },
+    ],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]],
+  },
+  {
+    id: 'image-to-video', labelKey: 'templateImageToVideo',
+    nodes: [
+      { kind: 'image-generate', params: { prompt: '金属质感的播放按钮悬浮在薄荷绿背景上，居中留白' } },
+      { kind: 'video-generate', params: { prompt: '按钮轻微旋转并伴随光晕闪烁，背景缓慢流动', duration: 5 } },
+      { kind: 'subtitle', params: { text: '订阅即可继续观看' } },
+      { kind: 'render', params: { note: '导出 1080P' } },
+    ],
+    edges: [[0, 1], [1, 2], [2, 3]],
+  },
+  {
+    id: 'reference-remake', labelKey: 'templateReferenceRemake',
+    nodes: [
+      { kind: 'video-generate', params: { prompt: '保留原片构图与动作，把背景替换成雪夜街道，并生成对比片', duration: 5, compare: true, referenceVideo: '' } },
+      { kind: 'preview', params: {} },
+    ],
+    edges: [[0, 1]],
+  },
+]
 
 /** 端口兼容表：目标输入能接受哪些来源输出。`any` 全收；`asset` 可当 `media` 用。 */
 const PORT_ACCEPTS: Record<PortKind, readonly PortKind[]> = {

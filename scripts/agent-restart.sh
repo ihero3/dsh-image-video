@@ -76,7 +76,9 @@ work() {
   sleep 2
   cd /Users/guxiongjian/Documents/code/deepseek-harness || { echo "RESULT=FAIL 找不到仓库"; return 1; }
   PNPM=$(command -v pnpm || command -v corepack || echo npx)
-  env PATH="$PATH" "$PNPM" run dev:desktop >>"$LOG" 2>&1 &
+  # 关键：宿主继承来的 ELECTRON_RUN_AS_NODE=1 会让 Electron 退化成纯 Node，
+  # 于是它拒绝 --remote-debugging-port/--user-data-dir（昨晚重启失败的真正原因）。
+  env -u ELECTRON_RUN_AS_NODE -u NODE_OPTIONS PATH="$PATH" "$PNPM" run dev:desktop >>"$LOG" 2>&1 &
   for i in $(seq 1 90); do
     sleep 2
     if curl -s --max-time 2 http://127.0.0.1:9222/json/list >/dev/null 2>&1; then

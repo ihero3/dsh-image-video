@@ -39,13 +39,14 @@ function fakeApi(options: {
   tasks?: TaskRecord[]
   assets?: AssetRecord[]
   workflows?: WorkflowRecord[]
+  runs?: WorkflowRunRecord[]
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const resources: ResourceRecord[] = []
   const workflows: WorkflowRecord[] = [...(options.workflows ?? [])]
-  const runs: WorkflowRunRecord[] = []
+  const runs: WorkflowRunRecord[] = [...(options.runs ?? [])]
   let runSequence = 0
   const calls: string[] = []
   let counter = 0
@@ -422,6 +423,63 @@ describe('workbench project and asset flow', () => {
     })
     expect(host.calls).toContain('workflows/list')
     expect(view.container.querySelector('[data-workflow-node="script"]')).toBeTruthy()
+  })
+
+  it('applies a built-in template into the canvas', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '模板项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-canvas]')).toBeTruthy() })
+
+    // 默认选中第一个模板（文案→分镜→图→视频），套用后应有 6 个节点且校验通过
+    const picker = view.container.querySelector('[data-workflow-template]') as HTMLSelectElement
+    expect(picker.value).toBe('copy-to-video')
+    fireEvent.click(view.container.querySelector('[data-workflow-action="apply-template"]') as HTMLElement)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-canvas]')?.getAttribute('data-workflow-nodes')).toBe('6')
+    })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-validation="ok"]')).toBeTruthy()
+    })
+    // 模板自带示例值：运行按钮可用
+    expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('lists past runs and shows the node results of the selected one', async () => {
+    const made = (id: string, status: WorkflowRunRecord['status'], nodeStatus: 'succeeded' | 'failed', startedAt: string): WorkflowRunRecord => ({
+      schemaVersion: 1, id, workflowId: 'wfl-1', projectId: 'prj-1', status,
+      graph: { nodes: [], edges: [] },
+      nodeRuns: [{
+        nodeId: 'i', kind: 'image-generate', status: nodeStatus, startedAt,
+        ...nodeStatus === 'succeeded' ? { outputPath: '/tmp/out/shot.png' } : { error: 'provider said no' },
+      }],
+      startedAt, finishedAt: startedAt,
+    })
+    const host = fakeApi({
+      runs: [
+        made('run-new', 'succeeded', 'succeeded', '2026-10-15T02:00:00.000Z'),
+        made('run-old', 'failed', 'failed', '2026-10-15T01:00:00.000Z'),
+      ],
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '回看项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-workflow-run-item]').length).toBe(2) })
+
+    // 默认看最新一次
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-run]')?.getAttribute('data-workflow-run')).toBe('succeeded')
+    })
+    // 点旧的那次 → 切到它的结果（失败节点 + 原因）
+    fireEvent.click(view.container.querySelector('[data-workflow-run-item="run-old"]') as HTMLElement)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-run]')?.getAttribute('data-workflow-run')).toBe('failed')
+    })
+    expect(view.container.querySelector('[data-workflow-node-run="i"]')?.getAttribute('data-workflow-node-status')).toBe('failed')
+    expect(view.container.querySelector('[data-workflow-run-item="run-old"]')?.getAttribute('data-workflow-run-item-selected')).toBe('true')
   })
 
   it('runs the workflow from the canvas once the graph validates', async () => {

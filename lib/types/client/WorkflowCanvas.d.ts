@@ -21,10 +21,14 @@ export interface WorkflowCanvasProps {
     /** 运行控制（`T4-4`）：状态展示 + 起跑/取消/重试。 */
     readonly run?: {
         readonly latest?: WorkflowRunRecord;
+        /** 历史运行（最新在前），点一条即可回看它当时的节点产出与图快照。 */
+        readonly history: readonly WorkflowRunRecord[];
+        readonly selectedRunId?: string;
         readonly busy: boolean;
         readonly onStart: () => void;
         readonly onCancel: () => void;
         readonly onRetry: () => void;
+        readonly onSelectRun: (runId: string) => void;
     };
 }
 /** 对外画布组件：套 `ReactFlowProvider` 并注入官方样式。 */

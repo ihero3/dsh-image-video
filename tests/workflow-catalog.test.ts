@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  NODE_CATALOG, catalogSummary, defaultParams, isRunnable, nodeSpec, validateWorkflow,
+  NODE_CATALOG, WORKFLOW_TEMPLATES, catalogSummary, defaultParams, isRunnable, nodeSpec, validateWorkflow,
   type NodeParamValue, type WorkflowEdge, type WorkflowNode, type WorkflowNodeKind,
 } from '../src/workbench/workflow.ts'
 
@@ -79,12 +79,28 @@ describe('graph validation (T4-3)', () => {
     expect(result.issues[0]?.nodeId).toBe('a')
   })
 
-  it('flags port mismatches (media into text)', () => {
+  it('flags port mismatches (resource into text)', () => {
     const result = validateWorkflow(
-      [node('a', 'storyboard', { shots: 3 }), node('b', 'script', { text: 'x' })],
+      [node('a', 'resource-reference', { resourceId: 'res-1' }), node('b', 'script', { text: 'x' })],
       [edge('a', 'b')],
     )
     expect(result.issues.some(issue => issue.code === 'port-mismatch')).toBe(true)
+  })
+
+  it('ships templates that instantiate into runnable graphs (R-FLW-7)', () => {
+    expect(WORKFLOW_TEMPLATES.length).toBeGreaterThanOrEqual(3)
+    for (const template of WORKFLOW_TEMPLATES) {
+      expect(template.nodes.length).toBeGreaterThanOrEqual(2)
+      const nodes = template.nodes.map((spec, index) => node(`t${index}`, spec.kind, spec.params ?? {}))
+      const edges = template.edges.map(([from, to]) => edge(`t${from}`, `t${to}`))
+      // 下标必须在范围内
+      for (const [from, to] of template.edges) {
+        expect(from).toBeGreaterThanOrEqual(0)
+        expect(to).toBeLessThan(template.nodes.length)
+      }
+      // 实例化后必须通过校验（模板要能直接跑）
+      expect(validateWorkflow(nodes, edges)).toEqual({ ok: true, issues: [] })
+    }
   })
 
   it('detects a cycle and names the loop', () => {

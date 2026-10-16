@@ -99,6 +99,30 @@ describe('WorkflowRunner', () => {
     expect(nodeRuns.find(item => item.nodeId === 's')?.error).toMatch(/no executor/)
   })
 
+  it('reports a node as running while it executes', async () => {
+    const states: string[] = []
+    let release: (() => void) | undefined
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const { store, runs, latest } = fakeStore()
+    const blocking: GenerationTool = {
+      async execute() { await gate; return { localPath: '/tmp/out/shot.png' } },
+    }
+    const runner = new WorkflowRunner({
+      store, newRunId: () => 'run-live',
+      generateImage: blocking, generateVideo: tool({}, []),
+    })
+    await runner.begin(workflow([node('i', 'image-generate', { prompt: '猫' })]))
+    // 执行期间运行记录里该节点应是 running（界面据此显示进度）
+    await vi.waitFor(() => {
+      const record = runs.find(candidate => candidate.id === 'run-live')
+      states.push(record?.nodeRuns[0]?.status ?? 'missing')
+      expect(record?.nodeRuns[0]?.status).toBe('running')
+    }, { timeout: 3000 })
+    release?.()
+    await vi.waitFor(() => { expect(latest().status).toBe('succeeded') })
+    expect(states).toContain('running')
+  })
+
   it('refuses to start when the graph fails validation', async () => {
     const imageCalls: Array<{ args: Record<string, unknown> }> = []
     const { store } = fakeStore()

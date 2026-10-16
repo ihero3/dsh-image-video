@@ -114,7 +114,7 @@ export declare function defaultParams(kind: WorkflowNodeKind): Record<string, No
 export interface WorkflowRunNodeRecord {
     readonly nodeId: string;
     readonly kind: WorkflowNodeKind;
-    readonly status: 'succeeded' | 'failed' | 'skipped' | 'cancelled';
+    readonly status: 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled';
     readonly startedAt: string;
     readonly finishedAt?: string;
     readonly outputPath?: string;
@@ -138,6 +138,23 @@ export interface WorkflowRunRecord {
     readonly finishedAt?: string;
     readonly error?: string;
 }
+/** 一个内置模板（`R-FLW-7`）：实例化后应当**可直接跑**，所以必填项都带示例值。 */
+export interface WorkflowTemplate {
+    readonly id: string;
+    readonly labelKey: string;
+    readonly nodes: readonly {
+        readonly kind: WorkflowNodeKind;
+        readonly params?: Record<string, NodeParamValue>;
+    }[];
+    /** 连线用节点下标表示，实例化时再换成真实 id。 */
+    readonly edges: readonly (readonly [number, number])[];
+}
+/**
+ * 内置模板：文案→分镜→图→视频 / 图片→视频→字幕→渲染 / 参考视频复刻（`compare`）。
+ *
+ * 示例值只求"能跑通并看清链路"，用户改提示词即可；端口类型与必填项都满足校验。
+ */
+export declare const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[];
 /** 一条图校验问题（`T4-3`）。 */
 export interface WorkflowIssue {
     readonly code: 'missing-required' | 'port-mismatch' | 'self-loop' | 'dangling-edge' | 'cycle' | 'not-runnable';

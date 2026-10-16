@@ -135,7 +135,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 工作流文档：画布维度的单一事实源（`T4-1`）。持久化随后端端点接入。
   const [workflow, setWorkflow] = useState<WorkflowRecord | undefined>(undefined)
   const [workflowState, setWorkflowState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
-  const [latestRun, setLatestRun] = useState<WorkflowRunRecord | undefined>(undefined)
+  const [runs, setRuns] = useState<readonly WorkflowRunRecord[]>([])
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined)
   const [runBusy, setRunBusy] = useState(false)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
@@ -186,7 +187,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 进入工作流模式（或切项目）读回该项目最近的运行记录
   useEffect(() => {
     if (mode !== 'workflow' || activeProject === undefined || workflow === undefined) {
-      setLatestRun(undefined)
+      setRuns([])
+      setSelectedRunId(undefined)
       return
     }
     const project = activeProject
@@ -195,7 +197,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     void (async () => {
       try {
         const rows = await apiRef.current.listRuns(project.id, workflowId)
-        if (!stale) setLatestRun(rows[0])
+        if (stale) return
+        setRuns(rows)
+        setSelectedRunId(current => current ?? rows[0]?.id)
       } catch (error) {
         if (!stale) setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
       }
@@ -204,7 +208,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [mode, activeProject, workflow?.id])
 
   // 只在运行中轮询（没有宿主→客户端推送通道）
-  const runningRun = latestRun?.status === 'running'
+  const runningRun = runs.some(run => run.status === 'running')
   useEffect(() => {
     if (!runningRun || activeProject === undefined) return
     const project = activeProject
@@ -212,7 +216,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     const timer = setInterval(() => {
       void (async () => {
         try {
-          setLatestRun((await apiRef.current.listRuns(project.id, workflowId))[0])
+          setRuns(await apiRef.current.listRuns(project.id, workflowId))
         } catch {
           // 轮询失败不打扰用户；状态留给下一次或手动刷新
         }
@@ -509,7 +513,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
               t={t}
               run={{
-                ...latestRun === undefined ? {} : { latest: latestRun },
+                ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined
+                  ? {}
+                  : { latest: runs.find(run => run.id === selectedRunId) ?? runs[0] },
+                history: runs,
+                ...selectedRunId === undefined ? {} : { selectedRunId },
+                onSelectRun: setSelectedRunId,
                 busy: runBusy,
                 onStart: () => {
                   void run(async () => {
@@ -522,7 +531,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       })
                       setWorkflow(stored)
                       setWorkflowState('saved')
-                      setLatestRun(await apiRef.current.runWorkflow(stored.id))
+                      const started = await apiRef.current.runWorkflow(stored.id)
+                      setSelectedRunId(started.id)
+                      setRuns(current => [started, ...current])
                     } finally {
                       setRunBusy(false)
                     }
@@ -530,18 +541,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 },
                 onCancel: () => {
                   void run(async () => {
-                    const id = latestRun?.id
+                    const id = selectedRunId ?? runs[0]?.id
                     if (id === undefined) return
                     await apiRef.current.cancelRun(id)
                   })
                 },
                 onRetry: () => {
                   void run(async () => {
-                    const id = latestRun?.id
+                    const id = selectedRunId ?? runs[0]?.id
                     if (id === undefined) return
                     setRunBusy(true)
                     try {
-                      setLatestRun(await apiRef.current.retryRun(id))
+                      const retried = await apiRef.current.retryRun(id)
+                      setSelectedRunId(retried.id)
+                      setRuns(current => [retried, ...current])
                     } finally {
                       setRunBusy(false)
                     }

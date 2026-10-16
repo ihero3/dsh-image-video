@@ -17,7 +17,7 @@ import {
   type Connection, type Edge, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, defaultParams, nodeSpec, validateWorkflow,
+  NODE_CATALOG, WORKFLOW_TEMPLATES, defaultParams, nodeSpec, validateWorkflow,
   type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
@@ -45,10 +45,14 @@ export interface WorkflowCanvasProps {
   /** 运行控制（`T4-4`）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
+    /** 历史运行（最新在前），点一条即可回看它当时的节点产出与图快照。 */
+    readonly history: readonly WorkflowRunRecord[]
+    readonly selectedRunId?: string
     readonly busy: boolean
     readonly onStart: () => void
     readonly onCancel: () => void
     readonly onRetry: () => void
+    readonly onSelectRun: (runId: string) => void
   }
 }
 
@@ -158,6 +162,7 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
+  const [templateId, setTemplateId] = useState<string>(WORKFLOW_TEMPLATES[0]?.id ?? '')
   const { fitView } = useReactFlow<CanvasNode, Edge>()
   const lastPushed = useRef<string>('')
   const seededId = useRef<string>(record.id)
@@ -237,6 +242,26 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
     setEdges(current => addEdge({ ...connection, id: `${connection.source}-${connection.target}` }, current))
   }, [setEdges, t])
 
+  const applyTemplate = useCallback((id: string) => {
+    const template = WORKFLOW_TEMPLATES.find(candidate => candidate.id === id)
+    if (template === undefined) return
+    const stamp = Date.now().toString(36)
+    const built: CanvasNode[] = template.nodes.map((spec, index) => ({
+      id: `${template.id}-${index}-${stamp}`,
+      type: 'workbench',
+      position: { x: 40 + (index % 2) * 200, y: 30 + Math.floor(index / 2) * 110 },
+      data: { kind: spec.kind, params: { ...defaultParams(spec.kind), ...spec.params ?? {} } },
+    }))
+    setNodes(built)
+    setEdges(template.edges.map(([from, to]) => ({
+      id: `${built[from]?.id ?? from}->${built[to]?.id ?? to}`,
+      source: built[from]?.id ?? String(from),
+      target: built[to]?.id ?? String(to),
+    })))
+    setSelectedId(undefined)
+    setError(undefined)
+  }, [setNodes, setEdges])
+
   const removeSelected = useCallback(() => {
     if (selectedId === undefined) return
     setNodes(current => current.filter(node => node.id !== selectedId))
@@ -278,6 +303,21 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <select
+            data-workflow-template="true"
+            aria-label={t('templateTitle')}
+            value={templateId}
+            onChange={event => { setTemplateId(event.target.value) }}
+            style={{ fontSize: '11px' }}
+          >
+            {WORKFLOW_TEMPLATES.map(template => (
+              <option key={template.id} value={template.id}>{t(template.labelKey as WorkbenchLocaleKey)}</option>
+            ))}
+          </select>
+          <button type="button" data-workflow-action="apply-template" style={{ fontSize: '11px' }}
+            onClick={() => { applyTemplate(templateId) }}>
+            {t('templateApply')}
+          </button>
           <button type="button" data-workflow-action="fit" onClick={() => { void fitView({ padding: 0.2 }) }}
             style={{ fontSize: '11px' }}>{t('canvasFit')}</button>
           <button type="button" data-workflow-action="delete-node" disabled={selectedId === undefined}
@@ -309,6 +349,30 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
           <div data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}
             style={{ display: 'grid', gap: '3px', fontSize: '11px' }}>
             <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('runTitle')}</strong>
+            {run.history.length > 1
+              ? (
+                <div data-workflow-run-history="true" style={{ display: 'grid', gap: '2px', marginBottom: '2px' }}>
+                  {run.history.slice(0, 8).map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      data-workflow-run-item={entry.id}
+                      data-workflow-run-item-selected={entry.id === run.selectedRunId ? 'true' : 'false'}
+                      onClick={() => { run.onSelectRun(entry.id) }}
+                      style={{
+                        fontSize: '10px', textAlign: 'left', padding: '1px 4px', borderRadius: '4px',
+                        border: '1px solid var(--dsh-border, #3a3a3a)', background: 'transparent',
+                        color: 'inherit', opacity: entry.id === run.selectedRunId ? 1 : 0.7,
+                      }}
+                    >
+                      {new Date(entry.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+                      {' · '}{t(runStatusKey(entry.status))}
+                      {' · '}{entry.nodeRuns.filter(node => node.outputPath !== undefined).length} {t('runArtifacts')}
+                    </button>
+                  ))}
+                </div>
+              )
+              : null}
             {run.latest === undefined
               ? <span style={{ opacity: 0.75 }}>{t('runNone')}</span>
               : (
