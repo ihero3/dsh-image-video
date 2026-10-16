@@ -12,6 +12,7 @@ import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecor
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts';
 import type { TimelineRecord } from '../workbench/timeline.ts';
 import type { FfmpegProbe } from '../media/ffmpeg.ts';
+import type { ResourceUsageRecord } from '../workbench/records.ts';
 import type { RenderJob } from '../media/render-registry.ts';
 import type { OutputFile } from '../workbench/outputs.ts';
 /** What the workbench UI may ask the host (phase 2, first slice). */
@@ -58,6 +59,13 @@ export interface WorkbenchApi {
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
     /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
     probeFfmpeg: (path?: string) => Promise<FfmpegProbe>;
+    /** 写运行时默认值覆盖（`R-CFG-2`）：与 composer 的 settings 走同一条路（留空 = 清除覆盖）。 */
+    saveDefaults: (patch: Record<string, string | number | null>) => Promise<void>;
+    /** 资源使用记录（`R-QCK-3`）：资源库据此显示「被哪些素材用过」。 */
+    listResourceUsage: (options?: {
+        resourceId?: string;
+        projectId?: string;
+    }) => Promise<ResourceUsageRecord[]>;
     /** Start rendering a timeline into an mp4 (returns the job to poll). */
     renderTimeline: (timelineId: string, projectId?: string) => Promise<RenderJob>;
     /** Export jobs, newest first. */

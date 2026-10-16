@@ -266,6 +266,14 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
     }
+    // 资源使用记录（`R-QCK-3`）
+    case 'resources/usage':
+      return {
+        usage: await deps.store.listResourceUsage({
+          ...optionalText(payload, 'resourceId') === undefined ? {} : { resourceId: optionalText(payload, 'resourceId') },
+          ...optionalText(payload, 'projectId') === undefined ? {} : { projectId: optionalText(payload, 'projectId') },
+        }),
+      }
     // ---- 项目包（阶段 8，T8-1）---------------------------------------------------
     case 'packages/export': {
       const projectId = text(payload, 'projectId')

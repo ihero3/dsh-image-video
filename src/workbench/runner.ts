@@ -232,6 +232,17 @@ export class WorkflowRunner {
       await this.persist(run, nodeRuns, 'running')
       const nodeStartedAt = Date.now()
       const record = await this.runNode(node, workflow, nodeRuns, signal, run, options)
+      // `R-QCK-3`：产物落地时，把"这张图用到的创作资源"记成使用记录（同产物同资源只留最新）
+      if (record.status === 'succeeded' && record.outputPath !== undefined) {
+        const resourceIds = workflow.nodes
+          .filter(candidate => candidate.kind === 'resource-reference')
+          .map(candidate => candidate.params.resourceId)
+          .filter((value): value is string => typeof value === 'string' && value !== '')
+        await this.deps.store.recordResourceUsage?.(resourceIds.map(resourceId => ({
+          resourceId, projectId: workflow.projectId, assetPath: record.outputPath as string,
+          runId: run.id, nodeId: node.id, at: (this.deps.now?.() ?? new Date()).toISOString(),
+        }))).catch?.(() => undefined) ?? 0
+      }
       this.deps.log?.({
         event: 'workflow-node', runId: run.id, nodeId: node.id, kind: node.kind,
         status: record.status, attempt: record.attempts ?? 1, durationMs: Date.now() - nodeStartedAt,

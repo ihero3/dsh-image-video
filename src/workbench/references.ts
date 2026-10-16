@@ -68,10 +68,29 @@ export function findAssetReferences(
  * @returns 引用位置。
  */
 export function findResourceReferences(
-  document: { workflows: readonly WorkflowRecord[] },
+  document: { workflows: readonly WorkflowRecord[]; timelines?: readonly TimelineRecord[] },
   resourceId: string,
 ): ReferenceHit[] {
   const hits: ReferenceHit[] = []
+  // `R-PRJ-4` 要求删资源前扫 工作流 / 时间轴 / 项目默认绑定：
+  //   工作流 ✓（resource-reference 节点的 resourceId）
+  //   时间轴 ✓（任何字段等于该 id 的字符串，含未来可能加的字幕样式/渲染资源绑定）
+  //   项目默认绑定 —— V1 的 `ProjectRecord` 没有"默认资源绑定"字段，因此这一项在 V1 为空集；
+  //     将来加了默认绑定，必须回到这里补一条扫描（这条注释就是复核锚点）。
+  for (const timeline of document.timelines ?? []) {
+    for (const track of timeline.tracks) {
+      for (const clip of track.clips) {
+        const values = new Set<string>()
+        collectStrings(clip, values)
+        if (values.has(resourceId)) {
+          hits.push({
+            kind: 'timeline', id: timeline.id, name: timeline.name,
+            where: `${track.kind} 轨 · 片段 ${clip.id}`,
+          })
+        }
+      }
+    }
+  }
   for (const workflow of document.workflows) {
     for (const node of workflow.nodes) {
       const values = new Set<string>()

@@ -12,12 +12,13 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
-  normalizeKeyframes, normalizeResourceKind, normalizeResourceName,
+  normalizeKeyframes, normalizeResourceKind, normalizeResourceName, normalizeResourceScope,
   type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
+import type { ResourceUsageRecord } from './records.ts'
 import { DEFAULT_FRAME_RATE, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
@@ -38,6 +39,8 @@ interface WorkbenchDocument {
   timelines: TimelineRecord[]
   /** 跨运行的成功结果缓存（`R-FLW-5`），按 at 淘汰。 */
   nodeCache: CachedNodeResult[]
+  /** 资源使用记录（`R-QCK-3`）。 */
+  resourceUsage: ResourceUsageRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -143,6 +146,7 @@ export class WorkbenchStore {
     document.workflows = document.workflows.filter(workflow => workflow.projectId !== id)
     document.runs = document.runs.filter(run => run.projectId !== id)
     document.timelines = document.timelines.filter(timeline => timeline.projectId !== id)
+    document.resourceUsage = document.resourceUsage.filter(usage => usage.projectId !== id)
     await this.save(document)
     return true
   }
@@ -257,6 +261,7 @@ export class WorkbenchStore {
     name: unknown
     note?: string
     keyframes?: unknown
+    scope?: unknown
   }): Promise<ResourceRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -268,6 +273,8 @@ export class WorkbenchStore {
       projectId: project.id,
       kind: normalizeResourceKind(input.kind),
       name: normalizeResourceName(input.name),
+      // V1 只写 project（`R-COL-1`）；入参给了别的也照实校验，未来放开时再说
+      scope: normalizeResourceScope(input.scope),
       // 轨迹资源必须带合法关键帧；其它资源给了关键帧也一并校验（越界一律拒）
       ...input.keyframes === undefined && normalizeResourceKind(input.kind) !== 'motion-track' ? {}
         : { keyframes: normalizeKeyframes(input.keyframes) },
@@ -503,6 +510,36 @@ export class WorkbenchStore {
   }
 
   /**
+   * 记一批资源使用记录（`R-QCK-3`）：同 (resourceId, assetPath) 只留最新一条。
+   * @param entries - 使用记录。
+   */
+  async recordResourceUsage(entries: readonly ResourceUsageRecord[]): Promise<number> {
+    if (entries.length === 0) return 0
+    const document = await this.load()
+    const keys = new Set(entries.map(entry => `${entry.resourceId}|${entry.assetPath}`))
+    document.resourceUsage = [
+      ...entries,
+      ...document.resourceUsage.filter(existing => !keys.has(`${existing.resourceId}|${existing.assetPath}`)),
+    ].slice(0, 2000)
+    await this.save(document)
+    return entries.length
+  }
+
+  /**
+   * 查资源使用记录：资源库据此显示"被哪些素材用过"。
+   * @param options.resourceId - 只看某个资源。
+   * @param options.projectId - 只看某个项目。
+   * @returns 记录（最新在前）。
+   */
+  async listResourceUsage(options: { resourceId?: string; projectId?: string } = {}): Promise<ResourceUsageRecord[]> {
+    const document = await this.load()
+    return document.resourceUsage
+      .filter(entry => (options.resourceId === undefined || entry.resourceId === options.resourceId)
+        && (options.projectId === undefined || entry.projectId === options.projectId))
+      .sort((left, right) => right.at.localeCompare(left.at))
+  }
+
+  /**
    * Collapse duplicate asset records (same project + same path) into the earliest one.
    *
    * Idempotent registration landed after some duplicates were already written, and the
@@ -699,6 +736,7 @@ export class WorkbenchStore {
         runs: raw.runs ?? [],
         timelines: raw.timelines ?? [],
         nodeCache: raw.nodeCache ?? [],
+        resourceUsage: raw.resourceUsage ?? [],
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -713,7 +751,7 @@ export class WorkbenchStore {
       }
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [], timelines: [], nodeCache: [],
+        runs: [], timelines: [], nodeCache: [], resourceUsage: [],
       }
     }
     return this.cache

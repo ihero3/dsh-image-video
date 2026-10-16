@@ -63,6 +63,24 @@ describe('store guards', () => {
     expect(await workbench.listAssets(project.id)).toHaveLength(0)
   })
 
+  it('also scans timelines for resource references (R-PRJ-4)', async () => {
+    const workbench = await store()
+    const project = await workbench.createProject('时间轴引用资源')
+    const resource = await workbench.createResource({ projectId: project.id, kind: 'style', name: '夜景' })
+    // 时间轴文档里出现该资源 id（未来可能来自字幕样式/渲染绑定的字段）
+    await workbench.saveTimeline({
+      projectId: project.id, name: '成片',
+      tracks: [{ id: 's1', kind: 'subtitle', clips: [{ id: 'c1', text: '字幕', startMs: 0, durationMs: 1000, style: { color: '#ffffff' } }] }],
+    })
+    const timeline = (await workbench.listTimelines(project.id))[0]!
+    // 直接把资源 id 写进时间轴（模拟将来的资源绑定字段），确认扫描覆盖到
+    await workbench.saveTimeline({
+      id: timeline.id, projectId: project.id, name: timeline.name,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: resource.id, startMs: 0, durationMs: 1000 }] }],
+    })
+    await expect(workbench.removeResource(resource.id)).rejects.toThrow(/时间轴/)
+  })
+
   it('refuses to delete a resource referenced by a workflow node unless forced', async () => {
     const workbench = await store()
     const project = await workbench.createProject('资源引用')

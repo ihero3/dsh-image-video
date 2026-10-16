@@ -44,6 +44,21 @@ export interface AssetRecord {
  */
 export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'imported-idle'
 
+/**
+ * 资源使用记录（`R-QCK-3`）：某条产物在生成时用到了哪个创作资源。
+ *
+ * 口径：产物由某张工作流跑出来时，**该图里的 `resource-reference` 节点**就算用到了这些资源
+ * （图是工作单位；逐条追到"某节点直连的上游资源"在 V1 太细，收益也不大）。
+ */
+export interface ResourceUsageRecord {
+  readonly resourceId: string
+  readonly projectId: string
+  readonly assetPath: string
+  readonly runId: string
+  readonly nodeId: string
+  readonly at: string
+}
+
 /** One generation attempt, recorded by the host when a tool call finishes. */
 export interface TaskRecord {
   readonly schemaVersion: number
@@ -77,6 +92,9 @@ export type MediaKind = 'image' | 'video'
  * `voice` deliberately carries metadata only in this version (`D6`): the field is
  * a name plus notes, no sample playback until a TTS provider is wired.
  */
+/** 资源作用域（`R-COL-1`）：V1 只用 `project`，字段先留好。 */
+export type ResourceScope = 'project' | 'team' | 'public'
+
 export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice' | 'motion-track'
 
 /** One reusable creative resource inside a project. */
@@ -104,6 +122,11 @@ export interface ResourceRecord {
   readonly name: string
   /** Free-form description (appearance, mood, usage notes). */
   readonly note?: string
+  /**
+   * 资源作用域（`R-COL-1`，后置能力）：保留 `project`/`team`/`public` 字段，
+   * **V1 一律写 `project`**，UI 不提供团队/公共入口。
+   */
+  readonly scope: ResourceScope
   /** 轨迹资源的关键帧（只有 `motion-track` 用）。 */
   readonly keyframes?: readonly MotionKeyframe[]
   readonly createdAt: string
@@ -122,6 +145,18 @@ export const MAX_RESOURCE_NAME_LENGTH = 80
  * @returns the trimmed name.
  * @throws {Error} when it is empty or too long.
  */
+/**
+ * 校验资源作用域（`R-COL-1`）。
+ * @param value - 原始取值；缺省即 `project`（V1 只写这一个）。
+ * @returns 作用域。
+ * @throws {Error} 取值不在白名单时。
+ */
+export function normalizeResourceScope(value: unknown): ResourceScope {
+  if (value === undefined || value === null || value === '') return 'project'
+  if (value === 'project' || value === 'team' || value === 'public') return value
+  throw new Error('resource scope must be one of project/team/public')
+}
+
 export function normalizeResourceName(value: unknown): string {
   if (typeof value !== 'string') throw new Error('resource name must be a string')
   const name = value.trim()

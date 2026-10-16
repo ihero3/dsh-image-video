@@ -41,6 +41,14 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'defaultsEditHint'
+  | 'defaultsSaved'
+  | 'defaultsCancel'
+  | 'defaultsSave'
+  | 'defaultsEdit'
+  | 'resourceUseUnit'
+  | 'resourceUsedBy'
+  | 'resourceUnused'
   | 'statusImportedIdle'
   | 'resourceMotionTrack'
   | 'paramTrack'
@@ -223,6 +231,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  defaultsEditHint: 'empty = follow settings',
+  defaultsSaved: 'Defaults saved',
+  defaultsCancel: 'Cancel',
+  defaultsSave: 'Save defaults',
+  defaultsEdit: 'Edit',
+  resourceUseUnit: 'artifacts',
+  resourceUsedBy: 'Used by',
+  resourceUnused: 'Not used by any artifact yet',
   statusImportedIdle: 'Imported (not running)',
   resourceMotionTrack: 'Motion track',
   paramTrack: 'Track resource',
@@ -403,6 +419,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  defaultsEditHint: '留空 = 跟随设置',
+  defaultsSaved: '默认值已保存',
+  defaultsCancel: '取消',
+  defaultsSave: '保存默认值',
+  defaultsEdit: '编辑',
+  resourceUseUnit: '次产物',
+  resourceUsedBy: '被用到',
+  resourceUnused: '还没被任何产物用过',
   statusImportedIdle: '已导入（未运行）',
   resourceMotionTrack: '轨迹',
   paramTrack: '轨迹资源',

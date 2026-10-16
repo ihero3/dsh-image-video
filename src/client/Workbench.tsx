@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
+import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, ResourceUsageRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import { activeClipAt, timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
@@ -160,6 +160,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
   const [ffmpeg, setFfmpeg] = useState<FfmpegProbe | undefined>(undefined)
+  // 资源使用记录（`R-QCK-3`）：按资源 id 归拢，供资源库显示「被哪些素材用过」
+  const [resourceUsage, setResourceUsage] = useState<readonly ResourceUsageRecord[]>([])
+  // 默认值编辑草稿（`R-CFG-2`）：undefined = 不在编辑态
+  const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string> | undefined>(undefined)
   const [renderJob, setRenderJob] = useState<RenderJob | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
@@ -286,6 +290,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })()
     return () => { stale = true }
   }, [mode, activeProject])
+
+  // 资源使用记录：切项目或资源增删后重读（轻量，资源库就要这份「被谁用过」）
+  useEffect(() => {
+    if (activeProject === undefined) { setResourceUsage([]); return }
+    const project = activeProject
+    let stale = false
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listResourceUsage({ projectId: project.id })
+        if (!stale) setResourceUsage(rows)
+      } catch {
+        // 拿不到就只显示资源本身，不打扰用户
+      }
+    })()
+    return () => { stale = true }
+  }, [activeProject, resources.length])
 
   // 时间轴模式下探测一次 ffmpeg（导出能力的前置条件，`T5-4`）
   const recheckFfmpeg = useCallback(async (): Promise<void> => {
@@ -521,7 +541,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [activeId, loadResources])
 
   // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
-  const defaultRows: Array<{ key: WorkbenchLocaleKey; value: string }> = health.status === 'ok' && health.defaults !== undefined
+  // `field` 是接口字段名（imageSize…），`key` 是界面文案键：下发 patch 必须用前者
+  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string }> = health.status === 'ok' && health.defaults !== undefined
     ? ([
       ['defaultMediaMode', health.defaults.mediaMode],
       ['defaultImageProvider', health.defaults.imageProvider],
@@ -531,7 +552,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       ['defaultVideoAspectRatio', health.defaults.videoAspectRatio],
       ['defaultVideoDuration', health.defaults.videoDuration],
     ] as Array<[WorkbenchLocaleKey, string | number | null | undefined]>)
-      .map(([key, value]) => ({ key, value: value === null || value === undefined || value === '' ? t('none') : String(value) }))
+      .map(([key, value]) => ({
+        key,
+        field: key.replace(/^default/, '').replace(/^./, character => character.toLowerCase()),
+        value: value === null || value === undefined || value === '' ? t('none') : String(value),
+      }))
     : []
 
   // 非本机宿主：`/outputs` 只在回环注册，预览会打不开——先告诉用户怎么办（`T2-9`）
@@ -680,6 +705,69 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {t(row.key)} {row.value}
                 </span>
               ))}
+              <button
+                type="button"
+                data-workbench-defaults-edit="true"
+                style={{ ...BUTTON, fontSize: '10px' }}
+                onClick={() => {
+                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value === t('none') ? '' : row.value])))
+                }}
+              >
+                {t('defaultsEdit')}
+              </button>
+            </div>
+          )}
+        {defaultsDraft === undefined
+          ? null
+          : (
+            <div data-workbench-defaults-editor="true" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '10px', alignItems: 'center' }}>
+              {defaultRows.map(row => (
+                <label key={row.key} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  {t(row.key)}
+                  <input
+                    aria-label={t(row.key)}
+                    value={defaultsDraft[row.field] ?? ''}
+                    onChange={event => { setDefaultsDraft({ ...defaultsDraft, [row.field]: event.target.value }) }}
+                    style={{ ...INPUT, minWidth: '84px', fontSize: '10px' }}
+                  />
+                </label>
+              ))}
+              <span style={{ ...MUTED, fontSize: '10px' }}>{t('defaultsEditHint')}</span>
+              <button
+                type="button"
+                data-workbench-defaults-save="true"
+                style={{ ...BUTTON, fontSize: '10px' }}
+                disabled={busy}
+                onClick={() => {
+                  void run(async () => {
+                    const patch: Record<string, string | number | null> = {}
+                    for (const row of defaultRows) {
+                      const next = (defaultsDraft[row.field] ?? '').trim()
+                      const current = row.value === t('none') ? '' : row.value
+                      if (next === current) continue
+                      patch[row.field] = next === '' ? null : /duration/i.test(row.field) ? Number(next) : next
+                    }
+                    if (Object.keys(patch).length > 0) await apiRef.current.saveDefaults(patch)
+                    setDefaultsDraft(undefined)
+                    const facts = await apiRef.current.health()
+                    setHealth({
+                      status: 'ok', version: facts.version, provider: facts.provider,
+                      ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
+                    })
+                    setNotice({ text: t('defaultsSaved'), tone: 'info' })
+                  })
+                }}
+              >
+                {t('defaultsSave')}
+              </button>
+              <button
+                type="button"
+                data-workbench-defaults-cancel="true"
+                style={{ ...BUTTON, fontSize: '10px' }}
+                onClick={() => { setDefaultsDraft(undefined) }}
+              >
+                {t('defaultsCancel')}
+              </button>
             </div>
           )}
         <span style={{ marginLeft: 'auto', fontSize: '12px', opacity: 0.55 }}>{kind}</span>
@@ -1214,6 +1302,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       title={resource.note ?? ''}>
                       {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
                     </span>
+                    {(() => {
+                      const used = resourceUsage.filter(entry => entry.resourceId === resource.id)
+                      const latest = used[0]
+                      return (
+                        <span data-resource-usage={resource.id} style={{ ...MUTED, fontSize: '10px' }} title={latest?.assetPath ?? ''}>
+                          {used.length === 0
+                            ? t('resourceUnused')
+                            : `${t('resourceUsedBy')} ${used.length} ${t('resourceUseUnit')}${latest === undefined ? '' : ` · ${baseName(latest.assetPath)}`}`}
+                        </span>
+                      )
+                    })()}
                     <button
                       type="button"
                       style={BUTTON}

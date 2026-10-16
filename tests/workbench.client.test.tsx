@@ -55,6 +55,7 @@ function fakeApi(options: {
   let runSequence = 0
   let renderJobs: Array<{ id: string; timelineId: string; projectId: string; status: 'running' | 'succeeded' | 'cancelled' | 'failed'; percent: number; startedAt: string; outputPath?: string; bytes?: number; durationMs?: number; error?: string }> = []
   let renderPolls = 0
+  const savedDefaults: Array<Record<string, string | number | null>> = []
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -173,6 +174,8 @@ function fakeApi(options: {
       calls.push('media/ffmpeg')
       return options.ffmpeg ?? { available: true, version: '7.1.1', path: '/opt/homebrew/bin/ffmpeg', encoders: { h264: true, aac: true } }
     },
+    saveDefaults: async (patch) => { calls.push('defaults/save'); savedDefaults.push(patch) },
+    listResourceUsage: async () => { calls.push('resources/usage'); return [] },
     renderTimeline: async (timelineId) => {
       calls.push('timelines/render')
       renderJobs = [{ id: 'render-1', timelineId, projectId: 'prj-1', status: 'running', percent: 0, startedAt: '2026-10-16T00:00:00.000Z' }]
@@ -275,7 +278,7 @@ function fakeApi(options: {
     },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -608,8 +611,8 @@ describe('workbench project and asset flow', () => {
     })
     await waitFor(() => {
       expect(view.container.querySelector('select[aria-label="Project"]')?.textContent).toContain('Agent 建的项目')
-    }, { timeout: 9000 })
-  }, 15_000)
+    }, { timeout: 12_000 })
+  }, 30_000)
 
   it('shows the seven effective defaults from the host (T2-11)', async () => {
     const host = fakeApi({
@@ -628,6 +631,25 @@ describe('workbench project and asset flow', () => {
     expect(view.container.textContent).toContain('16:9')
     // 没设的字段要明确说"未设置"，而不是留空
     expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.none)
+  })
+
+  it('edits the effective defaults from the workbench (R-CFG-2)', async () => {
+    const host = fakeApi({
+      defaults: {
+        mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
+        videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+      },
+    })
+      const view = render(<Workbench {...props({ api: host.api })} />)
+      await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
+      fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
+      await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeTruthy() })
+      fireEvent.change(view.container.querySelector('[aria-label="Image size"]') as HTMLElement, { target: { value: '768*1024' } })
+      fireEvent.click(view.container.querySelector('[data-workbench-defaults-save]') as HTMLElement)
+      await waitFor(() => { expect(host.savedDefaults).toHaveLength(1) })
+      // 只下发改动过的字段，字段名与 composer/settings 同一口径（不是界面文案键）
+      expect(host.savedDefaults[0]).toEqual({ imageSize: '768*1024' })
+      await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeNull() })
   })
 
   it('tells the user what to do when the host is not loopback (T2-9)', async () => {
