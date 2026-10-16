@@ -48,6 +48,7 @@ import { RenderService } from './media/render.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
+import { createWorkbenchTools } from './tools/workbench.ts'
 
 export { Config } from './config.ts'
 export type { Config as ConfigType, Provider, ProviderCredentials, WatermarkConfig, WatermarkPosition } from './config.ts'
@@ -293,5 +294,13 @@ export function apply(ctx: Context, config: Config): void {
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
     })
+
+  // Agent 工具面（`T6-3`）：项目/素材/时间轴/工作流/任务。注册在 effect 内，
+  // 卸载时随 fiber 注销（回滚=摘掉这段注册）。
+  for (const tool of createWorkbenchTools({
+    store: workbenchStore, renders: renderRegistry, runner: workflowRunner, registry: generationRegistry,
+  })) {
+    ctx.tools.register(tool)
+  }
   })
 }
