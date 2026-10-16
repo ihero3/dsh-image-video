@@ -52,6 +52,8 @@ function fakeApi(options: {
   const runs: WorkflowRunRecord[] = [...(options.runs ?? [])]
   const timelines: TimelineRecord[] = [...(options.timelines ?? [])]
   let runSequence = 0
+  let renderJobs: Array<{ id: string; timelineId: string; projectId: string; status: 'running' | 'succeeded' | 'cancelled' | 'failed'; percent: number; startedAt: string; outputPath?: string; bytes?: number; durationMs?: number; error?: string }> = []
+  let renderPolls = 0
   const calls: string[] = []
   let counter = 0
   const api: WorkbenchApi = {
@@ -169,6 +171,26 @@ function fakeApi(options: {
     probeFfmpeg: async () => {
       calls.push('media/ffmpeg')
       return options.ffmpeg ?? { available: true, version: '7.1.1', path: '/opt/homebrew/bin/ffmpeg', encoders: { h264: true, aac: true } }
+    },
+    renderTimeline: async (timelineId) => {
+      calls.push('timelines/render')
+      renderJobs = [{ id: 'render-1', timelineId, projectId: 'prj-1', status: 'running', percent: 0, startedAt: '2026-10-16T00:00:00.000Z' }]
+      return renderJobs[0]!
+    },
+    listRenders: async () => {
+      calls.push('timelines/renders')
+      // 第二次轮询就"渲染完成"，模拟真实进度收尾
+      renderPolls += 1
+      if (renderPolls > 1 && renderJobs[0] !== undefined) {
+        renderJobs = [{ ...renderJobs[0]!, status: 'succeeded', percent: 100, outputPath: '/tmp/outputs/movie.mp4', bytes: 2048, durationMs: 1000 }]
+      }
+      return [...renderJobs]
+    },
+    cancelRender: async (renderId) => {
+      calls.push('timelines/render-cancel')
+      if (renderJobs[0]?.id !== renderId) return false
+      renderJobs = [{ ...renderJobs[0]!, status: 'cancelled', error: '渲染已取消' }]
+      return true
     },
     listTimelines: async () => {
       calls.push('timelines/list')
@@ -520,6 +542,35 @@ describe('workbench project and asset flow', () => {
     const reopened = render(<Workbench {...props({ api: host.api })} />)
     fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
     await waitFor(() => { expect(reopened.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+  })
+
+  it('exports the timeline, shows progress and then the artifact', async () => {
+    const host = fakeApi({
+      timelines: [{
+        schemaVersion: 1, id: 'tml-1', projectId: 'prj-1', name: '成片', frameRate: 30, burnSubtitles: true,
+        tracks: [
+          { id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: '/tmp/outputs/clip.mp4', startMs: 0, durationMs: 1000 }] },
+          { id: 'a1', kind: 'audio', clips: [] },
+          { id: 's1', kind: 'subtitle', clips: [] },
+        ],
+        createdAt: '2026-10-16T00:00:00.000Z', updatedAt: '2026-10-16T00:00:00.000Z',
+      }],
+    })
+    const view = render(<Workbench {...props({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '导出项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+
+    // 没在跑时"取消导出"不可用
+    expect((view.container.querySelector('[data-timeline-export-cancel]') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(view.container.querySelector('[data-timeline-export]') as HTMLElement)
+    await waitFor(() => { expect(host.calls).toContain('timelines/render') })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-timeline-render]')?.getAttribute('data-timeline-render')).toBe('succeeded')
+    }, { timeout: 4000 })
+    expect(view.container.querySelector('[data-timeline-render]')?.getAttribute('data-timeline-render-percent')).toBe('100')
+    expect(view.container.querySelector('[data-timeline-render]')?.textContent).toContain('movie.mp4')
   })
 
   it('shows an actionable ffmpeg status in the timeline pane', async () => {

@@ -34,7 +34,7 @@
 | 6 三模式联动与 Agent | 5 | 0 | `R-ENT-3`、`R-QCK-4`、`R-AGT-2..4` |
 | 7 稳定性与发布 | 7 | 0 | `R-NFR-1..5` + 发布门禁 |
 | 8 本地项目包 / 资源包 | 4 | 0 | `R-PRJ-5`、`R-COL-2` |
-| **合计** | **59** | **29** | — |
+| **合计** | **59** | **33** | — |
 
 ## 2. 阶段 0：审计与方案（纯文档，无产品代码）
 
@@ -93,11 +93,11 @@
 ## 7. 阶段 5：时间轴精剪 MVP（计划 §7）
 
 - [x] **T5-1** `TimelineRecord` 模型与轨道/clip 操作（video/audio/subtitle）｜插件｜**已完成**：`src/workbench/timeline.ts`（三轨 + clip：素材**路径引用**/字幕文本/起点/时长/源内偏移/字幕样式，帧率、总时长函数）+ 校验（非法轨道种类、负数/NaN 时间、零时长、字幕缺文本、视频/音频缺路径、重复 clip id、超 400 clip 上限、**内联字节** data URL/超长 base64 一律拒）+ 存储（`timelines` 文档、增删改查、随项目级联）+ 端点 `timelines/list|save|remove` + 工作台「时间轴精剪」三轨面板（从素材加入 clip、写字幕、改起点/时长、删 clip、自动保存、总时长显示）。**测试**：模型/存储 8 例（含"三轨各 3 clip 保存重开完整恢复"+ 拒绝内联字节）+ 端点 1 例 + 客户端 1 例（三轨渲染、加入 clip 与字幕、自动保存落库、重开后恢复）｜R-TML-1、R-TML-2｜T4-7
-- [~] **T5-2** 时间轴预览（不渲染的顺序预览 + 与导出口径差异说明）｜插件｜**已实现（缺"阈值断言"，待 T5-5 有导出可比）**：面板里有播放头滑杆（`data-timeline-playhead`），按时间点取当前视频片段（图片走 `<img>`、视频走 `<video>`，均经 `/outputs` 只读通道）并把该时刻的字幕**按样式叠在画面上**（字号/颜色/上中下位置即时可见）；下方写明口径："顺序预览：不做转码；导出可能有一两帧差异"。客户端测试断言播放头移动会切换"当前字幕"。**待做**：`T5-5` 落地后补"预览切换点 vs 导出切换点偏差 ≤ 阈值"的断言（阈值写进测试）｜R-TML-3｜T5-1
-- [~] **T5-3** 字幕轨：编辑 + 样式 + 烧录开关｜插件｜**已实现（导出侧待 T5-5）**：字幕文本编辑、样式（字号 8–200 / `#rrggbb` 颜色 / 上中下位置）都有**模型级校验**并在面板里可改、预览即时生效；`burnSubtitles` 开关随文档落库。**测试**：模型/存储 2 例（样式越界被拒 + 烧录开关往返 + **关掉烧录后字幕数据仍在**）+ 客户端 1 例（改颜色与关烧录都落库）。**待做**：`T5-5` 渲染时按该开关决定"烧进画面 or 仅保留数据"｜R-TML-4｜T5-1
-- [x] **T5-4** ffmpeg 集中解析与特性检测（缺失/版本/权限失败给 `MEDIA_FFMPEG_UNAVAILABLE` 级可操作错误）｜插件｜**已完成**：`src/media/ffmpeg.ts` 是唯一解析点——顺序为 `DSH_FFMPEG_PATH` → PATH → 常见安装位置，再跑 `-version`/`-encoders` 检测 H.264/AAC；三种失败各给**机器可读 code + 能照着做的文案**：`MEDIA_FFMPEG_UNAVAILABLE`（含 `brew install ffmpeg` 与 `DSH_FFMPEG_PATH` 指引）、`MEDIA_FFMPEG_NOT_EXECUTABLE`（权限被拒）、`MEDIA_FFMPEG_ENCODER_MISSING`（这份构建没有 libx264/videotoolbox）；`media/ffmpeg` 端点（带 `path` 时**严格只查该副本**，供诊断）；时间轴面板显示 `data-timeline-ffmpeg`（ok/失败码 + 文案 + 「重新检查 ffmpeg」）。**测试**：模块 6 例（含本机真探测：装了报版本、没装给可操作原因）+ 端点 1 例（含严格模式查不存在路径必报 UNAVAILABLE）+ 客户端 1 例（横幅文案含下一步动作、重新检查会再调）｜R-TML-6、R-TML-7｜T5-1
-- [ ] **T5-5** `RenderService`：时间轴快照 → filter graph → 进度/取消/输出校验；快照冻结后编辑不影响进行中的渲染｜插件｜`test:` 导出可播放、时长 ±1 帧；取消不留半成品｜回滚：停止渲染任务并标记 `cancelled`｜R-TML-5｜T5-4
-- [ ] **T5-6** 导出失败面覆盖（素材丢失 / 磁盘不足 / 编码不支持 / ffmpeg 缺失）｜插件｜`test:` 每类失败一条断言，文案含原因与建议动作｜回滚：删失败面测试（保留主流程）｜R-TML-5、R-TML-6｜T5-5
+- [x] **T5-2** 时间轴预览（不渲染的顺序预览 + 与导出口径差异说明）｜插件｜**已完成**：面板有播放头滑杆（`data-timeline-playhead`），按时间取当前片段（图 `<img>`/视频 `<video>`，走 `/outputs` 只读通道）+ 按样式把当刻字幕叠在画面上，旁注"不做转码、导出可能差一两帧"。**关键**：预览与导出**共用同一份边界判断** `activeClipAt()`（`src/workbench/timeline.ts`），并有阈值断言——测试遍历导出侧每个切分点，要求预览侧最近切换点与之相差 ≤ 1 帧（30fps 容差 33.3ms）｜R-TML-3｜T5-1
+- [x] **T5-3** 字幕轨：编辑 + 样式 + 烧录开关｜插件｜**已完成**：字幕文本与样式（字号 8–200/`#rrggbb`/上中下）都可编辑，模型级校验拒绝越界；`burnSubtitles` 随文档落库；**导出侧**由 `buildRenderArgs` 决定——关掉烧录整段不生成 `drawtext`，字幕数据仍留在文档里（测试断言 filter graph 无 `drawtext` + 存储往返后文本仍在）｜R-TML-4｜T5-1
+- [x] **T5-4** ffmpeg 集中解析与特性检测｜插件｜**已完成**：唯一解析点（`DSH_FFMPEG_PATH`→PATH→常见位置）+ 版本/编码器检测；`MEDIA_FFMPEG_UNAVAILABLE`/`NOT_EXECUTABLE`/`ENCODER_MISSING` 三码各带下一步动作；`media/ffmpeg` 端点支持严格诊断指定副本；面板显示状态并可重新检查。测试：模块 6 + 端点 1 + 客户端 1｜R-TML-6、R-TML-7｜T5-1
+- [x] **T5-5** `RenderService`：时间轴快照 → filter graph → 进度/取消/输出校验；快照冻结后编辑不影响进行中的渲染｜插件｜**已完成**：`freezeTimeline()` 先深拷贝成快照（测试断言冻结后改原文档不影响渲染）；`planVideoSegments()` 把视频轨排成"片段 + 黑场填充"（重叠直接拒；尾部补黑对齐总时长）；`buildRenderArgs()` 拼 `scale/pad/setsar/fps/format → concat →(可选)drawtext→ libx264 + faststart`；进度靠 `-progress pipe:1` 的 `out_time_ms`；取消即 SIGKILL + **清理半成品**；导出后用 `ffmpeg -i` 实测时长并与时间轴比对（**±1 帧**超差即判 `MEDIA_OUTPUT_INVALID`）。宿主侧 `RenderRegistry` 提供任务快照/轮询/取消（`timelines/render|renders|render-cancel`），**成功的产物自动登记成素材**；面板有「导出成片 / 取消导出」+ 2 秒轮询进度。**真机验证**（自造 testsrc 素材，不花生成 token）：导出时长 2000ms ±1 帧、进度回调有值、取消后无残留文件、端点侧产物已登记为素材｜R-TML-5｜T5-4
+- [x] **T5-6** 导出失败面覆盖（素材丢失 / 磁盘不足 / 编码不支持 / ffmpeg 缺失）｜插件｜**已完成**：素材不存在→`MEDIA_ASSET_MISSING`（**起 ffmpeg 前**就拦下，文案指到具体片段与路径）；ffmpeg 不可用/缺编码器→沿用 T5-4 的码与文案；ffmpeg stderr 映射磁盘满→`MEDIA_DISK_FULL`、`Unknown encoder`→`MEDIA_ENCODER_UNSUPPORTED`、spawn 失败→`MEDIA_FFMPEG_UNAVAILABLE`；成功但产物为空/时长超差→`MEDIA_OUTPUT_INVALID`；失败与取消都**不留半成品**。测试 4 例（用假 ffmpeg 脚本模拟 stderr，不依赖真实故障）｜R-TML-5、R-TML-6｜T5-5
 
 ## 8. 阶段 6：三模式联动与 Agent
 

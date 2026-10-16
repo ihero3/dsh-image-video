@@ -2,7 +2,8 @@
  * The workbench channel's phase-2 endpoints, over the real handler and a real
  * store: the payload contract the browser half depends on.
  */
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,6 +11,8 @@ import { createWorkbenchHandler } from '../src/host/rpc.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 import { GenerationRegistry } from '../src/workbench/cancel.ts'
 import { WorkflowRunner } from '../src/workbench/runner.ts'
+import { RenderRegistry } from '../src/media/render-registry.ts'
+import { RenderService } from '../src/media/render.ts'
 import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
 
@@ -29,7 +32,14 @@ async function makeHandler() {
     generateImage: { async execute() { return { localPath: '/tmp/out/shot.png', bytes: 10 } } },
     generateVideo: { async execute() { return { videoPath: '/tmp/out/clip.mp4', bytes: 20 } } },
   })
-  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry, runner })
+  const renders = new RenderRegistry({
+    render: new RenderService({ outputsDir }),
+    registerAsset: async job => {
+      if (job.outputPath === undefined) return
+      await store.attachAsset({ projectId: job.projectId, path: job.outputPath, kind: 'video', bytes: job.bytes })
+    },
+  })
+  const handler = createWorkbenchHandler({ provider: 'threerouter', outputsDir, store, registry, runner, renders })
   /** Call one endpoint and fail the test on a refused envelope. */
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
     const result = await handler(endpoint, payload, new AbortController().signal, {} as never)
@@ -93,6 +103,41 @@ describe('workbench channel endpoints', () => {
 
     expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
   })
+
+  it('renders a timeline through the channel and registers the artifact (T5-5)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '导出项目' })
+    // 用 ffmpeg 自造 1 秒素材（不花生成 token）
+    const work = await mkdtemp(join(tmpdir(), 'dsh-endpoint-render-'))
+    const clip = join(work, 'clip.mp4')
+    await new Promise<void>((resolve, reject) => {
+      execFile('/opt/homebrew/bin/ffmpeg', [
+        '-y', '-hide_banner', '-loglevel', 'error',
+        '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=30:duration=1',
+        '-pix_fmt', 'yuv420p', '-c:v', 'libx264', clip,
+      ], error => { error === null ? resolve() : reject(error) })
+    })
+
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id, name: '成片',
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: clip, startMs: 0, durationMs: 1000 }] }],
+    })
+    const started = await ok<{ render: { id: string; status: string } }>('timelines/render', { timelineId: saved.timeline.id })
+    expect(started.render.status).toBe('running')
+
+    await vi.waitFor(async () => {
+      const list = await ok<{ renders: Array<{ status: string; outputPath?: string; percent: number }> }>('timelines/renders', { projectId: created.project.id })
+      expect(list.renders[0]?.status).toBe('succeeded')
+      expect(list.renders[0]?.percent).toBe(100)
+      // 产物自动登记成素材
+      const assets = await ok<{ assets: Array<{ path: string }> }>('assets/list', { projectId: created.project.id })
+      expect(assets.assets.some(asset => asset.path === list.renders[0]?.outputPath)).toBe(true)
+    }, { timeout: 40_000, interval: 500 })
+
+    // 已结束的任务取消不了
+    expect(await ok<{ cancelled: boolean }>('timelines/render-cancel', { renderId: started.render.id })).toEqual({ cancelled: false })
+    await rm(work, { recursive: true, force: true })
+  }, 60_000)
 
   it('reports ffmpeg capability through the channel (T5-4)', async () => {
     const { ok } = await makeHandler()

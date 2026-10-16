@@ -187,6 +187,27 @@ export function normalizeSubtitleStyle(raw: unknown, clipId: string): SubtitleSt
   return normalized
 }
 
+/**
+ * 取某个时间点上某类轨道的活动 clip。
+ *
+ * **预览与导出共用这一份边界判断**（`R-TML-3`）：预览显示哪一段、导出从哪一段切，
+ * 都来自这里，所以"预览切换点"与"导出切换点"不会各算一套。
+ * @param tracks - 轨道。
+ * @param kind - 轨道种类。
+ * @param timeMs - 播放头位置（毫秒）。
+ * @returns 该时刻的活动 clip，没有则 `undefined`。
+ */
+export function activeClipAt(
+  tracks: readonly TimelineTrack[],
+  kind: TrackKind,
+  timeMs: number,
+): TimelineClip | undefined {
+  return tracks
+    .filter(track => track.kind === kind)
+    .flatMap(track => track.clips)
+    .find(clip => timeMs >= clip.startMs && timeMs < clip.startMs + clip.durationMs)
+}
+
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export function timelineDurationMs(tracks: readonly TimelineTrack[]): number {
   return tracks.reduce(

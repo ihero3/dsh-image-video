@@ -78,5 +78,16 @@ export declare const SUBTITLE_FONT_SIZE_RANGE: {
  * @throws {Error} 取值越界或类型不对时。
  */
 export declare function normalizeSubtitleStyle(raw: unknown, clipId: string): SubtitleStyle;
+/**
+ * 取某个时间点上某类轨道的活动 clip。
+ *
+ * **预览与导出共用这一份边界判断**（`R-TML-3`）：预览显示哪一段、导出从哪一段切，
+ * 都来自这里，所以"预览切换点"与"导出切换点"不会各算一套。
+ * @param tracks - 轨道。
+ * @param kind - 轨道种类。
+ * @param timeMs - 播放头位置（毫秒）。
+ * @returns 该时刻的活动 clip，没有则 `undefined`。
+ */
+export declare function activeClipAt(tracks: readonly TimelineTrack[], kind: TrackKind, timeMs: number): TimelineClip | undefined;
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export declare function timelineDurationMs(tracks: readonly TimelineTrack[]): number;

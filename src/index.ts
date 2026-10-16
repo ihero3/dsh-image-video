@@ -43,6 +43,8 @@ import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { withTaskLedger } from './workbench/ledger.ts'
 import { GenerationRegistry } from './workbench/cancel.ts'
 import { WorkflowRunner, type GenerationTool } from './workbench/runner.ts'
+import { RenderRegistry } from './media/render-registry.ts'
+import { RenderService } from './media/render.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -260,7 +262,25 @@ export function apply(ctx: Context, config: Config): void {
   // 而 `webServer` 未在该子上下文中注入时 `owner.webServer.register` 会抛错、路由
   // 静默缺席，浏览器侧只能看到 `HTTP 405`（2026-10-14 现场踩到并修掉）。
   ctx.inject(['connection', 'webServer'], (rpcCtx) => {
-    // 图运行器复用对话里的同一对生成工具（参数语义一致，账本/取消自动继承）
+    // 导出服务：成功产物自动登记成素材，出现在素材面板里（`T5-5`）
+  const renderService = new RenderService({
+    outputsDir: config.outputsDir ?? outputsDir,
+  })
+  const renderRegistry = new RenderRegistry({
+    render: renderService,
+    registerAsset: async job => {
+      if (job.outputPath === undefined) return
+      await workbenchStore.attachAsset({
+        projectId: job.projectId, path: job.outputPath, kind: 'video',
+        bytes: job.bytes, provider: config.provider, prompt: `时间轴导出（${job.timelineId}）`,
+      })
+    },
+    onError: message => { ctx.logger?.warn?.(`image-video workbench: ${message}`) },
+  })
+  // 进程重启后遗留的"运行中"导出按失败收尾，避免永远转圈
+  renderRegistry.failStale('宿主重启中断（无法继续这次导出）')
+
+  // 图运行器复用对话里的同一对生成工具（参数语义一致，账本/取消自动继承）
     const workflowRunner = new WorkflowRunner({
       store: workbenchStore,
       generateImage: proxyTool('image'),
@@ -269,7 +289,7 @@ export function apply(ctx: Context, config: Config): void {
     })
     registerWorkbenchRpc(rpcCtx, {
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
-      runner: workflowRunner,
+      runner: workflowRunner, renders: renderRegistry,
     })
   })
 }

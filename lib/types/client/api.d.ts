@@ -12,6 +12,7 @@ import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecor
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts';
 import type { TimelineRecord } from '../workbench/timeline.ts';
 import type { FfmpegProbe } from '../media/ffmpeg.ts';
+import type { RenderJob } from '../media/render-registry.ts';
 import type { OutputFile } from '../workbench/outputs.ts';
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
@@ -57,6 +58,12 @@ export interface WorkbenchApi {
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
     /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
     probeFfmpeg: (path?: string) => Promise<FfmpegProbe>;
+    /** Start rendering a timeline into an mp4 (returns the job to poll). */
+    renderTimeline: (timelineId: string, projectId?: string) => Promise<RenderJob>;
+    /** Export jobs, newest first. */
+    listRenders: (projectId?: string) => Promise<RenderJob[]>;
+    /** Cancel a running export. */
+    cancelRender: (renderId: string) => Promise<boolean>;
     /** One project's timeline documents, newest first. */
     listTimelines: (projectId: string) => Promise<TimelineRecord[]>;
     /** Create or update a timeline document. */

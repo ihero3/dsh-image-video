@@ -12,6 +12,7 @@ import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecor
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
+import type { RenderJob } from '../media/render-registry.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 
 /** What the workbench UI may ask the host (phase 2, first slice). */
@@ -55,6 +56,12 @@ export interface WorkbenchApi {
   listTasks: (limit?: number) => Promise<TaskRecord[]>
   /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
   probeFfmpeg: (path?: string) => Promise<FfmpegProbe>
+  /** Start rendering a timeline into an mp4 (returns the job to poll). */
+  renderTimeline: (timelineId: string, projectId?: string) => Promise<RenderJob>
+  /** Export jobs, newest first. */
+  listRenders: (projectId?: string) => Promise<RenderJob[]>
+  /** Cancel a running export. */
+  cancelRender: (renderId: string) => Promise<boolean>
   /** One project's timeline documents, newest first. */
   listTimelines: (projectId: string) => Promise<TimelineRecord[]>
   /** Create or update a timeline document. */
@@ -125,6 +132,11 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     removeResource: async id => (await call<{ removed: boolean }>('resources/remove', { id })).removed,
     listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
     probeFfmpeg: async path => (await call<{ ffmpeg: FfmpegProbe }>('media/ffmpeg', path === undefined ? {} : { path })).ffmpeg,
+    renderTimeline: async (timelineId, projectId) =>
+      (await call<{ render: RenderJob }>('timelines/render', projectId === undefined ? { timelineId } : { timelineId, projectId })).render,
+    listRenders: async projectId =>
+      (await call<{ renders: RenderJob[] }>('timelines/renders', projectId === undefined ? {} : { projectId })).renders,
+    cancelRender: async renderId => (await call<{ cancelled: boolean }>('timelines/render-cancel', { renderId })).cancelled,
     listTimelines: async projectId =>
       (await call<{ timelines: TimelineRecord[] }>('timelines/list', { projectId })).timelines,
     saveTimeline: async input => (await call<{ timeline: TimelineRecord }>('timelines/save', input)).timeline,

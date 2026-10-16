@@ -19,6 +19,7 @@ import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
+import type { RenderRegistry } from '../media/render-registry.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
 } from '../workbench/records.ts'
@@ -65,6 +66,8 @@ export interface WorkbenchRpcDeps {
   registry: GenerationRegistry
   /** 图运行器（`T4-4`）。 */
   runner: WorkflowRunner
+  /** 导出任务表（`T5-5`）。 */
+  renders: RenderRegistry
 }
 
 /**
@@ -229,6 +232,21 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
     case 'timelines/remove':
       return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
+    // ---- 导出（阶段 5，T5-5）----------------------------------------------------
+    case 'timelines/render': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const projectId = optionalText(payload, 'projectId')
+      if (projectId !== undefined && projectId !== '' && projectId !== timeline.projectId) {
+        throw new Error(`timeline ${timelineId} does not belong to project ${projectId}`)
+      }
+      return { render: deps.renders.start(timeline) }
+    }
+    case 'timelines/renders':
+      return { renders: deps.renders.list(optionalText(payload, 'projectId')) }
+    case 'timelines/render-cancel':
+      return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
     case 'maintenance/compact':
       return { removed: await deps.store.compactAssets() }

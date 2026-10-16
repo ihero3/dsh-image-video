@@ -41,6 +41,12 @@ export type WorkbenchLocaleKey =
   | 'statusFailed'
   | 'statusCancelled'
   | 'cancelTask'
+  | 'exportResult'
+  | 'exportFailed'
+  | 'exportDone'
+  | 'exportRunning'
+  | 'exportCancel'
+  | 'exportStart'
   | 'ffmpegRecheck'
   | 'ffmpegOk'
   | 'stylePosition'
@@ -203,6 +209,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
+  exportResult: 'Result',
+  exportFailed: 'Export failed',
+  exportDone: 'Exported',
+  exportRunning: 'Exporting',
+  exportCancel: 'Cancel export',
+  exportStart: 'Export video',
   ffmpegRecheck: 'Re-check ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: 'Position',
@@ -363,6 +375,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
+  exportResult: '产物',
+  exportFailed: '导出失败',
+  exportDone: '导出完成',
+  exportRunning: '导出中',
+  exportCancel: '取消导出',
+  exportStart: '导出成片',
   ffmpegRecheck: '重新检查 ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: '位置',

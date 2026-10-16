@@ -17,8 +17,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
-import { timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
+import { activeClipAt, timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
+import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
@@ -156,6 +157,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [previewMs, setPreviewMs] = useState(0)
   const [ffmpeg, setFfmpeg] = useState<FfmpegProbe | undefined>(undefined)
+  const [renderJob, setRenderJob] = useState<RenderJob | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -303,6 +305,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return () => { stale = true }
   }, [mode])
 
+  // 导出任务：进入时间轴时读回最近一次，运行中每 2 秒轮询（没有推送通道）
+  const renderRunning = renderJob?.status === 'running'
+  useEffect(() => {
+    if (mode !== 'timeline' || activeProject === undefined) return
+    const project = activeProject
+    let stale = false
+    const load = async (): Promise<void> => {
+      try {
+        const jobs = await apiRef.current.listRenders(project.id)
+        if (!stale) setRenderJob(jobs[0])
+      } catch {
+        // 轮询失败不打扰用户
+      }
+    }
+    void load()
+    if (!renderRunning) return () => { stale = true }
+    const timer = setInterval(() => { void load() }, 2000)
+    return () => { stale = true; clearInterval(timer) }
+  }, [mode, activeProject, renderRunning])
+
   // 时间轴改动 → 去抖落库
   const timelineDirty = timelineState === 'dirty'
   useEffect(() => {
@@ -355,13 +377,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   /** 时间轴总时长与当前播放头处的活动片段（顺序预览用）。 */
   const timelineTotal = timeline === undefined ? 0 : timelineDurationMs(timeline.tracks)
   const playheadMs = Math.max(0, Math.min(previewMs, timelineTotal))
-  const activeAt = (kind: TrackKind): { id: string; assetPath?: string; text?: string; style?: { fontSize?: number; color?: string; position?: 'top' | 'middle' | 'bottom' } } | undefined =>
-    timeline?.tracks
-      .filter(track => track.kind === kind)
-      .flatMap(track => track.clips)
-      .find(clip => playheadMs >= clip.startMs && playheadMs < clip.startMs + clip.durationMs)
-  const activeVideo = activeAt('video')
-  const activeSubtitle = activeAt('subtitle')
+  // 与导出共用同一边界判断（`R-TML-3`）
+  const activeVideo = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'video', playheadMs)
+  const activeSubtitle = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'subtitle', playheadMs)
 
   /** 时间轴通用改法：换掉某条轨道。 */
   const patchTrack = (trackId: string, update: (track: TimelineTrack) => TimelineTrack): void => {
@@ -740,6 +758,37 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 {t('ffmpegRecheck')}
               </button>
             </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+              <button type="button" style={BUTTON} data-timeline-export="true"
+                disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
+                onClick={() => {
+                  void run(async () => {
+                    setRenderJob(await apiRef.current.renderTimeline(timeline.id, timeline.projectId))
+                  })
+                }}>
+                {t('exportStart')}
+              </button>
+              <button type="button" style={BUTTON} disabled={!renderRunning} data-timeline-export-cancel="true"
+                onClick={() => {
+                  void run(async () => {
+                    const id = renderJob?.id
+                    if (id === undefined) return
+                    await apiRef.current.cancelRender(id)
+                  })
+                }}>
+                {t('exportCancel')}
+              </button>
+              {renderJob === undefined
+                ? null
+                : (
+                  <span data-timeline-render={renderJob.status} data-timeline-render-percent={String(renderJob.percent)}>
+                    {t(renderJob.status === 'running' ? 'exportRunning' : renderJob.status === 'succeeded' ? 'exportDone' : 'exportFailed')}
+                    {renderJob.status === 'running' ? ` ${renderJob.percent}%` : ''}
+                    {renderJob.outputPath === undefined ? '' : ` · ${t('exportResult')} ${baseName(renderJob.outputPath)}`}
+                    {renderJob.error === undefined ? '' : ` · ${renderJob.error.slice(0, 90)}`}
+                  </span>
+                )}
+            </div>
             <strong style={{ fontSize: '11px', opacity: 0.8 }}>{t('previewTitle')}</strong>
             <div data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
               data-timeline-active-subtitle={activeSubtitle?.id ?? ''}
