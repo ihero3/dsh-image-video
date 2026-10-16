@@ -5,7 +5,9 @@
  * **重试只重跑失败节点及其下游**（前序成功节点不再调外部 API）。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { WorkflowRunner, selectRunNodes, topologicalOrder, type GenerationTool } from '../src/workbench/runner.ts'
+import {
+  DEFAULT_NODE_ATTEMPTS, WorkflowRunner, isTransientFailure, selectRunNodes, topologicalOrder, type GenerationTool,
+} from '../src/workbench/runner.ts'
 import type { WorkbenchStore } from '../src/workbench/store.ts'
 import type { NodeParamValue, WorkflowEdge, WorkflowNode, WorkflowNodeKind, WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 
@@ -209,6 +211,45 @@ describe('WorkflowRunner', () => {
     expect(imageCalls).toHaveLength(1)
     expect(videoAttempts).toBe(3) // 第一次失败 + 重试时 v、v2 各一次
     expect(latest().startedAt).toBeDefined()
+  })
+
+  it('retries transient upstream failures (at least three attempts) but not deterministic ones', async () => {
+    expect(DEFAULT_NODE_ATTEMPTS).toBeGreaterThanOrEqual(3)
+    expect(isTransientFailure('Upstream response stream was interrupted')).toBe(true)
+    expect(isTransientFailure('HTTP 503 upstream unavailable')).toBe(true)
+    expect(isTransientFailure('generate_video 任务报错（HTTP 400）：resolution not supported')).toBe(false)
+    expect(isTransientFailure('任务已被取消')).toBe(false)
+
+    const attempts: string[] = []
+    let call = 0
+    const flaky: GenerationTool = {
+      async execute() {
+        call += 1
+        attempts.push(`call-${call}`)
+        if (call < 3) throw new Error('Upstream response stream was interrupted')
+        return { videoPath: '/tmp/out/clip.mp4', bytes: 2048 }
+      },
+    }
+    const { store, latest } = fakeStore()
+    const runner = new WorkflowRunner({
+      store, newRunId: () => 'run-flaky', retryDelayMs: 1,
+      generateImage: tool({}, []), generateVideo: flaky,
+    })
+    await runner.begin(workflow([node('v', 'video-generate', { prompt: '齿轮' })]))
+    await vi.waitFor(() => { expect(latest().status).toBe('succeeded') })
+    expect(attempts).toHaveLength(3)
+    expect(latest().nodeRuns[0]).toMatchObject({ status: 'succeeded', attempts: 3 })
+
+    // 确定性失败不重试
+    const hardCalls: string[] = []
+    const hard: GenerationTool = {
+      async execute() { hardCalls.push('x'); throw new Error('HTTP 400 bad request: prompt rejected') },
+    }
+    const second = new WorkflowRunner({ store, newRunId: () => 'run-hard', retryDelayMs: 1, generateImage: tool({}, []), generateVideo: hard })
+    await second.begin(workflow([node('v', 'video-generate', { prompt: '齿轮' })]))
+    await vi.waitFor(() => { expect(latest().status).toBe('failed') })
+    expect(hardCalls).toHaveLength(1)
+    expect(latest().nodeRuns[0]?.attempts).toBe(1)
   })
 
   it('cancels a running node and records the run as cancelled', async () => {

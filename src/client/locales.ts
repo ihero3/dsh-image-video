@@ -115,8 +115,9 @@ export type WorkbenchLocaleKey =
   | 'ratioLandscape'
   | 'ratioVertical'
   | 'resolution480'
-  | 'resolution720'
-  | 'resolution1080'
+  | 'resolution768'
+  | 'resolution2k'
+  | 'resolutionDefault'
   | 'rename'
   | 'save'
   | 'cancel'
@@ -253,9 +254,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   ratioPortrait: '3:4',
   ratioLandscape: '16:9',
   ratioVertical: '9:16',
+  resolutionDefault: 'Model default',
   resolution480: '480P',
-  resolution720: '720P',
-  resolution1080: '1080P',
+  resolution768: '768P',
+  resolution2k: '2K',
   rename: 'Rename',
   save: 'Save',
   cancel: 'Cancel',
@@ -390,9 +392,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   ratioPortrait: '3:4',
   ratioLandscape: '16:9',
   ratioVertical: '9:16',
+  resolutionDefault: '模型默认',
   resolution480: '480P',
-  resolution720: '720P',
-  resolution1080: '1080P',
+  resolution768: '768P',
+  resolution2k: '2K',
   rename: '改名',
   save: '保存',
   cancel: '取消',

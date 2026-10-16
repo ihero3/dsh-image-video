@@ -23,6 +23,24 @@ const EXECUTORS = { 'image-generate': 'image', 'video-generate': 'video' } as co
 /** 产文本的节点：它们的文字会并入下游生成节点的提示词。 */
 const TEXT_KINDS = new Set(['creative-input', 'script', 'subtitle'])
 
+/** 默认的节点尝试次数（1 次首发 + 2 次重试）；瞬时失败才用得上。 */
+export const DEFAULT_NODE_ATTEMPTS = 3
+
+/**
+ * 判断一个失败是否值得重试。
+ *
+ * 上游流被中断、网关 5xx、超时、限流、连接被重置都属于"服务商那边的抖动"——
+ * owner 明确要求这类错误至少重试 3 次、不要直接判任务失败。参数错误、内容被拒、
+ * 取消这类**确定性**失败不重试。
+ * @param message - 错误原文。
+ * @returns 是否重试。
+ */
+export function isTransientFailure(message: string): boolean {
+  if (/abort|cancel|取消/i.test(message)) return false
+  return /interrupted|stream|timeout|timed out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|network|rate ?limit|too many requests|429|50[0-9]|upstream|gateway/i
+    .test(message)
+}
+
 /** 执行一个生成节点所需的最小工具面（`ToolDefinition` 的子集）。 */
 export interface GenerationTool {
   execute(args: unknown, exec: unknown): Promise<unknown>
@@ -40,6 +58,10 @@ export interface WorkflowRunnerDeps {
   readonly now?: () => Date
   /** 后台执行里的意外异常上报。 */
   readonly onError?: (message: string) => void
+  /** 单个节点的最大尝试次数（默认 3：首发 + 两次重试，仅对瞬时失败生效）。 */
+  readonly nodeAttempts?: number
+  /** 重试之间的等待毫秒（默认 800，按次数线性退避）。 */
+  readonly retryDelayMs?: number
 }
 
 /** 起跑选项：`only` 用于"重试只重跑失败节点及其下游"。 */
@@ -235,20 +257,42 @@ export class WorkflowRunner {
       }
     }
     const tool = executor === 'image' ? this.deps.generateImage : this.deps.generateVideo
-    try {
-      const value = await tool.execute(this.buildArgs(node, workflow, done), { signal })
-      const extracted = extractOutcome(value)
-      return {
-        nodeId: node.id, kind: node.kind, status: 'succeeded', startedAt,
-        finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), ...extracted,
+    const maxAttempts = Math.max(1, this.deps.nodeAttempts ?? DEFAULT_NODE_ATTEMPTS)
+    let lastMessage = ''
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const value = await tool.execute(this.buildArgs(node, workflow, done), { signal })
+        const extracted = extractOutcome(value)
+        return {
+          nodeId: node.id, kind: node.kind, status: 'succeeded', startedAt,
+          finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: attempt, ...extracted,
+        }
+      } catch (error) {
+        lastMessage = error instanceof Error ? error.message : String(error)
+        const cancelled = signal.aborted || /abort|cancel/i.test(lastMessage)
+        if (cancelled) {
+          return {
+            nodeId: node.id, kind: node.kind, status: 'cancelled', startedAt,
+            finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: attempt, error: lastMessage,
+          }
+        }
+        // 上游抖动这类瞬时失败自动重试（owner 要求 ≥3 次），确定性失败立即收手
+        if (attempt < maxAttempts && isTransientFailure(lastMessage)) {
+          this.deps.onError?.(`node ${node.id} attempt ${attempt}/${maxAttempts} failed transiently: ${lastMessage}`)
+          const delay = (this.deps.retryDelayMs ?? 800) * attempt
+          await new Promise(resolve => { setTimeout(resolve, delay) })
+          continue
+        }
+        return {
+          nodeId: node.id, kind: node.kind, status: 'failed', startedAt,
+          finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: attempt, error: lastMessage,
+        }
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const cancelled = signal.aborted || /abort|cancel/i.test(message)
-      return {
-        nodeId: node.id, kind: node.kind, status: cancelled ? 'cancelled' : 'failed',
-        startedAt, finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), error: message,
-      }
+    }
+    return {
+      nodeId: node.id, kind: node.kind, status: 'failed', startedAt,
+      finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: maxAttempts,
+      error: lastMessage === '' ? 'node failed without an error message' : lastMessage,
     }
   }
 

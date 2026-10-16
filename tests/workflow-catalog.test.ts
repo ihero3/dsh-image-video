@@ -44,6 +44,14 @@ describe('node catalog', () => {
     expect(defaultParams('video-generate')).toMatchObject({ duration: 5, compare: false })
   })
 
+  it('offers exactly the three video resolutions the owner specified', () => {
+    const field = nodeSpec('video-generate').params.find(candidate => candidate.id === 'resolution')
+    expect(field?.type).toBe('select')
+    // 第一项是"模型默认"（空值不发），随后就是 owner 指定的三档
+    expect(field?.options?.map(option => option.value)).toEqual(['', '480P', '768P', '2K'])
+    expect(field?.default).toBe('')
+  })
+
   it('keeps deployment values out of the catalog', () => {
     const masthead = JSON.stringify(NODE_CATALOG)
     for (const needle of ['threerouter', 'minimax', 'wanx', 'qwen']) expect(masthead).not.toContain(needle)
