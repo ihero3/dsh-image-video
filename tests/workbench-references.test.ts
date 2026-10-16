@@ -74,7 +74,7 @@ describe('store guards', () => {
     })
     await expect(workbench.removeResource(resource.id)).rejects.toThrow(/正被引用/)
     await expect(workbench.removeResource(resource.id)).rejects.toThrow(/流程图「用资源」/)
-    await expect(workbench.removeResource(resource.id)).rejects.toThrow(/仍要删除/)
+    await expect(workbench.removeResource(resource.id)).rejects.toThrow(/force/)
     expect(await workbench.removeResource(resource.id, { force: true })).toBe(true)
   })
 })
