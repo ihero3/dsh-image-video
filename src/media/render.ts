@@ -216,7 +216,12 @@ export interface RenderRunner {
 /** 默认 runner：spawn ffmpeg、解析 out_time_ms、abort 时杀进程。 */
 export const defaultRenderRunner: RenderRunner = async ({ ffmpegPath, args, signal, onProgress, durationMs }) => {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpegPath, [...args], { stdio: ['ignore', 'pipe', 'pipe'] })
+    // Windows 上 shell spawn 能正确解析 PATH、.exe、以及 fake 脚本里的 .cmd；
+    // Unix 上保持直接 spawn（更干净）。对生产 ffmpeg 路径，shell 只是多一层 cmd.exe/sh，无副作用。
+    const child = spawn(ffmpegPath, [...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    })
     let stderr = ''
     let settled = false
     const finish = (error?: Error): void => {
@@ -256,6 +261,11 @@ export const defaultRenderRunner: RenderRunner = async ({ ffmpegPath, args, sign
       }
       if (/No such file or directory/i.test(text)) {
         finish(new RenderError('MEDIA_ASSET_MISSING', `素材读不到（可能已被移动或删除）：${text.slice(0, 200)}`))
+        return
+      }
+      // Windows shell spawn：找不到可执行文件时 cmd.exe 在 stderr 打印而不是触发 Node 的 error 事件
+      if (/not recognized as an internal or external command|The system cannot find the (path|file) specified/i.test(text)) {
+        finish(new RenderError('MEDIA_FFMPEG_UNAVAILABLE', `ffmpeg 无法启动：${text.split('\n')[0]}`))
         return
       }
       finish(new RenderError('MEDIA_RENDER_FAILED', `ffmpeg 渲染失败（退出码 ${code}）：${text.slice(0, 300)}`))

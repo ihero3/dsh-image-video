@@ -95,6 +95,12 @@ export class WorkbenchStore {
   private readonly file: string
   private readonly now: () => Date
   private cache: WorkbenchDocument | undefined
+  /** Shared first read: concurrent mutations must land on one document, not one copy each. */
+  private loading: Promise<WorkbenchDocument> | undefined
+  /** Serializes writes so concurrent mutations cannot interleave on the same temporary file. */
+  private writes: Promise<void> = Promise.resolve()
+  /** Distinguishes temporary files written by queued saves within this process. */
+  private writeSequence = 0
 
   /**
    * @param options - directory and optional clock.
@@ -724,6 +730,12 @@ export class WorkbenchStore {
   /** Read the document, caching it after the first read. */
   private async load(): Promise<WorkbenchDocument> {
     if (this.cache !== undefined) return this.cache
+    this.loading ??= this.readDocument()
+    return this.loading
+  }
+
+  /** Perform the one read that populates {@link cache}. */
+  private async readDocument(): Promise<WorkbenchDocument> {
     try {
       const raw = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkbenchDocument>
       this.cache = {
@@ -759,10 +771,18 @@ export class WorkbenchStore {
 
   /** Write the document atomically and refresh the cache. */
   private async save(document: WorkbenchDocument): Promise<void> {
-    await mkdir(dirname(this.file), { recursive: true })
-    const temporary = `${this.file}.${process.pid}.tmp`
-    await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.file)
+    // 并发保存（后台运行收尾 + 新一轮 begin）曾共用 `<file>.<pid>.tmp`：先完成的那次
+    // rename 移走临时文件，后一次 rename 直接 ENOENT。写队列保证顺序，序号保证临时名唯一。
+    const write = this.writes.then(async () => {
+      await mkdir(dirname(this.file), { recursive: true })
+      this.writeSequence += 1
+      const temporary = `${this.file}.${process.pid}.${this.writeSequence}.tmp`
+      await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    })
+    // 队列不能因一次失败而中断；错误仍由下面的 `await write` 交给调用方
+    this.writes = write.then(() => undefined, () => undefined)
+    await write
     this.cache = document
   }
 }

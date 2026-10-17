@@ -7,8 +7,10 @@
  * does goes through the injected `api` (the `/image-video` channel), so no part
  * of this component reaches into the host directly.
  *
- * Colours stay theme-neutral (`currentColor` + `color-mix`) until the theme pass
- * (`R-NFR-3`) switches every surface to the Harness CSS variables.
+ * Presentation: one design-system sheet (`workbench-style.ts`, class prefix
+ * `iv-`) injected once at mount, plus the stroke icon set (`icons.tsx`). All
+ * colours resolve through the Harness design tokens with currentColor-mix
+ * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
 import { type ReactNode } from 'react';
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';

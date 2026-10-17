@@ -264,6 +264,9 @@ export class WorkflowRunner {
         }
       }
     }
+    // controller 提前清理：persist 写 store 之后任何时刻 cancel 都应返回 false。
+    // （begin 的 .finally 是异常/提前返回的兜底；两处都 delete 是幂等的。）
+    this.controllers.delete(run.id)
     await this.persist(run, nodeRuns, status, error)
   }
 

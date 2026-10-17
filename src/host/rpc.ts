@@ -13,7 +13,10 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import { PLUGIN_VERSION } from '../version.ts'
-import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
+import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
+import {
+  IMAGE_SIZE_OPTIONS, IMAGE_STYLE_OPTIONS, MAX_VIDEO_DURATION, MIN_VIDEO_DURATION, PROVIDERS, VIDEO_ASPECT_RATIOS,
+} from '../runtime-defaults.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
@@ -71,6 +74,27 @@ export interface WorkbenchRpcDeps {
   renders: RenderRegistry
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
+  /** 默认值编辑器的可选项；缺省时不带该字段。 */
+  options?: () => WorkbenchOptions
+}
+
+/**
+ * 默认值编辑器的可选项：直接复用协议层的白名单，避免界面允许值与被拒值分叉。
+ *
+ * 服务端下发而不是客户端内置——浏览器包里出现服务商名会被
+ * `tests/client-no-hardcoding.test.ts` 判为部署配置泄漏（`T2-11`）。
+ * @returns 与协议层校验同源的下拉选项。
+ */
+export function workbenchOptions(): WorkbenchOptions {
+  return {
+    // minimax 只有视频能力，不作为图片服务商选项
+    imageProviders: PROVIDERS.filter(provider => provider !== 'minimax'),
+    videoProviders: [...PROVIDERS],
+    imageSizes: IMAGE_SIZE_OPTIONS,
+    imageStyles: IMAGE_STYLE_OPTIONS.filter(option => option.id !== '').map(option => option.id),
+    videoAspectRatios: [...VIDEO_ASPECT_RATIOS],
+    videoDuration: { min: MIN_VIDEO_DURATION, max: MAX_VIDEO_DURATION },
+  }
 }
 
 /**
@@ -118,6 +142,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         outputsDir: deps.outputsDir,
         at: new Date().toISOString(),
         ...deps.defaults === undefined ? {} : { defaults: deps.defaults() },
+        ...deps.options === undefined ? {} : { options: deps.options() },
       }
       return value
     }

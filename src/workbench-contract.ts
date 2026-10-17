@@ -18,6 +18,27 @@
  */
 export const WORKBENCH_RPC_CHANNEL = '/image-video'
 
+/**
+ * 默认值编辑器的下拉可选项，由宿主下发。
+ *
+ * 浏览器半边不内置服务商名：部署可换服务商，内置一份就是「只在本机正确」的
+ * 配置（`T2-11`，`tests/client-no-hardcoding.test.ts` 会扫描构建产物）。
+ */
+export interface WorkbenchOptions {
+  /** 可作图片生成的服务商（已剔除无图片能力的）。 */
+  imageProviders: readonly string[]
+  /** 可作视频生成的服务商。 */
+  videoProviders: readonly string[]
+  /** 图片尺寸白名单；`size` 是协议值（'宽*高'）。 */
+  imageSizes: ReadonlyArray<{ id: string; label: string; size: string }>
+  /** 图片风格 id（不含 '' 自动）。 */
+  imageStyles: readonly string[]
+  /** 视频宽高比白名单。 */
+  videoAspectRatios: readonly string[]
+  /** 视频时长范围（秒，闭区间）。 */
+  videoDuration: { readonly min: number; readonly max: number }
+}
+
 /** Facts a freshly mounted workbench needs before it can show anything. */
 export interface WorkbenchHealth {
   /** Stable plugin identity (the package name). */
@@ -37,4 +58,6 @@ export interface WorkbenchHealth {
    * 工作台只读展示，避免"界面上看不出这一轮到底按什么参数生成"（`R-NFR-1`/`R-BIND-3`）。
    */
   defaults?: Record<string, string | number | null>
+  /** 默认值编辑器的可选项（与宿主白名单同源）；缺省时编辑器只给「未设置」。 */
+  options?: WorkbenchOptions
 }

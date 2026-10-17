@@ -4,7 +4,7 @@
  */
 import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { RenderError, RenderService, defaultRenderRunner, type RenderRunner } from '../src/media/render.ts'
 import type { TimelineRecord } from '../src/workbench/timeline.ts'
@@ -17,12 +17,19 @@ async function tempDir(prefix: string): Promise<string> {
 }
 afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
 
-/** 一个"假 ffmpeg"：把给定信息打到 stderr 后按退出码结束。 */
+/** 一个"假 ffmpeg"：把给定信息打到 stderr 后按退出码结束。跨平台——
+ * Windows 生成 `.cmd`（cmd.exe 可直接执行），Unix 生成 `.sh` 并 chmod。 */
 async function fakeFfmpeg(dir: string, name: string, stderr: string, code: number): Promise<string> {
-  const path = join(dir, name)
-  await writeFile(path, `#!/bin/sh\necho "${stderr}" >&2\nexit ${code}\n`)
-  await chmod(path, 0o755)
-  return path
+  const base = name.replace(/\.[^.]+$/, '')
+  const fake = process.platform === 'win32' ? join(dir, `${base}.cmd`) : join(dir, `${base}.sh`)
+  if (process.platform === 'win32') {
+    const escaped = stderr.replace(/"/g, '""')
+    await writeFile(fake, `@echo off\r\necho ${escaped} 1>&2\r\nexit /b ${code}\r\n`)
+  } else {
+    await writeFile(fake, `#!/bin/sh\necho "${stderr}" >&2\nexit ${code}\n`)
+    await chmod(fake, 0o755)
+  }
+  return fake
 }
 
 function timelineWith(path: string, fileName?: string): TimelineRecord {
@@ -52,8 +59,8 @@ describe('export failure surfaces (T5-6)', () => {
     // 起 ffmpeg 之前会因为产物不存在/校验失败而报错，这里只关心它写出的路径是绝对的
     await service.render(timelineWith(asset), { fileName: 'out.mp4' }).catch(() => undefined)
     expect(argv[0]).toBeDefined()
-    expect(argv[0]).toMatch(/^\//)
-    expect(argv[0]?.endsWith('/outputs/out.mp4')).toBe(true)
+    expect(isAbsolute(argv[0]!)).toBe(true)
+    expect(argv[0]).toBe(join(resolve('outputs'), 'out.mp4'))
   })
 
   it('says what to do when ffmpeg is missing', async () => {

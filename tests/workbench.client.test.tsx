@@ -21,9 +21,23 @@ import type { OutputFile } from '../src/workbench/outputs.ts'
 
 afterEach(cleanup)
 
+/** Host-supplied dropdown values (the browser bundle carries none of these). */
+const OPTIONS = {
+  imageProviders: ['threerouter', 'wanx', 'seedance'],
+  videoProviders: ['threerouter', 'wanx', 'minimax', 'seedance'],
+  imageSizes: [
+    { id: '1:1', label: '1:1', size: '1024*1024' },
+    { id: '4:3', label: '4:3', size: '1152*864' },
+  ],
+  imageStyles: ['photo', 'illustration', '3d', 'anime', 'ink'],
+  videoAspectRatios: ['16:9', '9:16', '1:1'],
+  videoDuration: { min: 1, max: 30 },
+}
+
 const HEALTH = {
   plugin: 'dsh-image-video' as const, version: '0.3.1', channel: '/image-video',
   provider: 'threerouter', outputsDir: '/tmp/outputs', at: '2026-10-14T00:00:00.000Z',
+  options: OPTIONS,
 }
 
 /** Outputs the fake host offers. */
@@ -644,11 +658,15 @@ describe('workbench project and asset flow', () => {
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
       fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeTruthy() })
-      fireEvent.change(view.container.querySelector('[aria-label="Image size"]') as HTMLElement, { target: { value: '768*1024' } })
+      // 默认值编辑器全部为下拉选择（白名单内），不再提供自由输入
+      const sizeSelect = view.container.querySelector('select[aria-label="Image size"]') as HTMLSelectElement
+      expect(sizeSelect).toBeInstanceOf(HTMLSelectElement)
+      expect([...sizeSelect.options].every(option => option.value === '' || /^(\d+\*\d+)$/.test(option.value))).toBe(true)
+      fireEvent.change(sizeSelect, { target: { value: '1152*864' } })
       fireEvent.click(view.container.querySelector('[data-workbench-defaults-save]') as HTMLElement)
       await waitFor(() => { expect(host.savedDefaults).toHaveLength(1) })
       // 只下发改动过的字段，字段名与 composer/settings 同一口径（不是界面文案键）
-      expect(host.savedDefaults[0]).toEqual({ imageSize: '768*1024' })
+      expect(host.savedDefaults[0]).toEqual({ imageSize: '1152*864' })
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeNull() })
   })
 

@@ -3,7 +3,7 @@
  * store: the payload contract the browser half depends on.
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,13 @@ import { RenderRegistry } from '../src/media/render-registry.ts'
 import { RenderService } from '../src/media/render.ts'
 import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
+
+function findFfmpeg(): string | null {
+  if (process.env.DSH_FFMPEG_PATH) return process.env.DSH_FFMPEG_PATH
+  try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); return 'ffmpeg' }
+  catch { return null }
+}
+const FFMPEG = findFfmpeg()
 
 /** Handler over throwaway directories, plus a helper that unwraps the envelope. */
 async function makeHandler() {
@@ -110,14 +117,15 @@ describe('workbench channel endpoints', () => {
     expect(await ok<{ removed: number }>('maintenance/compact', {})).toEqual({ removed: 0 })
   })
 
-  it('renders a timeline through the channel and registers the artifact (T5-5)', async () => {
+  const itWithFfmpeg = FFMPEG ? it : it.skip
+  itWithFfmpeg('renders a timeline through the channel and registers the artifact (T5-5)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '导出项目' })
     // 用 ffmpeg 自造 1 秒素材（不花生成 token）
     const work = await mkdtemp(join(tmpdir(), 'dsh-endpoint-render-'))
     const clip = join(work, 'clip.mp4')
     await new Promise<void>((resolve, reject) => {
-      execFile('/opt/homebrew/bin/ffmpeg', [
+      execFile(FFMPEG!, [
         '-y', '-hide_banner', '-loglevel', 'error',
         '-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=30:duration=1',
         '-pix_fmt', 'yuv420p', '-c:v', 'libx264', clip,

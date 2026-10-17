@@ -4,7 +4,7 @@
  */
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { WorkbenchStore, resolveWorkbenchDirectory } from '../src/workbench/store.ts'
 
@@ -30,6 +30,15 @@ describe('workbench store', () => {
     const files = await readdir(directory)
     expect(files).toEqual(['workbench.json'])
     expect(JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8'))).toMatchObject({ schemaVersion: 1 })
+  })
+
+  it('serializes concurrent saves without losing records or leaving temporary files', async () => {
+    const { store, directory } = await makeStore()
+    // 并发保存曾共用同一个临时文件名：后完成的一次 rename 会 ENOENT
+    const created = await Promise.all(Array.from({ length: 12 }, (_, index) => store.createProject(`并发-${index}`)))
+    const projects = await store.listProjects()
+    expect(projects.map(project => project.id).sort()).toEqual(created.map(project => project.id).sort())
+    expect(await readdir(directory)).toEqual(['workbench.json'])
   })
 
   it('rejects an empty or oversized project name', async () => {
@@ -153,7 +162,8 @@ describe('workbench store', () => {
   })
 
   it('derives its directory next to the output directory', () => {
-    expect(resolveWorkbenchDirectory('/home/me/profiles/desktop/outputs'))
-      .toBe('/home/me/profiles/desktop/image-video-workbench')
+    const outputsDir = join('profiles', 'desktop', 'outputs')
+    expect(resolveWorkbenchDirectory(outputsDir))
+      .toBe(join(dirname(outputsDir), 'image-video-workbench'))
   })
 })

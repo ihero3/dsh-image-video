@@ -137,15 +137,16 @@ export const IMAGE_SIZE_OPTIONS: ReadonlyArray<{ id: string; label: string; size
   { id: '9:16', label: '9:16', size: '720*1280' },
 ] as const
 
-/** 视频宽高比白名单。 */
-const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as const
+/** 视频宽高比白名单（导出供 workbench 下拉选项复用，与协议层校验同源）。 */
+export const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as const
 
-/** 视频时长上下限（与 generate_video 工具的强制规范一致）。 */
-const MIN_VIDEO_DURATION = 1
-const MAX_VIDEO_DURATION = 30
+/** 视频时长下限（与 generate_video 工具的强制规范一致）。 */
+export const MIN_VIDEO_DURATION = 1
+/** 视频时长上限。 */
+export const MAX_VIDEO_DURATION = 30
 
-/** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验。 */
-const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'minimax', 'seedance'] as const
+/** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验（导出供 workbench 下拉选项复用）。 */
+export const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'minimax', 'seedance'] as const
 
 /** 值是否为合法服务商（'' / 未知值均拒绝）。 */
 function isProvider(value: string): value is Provider {

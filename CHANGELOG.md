@@ -6,6 +6,13 @@
 
 （下一轮的改动写这里）
 
+### 设计（工作台专业排版 v2，2026-10-17）
+- **设计系统落地**：新增 `src/client/workbench-style.ts`（内嵌样式表 + 挂载注入 hook）与 `src/client/icons.tsx`（24 视窗 1.8 描边图标集 35 枚）。配色先取 Harness 设计令牌（`--dsw-alias-*`），取不到退到 `color-mix(currentColor …)`，浅/深主题都成立（`R-NFR-3`）；产物不烧入任何部署事实（门禁 `client-no-hardcoding` 续防）
+- **信息降噪**：生效默认值从"一排 7 个控件"改为**一条安静的内联摘要 + 按需弹出的编辑面板**（progressive disclosure）；项目改名/删除图标化并带 title；破坏性操作两步确认改危险色
+- **层次与排版**：14px 品牌名 / 12.5px 正文 / 12px 控件 / 11px 元信息 / 10px 眉题五档字阶，行高 1.55，数字 tabular-nums；面板头部统一 24px 着色瓷砖图标；快速创作改为"三步引导 + 统计卡"；素材行图片缩略图；时间轴 clip 块化（左侧色条 + 时长徽章 + 内联编辑）；画布节点库按「可用 / 规划中」分组
+- **体积**：客户端产物 raw 611,536 B / gzip 134,051 B（预算 raw 657,938 / gzip 145,393，占 93%/92%），`check:bundle` 通过；构建注意：沙箱会拦 `rmSync('lib')`，需删目录后手动 `npx tsdown && npx tsc -p tsconfig.client.json`
+- **回归**：客户端 46 项测试（workbench 32 + canvas 7 + bundle 2 + no-hardcoding 3 + lifecycle 2）全过；宿主侧 8 例超时类失败为本机文件 I/O 慢（加大超时即过），1 例 ffmpeg stderr 映射失败属工作区既有未提交改动（`src/media/render.ts`），与本次无关
+
 ## [Unreleased]
 
 ### 新增（需求覆盖审计补全）

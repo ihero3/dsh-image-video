@@ -31,5 +31,5 @@ export interface WorkflowCanvasProps {
         readonly onSelectRun: (runId: string) => void;
     };
 }
-/** 对外画布组件：套 `ReactFlowProvider` 并注入官方样式。 */
+/** 对外画布组件：套 `ReactFlowProvider` 并注入官方样式 + 设计系统样式。 */
 export declare function WorkflowCanvas(props: WorkflowCanvasProps): JSX.Element;

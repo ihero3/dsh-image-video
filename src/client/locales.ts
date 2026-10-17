@@ -42,6 +42,14 @@ export type WorkbenchLocaleKey =
   | 'statusCancelled'
   | 'cancelTask'
   | 'defaultsEditHint'
+  | 'optModeText'
+  | 'optModeImage'
+  | 'optModeVideo'
+  | 'optStylePhoto'
+  | 'optStyleIllustration'
+  | 'optStyle3d'
+  | 'optStyleAnime'
+  | 'optStyleInk'
   | 'defaultsSaved'
   | 'defaultsCancel'
   | 'defaultsSave'
@@ -186,6 +194,26 @@ export type WorkbenchLocaleKey =
   | 'kindBrand'
   | 'kindStyle'
   | 'kindVoice'
+  | 'brandTagline'
+  | 'modeQuickHint'
+  | 'statOutputs'
+  | 'statAssets'
+  | 'statTasks'
+  | 'statResources'
+  | 'heroStepChat'
+  | 'heroStepOutputs'
+  | 'heroStepFile'
+  | 'palettePlanned'
+  | 'railAssets'
+  | 'railTasks'
+  | 'railDefaults'
+  | 'statusReady'
+  | 'monitorProgram'
+  | 'transportPlay'
+  | 'timelineZoom'
+  | 'trackVideoId'
+  | 'trackAudioId'
+  | 'trackSubtitleId'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -231,7 +259,15 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
-  defaultsEditHint: 'empty = follow settings',
+  defaultsEditHint: '"Not set" = follow settings',
+  optModeText: 'Text',
+  optModeImage: 'Image',
+  optModeVideo: 'Video',
+  optStylePhoto: 'Photo',
+  optStyleIllustration: 'Illustration',
+  optStyle3d: '3D render',
+  optStyleAnime: 'Anime',
+  optStyleInk: 'Ink painting',
   defaultsSaved: 'Defaults saved',
   defaultsCancel: 'Cancel',
   defaultsSave: 'Save defaults',
@@ -376,6 +412,26 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   kindBrand: 'Brand',
   kindStyle: 'Style',
   kindVoice: 'Voice',
+  brandTagline: 'Media production workbench',
+  modeQuickHint: 'Generate images or videos straight from the composer. Once a file lands in the local output directory, file it into the active project from the Media assets panel in one click.',
+  statOutputs: 'Outputs',
+  statAssets: 'Assets',
+  statTasks: 'Tasks',
+  statResources: 'Resources',
+  heroStepChat: 'Generate in chat',
+  heroStepOutputs: 'Lands in outputs',
+  heroStepFile: 'File into project',
+  palettePlanned: 'Planned',
+  railAssets: 'Media assets',
+  railTasks: 'Tasks',
+  railDefaults: 'Effective defaults',
+  statusReady: 'Ready',
+  monitorProgram: 'Program',
+  transportPlay: 'Play',
+  timelineZoom: 'Zoom',
+  trackVideoId: 'V1',
+  trackAudioId: 'A1',
+  trackSubtitleId: 'S1',
 }
 
 /** Simplified Chinese copy. */
@@ -419,7 +475,15 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusFailed: '失败',
   statusCancelled: '已取消',
   cancelTask: '取消任务',
-  defaultsEditHint: '留空 = 跟随设置',
+  defaultsEditHint: '选「未设置」= 跟随设置',
+  optModeText: '文本',
+  optModeImage: '图片',
+  optModeVideo: '视频',
+  optStylePhoto: '摄影',
+  optStyleIllustration: '插画',
+  optStyle3d: '3D 渲染',
+  optStyleAnime: '动漫',
+  optStyleInk: '水墨',
   defaultsSaved: '默认值已保存',
   defaultsCancel: '取消',
   defaultsSave: '保存默认值',
@@ -564,4 +628,24 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   kindBrand: '品牌',
   kindStyle: '风格',
   kindVoice: '音色',
+  brandTagline: '媒体创作工作台',
+  modeQuickHint: '在中间对话区直接出图或出片；产物落在本机输出目录后，可在「媒体素材」面板一键登记进当前项目。',
+  statOutputs: '输出产物',
+  statAssets: '媒体素材',
+  statTasks: '生成任务',
+  statResources: '创作资源',
+  heroStepChat: '对话区生成',
+  heroStepOutputs: '落入输出目录',
+  heroStepFile: '登记进项目',
+  palettePlanned: '规划中',
+  railAssets: '媒体素材',
+  railTasks: '生成任务',
+  railDefaults: '生效默认值',
+  statusReady: '就绪',
+  monitorProgram: '节目监视器',
+  transportPlay: '播放',
+  timelineZoom: '缩放',
+  trackVideoId: 'V1',
+  trackAudioId: 'A1',
+  trackSubtitleId: 'S1',
 }

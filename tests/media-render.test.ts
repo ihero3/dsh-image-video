@@ -4,7 +4,7 @@
  * 真机部分用 ffmpeg 的 `testsrc` 自造素材（**不花生成 token**）：验证导出文件可播放、
  * 时长与时间轴差在 1 帧内、取消不留半成品；纯函数部分断言 filter graph 与快照冻结。
  */
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,7 +16,14 @@ import {
 import { activeClipAt, type TimelineRecord } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
-const FFMPEG = '/opt/homebrew/bin/ffmpeg'
+
+/** 查找本机 ffmpeg：先看 DSH_FFMPEG_PATH，再试 PATH（Node 在 Windows 上 spawn 时会自动补 .exe）。 */
+function findFfmpeg(): string | null {
+  if (process.env.DSH_FFMPEG_PATH) return process.env.DSH_FFMPEG_PATH
+  try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); return 'ffmpeg' }
+  catch { return null }
+}
+const FFMPEG = findFfmpeg()
 
 async function tempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
@@ -164,7 +171,8 @@ describe('preview vs export boundaries (T5-2)', () => {
   })
 })
 
-describe('render on the real machine (T5-5)', () => {
+const describeRenderReal = FFMPEG ? describe : describe.skip
+describeRenderReal('render on the real machine (T5-5)', () => {
   it('exports a playable file whose duration matches the timeline within one frame', async () => {
     const work = await tempDir('dsh-render-')
     const first = await makeClip(work, 'a.mp4', 1)

@@ -37,7 +37,7 @@ import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
 import { createRuntimeDefaultsStore, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
-import { registerWorkbenchRpc } from './host/rpc.ts'
+import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { withTaskLedger } from './workbench/ledger.ts'
@@ -299,6 +299,8 @@ export function apply(ctx: Context, config: Config): void {
       runner: workflowRunner, renders: renderRegistry,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
+      // 下拉白名单由宿主下发：浏览器包不内置服务商名（`T2-11`）
+      options: workbenchOptions,
     })
 
   // Agent 工具面（`T6-3`）：项目/素材/时间轴/工作流/任务。注册在 effect 内，
