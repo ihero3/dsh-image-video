@@ -29,6 +29,9 @@ export type VideoSegment = {
         readonly width: number;
         readonly height: number;
     };
+    /** 与上一个片段的转场（`A13b`）：类型 + 生效时长（毫秒）。 */
+    readonly transition?: string;
+    readonly transitionMs?: number;
 } | {
     readonly kind: 'filler';
     readonly durationMs: number;

@@ -14,7 +14,7 @@
 
 ## 批次二（A13–A16）
 
-- [x] **A13 变速/淡入淡出/裁剪（已完成）** ✅ 2026-10-18：片段新增 `speed`(0.25–4)/`fade`(0–2000ms)/`crop`（偶数宽高）；**时间轴所有占位计算按变速折算**（`effectiveDurationMs` 已用于 `timelineDurationMs`/`activeClipAt`/导出排布，避免成片与时间轴错位）；导出链 `crop → setpts → fade → fps → scale/pad` 已落地并验到 filter 里；测试 4 例。**已闭环**：端到端时长偏差的根因是 `freezeTimeline` 里另算了一遍总时长（用原始 `durationMs`），导致 2 倍速片段后补了 0.5s 黑场 → 改为统一走 `timelineDurationMs`（按变速折算）；真机 2 倍速 + 裁剪 + 淡入淡出输出 **500ms ±70ms** ✓
+- [x] **A13 变速/淡入淡出/裁剪 + 跨段 xfade 转场（已完成）** ✅ 2026-10-18：片段新增 `speed`(0.25–4)/`fade`(0–2000ms)/`crop`（偶数宽高）；**时间轴所有占位计算按变速折算**（`effectiveDurationMs` 已用于 `timelineDurationMs`/`activeClipAt`/导出排布，避免成片与时间轴错位）；导出链 `crop → setpts → fade → fps → scale/pad` 已落地并验到 filter 里；测试 4 例。**已闭环**：端到端时长偏差的根因是 `freezeTimeline` 里另算了一遍总时长（用原始 `durationMs`），导致 2 倍速片段后补了 0.5s 黑场 → 改为统一走 `timelineDurationMs`（按变速折算）；真机 2 倍速 + 裁剪 + 淡入淡出输出 **500ms ±70ms** ✓；**A13b xfade 跨段转场**：`transition`(fade/wipeleft/circleopen) + `transitionDurationMs`(0–2000，缺省 400)，时间轴总时长**扣掉段间重叠**，导出改用 `xfade` 链（无转场时仍走 `concat`，零回归）；真机 2×1s + 0.4s 转场 = **1.6s ±120ms** ✓
 - [x] **A14 字幕批量生成** ✅ 2026-10-18：`src/workbench/subtitles.ts`（按句末标点切句 → 长句按逗号续切 → 仍超长硬切；按字数比例分配时间、保底最短显示、放不下就截断而不是压到看不见）；工具面 `workbench_timeline action=add-subtitles`（缺省接在字幕轨末尾/到时间轴末尾）；测试 18 例：按句切分 + 时间分配 + 工具面动作
 - [x] **A15 输出配额与清理** ✅ 2026-10-18：`src/media/retention.ts` 纯函数计划器（最旧优先、受保护引用不动、至少保留最新 N、可预演）；端点 `maintenance/retention`（**默认 dryRun**，`dryRun=false` 才真删，且只删 outputs 目录内、名字不含路径分隔符的文件）；`store.referencedAssetPaths()` 提供保护名单；测试 5 例：outputs 上限、`maintenance` 扩展、诊断暴露
 - [x] **A16 发布 `v0.3.4-workbench-4`** ✅ 2026-10-18：版本 0.3.4 / CHANGELOG 定稿（A13–A15）/ lib 构建提交 / tag / Harness 指针同步；全量测试与四道门见发布提交说明

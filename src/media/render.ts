@@ -15,7 +15,7 @@ import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
 import {
   DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, effectiveDurationMs, normalizeExportFormat, timelineDurationMs,
-  type TimelineExportFormat,
+  transitionDurationMs, type TimelineExportFormat,
 } from '../workbench/timeline.ts'
 
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
@@ -43,6 +43,9 @@ export type VideoSegment =
       readonly fade?: number
       /** 画面裁剪（像素，相对源）。 */
       readonly crop?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+      /** 与上一个片段的转场（`A13b`）：类型 + 生效时长（毫秒）。 */
+      readonly transition?: string
+      readonly transitionMs?: number
     }
   | { readonly kind: 'filler'; readonly durationMs: number }
 
@@ -136,6 +139,7 @@ export function planVideoSegments(snapshot: TimelineSnapshot): VideoSegment[] {
       ...clip.speed === undefined ? {} : { speed: clip.speed },
       ...clip.fade === undefined ? {} : { fade: clip.fade },
       ...clip.crop === undefined ? {} : { crop: clip.crop },
+      ...clip.transition === undefined ? {} : { transition: clip.transition, transitionMs: transitionDurationMs(clip) },
     })
     // 时间轴占位按**变速折算后**的时长算（与 timelineDurationMs 保持一致）
     cursor = clip.startMs + effectiveDurationMs(clip)
@@ -230,7 +234,45 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     )
     labels.push(`[v${index}]`)
   })
-  const concat = `${labels.join('')}concat=n=${segments.length}:v=1:a=0`
+  /**
+   * 视频拼接（`A13b`）：段间有转场时改用 `xfade` 链（两段重叠 transitionMs），
+   * 没有转场时沿用 `concat`（行为与之前完全一致，零回归）。
+   */
+  const segmentMs = (segment: (typeof segments)[number]): number => segment.kind === 'filler'
+    ? segment.durationMs
+    : Math.max(1, Math.round(segment.durationMs / (segment.speed ?? 1)))
+  const overlaps = segments.map((segment, index) => {
+    if (index === 0 || segment.kind !== 'clip') return 0
+    const previous = segments[index - 1]
+    if (previous === undefined || previous.kind !== 'clip') return 0
+    return Math.min(segment.transitionMs ?? 0, Math.floor(Math.min(segmentMs(segment), segmentMs(previous)) / 2))
+  })
+  const hasTransition = overlaps.some(ms => ms > 0)
+  if (!hasTransition) {
+    const concat = `${labels.join('')}concat=n=${segments.length}:v=1:a=0`
+    chains.push(`${concat}[vcat]`)
+  } else {
+    let accumulator = labels[0]!
+    let accumulatorMs = segmentMs(segments[0]!)
+    for (let index = 1; index < segments.length; index += 1) {
+      const segment = segments[index]!
+      const overlapMs = overlaps[index] ?? 0
+      const output = `x${index}`
+      if (overlapMs > 0) {
+        const transition = segment.kind === 'clip' ? segment.transition ?? 'fade' : 'fade'
+        const offset = Math.max(0, (accumulatorMs - overlapMs) / 1000).toFixed(3)
+        chains.push(
+          `${accumulator}[v${index}]xfade=transition=${transition}:duration=${(overlapMs / 1000).toFixed(3)}:offset=${offset}[${output}]`,
+        )
+        accumulatorMs = accumulatorMs + segmentMs(segment) - overlapMs
+      } else {
+        chains.push(`${accumulator}[v${index}]concat=n=2:v=1:a=0[${output}]`)
+        accumulatorMs += segmentMs(segment)
+      }
+      accumulator = `[${output}]`
+    }
+    chains.push(`${accumulator}null[vcat]`)
+  }
 
   // 字幕：只烧 subtitle 轨，按各自起止时间 show/hide；关掉烧录就整段不生成
   const drawFilters: string[] = []
@@ -249,9 +291,8 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     }
   }
   if (drawFilters.length === 0) {
-    chains.push(`${concat}[vout]`)
+    chains.push(`[vcat]null[vout]`)
   } else {
-    chains.push(`${concat}[vcat]`)
     chains.push(`[vcat]${drawFilters.join(',')}[vout]`)
   }
 

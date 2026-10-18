@@ -20,6 +20,14 @@ export interface ClipCrop {
     readonly width: number;
     readonly height: number;
 }
+/** 跨段转场类型（对应 ffmpeg `xfade` 的 transition 名；`A13b`）。 */
+export type ClipTransition = 'fade' | 'wipeleft' | 'circleopen';
+/** 允许的转场类型（白名单）。 */
+export declare const CLIP_TRANSITIONS: readonly ClipTransition[];
+/** 转场时长上限（毫秒）。 */
+export declare const MAX_CLIP_TRANSITION_MS = 2000;
+/** 转场时长缺省值（毫秒）。 */
+export declare const DEFAULT_CLIP_TRANSITION_MS = 400;
 /** 变速的允许范围。 */
 export declare const CLIP_SPEED_RANGE: {
     readonly min: 0.25;
@@ -49,6 +57,14 @@ export interface TimelineClip {
     readonly fade?: number;
     /** 画面裁剪（像素，相对源；导出时在缩放前应用）。 */
     readonly crop?: ClipCrop;
+    /**
+     * 与**上一个片段**之间的转场（`A13b`）。用 ffmpeg `xfade` 实现：两段在成片里重叠
+     * `transitionDurationMs`，因此时间轴总时长要把重叠扣掉（见 {@link timelineDurationMs}）。
+     * 与空白（填充黑场）相邻时转场不生效。
+     */
+    readonly transition?: ClipTransition;
+    /** 转场时长（毫秒，0–2000；缺省 400）。 */
+    readonly transitionDurationMs?: number;
     readonly style?: SubtitleStyle;
 }
 /** 一条轨道。 */
@@ -155,3 +171,16 @@ export declare function normalizeSubtitleStyle(raw: unknown, clipId: string): Su
 export declare function activeClipAt(tracks: readonly TimelineTrack[], kind: TrackKind, timeMs: number): TimelineClip | undefined;
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export declare function timelineDurationMs(tracks: readonly TimelineTrack[]): number;
+/**
+ * 片段与其**上一个片段**之间实际生效的转场时长（毫秒）。
+ * @param clip - 当前片段。
+ * @param previous - 上一个片段（没有则不生效）。
+ * @returns 0 表示不转场。
+ */
+export declare function transitionOverlapMs(clip: TimelineClip, previous: TimelineClip | undefined): number;
+/**
+ * 转场时长（缺省 400ms，按 0–2000 夹取）。
+ * @param clip - 片段。
+ * @returns 毫秒。
+ */
+export declare function transitionDurationMs(clip: TimelineClip): number;

@@ -9,6 +9,7 @@
 ## [0.3.4-workbench-4] - 2026-10-18
 
 ### 批次二
+- **A13b 跨段转场（xfade）**：片段新增 `transition`（`fade`/`wipeleft`/`circleopen`）与 `transitionDurationMs`（0–2000ms，缺省 400）；两段在成片里重叠，因此时间轴总时长**扣掉重叠**（与变速同一个一致性坑）；导出用 `xfade` 链，无转场时仍走 `concat`（零回归）；真机 2×1s + 0.4s 转场 = 1.6s
 - **A15 输出保留策略**：`planRetention` 纯函数（最旧优先/受保护不动/保留最新 N/可预演）+ `maintenance/retention` 端点（默认 dryRun）+ `store.referencedAssetPaths()` 保护名单；测试 4 例
 - **A14 字幕批量生成**：`splitSubtitleSentences`（句末标点 → 逗号 → 硬切，单条长度上限可控）；`planSubtitleClips` 按字数比例分配时间、保底最短显示、窗口放不下就截断；工具面 `timeline add-subtitles` 一键把台词变成连续的定时字幕（缺省接在字幕轨末尾）
 - **A13 片段特效**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`）；导出链 `crop→setpts→fade`；**修掉一个真 bug**——`freezeTimeline` 另算总时长导致 2 倍速后补 0.5s 黑场，成片与时间轴不一致（现统一走 `timelineDurationMs`，真机 500ms ±70ms ✓）

@@ -24,6 +24,15 @@ export interface ClipCrop {
   readonly height: number
 }
 
+/** 跨段转场类型（对应 ffmpeg `xfade` 的 transition 名；`A13b`）。 */
+export type ClipTransition = 'fade' | 'wipeleft' | 'circleopen'
+/** 允许的转场类型（白名单）。 */
+export const CLIP_TRANSITIONS: readonly ClipTransition[] = ['fade', 'wipeleft', 'circleopen']
+/** 转场时长上限（毫秒）。 */
+export const MAX_CLIP_TRANSITION_MS = 2000
+/** 转场时长缺省值（毫秒）。 */
+export const DEFAULT_CLIP_TRANSITION_MS = 400
+
 /** 变速的允许范围。 */
 export const CLIP_SPEED_RANGE = { min: 0.25, max: 4 } as const
 /** 淡入淡出时长上限（毫秒）。 */
@@ -51,6 +60,14 @@ export interface TimelineClip {
   readonly fade?: number
   /** 画面裁剪（像素，相对源；导出时在缩放前应用）。 */
   readonly crop?: ClipCrop
+  /**
+   * 与**上一个片段**之间的转场（`A13b`）。用 ffmpeg `xfade` 实现：两段在成片里重叠
+   * `transitionDurationMs`，因此时间轴总时长要把重叠扣掉（见 {@link timelineDurationMs}）。
+   * 与空白（填充黑场）相邻时转场不生效。
+   */
+  readonly transition?: ClipTransition
+  /** 转场时长（毫秒，0–2000；缺省 400）。 */
+  readonly transitionDurationMs?: number
   readonly style?: SubtitleStyle
 }
 
@@ -243,7 +260,20 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
           height: even('height'),
         }
       }
+      let transition: ClipTransition | undefined
+      if (clip.transition !== undefined) {
+        if (typeof clip.transition !== 'string' || !CLIP_TRANSITIONS.includes(clip.transition as ClipTransition)) {
+          throw new Error(`clip ${id} transition must be one of ${CLIP_TRANSITIONS.join('/')}`)
+        }
+        transition = clip.transition as ClipTransition
+      }
+      const transitionDurationMs = clip.transitionDurationMs === undefined
+        ? undefined
+        : Math.round(numberField(clip.transitionDurationMs, `clip ${id} transitionDurationMs`, { min: 0, max: MAX_CLIP_TRANSITION_MS }))
+
       const extras = {
+        ...transition === undefined ? {} : { transition },
+        ...transitionDurationMs === undefined ? {} : { transitionDurationMs },
         ...speed === undefined ? {} : { speed },
         ...fade === undefined ? {} : { fade },
         ...crop === undefined ? {} : { crop },
@@ -355,10 +385,47 @@ export function activeClipAt(
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export function timelineDurationMs(tracks: readonly TimelineTrack[]): number {
   return tracks.reduce(
-    (longest, track) => track.clips.reduce(
-      (trackLongest, clip) => Math.max(trackLongest, clip.startMs + effectiveDurationMs(clip)),
-      longest,
-    ),
+    (longest, track) => {
+      const ordered = [...track.clips].sort((left, right) => left.startMs - right.startMs)
+      let end = 0
+      for (let index = 0; index < ordered.length; index += 1) {
+        const clip = ordered[index]!
+        const start = clip.startMs
+        const clipEnd = start + effectiveDurationMs(clip)
+        // 转场让两段重叠：仅当两段首尾相接（无空档）且都在视频轨上时才扣
+        const previous = ordered[index - 1]
+        const overlap = track.kind === 'video' && previous !== undefined && clip.transition !== undefined
+          && start <= previous.startMs + effectiveDurationMs(previous) + 1
+          ? Math.min(transitionDurationMs(clip), Math.floor(Math.min(effectiveDurationMs(clip), effectiveDurationMs(previous)) / 2))
+          : 0
+        end = Math.max(end, clipEnd - overlap)
+      }
+      return Math.max(longest, end)
+    },
     0,
   )
+}
+
+/**
+ * 片段与其**上一个片段**之间实际生效的转场时长（毫秒）。
+ * @param clip - 当前片段。
+ * @param previous - 上一个片段（没有则不生效）。
+ * @returns 0 表示不转场。
+ */
+export function transitionOverlapMs(clip: TimelineClip, previous: TimelineClip | undefined): number {
+  if (previous === undefined || clip.transition === undefined) return 0
+  return Math.min(
+    transitionDurationMs(clip),
+    Math.floor(Math.min(effectiveDurationMs(clip), effectiveDurationMs(previous)) / 2),
+  )
+}
+
+/**
+ * 转场时长（缺省 400ms，按 0–2000 夹取）。
+ * @param clip - 片段。
+ * @returns 毫秒。
+ */
+export function transitionDurationMs(clip: TimelineClip): number {
+  const value = clip.transitionDurationMs ?? DEFAULT_CLIP_TRANSITION_MS
+  return Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, Math.round(value)))
 }
