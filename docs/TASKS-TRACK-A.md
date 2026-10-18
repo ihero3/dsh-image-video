@@ -23,7 +23,7 @@
 ## P2（发布与工程）
 
 - [x] **A11 CI 强化** ✅ 2026-10-18 部分完成：① `scripts/check-scope.mjs --track=a|b` 轨道越界自检（按 COLLABORATION 的矩阵，越界非零退出）；② 真实 IO 用例（ffmpeg 渲染）`retry: 1` 兜底抖动；③ vitest 超时 60s/30s（A5 时已加）。**覆盖率门禁暂缓**：插件解析 vitest@3.2.7，根装的 `@vitest/coverage-v8` 是 v4，provider 直接崩（`reportsDirectory` undefined）→ 需先把 coverage 依赖对齐到 3.x 或整体升 vitest，属于依赖变更，单独排期：覆盖率门禁（阈值先在文档定 60%，再爬）、稳定性（重试仅对已知 flaky）、PR 模板（改动范围自检）。
-- [ ] **A12 发布**：版本号 + CHANGELOG 定稿 + `lib` 构建提交 + `v0.3.x-workbench-N` tag + Harness 指针 bump。
+- [x] **A12 发布** ✅ 2026-10-18：`v0.3.3-workbench-3`（版本 0.3.3 / CHANGELOG 定稿 / lib 构建提交 / tag = main = `cb9a6eb` / Harness 指针同步 `166bd6cdcb`）；全量 **484 passed / 5 skipped**，四道门全绿：版本号 + CHANGELOG 定稿 + `lib` 构建提交 + `v0.3.x-workbench-N` tag + Harness 指针 bump。
 
 ## 交付物
 

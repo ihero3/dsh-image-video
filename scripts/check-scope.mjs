@@ -26,7 +26,7 @@ if (track !== 'a' && track !== 'b') {
 const scopes = {
   // Track A 拥有 src 下除 client 之外的一切（host/workbench/media/tools/入口与配置）
   a: [/^src\/(?!client\/)/,
-    /^lib\//, /^scripts\//, /^package\.json$/, /^pnpm-lock\.yaml$/, /^docs\/TASKS-TRACK-A\.md$/, /^docs\/PERF\.md$/,
+    /^lib\//, /^scripts\//, /^vitest\.config\.ts$/, /^\.gitignore$/, /^package\.json$/, /^pnpm-lock\.yaml$/, /^docs\/TASKS-TRACK-A\.md$/, /^docs\/PERF\.md$/,
     /^docs\/API-SURFACE\.md$/, /^docs\/COLLABORATION\.md$/, /^docs\/REQUIREMENTS\.md$/, /^docs\/EXECUTION\.md$/,
     /^docs\/RELEASE\.md$/, /^CHANGELOG\.md$/, /^tests\/(?!.*client)/],
   b: [/^src\/client\//, /^tests\/.*client.*\.(test|spec)\.(ts|tsx)$/, /^docs\/TASKS-TRACK-B\.md$/, /^docs\/UI-/, /^docs\/ui-baseline\//],
