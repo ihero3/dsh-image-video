@@ -19,6 +19,7 @@ import {
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ResourceUsageRecord } from './records.ts'
+import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
 import { DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
@@ -45,6 +46,8 @@ interface WorkbenchDocument {
 
 /** Facts the store is constructed with. */
 export interface WorkbenchStoreOptions {
+  /** 迁移链（默认用内置的；测试可注入）。 */
+  readonly migrations?: readonly WorkbenchMigration[]
   /** Directory holding `workbench.json` (created on first write). */
   readonly directory: string
   /** Clock override, for deterministic tests. */
@@ -110,10 +113,14 @@ export class WorkbenchStore {
   /**
    * @param options - directory and optional clock.
    */
+  /** 迁移链（默认用内置；测试可注入）。 */
+  private readonly migrations: readonly WorkbenchMigration[] | undefined
+
   constructor(options: WorkbenchStoreOptions) {
     this.directory = options.directory
     this.file = join(options.directory, 'workbench.json')
     this.now = options.now ?? (() => new Date())
+    this.migrations = options.migrations
   }
 
   /** Read every project, newest first. */
@@ -761,8 +768,16 @@ export class WorkbenchStore {
   /** Perform the one read that populates {@link cache}. */
   private async readDocument(): Promise<WorkbenchDocument> {
     try {
-      const raw = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkbenchDocument>
-      this.cache = this.normalize(raw)
+      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Record<string, unknown>
+      // 迁移链：只升不降；真发生迁移时先把原文件备份成 .pre-migrate-v<N>
+      const migration = migrateDocument(parsed, this.migrations)
+      if (migration.applied.length > 0) {
+        await copyFile(this.file, `${this.file}.pre-migrate-v${migration.fromVersion}`).catch(() => undefined)
+      }
+      this.cache = this.normalize(migration.document as Partial<WorkbenchDocument>)
+      if (migration.applied.length > 0) {
+        await this.save(this.cache).catch(() => undefined)
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         // 商用底线：**数据坏了也不能把用户卡死**。

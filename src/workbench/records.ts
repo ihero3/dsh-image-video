@@ -7,7 +7,7 @@
  */
 
 /** Schema version stamped into every stored record, so later migrations have a hook. */
-export const WORKBENCH_SCHEMA_VERSION = 1
+export const WORKBENCH_SCHEMA_VERSION = 2
 
 /** One project: the container every asset, task and workflow belongs to. */
 export interface ProjectRecord {

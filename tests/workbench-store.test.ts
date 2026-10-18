@@ -6,6 +6,7 @@ import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { WORKBENCH_SCHEMA_VERSION } from '../src/workbench/records.ts'
 import { WorkbenchStore, resolveWorkbenchDirectory } from '../src/workbench/store.ts'
 
 /** A store over a throwaway directory with a frozen clock. */
@@ -23,14 +24,14 @@ describe('workbench store', () => {
     expect(first.name).toBe('第一个')
     expect(second.name).toBe('第二个')
     expect(first.id).not.toBe(second.id)
-    expect(first.schemaVersion).toBe(1)
+    expect(first.schemaVersion).toBe(WORKBENCH_SCHEMA_VERSION)
     // 同一时刻创建 → 名字保序不重要，但两条都要在
     expect((await store.listProjects()).map(project => project.id).sort()).toEqual([first.id, second.id].sort())
     // 落盘：目录里只有 workbench.json，没有半写的 .tmp
     const files = await readdir(directory)
     // `.bak` 是数据安全的镜像副本（不再断言目录里只有主文件）
     expect(files.filter(name => name.endsWith('.json'))).toEqual(['workbench.json'])
-    expect(JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8'))).toMatchObject({ schemaVersion: 1 })
+    expect(JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8'))).toMatchObject({ schemaVersion: WORKBENCH_SCHEMA_VERSION })
   })
 
   it('serializes concurrent saves without losing records or leaving temporary files', async () => {

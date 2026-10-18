@@ -6,7 +6,7 @@
  * directory). Nothing in this file touches the filesystem or the framework.
  */
 /** Schema version stamped into every stored record, so later migrations have a hook. */
-export declare const WORKBENCH_SCHEMA_VERSION = 1;
+export declare const WORKBENCH_SCHEMA_VERSION = 2;
 /** One project: the container every asset, task and workflow belongs to. */
 export interface ProjectRecord {
     readonly schemaVersion: number;

@@ -19,7 +19,8 @@
 - **A4 渲染队列**：`maxConcurrent` 默认 1 + FIFO 队列；排队任务加法字段 `queued/queuePosition`；出队自动拉起、排队可取消、事件进日志
 - **A5 节点级超时与重试策略化**：默认超时按种类（图像 180s / 视频 900s / 其它 120s），可注入 `nodeTimeoutMs`；每次尝试独立 `AbortController` + `Promise.race` 护栏（工具无视取消也能结束）；超时算瞬时失败并重试；`retryBackoffMs` 可配
 - **A6 Agent 工具面扩展**：时间轴 trim / drop-clip / set-format / set-track + 导出 render-cancel（排队项也能取消）；批量护栏沿用 ≤20；修复片段 id 同毫秒撞车（改唯一生成器）
-- 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 例
+- **A7 项目迁移框架 + schema v2**：迁移链（只升不降、无路径拒绝）；读入即迁移、迁移前自动备份 `.pre-migrate-v<N>`、结果立即落盘；新增真实 1→2 迁移（资源补 `scope`、文档补 `resourceUsage`）
+- 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 + A7 4 例
 
 ## [0.3.2-workbench-2] - 2026-10-18
 
