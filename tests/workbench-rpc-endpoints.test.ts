@@ -173,6 +173,7 @@ describe('workbench channel endpoints', () => {
       data: { projects: number; assets: number; writeCount: number; fileBytes: number; runningRuns: number }
       renders: { running: number; queued: number; recent: unknown[] }
       cache: { nodeResults: number }
+      outputs: { files: number; bytes: number; referenced: number; oldestAt?: string }
       errors: { errors: unknown[]; errorCount: number }
     }>('diagnostics', {})
     expect(snapshot.plugin.name).toBe('dsh-image-video')
@@ -185,6 +186,10 @@ describe('workbench channel endpoints', () => {
     expect(snapshot.renders).toMatchObject({ running: 0, queued: 0 })
     expect(Array.isArray(snapshot.renders.recent)).toBe(true)
     expect(snapshot.cache.nodeResults).toBe(0)
+    // `A18`：输出目录占用（空目录至少字段齐全可读）
+    expect(snapshot.outputs.files).toBeGreaterThanOrEqual(0)
+    expect(snapshot.outputs.bytes).toBeGreaterThanOrEqual(0)
+    expect(snapshot.outputs.referenced).toBeGreaterThanOrEqual(0)
     expect(snapshot.errors).toMatchObject({ errorCount: expect.any(Number) })
   })
 

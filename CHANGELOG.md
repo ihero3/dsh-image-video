@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### 批次三
+- **A18 诊断暴露输出占用**：`diagnostics` 增加 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`，与 `maintenance/retention` 配合使用
 - **A17 时间轴 schema v3**：新增 2→3 迁移（片段特效/转场字段均可选，旧数据无需改写）；迁移链 1→2→3
 
 ## [0.3.4-workbench-4] - 2026-10-18

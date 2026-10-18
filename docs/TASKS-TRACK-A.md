@@ -22,7 +22,7 @@
 ## 批次三（A17–A19）
 
 - [x] **A17 时间轴 schema v3 + 真实迁移** ✅ 2026-10-18：`WORKBENCH_SCHEMA_VERSION=3`，新增 2→3 迁移（A13/A13b 的 `speed/fade/crop/transition` 均为可选字段，无需改写旧数据）；迁移链 1→2→3 全绿；测试适配（注入链两步）
-- [ ] **A18 诊断暴露 outputs/保留策略状态**
+- [x] **A18 诊断暴露 outputs/保留策略状态** ✅ 2026-10-18：`diagnostics` 新增 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`（与 `maintenance/retention` 配合决定是否清理）；端点测试断言字段可读
 - [ ] **A19 发布 `v0.3.5-workbench-5`**
 
 ## P1（能力补齐与规模化）

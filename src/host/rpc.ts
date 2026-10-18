@@ -304,6 +304,14 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const jobs = deps.renders.list()
       const running = jobs.filter(job => job.status === 'running' && job.queued !== true).length
       const queued = jobs.filter(job => job.queued === true).length
+      // `A18`：输出目录实际占用（配合 `maintenance/retention` 判断要不要清理）
+      const outputs = await listOutputs(deps.outputsDir)
+      const outputBytes = outputs.reduce((sum, file) => sum + Math.max(0, file.bytes), 0)
+      const stamps = outputs
+        .map(file => Date.parse(file.modifiedAt ?? ''))
+        .filter(value => Number.isFinite(value))
+        .sort((left, right) => left - right)
+      const referencedFiles = (await deps.store.referencedAssetPaths()).length
       return {
         plugin: { name: 'dsh-image-video', version: PLUGIN_VERSION },
         provider: deps.provider,
@@ -315,6 +323,15 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         },
         runs: { running: data.runningRuns },
         cache: { nodeResults: data.nodeCache },
+        outputs: {
+          files: outputs.length,
+          bytes: outputBytes,
+          referenced: referencedFiles,
+          ...stamps.length === 0 ? {} : {
+            oldestAt: new Date(stamps[0] as number).toISOString(),
+            newestAt: new Date(stamps[stamps.length - 1] as number).toISOString(),
+          },
+        },
         errors: deps.diagnostics?.snapshot() ?? { errors: [], errorCount: 0 },
       }
     }
