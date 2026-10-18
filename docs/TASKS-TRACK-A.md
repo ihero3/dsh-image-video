@@ -29,8 +29,8 @@
 
 - [x] **A20 音频淡入淡出 + 响度归一化** ✅ 2026-10-18：音轨 `fadeMs`(0–5000) + 文档 `normalizeLoudness`（缺省关）；导出链 `afade=t=in/out`（轨内）+ `loudnorm=I=-16:TP=-1.5:LRA=11`（混音后）；真机出片仍有音轨且时长不变；测试 3 例
 - [x] **A21 耗时分位数日志 + 诊断渲染统计** ✅ 2026-10-18：`RenderRegistry` 记最近 50 次渲染耗时并输出 `render-finished` 结构化日志（含 status/durationMs）；新增 `stats()`（成功/失败/取消计数 + p50/p90）；`diagnostics.renders.stats` 暴露；节点侧 `durationMs` 早已在 runner 日志里；测试 +2
-- [ ] **A22 覆盖率门禁依赖对齐**
-- [ ] **A23 发布 `v0.3.6-workbench-6`**
+- [ ] **A22 覆盖率门禁依赖对齐（⏸ 待 owner 决策）** 2026-10-18 探测结论：插件解析到 `vitest@3.2.7`，而根装 `@vitest/coverage-v8@4.1.11` → provider 直接崩（`reportsDirectory` undefined）。两种可选做法：① 给插件加 `@vitest/coverage-v8@3.2.7` 的 devDependency（会改 lockfile，属于跨仓依赖变更）；② 把插件/根整体升到同一 vitest 大版本。两者都影响依赖树，**按规矩需 owner 确认后再做**；在此之前 A11 的覆盖率门禁保持"暂缓"，不硬改
+- [x] **A23 发布 `v0.3.6-workbench-6`** ✅ 2026-10-18：A20（音频淡入淡出+响度归一化）+ A21（渲染耗时分位数与诊断统计）；A22 记为待 owner 决策
 
 ## P1（能力补齐与规模化）
 

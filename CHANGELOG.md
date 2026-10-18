@@ -2,11 +2,15 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.5-workbench-5] - 2026-10-18
 
 （下一轮的改动写这里）
 
-## [Unreleased]
+## [0.3.6-workbench-6] - 2026-10-18
 
 ### 批次四
 - **A21 渲染耗时可观测**：最近 50 次渲染的耗时 + `render-finished` 结构化日志（status/durationMs）+ `RenderRegistry.stats()`（成功/失败/取消 + p50/p90），并通过 `diagnostics.renders.stats` 暴露
