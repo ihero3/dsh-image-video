@@ -25,6 +25,8 @@ export interface TimelineSnapshot {
   readonly burnSubtitles: boolean
   /** 导出规格（冻结后不受后续编辑影响）。 */
   readonly exportFormat: TimelineExportFormat
+  /** 是否做响度归一化（`A20`）。 */
+  readonly normalizeLoudness: boolean
   readonly durationMs: number
   readonly tracks: readonly TimelineTrack[]
 }
@@ -108,7 +110,7 @@ export function freezeTimeline(timeline: TimelineRecord): TimelineSnapshot {
   const durationMs = timelineDurationMs(tracks)
   return {
     id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
-    exportFormat: normalizeExportFormat(timeline.exportFormat), durationMs, tracks,
+    exportFormat: normalizeExportFormat(timeline.exportFormat), normalizeLoudness: timeline.normalizeLoudness === true, durationMs, tracks,
   }
 }
 
@@ -311,12 +313,25 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     })
     const out = `at${trackIndex}`
     chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
-    audioLabels.push(`[${out}]`)
+    // 淡入淡出（`A20`）：轨内总长 = 快照时长（间隙已补静音），所以淡出从末尾往前推
+    if (track.fadeMs > 0) {
+      const fadeSeconds = (track.fadeMs / 1000).toFixed(3)
+      const outStart = Math.max(0, (snapshot.durationMs - track.fadeMs) / 1000).toFixed(3)
+      chains.push(`[${out}]afade=t=in:st=0:d=${fadeSeconds},afade=t=out:st=${outStart}:d=${fadeSeconds}[atf${trackIndex}]`)
+      audioLabels.push(`[atf${trackIndex}]`)
+    } else {
+      audioLabels.push(`[${out}]`)
+    }
   })
   if (audioLabels.length === 1) {
     chains.push(`${audioLabels[0]}anull[aout]`)
   } else if (audioLabels.length > 1) {
     chains.push(`${audioLabels.join('')}amix=inputs=${audioLabels.length}:duration=longest:normalize=0[aout]`)
+  }
+  // 响度归一化（`A20`）：单遍 loudnorm，目标 -16 LUFS / 真峰 -1.5 dBTP
+  const audioOut = snapshot.normalizeLoudness && audioLabels.length > 0 ? 'aoutn' : 'aout'
+  if (audioOut === 'aoutn') {
+    chains.push('[aout]loudnorm=I=-16:TP=-1.5:LRA=11[aoutn]')
   }
 
   args.push('-filter_complex', chains.join(';'))
@@ -324,7 +339,7 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   if (audioLabels.length === 0) {
     args.push('-an')
   } else {
-    args.push('-map', '[aout]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
+    args.push('-map', `[${audioOut}]`, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
   }
   args.push('-c:v', 'libx264', '-preset', 'veryfast',
     ...bitrateKbps === undefined ? ['-crf', '20'] : ['-b:v', `${bitrateKbps}k`],
@@ -336,6 +351,8 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
 export interface PlannedAudioTrack {
   readonly trackId: string
   readonly volume: number
+  /** 淡入淡出时长（毫秒，`A20`）。 */
+  readonly fadeMs: number
   readonly segments: readonly VideolessSegment[]
 }
 
@@ -372,7 +389,7 @@ export function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[]
       cursor = clip.startMs + clip.durationMs
     }
     if (snapshot.durationMs > cursor) segments.push({ kind: 'filler', durationMs: snapshot.durationMs - cursor })
-    tracks.push({ trackId: track.id, volume, segments })
+    tracks.push({ trackId: track.id, volume, fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))), segments })
   }
   return tracks
 }

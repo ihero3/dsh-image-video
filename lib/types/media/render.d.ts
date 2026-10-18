@@ -8,6 +8,8 @@ export interface TimelineSnapshot {
     readonly burnSubtitles: boolean;
     /** 导出规格（冻结后不受后续编辑影响）。 */
     readonly exportFormat: TimelineExportFormat;
+    /** 是否做响度归一化（`A20`）。 */
+    readonly normalizeLoudness: boolean;
     readonly durationMs: number;
     readonly tracks: readonly TimelineTrack[];
 }
@@ -87,6 +89,8 @@ export declare function buildRenderArgs(snapshot: TimelineSnapshot, options: {
 export interface PlannedAudioTrack {
     readonly trackId: string;
     readonly volume: number;
+    /** 淡入淡出时长（毫秒，`A20`）。 */
+    readonly fadeMs: number;
     readonly segments: readonly VideolessSegment[];
 }
 /** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */

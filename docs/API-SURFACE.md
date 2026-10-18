@@ -37,6 +37,7 @@
 
 - `workbench_projects` / `workbench_assets` / `workbench_workflow` / `workbench_tasks` / `workbench_timeline`
 - 工作流动作：`list | save | templates | from-template | run | runs | run-cancel | run-retry`（`A10` 新增 `templates`/`from-template`，模板含 `drama-series` 漫剧单集）
+- 音轨支持 `fadeMs`(0–5000) 淡入淡出；时间轴文档支持 `normalizeLoudness`（`A20`，缺省关）。
 - 时间轴动作：`list | add-clip | add-subtitles | trim | drop-clip | set-format | set-track | export`（`A14` 新增 `add-subtitles`：一段台词按句切分并按字数分配时间，入参 `text`/`startMs?`/`endMs?`/`maxChars?`）
 - 任务动作：`list | renders | cancel | render-cancel`
 - 护栏：单次片段 ≤20；**不提供**项目/素材级删除（`T6-5`，只在 UI 里做）

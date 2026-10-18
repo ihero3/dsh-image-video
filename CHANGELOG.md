@@ -8,6 +8,9 @@
 
 ## [Unreleased]
 
+### 批次四
+- **A20 音频淡入淡出 + 响度归一化**：音轨 `fadeMs`(0–5000ms) 与文档 `normalizeLoudness`（缺省关）；导出链每轨 `afade=t=in/out`，混音后可选 `loudnorm=I=-16:TP=-1.5:LRA=11`；真机验证仍有音轨且时长 ±80ms
+
 ### 批次三
 - **A18 诊断暴露输出占用**：`diagnostics` 增加 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`，与 `maintenance/retention` 配合使用
 - **A17 时间轴 schema v3**：新增 2→3 迁移（片段特效/转场字段均可选，旧数据无需改写）；迁移链 1→2→3

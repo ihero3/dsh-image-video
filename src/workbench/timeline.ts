@@ -37,6 +37,8 @@ export const DEFAULT_CLIP_TRANSITION_MS = 400
 export const CLIP_SPEED_RANGE = { min: 0.25, max: 4 } as const
 /** 淡入淡出时长上限（毫秒）。 */
 export const MAX_CLIP_FADE_MS = 2000
+/** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
+export const MAX_TRACK_FADE_MS = 5000
 
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
@@ -79,6 +81,8 @@ export interface TimelineTrack {
   readonly muted?: boolean
   /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
   readonly volume?: number
+  /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
+  readonly fadeMs?: number
 }
 
 /**
@@ -168,6 +172,8 @@ export interface TimelineRecord {
   readonly burnSubtitles: boolean
   /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
   readonly exportFormat?: TimelineExportFormat
+  /** 导出时做响度归一化（`loudnorm`，目标 -16 LUFS；`A20`）。缺省关。 */
+  readonly normalizeLoudness?: boolean
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -310,12 +316,17 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       }
       volume = Math.round(track.volume * 100) / 100
     }
+    let fadeMs: number | undefined
+    if (track.fadeMs !== undefined) {
+      fadeMs = Math.round(numberField(track.fadeMs, `track ${trackIndex} fadeMs`, { min: 0, max: MAX_TRACK_FADE_MS }))
+    }
     return {
       id: typeof track.id === 'string' && track.id !== '' ? track.id : `track-${trackIndex + 1}`,
       kind: kind as TrackKind,
       clips: normalized,
       ...track.muted === true ? { muted: true } : {},
       ...volume === undefined ? {} : { volume },
+      ...fadeMs === undefined ? {} : { fadeMs },
     }
   })
   return tracks

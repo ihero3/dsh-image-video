@@ -25,6 +25,13 @@
 - [x] **A18 诊断暴露 outputs/保留策略状态** ✅ 2026-10-18：`diagnostics` 新增 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`（与 `maintenance/retention` 配合决定是否清理）；端点测试断言字段可读
 - [x] **A19 发布 `v0.3.5-workbench-5`** ✅ 2026-10-18：版本 0.3.5 / CHANGELOG 定稿（xfade + schema v3 + 诊断输出占用）/ lib 构建 / tag / Harness 指针同步
 
+## 批次四（A20–A23）
+
+- [x] **A20 音频淡入淡出 + 响度归一化** ✅ 2026-10-18：音轨 `fadeMs`(0–5000) + 文档 `normalizeLoudness`（缺省关）；导出链 `afade=t=in/out`（轨内）+ `loudnorm=I=-16:TP=-1.5:LRA=11`（混音后）；真机出片仍有音轨且时长不变；测试 3 例
+- [ ] **A21 耗时分位数日志 + 诊断渲染统计**
+- [ ] **A22 覆盖率门禁依赖对齐**
+- [ ] **A23 发布 `v0.3.6-workbench-6`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

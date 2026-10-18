@@ -35,6 +35,8 @@ export declare const CLIP_SPEED_RANGE: {
 };
 /** 淡入淡出时长上限（毫秒）。 */
 export declare const MAX_CLIP_FADE_MS = 2000;
+/** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
+export declare const MAX_TRACK_FADE_MS = 5000;
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
     readonly id: string;
@@ -75,6 +77,8 @@ export interface TimelineTrack {
     readonly muted?: boolean;
     /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
     readonly volume?: number;
+    /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
+    readonly fadeMs?: number;
 }
 /**
  * 片段在时间轴上**实际占用**的时长（变速折算后）。
@@ -125,6 +129,8 @@ export interface TimelineRecord {
     readonly burnSubtitles: boolean;
     /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
     readonly exportFormat?: TimelineExportFormat;
+    /** 导出时做响度归一化（`loudnorm`，目标 -16 LUFS；`A20`）。缺省关。 */
+    readonly normalizeLoudness?: boolean;
     readonly createdAt: string;
     readonly updatedAt: string;
 }
