@@ -298,47 +298,46 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
 
   return (
     <div
-      className="iv-canvas"
+      className="iv-canvas-main"
       data-workflow-canvas="true"
       data-workflow-nodes={String(nodes.length)}
       data-workflow-edges={String(edges.length)}
       data-workflow-selected={selectedId ?? ''}
     >
-      <div className="iv-palette" data-workflow-palette="true">
-        <strong className="iv-eyebrow iv-pal-title">{t('canvasPalette')}</strong>
+      <div className="iv-pal" data-workflow-palette="true">
+        <span className="iv-micro" style={{ width: '100%' }}>{t('canvasPalette')}</span>
         {NODE_CATALOG.filter(spec => spec.availability === 'runnable').map(spec => (
           <button
             key={spec.kind}
             type="button"
-            className="iv-pal-item"
+            className="iv-pal-chip"
             data-workflow-palette-item={spec.kind}
             data-workflow-availability={spec.availability}
             aria-label={`${t('canvasAdd')} ${spec.kind}`}
             title={spec.reasonKey === undefined ? spec.kind : t(spec.reasonKey as WorkbenchLocaleKey)}
             onClick={() => { addNode(spec.kind) }}
           >
-            <Icon name={NODE_ICONS[spec.kind]} size={13} />
-            <span className="iv-ellipsis">{t(spec.labelKey as WorkbenchLocaleKey)}</span>
+            <Icon name={NODE_ICONS[spec.kind]} size={12} />
+            <span>{t(spec.labelKey as WorkbenchLocaleKey)}</span>
           </button>
         ))}
         {NODE_CATALOG.some(spec => spec.availability !== 'runnable')
           ? (
             <>
               <span className="iv-pal-sep" role="separator" />
-              <strong className="iv-eyebrow">{t('palettePlanned')}</strong>
               {NODE_CATALOG.filter(spec => spec.availability !== 'runnable').map(spec => (
                 <button
                   key={spec.kind}
                   type="button"
-                  className="iv-pal-item"
+                  className="iv-pal-chip"
                   data-workflow-palette-item={spec.kind}
                   data-workflow-availability={spec.availability}
                   aria-label={`${t('canvasAdd')} ${spec.kind}`}
                   title={spec.reasonKey === undefined ? spec.kind : t(spec.reasonKey as WorkbenchLocaleKey)}
                   onClick={() => { addNode(spec.kind) }}
                 >
-                  <Icon name={NODE_ICONS[spec.kind]} size={13} />
-                  <span className="iv-ellipsis">{t(spec.labelKey as WorkbenchLocaleKey)}</span>
+                  <Icon name={NODE_ICONS[spec.kind]} size={12} />
+                  <span>{t(spec.labelKey as WorkbenchLocaleKey)}</span>
                   <span className="iv-meta">{t('canvasPlannedTag')}</span>
                 </button>
               ))}

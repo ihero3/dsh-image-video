@@ -42,6 +42,9 @@ export type WorkbenchLocaleKey =
   | 'statusCancelled'
   | 'cancelTask'
   | 'defaultsEditHint'
+  | 'defaultsGroupMode'
+  | 'defaultsGroupImage'
+  | 'defaultsGroupVideo'
   | 'optModeText'
   | 'optModeImage'
   | 'optModeVideo'
@@ -259,7 +262,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusFailed: 'Failed',
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
-  defaultsEditHint: '"Not set" = follow settings',
+  defaultsEditHint: 'Leave "Not set" to follow settings',
+  defaultsGroupMode: 'Media type',
+  defaultsGroupImage: 'Image',
+  defaultsGroupVideo: 'Video',
   optModeText: 'Text',
   optModeImage: 'Image',
   optModeVideo: 'Video',
@@ -476,6 +482,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusCancelled: '已取消',
   cancelTask: '取消任务',
   defaultsEditHint: '选「未设置」= 跟随设置',
+  defaultsGroupMode: '媒体类型',
+  defaultsGroupImage: '图像',
+  defaultsGroupVideo: '视频',
   optModeText: '文本',
   optModeImage: '图片',
   optModeVideo: '视频',

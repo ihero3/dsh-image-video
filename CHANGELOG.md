@@ -6,6 +6,29 @@
 
 （下一轮的改动写这里）
 
+### 修复（参数对话框排版错乱 / 样式表跨版本残留 v5，2026-10-18）
+- **真正的根因是"旧 CSS 配新 JSX"**：`useWorkbenchStyle` 原本"id 已存在就跳过"，而宿主在插件模块热替换时**不会卸载文档级 `<style>`**。于是新一版 JSX 渲染时仍挂着上一版样式表——旧规则 `.iv-pop-grid label{display:flex;align-items:center}` 把标签和下拉排成一行、`width:76px` 的标签列把行高压到 30px，新旧结构一叠就是"标签压控件、行行错位"。现在注入改为**版本戳自愈**：比对 `WORKBENCH_STYLE_VERSION`，不一致就整表覆盖；新增 `tests/client-style-injection.test.ts` 锁死该行为（含"复用同一节点、不叠第二张表"）
+- **面色透明导致浮层看穿**：`--iv-panel` 原先取 `--dsw-alias-bg-l1`，而 Harness 的层级令牌叫 `--dsw-alias-bg-layer-1/2/3`，名字写错后静默退到 `color-mix(currentColor 4%,transparent)` 这种近乎透明的兜底，对话框叠在面板上时底下文字直接透出来。改用 `bg-layer-1`，并把 `--iv-panel-2/3` 改为在**不透明底**上叠文字色（浅色得浅灰、深色得亮一档），新增 `--iv-surface` 专供浮层
+- **对话框几何**：弹层不再挂在按钮上算 `left:0`（窄侧栏里必然溢出被裁），改为挂到摘要条、按**栏宽**定位（`container-type:inline-size` + `width:min(560px,100%)`，右对齐到「编辑」按钮那一侧）；栏宽 <360px 时两列自动落成一列；单字段分组（媒体类型）整行铺满；`max-height` 提到 640px 并在吸底动作区留 `scroll-padding`，7 项一次看完不用滚
+- **可读性**：分组标题/字段标签/元信息统一 10.5px 三档灰，下拉 25px 高、面板色底（与白底区分）；头部/脚部改用不透明提亮色，滚动时字段不再从按钮缝里透出来
+- **体积**：raw 629,587 B / gzip 139,069 B（预算 657,938 / 145,393，占 96%），`check:bundle` 通过；客户端测试 47/47（新增 3 项）
+
+### 修复（工作台配色与交互反馈 v4，2026-10-18）
+- **动作色改回蓝色**：此前主按钮/确认按钮取自 `--dsw-alias-brand-primary`，而该令牌在 Harness 浅色主题下**就是近黑色**（Harness「主按钮=黑底白字」的极简口径），导致改名确认、新建项目、保存默认值等按钮呈黑块。改用 Harness 为彩色动作准备的 `--dsw-alias-button-info-fill` / `-hover`（浅色 #4176E6、深色 #7AAAFF），前景取 `--dsw-alias-label-primary-foreground`，两个主题对比度均达标；顺带新增 `--iv-solid` 中性令牌备用
+- **主按钮质感**：加 `box-shadow` 微投影与 `:active` 压平；禁用态从"灰块"改为 16% 透明蓝（`--iv-acc` 混合），不再与正常态撞色
+- **改名行**：输入框与两个按钮统一 26px 高（原来 23/20px 不齐），主按钮 `min-width:52px`，铅笔图标归入 `--iv-tx3` 静音色
+- **参数编辑对话框重做**：新增头部（sliders 图标 + 标题「当前生效参数」+ 说明）、按「媒体类型 / 图像 / 视频」三组分区（`DEFAULT_GROUPS`，7 项不再平铺成一堵墙）、两列表单、脚部提示与按钮 26px 齐平；头部/脚部 `position:sticky` 保证滚动时动作区常驻；新增 locale 键 `defaultsGroupMode` / `defaultsGroupImage` / `defaultsGroupVideo`（中英）
+- **左栏「媒体素材 / 生成任务」点击无反馈**：根因是停靠区四个面板在宽屏下本就全部可见，`scrollIntoView` 对视口内元素是空操作，视觉上等于"按了没反应"。现在 `scrollToPane` 额外给目标面板挂 `iv-pane--flash`（描边 + 底色泛蓝，1.5s 渐隐，尊重 `prefers-reduced-motion`），左栏按钮补 `:active` 按下缩放 + 变蓝 + 气泡常显
+- **体积**：客户端产物 raw 627,633 B / gzip 137,923 B（预算 raw 657,938 / gzip 145,393，占 95%/95%），`check:bundle` 通过；客户端测试 46/46
+
+### 设计（工作台专业工具风 v3，2026-10-17）
+- **应用外壳**：左图标栏（模式导航 + 素材/任务/默认值快捷入口，选中态左侧 2px 指示条 + hover 气泡提示）+ 顶栏（品牌/项目/状态/图标操作）+ 底部状态栏（就绪/产物数/宿主/kind）；模式切换从顶部分段控件改为左栏图标（`aria-pressed` 保留）
+- **时间轴重做成 NLE 三件套**：节目监视器（恒深色板 + 时间码浮层 + PROGRAM 徽章 + 字幕叠加）→ transport（播放键 + 等宽时间码 + 走带条）→ 刻度尺 + V1/A1/S1 轨头 + 三色 clip 块（左色条、时长徽章、flexGrow 随时长伸缩）+ 琥珀色播放头（calc 定位跨尺与轨）
+- **主题口径（owner 拍板）**：所有面色/文字/边框取 Harness 设计令牌（`--dsw-alias-*`），浅/深主题自适应；唯一例外是**监视器恒深**（媒体惯例：NLE 的节目监视器在浅色 UI 里也是黑的，保证调色判断不受 UI 干扰）；平面无阴影、圆角收敛 5px、大写微型标签 + 等宽时间码
+- **工作流页**：节点库从侧栏列表改为顶部 chips（可用/规划中分组保留）；节点卡片深色面板化
+- **体积**：客户端产物 raw 621,576 B / gzip 135,615 B（预算 raw 657,938 / gzip 145,393，占 94%/93%），`check:bundle` 通过
+- **回归**：客户端 46 项测试全过；全量 436 过 / 3 败，均为工作区既有未提交改动（`src/media/render.ts` 的 ffmpeg stderr 映射）与本机并行抖动（单独重跑即过），与本次无关
+
 ### 设计（工作台专业排版 v2，2026-10-17）
 - **设计系统落地**：新增 `src/client/workbench-style.ts`（内嵌样式表 + 挂载注入 hook）与 `src/client/icons.tsx`（24 视窗 1.8 描边图标集 35 枚）。配色先取 Harness 设计令牌（`--dsw-alias-*`），取不到退到 `color-mix(currentColor …)`，浅/深主题都成立（`R-NFR-3`）；产物不烧入任何部署事实（门禁 `client-no-hardcoding` 续防）
 - **信息降噪**：生效默认值从"一排 7 个控件"改为**一条安静的内联摘要 + 按需弹出的编辑面板**（progressive disclosure）；项目改名/删除图标化并带 title；破坏性操作两步确认改危险色
