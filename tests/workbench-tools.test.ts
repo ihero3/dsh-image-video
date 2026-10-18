@@ -187,6 +187,32 @@ describe('agent tool surface (T6-3)', () => {
       .rejects.toThrow(/至少一个片段/)
   })
 
+  it('turns a script into timed subtitle clips through the tool surface (A14)', async () => {
+    const { call, store } = await harness()
+    const project = await store.createProject('字幕项目')
+    const timeline = await store.saveTimeline({
+      projectId: project.id, tracks: [
+        { id: 'v1', kind: 'video', clips: [] },
+        { id: 's1', kind: 'subtitle', clips: [] },
+      ],
+    })
+    const result = await call('workbench_timeline', {
+      action: 'add-subtitles', projectId: project.id, timelineId: timeline.id,
+      text: '第一句台词。第二句台词。第三句台词。', startMs: 0, endMs: 6000,
+    })
+    const value = result.value as { timeline: { added: number }, subtitles: Array<{ text: string; durationMs: number }> }
+    expect(value.timeline.added).toBe(3)
+    expect(value.subtitles.map(row => row.text)).toEqual(['第一句台词', '第二句台词', '第三句台词'])
+    const saved = (await store.findTimeline(timeline.id))!
+    const subtitleTrack = saved.tracks.find(track => track.kind === 'subtitle')!
+    expect(subtitleTrack.clips).toHaveLength(3)
+    // 再追加一段：应接在末尾而不是覆盖
+    await call('workbench_timeline', {
+      action: 'add-subtitles', projectId: project.id, timelineId: timeline.id, text: '第四句。', startMs: 6000, endMs: 8000,
+    })
+    expect((await store.findTimeline(timeline.id))!.tracks.find(track => track.kind === 'subtitle')!.clips).toHaveLength(4)
+  })
+
   it('lists and instantiates the drama template through the tool surface (A10)', async () => {
     const { call, store } = await harness()
     const project = await store.createProject('漫剧项目')

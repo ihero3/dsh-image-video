@@ -17,6 +17,8 @@ import type { RenderRegistry } from '../media/render-registry.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import { DRAMA_TEMPLATES, instantiateTemplate } from '../workbench/drama.ts'
+import { planSubtitleClips } from '../workbench/subtitles.ts'
+import { timelineDurationMs } from '../workbench/timeline.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -104,6 +106,9 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       frameRate: { type: 'integer', description: 'set-format 时导出帧率（24/25/30/60）' },
       bitrateKbps: { type: 'integer', description: 'set-format 时视频码率（kbps，可选）' },
       track: { type: 'string', description: 'set-track 时的轨道：video / audio / subtitle（默认 audio）' },
+      maxChars: { type: 'integer', description: 'add-subtitles 时单条字幕最多字数（默认 28）' },
+      startMs: { type: 'integer', description: '起始时间（毫秒）；add-subtitles 缺省接在字幕轨末尾' },
+      endMs: { type: 'integer', description: '结束时间（毫秒）；add-subtitles 缺省到时间轴末尾' },
       volume: { type: 'number', description: 'set-track 时的轨道音量（0–2）' },
       muted: { type: 'boolean', description: 'set-track 时是否静音' },
     },
@@ -268,6 +273,37 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         return json({ timeline: { id: saved.id, tracks: saved.tracks.map(track => ({ kind: track.kind, clips: track.clips.length })) } })
       }
+      if (action === 'add-subtitles') {
+        // `A14`：一段台词 → 多条字幕（按句切分 + 按字数分配时间），自动接到字幕轨末尾
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline add-subtitles')
+        const script = requireString(input, 'text', 'workbench_timeline add-subtitles')
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const subtitleTrack = current.tracks.find(track => track.kind === 'subtitle')
+        const trackStart = subtitleTrack === undefined || subtitleTrack.clips.length === 0
+          ? 0
+          : Math.max(...subtitleTrack.clips.map(clip => clip.startMs + clip.durationMs))
+        const totalMs = Math.max(trackStart + 1000, timelineDurationMs(current.tracks))
+        const windowStart = typeof input.startMs === 'number' ? Math.max(0, Math.round(input.startMs)) : trackStart
+        const windowEnd = typeof input.endMs === 'number' ? Math.round(input.endMs) : Math.max(windowStart + 1000, totalMs)
+        const clips = planSubtitleClips(script, {
+          startMs: windowStart, endMs: windowEnd,
+          ...typeof input.maxChars === 'number' ? { maxChars: input.maxChars } : {},
+        })
+        if (clips.length === 0) throw new Error('这段文本切不出字幕：检查是否有内容')
+        if (clips.length > MAX_TOOL_CLIPS) throw new Error(`一次最多生成 ${MAX_TOOL_CLIPS} 条字幕，收到 ${clips.length} 条：缩短文本或调大 maxChars`)
+        const tracks = current.tracks.map(track => track.kind === 'subtitle'
+          ? { ...track, clips: [...track.clips, ...clips] }
+          : track)
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name, tracks,
+          frameRate: current.frameRate, burnSubtitles: current.burnSubtitles, exportFormat: current.exportFormat,
+        })
+        return json({
+          timeline: { id: saved.id, added: clips.length, window: { startMs: windowStart, endMs: windowEnd } },
+          subtitles: clips.map(clip => ({ id: clip.id, text: clip.text, startMs: clip.startMs, durationMs: clip.durationMs })),
+        })
+      }
       if (action === 'trim') {
         const timelineId = requireString(input, 'timelineId', 'workbench_timeline trim')
         const current = await store.findTimeline(timelineId)
@@ -365,7 +401,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const job = renders.start(doc)
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
-      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
+      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
     },
   })
 

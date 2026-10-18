@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### 批次二
+- **A14 字幕批量生成**：`splitSubtitleSentences`（句末标点 → 逗号 → 硬切，单条长度上限可控）；`planSubtitleClips` 按字数比例分配时间、保底最短显示、窗口放不下就截断；工具面 `timeline add-subtitles` 一键把台词变成连续的定时字幕（缺省接在字幕轨末尾）
 - **A13 片段特效**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`）；导出链 `crop→setpts→fade`；**修掉一个真 bug**——`freezeTimeline` 另算总时长导致 2 倍速后补 0.5s 黑场，成片与时间轴不一致（现统一走 `timelineDurationMs`，真机 500ms ±70ms ✓）
 
 ## [0.3.3-workbench-3] - 2026-10-18
