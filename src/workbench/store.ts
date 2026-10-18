@@ -107,6 +107,15 @@ export class WorkbenchStore {
   private writes: Promise<void> = Promise.resolve()
   /** Distinguishes temporary files written by queued saves within this process. */
   private writeSequence = 0
+  /**
+   * 派生视图缓存（`A8`）：键是**文档对象身份**——每次保存都会替换文档对象，
+   * 所以缓存天然失效，不需要手写失效逻辑（也就不会有漏失效的 bug）。
+   */
+  private readonly derived = new WeakMap<WorkbenchDocument, {
+    assetsByProject: Map<string, readonly AssetRecord[]>
+  }>()
+  /** 真实落盘次数（压测与诊断用；`A8`/`A9`）。 */
+  writeCount = 0
   /** 上次成功落盘的内容（相同则跳过写盘） */
   private lastSerialized: string | undefined
 
@@ -176,9 +185,27 @@ export class WorkbenchStore {
    */
   async listAssets(projectId: string): Promise<AssetRecord[]> {
     const document = await this.load()
-    return document.assets
-      .filter(asset => asset.projectId === projectId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    return [...this.assetsByProject(document).get(projectId) ?? []]
+  }
+
+  /**
+   * 按项目索引素材（`A8`）：一次 O(n) 建索引，之后每个项目的读取是 O(1) + 拷贝。
+   * 文档对象一变缓存就失效，因此不会读到旧数据。
+   */
+  private assetsByProject(document: WorkbenchDocument): Map<string, readonly AssetRecord[]> {
+    const cached = this.derived.get(document)
+    if (cached !== undefined) return cached.assetsByProject
+    const grouped = new Map<string, AssetRecord[]>()
+    for (const asset of document.assets) {
+      const bucket = grouped.get(asset.projectId)
+      if (bucket === undefined) grouped.set(asset.projectId, [asset])
+      else bucket.push(asset)
+    }
+    for (const bucket of grouped.values()) {
+      bucket.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    }
+    this.derived.set(document, { assetsByProject: grouped })
+    return grouped
   }
 
   /**
@@ -819,6 +846,7 @@ export class WorkbenchStore {
       const temporary = `${this.file}.${process.pid}.${this.writeSequence}.tmp`
       await writeFile(temporary, serialized, 'utf8')
       await rename(temporary, this.file)
+      this.writeCount += 1
       // 成功落盘后再镜像一份 .bak：这是"损坏自动恢复"的数据来源，
       // 且镜像的是**最新成功状态**（恢复时不丢最后一次保存）
       await copyFile(this.file, `${this.file}.bak`).catch(() => undefined)
