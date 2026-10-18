@@ -13,6 +13,20 @@ export interface SubtitleStyle {
     readonly color?: string;
     readonly position?: 'top' | 'middle' | 'bottom';
 }
+/** 画面裁剪（像素，相对源；宽高必须是偶数且 ≥2）。 */
+export interface ClipCrop {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+/** 变速的允许范围。 */
+export declare const CLIP_SPEED_RANGE: {
+    readonly min: 0.25;
+    readonly max: 4;
+};
+/** 淡入淡出时长上限（毫秒）。 */
+export declare const MAX_CLIP_FADE_MS = 2000;
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
     readonly id: string;
@@ -26,6 +40,15 @@ export interface TimelineClip {
     readonly durationMs: number;
     /** 源内偏移（裁剪起点，毫秒）。 */
     readonly inMs?: number;
+    /**
+     * 播放速度（0.25–4，缺省 1）：`2` = 两倍速，时间轴上占用的时长减半。
+     * 所有占位计算（时长/播放头/导出排布）都按**折算后**时长算，见 {@link effectiveDurationMs}。
+     */
+    readonly speed?: number;
+    /** 淡入淡出时长（毫秒，0–2000；缺省无效果）。导出用 ffmpeg `fade` 实现（`A13`）。 */
+    readonly fade?: number;
+    /** 画面裁剪（像素，相对源；导出时在缩放前应用）。 */
+    readonly crop?: ClipCrop;
     readonly style?: SubtitleStyle;
 }
 /** 一条轨道。 */
@@ -37,6 +60,12 @@ export interface TimelineTrack {
     /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
     readonly volume?: number;
 }
+/**
+ * 片段在时间轴上**实际占用**的时长（变速折算后）。
+ * @param clip - 片段。
+ * @returns 毫秒（至少 1）。
+ */
+export declare function effectiveDurationMs(clip: TimelineClip): number;
 /** 轨道音量上限（`R-TML-4`：允许增益到 2 倍，超了就是削波，交给用户自己负责）。 */
 export declare const MAX_TRACK_VOLUME = 2;
 /** 时间轴文档。 */

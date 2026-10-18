@@ -18,6 +18,17 @@ export type VideoSegment = {
     readonly assetPath: string;
     readonly inMs: number;
     readonly durationMs: number;
+    /** 变速倍数（缺省 1）。 */
+    readonly speed?: number;
+    /** 淡入淡出时长（毫秒）。 */
+    readonly fade?: number;
+    /** 画面裁剪（像素，相对源）。 */
+    readonly crop?: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+    };
 } | {
     readonly kind: 'filler';
     readonly durationMs: number;

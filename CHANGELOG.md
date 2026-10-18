@@ -4,7 +4,8 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次二
+- **A13 片段特效（部分）**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`），导出链加入 `crop→setpts→fade`；**已知偏差**：端到端时长仍测得 1s（手工 ffmpeg 同链 0.5s），待定位
 
 ## [0.3.3-workbench-3] - 2026-10-18
 

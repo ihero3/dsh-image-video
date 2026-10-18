@@ -1,6 +1,6 @@
 # Track B 任务书（界面：交互 / 视觉 / 使用体验）
 
-> 归属：**同事 A**。地盘：`src/client/**` + 客户端测试 + UI 文档。**不碰** `src/host`、`src/workbench`、`src/media`、`lib`、依赖。
+> 归属：**同事 B**（Track B）。地盘：`src/client/**` + 客户端测试 + UI 文档。**不碰** `src/host`、`src/workbench`、`src/media`、`lib`、依赖。
 > 前置：先把 `docs/COLLABORATION.md` 看一遍（文件所有权矩阵 + 分支规则）。
 > 每项完成条件：`bash scripts/gate.sh` 全绿（lib 由 A 提交，你本地 build 自测即可）+ 客户端测试 + 截图。
 

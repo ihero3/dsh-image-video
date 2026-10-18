@@ -12,6 +12,13 @@
 - [x] **A4 渲染队列与并发控制** ✅ 完成（2026-10-18）：见 CHANGELOG：导出同时最多 1 个、其余排队（状态 `queued`）；工作流节点并发上限可配；测试：两个导出排队顺序 + 取消排队项。
 - [x] **A5 节点级超时与重试策略化** ✅ 2026-10-18：`nodeTimeoutMs(kind)` + 默认图像 180s/视频 900s/其它 120s；每次尝试独立 AbortController + `Promise.race` 超时护栏（工具无视取消也能结束）；超时计入瞬时失败并重试；`retryBackoffMs` 可配；测试 3 例：`timeoutMs` 可配（默认按 kind）、重试次数/退避可配；测试：超时节点记为 failed 且带可操作文案。
 
+## 批次二（A13–A16）
+
+- [x] **A13 变速/淡入淡出/裁剪（部分完成）** ✅ 2026-10-18：片段新增 `speed`(0.25–4)/`fade`(0–2000ms)/`crop`（偶数宽高）；**时间轴所有占位计算按变速折算**（`effectiveDurationMs` 已用于 `timelineDurationMs`/`activeClipAt`/导出排布，避免成片与时间轴错位）；导出链 `crop → setpts → fade → fps → scale/pad` 已落地并验到 filter 里；测试 4 例。**未闭环**：经 `RenderService` 的端到端时长仍测得 1000ms（手工 ffmpeg 同链为 0.50s）→ 已记为待查项，测试里显式 NOTE，不假装通过
+- [ ] **A14 字幕批量生成**：按句切分 + 时间分配 + 工具面动作
+- [ ] **A15 输出配额与清理**：outputs 上限、`maintenance` 扩展、诊断暴露
+- [ ] **A16 发布 `v0.3.4-workbench-4`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

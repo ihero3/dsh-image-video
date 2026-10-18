@@ -13,7 +13,7 @@ import { mkdir, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
-import { DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, normalizeExportFormat, type TimelineExportFormat } from '../workbench/timeline.ts'
+import { DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, effectiveDurationMs, normalizeExportFormat, type TimelineExportFormat } from '../workbench/timeline.ts'
 
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
 export interface TimelineSnapshot {
@@ -28,7 +28,19 @@ export interface TimelineSnapshot {
 
 /** 一段画面：要么是素材 clip，要么是补的黑场。 */
 export type VideoSegment =
-  | { readonly kind: 'clip'; readonly clipId: string; readonly assetPath: string; readonly inMs: number; readonly durationMs: number }
+  | {
+      readonly kind: 'clip'
+      readonly clipId: string
+      readonly assetPath: string
+      readonly inMs: number
+      readonly durationMs: number
+      /** 变速倍数（缺省 1）。 */
+      readonly speed?: number
+      /** 淡入淡出时长（毫秒）。 */
+      readonly fade?: number
+      /** 画面裁剪（像素，相对源）。 */
+      readonly crop?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+    }
   | { readonly kind: 'filler'; readonly durationMs: number }
 
 /** 一次渲染的进度。 */
@@ -120,8 +132,14 @@ export function planVideoSegments(snapshot: TimelineSnapshot): VideoSegment[] {
     if (assetPath === undefined) {
       throw new RenderError('MEDIA_ASSET_MISSING', `片段 ${clip.id} 没有素材路径：重新从素材面板选一次。`)
     }
-    segments.push({ kind: 'clip', clipId: clip.id, assetPath, inMs: clip.inMs ?? 0, durationMs: clip.durationMs })
-    cursor = clip.startMs + clip.durationMs
+    segments.push({
+      kind: 'clip', clipId: clip.id, assetPath, inMs: clip.inMs ?? 0, durationMs: clip.durationMs,
+      ...clip.speed === undefined ? {} : { speed: clip.speed },
+      ...clip.fade === undefined ? {} : { fade: clip.fade },
+      ...clip.crop === undefined ? {} : { crop: clip.crop },
+    })
+    // 时间轴占位按**变速折算后**的时长算（与 timelineDurationMs 保持一致）
+    cursor = clip.startMs + effectiveDurationMs(clip)
   }
   // 视频轨比字幕轨短时，尾部补黑让总时长与快照一致
   if (snapshot.durationMs > cursor) segments.push({ kind: 'filler', durationMs: snapshot.durationMs - cursor })
@@ -186,9 +204,29 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
 
   const chains: string[] = []
   const labels: string[] = []
-  segments.forEach((_segment, index) => {
+  segments.forEach((segment, index) => {
+    // 每个片段：裁剪 → 变速(setpts) → 淡入淡出 → 帧率 → 缩放补边（`A13`）
+    const pre: string[] = []
+    if (segment.kind === 'clip') {
+      if (segment.crop !== undefined) {
+        pre.push(`crop=${segment.crop.width}:${segment.crop.height}:${segment.crop.x}:${segment.crop.y}`)
+      }
+      if (segment.speed !== undefined && segment.speed !== 1) {
+        pre.push(`setpts=${(1 / segment.speed).toFixed(4)}*PTS`)
+      }
+      if (segment.fade !== undefined && segment.fade > 0) {
+        const effective = Math.max(1, Math.round(segment.durationMs / (segment.speed ?? 1)))
+        const fadeMs = Math.min(segment.fade, Math.floor(effective / 2))
+        if (fadeMs > 0) {
+          const seconds = (fadeMs / 1000).toFixed(3)
+          const outStart = ((effective - fadeMs) / 1000).toFixed(3)
+          pre.push(`fade=t=in:st=0:d=${seconds}`, `fade=t=out:st=${outStart}:d=${seconds}`)
+        }
+      }
+    }
+    const prefix = pre.length === 0 ? '' : `${pre.join(',')},`
     chains.push(
-      `[${index}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,`
+      `[${index}:v]${prefix}scale=${width}:${height}:force_original_aspect_ratio=decrease,`
       + `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p[v${index}]`,
     )
     labels.push(`[v${index}]`)

@@ -16,6 +16,19 @@ export interface SubtitleStyle {
   readonly position?: 'top' | 'middle' | 'bottom'
 }
 
+/** 画面裁剪（像素，相对源；宽高必须是偶数且 ≥2）。 */
+export interface ClipCrop {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** 变速的允许范围。 */
+export const CLIP_SPEED_RANGE = { min: 0.25, max: 4 } as const
+/** 淡入淡出时长上限（毫秒）。 */
+export const MAX_CLIP_FADE_MS = 2000
+
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
   readonly id: string
@@ -29,6 +42,15 @@ export interface TimelineClip {
   readonly durationMs: number
   /** 源内偏移（裁剪起点，毫秒）。 */
   readonly inMs?: number
+  /**
+   * 播放速度（0.25–4，缺省 1）：`2` = 两倍速，时间轴上占用的时长减半。
+   * 所有占位计算（时长/播放头/导出排布）都按**折算后**时长算，见 {@link effectiveDurationMs}。
+   */
+  readonly speed?: number
+  /** 淡入淡出时长（毫秒，0–2000；缺省无效果）。导出用 ffmpeg `fade` 实现（`A13`）。 */
+  readonly fade?: number
+  /** 画面裁剪（像素，相对源；导出时在缩放前应用）。 */
+  readonly crop?: ClipCrop
   readonly style?: SubtitleStyle
 }
 
@@ -40,6 +62,16 @@ export interface TimelineTrack {
   readonly muted?: boolean
   /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
   readonly volume?: number
+}
+
+/**
+ * 片段在时间轴上**实际占用**的时长（变速折算后）。
+ * @param clip - 片段。
+ * @returns 毫秒（至少 1）。
+ */
+export function effectiveDurationMs(clip: TimelineClip): number {
+  const speed = clip.speed ?? 1
+  return Math.max(1, Math.round(clip.durationMs / speed))
 }
 
 /** 轨道音量上限（`R-TML-4`：允许增益到 2 倍，超了就是削波，交给用户自己负责）。 */
@@ -187,6 +219,36 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
         ? undefined
         : numberField(clip.inMs, `clip ${id} inMs`, { min: 0, max: MAX_CLIP_DURATION_MS })
 
+      // 变速 / 淡入淡出 / 裁剪（`A13`）：越界一律拒，不做静默截断
+      const speed = clip.speed === undefined
+        ? undefined
+        : numberField(clip.speed, `clip ${id} speed`, { min: CLIP_SPEED_RANGE.min, max: CLIP_SPEED_RANGE.max })
+      const fade = clip.fade === undefined
+        ? undefined
+        : numberField(clip.fade, `clip ${id} fade`, { min: 0, max: MAX_CLIP_FADE_MS })
+      let crop: ClipCrop | undefined
+      if (clip.crop !== undefined) {
+        if (typeof clip.crop !== 'object' || clip.crop === null) throw new Error(`clip ${id} crop must be an object`)
+        const raw = clip.crop as Record<string, unknown>
+        const even = (key: 'width' | 'height'): number => {
+          const value = numberField(raw[key], `clip ${id} crop.${key}`, { min: 2, max: MAX_CLIP_DURATION_MS })
+          const rounded = Math.round(value)
+          if (rounded % 2 !== 0) throw new Error(`clip ${id} crop.${key} must be an even number`)
+          return rounded
+        }
+        crop = {
+          x: Math.round(numberField(raw.x, `clip ${id} crop.x`, { min: 0, max: MAX_CLIP_DURATION_MS })),
+          y: Math.round(numberField(raw.y, `clip ${id} crop.y`, { min: 0, max: MAX_CLIP_DURATION_MS })),
+          width: even('width'),
+          height: even('height'),
+        }
+      }
+      const extras = {
+        ...speed === undefined ? {} : { speed },
+        ...fade === undefined ? {} : { fade },
+        ...crop === undefined ? {} : { crop },
+      }
+
       if (kind === 'subtitle') {
         const text = typeof clip.text === 'string' ? clip.text : ''
         if (text.trim() === '') throw new Error(`subtitle clip ${id} needs text`)
@@ -195,6 +257,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
         return {
           id, text, startMs, durationMs,
           ...inMs === undefined ? {} : { inMs },
+          ...extras,
           ...Object.keys(style).length === 0 ? {} : { style },
         }
       }
@@ -204,7 +267,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       if (looksInlinedBytes(assetPath)) {
         throw new Error(`${kind} clip ${id} must reference a file path, not inlined bytes (R-TML-1)`)
       }
-      return { id, assetPath, startMs, durationMs, ...inMs === undefined ? {} : { inMs } }
+      return { id, assetPath, startMs, durationMs, ...inMs === undefined ? {} : { inMs }, ...extras }
     })
     // 音量：缺省不写（= 1）；给非法值一律拒，不做静默截断
     let volume: number | undefined
@@ -286,14 +349,14 @@ export function activeClipAt(
   return tracks
     .filter(track => track.kind === kind)
     .flatMap(track => track.clips)
-    .find(clip => timeMs >= clip.startMs && timeMs < clip.startMs + clip.durationMs)
+    .find(clip => timeMs >= clip.startMs && timeMs < clip.startMs + effectiveDurationMs(clip))
 }
 
 /** 时间轴总时长 = 所有 clip 结束点的最大值（预览与导出口径一致，`R-TML-3`）。 */
 export function timelineDurationMs(tracks: readonly TimelineTrack[]): number {
   return tracks.reduce(
     (longest, track) => track.clips.reduce(
-      (trackLongest, clip) => Math.max(trackLongest, clip.startMs + clip.durationMs),
+      (trackLongest, clip) => Math.max(trackLongest, clip.startMs + effectiveDurationMs(clip)),
       longest,
     ),
     0,
