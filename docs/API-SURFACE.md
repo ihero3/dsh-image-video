@@ -33,6 +33,7 @@
 ## Agent 工具面（`src/tools/workbench.ts`）
 
 - `workbench_projects` / `workbench_assets` / `workbench_workflow` / `workbench_tasks` / `workbench_timeline`
+- 工作流动作：`list | save | templates | from-template | run | runs | run-cancel | run-retry`（`A10` 新增 `templates`/`from-template`，模板含 `drama-series` 漫剧单集）
 - 时间轴动作：`list | add-clip | trim | drop-clip | set-format | set-track | export`
 - 任务动作：`list | renders | cancel | render-cancel`
 - 护栏：单次片段 ≤20；**不提供**项目/素材级删除（`T6-5`，只在 UI 里做）

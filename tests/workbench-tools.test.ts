@@ -187,6 +187,25 @@ describe('agent tool surface (T6-3)', () => {
       .rejects.toThrow(/至少一个片段/)
   })
 
+  it('lists and instantiates the drama template through the tool surface (A10)', async () => {
+    const { call, store } = await harness()
+    const project = await store.createProject('漫剧项目')
+    const listed = await call('workbench_workflow', { action: 'templates', projectId: project.id })
+    const templates = (listed.value as { templates: Array<{ id: string; nodes: string[] }> }).templates
+    expect(templates.some(template => template.id === 'drama-series')).toBe(true)
+
+    const created = await call('workbench_workflow', {
+      action: 'from-template', projectId: project.id, templateId: 'drama-series',
+    })
+    const workflow = (created.value as { workflow: { id: string; nodes: number; edges: number } }).workflow
+    expect(workflow.nodes).toBe(7)
+    expect(workflow.edges).toBe(6)
+    // 真存进了 store，能在 list 里看到
+    expect((await store.listWorkflows(project.id)).some(record => record.id === workflow.id)).toBe(true)
+    await expect(call('workbench_workflow', { action: 'from-template', projectId: project.id, templateId: 'nope' }))
+      .rejects.toThrow(/没有模板/)
+  })
+
   it('edits timelines through the tool surface: trim / remove-clip / set-format / set-track (A6)', async () => {
     const { call, store, outputs } = await harness()
     const project = await store.createProject('工具剪片')

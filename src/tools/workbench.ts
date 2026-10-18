@@ -16,6 +16,7 @@ import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
+import { DRAMA_TEMPLATES, instantiateTemplate } from '../workbench/drama.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -416,6 +417,26 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       if (action === 'list') {
         const rows = (await store.listWorkflows(projectId)).slice(0, optionalLimit(input))
         return json({ workflows: rows.map(item => ({ id: item.id, name: item.name, nodes: item.nodes.length, edges: item.edges.length, updatedAt: item.updatedAt })), count: rows.length })
+      }
+      if (action === 'templates') {
+        return json({
+          templates: DRAMA_TEMPLATES.map(template => ({
+            id: template.id, labelKey: template.labelKey, describe: template.describe,
+            nodes: template.nodes.map(node => node.kind), edges: template.edges.length,
+          })),
+          hint: '用 action=from-template 并传 templateId 即可在工作流里实例化',
+        })
+      }
+      if (action === 'from-template') {
+        const projectId = requireString(input, 'projectId', 'workbench_workflow from-template')
+        const templateId = requireString(input, 'templateId', 'workbench_workflow from-template')
+        const template = DRAMA_TEMPLATES.find(candidate => candidate.id === templateId)
+        if (template === undefined) {
+          throw new Error(`没有模板 ${templateId}；先用 action=templates 看可用模板`)
+        }
+        const record = instantiateTemplate(template, projectId, () => newWorkbenchId('wfl'))
+        const saved = await store.saveWorkflow(record)
+        return json({ workflow: { id: saved.id, name: saved.name, nodes: saved.nodes.length, edges: saved.edges.length } })
       }
       if (action === 'save') {
         // 画布坐标是"界面细节"，模型不该为此编数字：缺 position 时按加入顺序自动排布
