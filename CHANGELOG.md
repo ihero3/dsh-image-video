@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+（下一轮的改动写这里）
+
+## [0.3.3-workbench-3] - 2026-10-18
+
+### Track A（底层）A5–A11：面向大规模与商用
+- **A5 节点级超时与重试策略化**：默认图像 180s / 视频 900s / 其它 120s，可注入；每次尝试独立 `AbortController` + `Promise.race` 护栏（工具无视取消也能结束）；超时算瞬时失败并重试；`retryBackoffMs` 可配
+- **A6 Agent 工具面扩展**：时间轴 `trim` / `drop-clip` / `set-format` / `set-track` + 导出 `render-cancel`（排队项也能取消）；批量护栏 ≤20；修复片段 id 同毫秒撞车
+- **A7 项目迁移框架 + schema v2**：迁移链、**只升不降**、找不到路径不猜字段；迁移前自动备份 `.pre-migrate-v<N>`；真实 1→2 迁移（资源补 `scope`、文档补 `resourceUsage`）
+- **A8 存储规模化**：一万素材实测 1.64 MB / 冷加载 11.7 ms / 落盘 12.5 ms → **V1 不分片不索引**（索引试过因过期风险撤销）；`writeCount` 可观测；基线 `docs/PERF.md`
+- **A9 诊断与可观测**：`diagnostics` 端点（版本/规模/写次数/文件字节/运行中用例/渲染队列/缓存/近 50 条错误）；错误环不落盘、不含敏感内容
+- **A10 漫剧/连续剧模板**：`drama-series`（7 节点全 runnable、校验零问题）；Agent 可 `templates` / `from-template` 实例化
+- **A11 CI 强化（部分）**：`scripts/check-scope.mjs` 轨道越界自检；真实 IO 用例 `retry: 1`；覆盖率门禁因 vitest/coverage-v8 版本不匹配暂缓（待依赖对齐）
+
+### 测试
+- 全量 **484 passed / 5 skipped**（新增 A5–A10 共 23 例：超时重试、工具动作、迁移、规模化、诊断、漫剧模板）
+
 ### 新增（Track A / A1 音轨能力）
 - **轨道音量与静音**：`TimelineTrack` 增加 `volume`（0–2，缺省 1）与 `muted`，越界一律拒（不静默截断）
 - **导出真实混音**：音轨按 `aresample → volume → concat → amix(normalize=0)` 参与 filter graph；静音/零音量轨不输出；无音轨时仍 `-an`
