@@ -14,6 +14,7 @@ import { nodeCacheKey } from './node-cache.ts'
 import { stat } from 'node:fs/promises'
 import {
   validateWorkflow,
+  type WorkflowNodeKind,
   type WorkflowEdge, type WorkflowNode, type WorkflowRecord,
   type WorkflowRunNodeRecord, type WorkflowRunRecord,
 } from './workflow.ts'
@@ -24,6 +25,14 @@ const EXECUTORS = { 'image-generate': 'image', 'video-generate': 'video' } as co
 
 /** 产文本的节点：它们的文字会并入下游生成节点的提示词。 */
 const TEXT_KINDS = new Set(['creative-input', 'script', 'subtitle'])
+
+/** 默认单节点超时（毫秒）：图像 3 分钟、视频 15 分钟（生成类本来就慢）。 */
+export const DEFAULT_NODE_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  'image-generate': 180_000,
+  'video-generate': 900_000,
+}
+/** 其它种类的兜底超时。 */
+export const FALLBACK_NODE_TIMEOUT_MS = 120_000
 
 /** 默认的节点尝试次数（1 次首发 + 2 次重试）；瞬时失败才用得上。 */
 export const DEFAULT_NODE_ATTEMPTS = 3
@@ -39,7 +48,7 @@ export const DEFAULT_NODE_ATTEMPTS = 3
  */
 export function isTransientFailure(message: string): boolean {
   if (/abort|cancel|取消/i.test(message)) return false
-  return /interrupted|stream|timeout|timed out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|network|rate ?limit|too many requests|429|50[0-9]|upstream|gateway/i
+  return /interrupted|stream|timeout|timed out|超时|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket hang up|network|rate ?limit|too many requests|429|50[0-9]|upstream|gateway/i
     .test(message)
 }
 
@@ -68,6 +77,10 @@ export interface WorkflowRunnerDeps {
   readonly nodeAttempts?: number
   /** 重试之间的等待毫秒（默认 800，按次数线性退避）。 */
   readonly retryDelayMs?: number
+  /** 单节点超时毫秒（按节点种类给；缺省见 DEFAULT_NODE_TIMEOUT_MS）。 */
+  readonly nodeTimeoutMs?: (kind: WorkflowNodeKind) => number
+  /** 第 N 次重试前的等待毫秒（缺省 = retryDelayMs × 次数）。 */
+  readonly retryBackoffMs?: (attempt: number) => number
 }
 
 /** 起跑选项：`only` 用于"重试只重跑失败节点及其下游"。 */
@@ -312,9 +325,24 @@ export class WorkflowRunner {
     }
 
     let lastMessage = ''
+    const timeoutMs = Math.max(1, this.deps.nodeTimeoutMs?.(node.kind)
+      ?? DEFAULT_NODE_TIMEOUT_MS[node.kind] ?? FALLBACK_NODE_TIMEOUT_MS)
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      // 每次尝试独立控制器 + 超时护栏：既让工具能收到取消信号，也保证"工具不听话"时节点仍能结束
+      const attemptController = new AbortController()
+      const combined = AbortSignal.any([signal, attemptController.signal])
+      let timedOut = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          attemptController.abort()
+          reject(new Error(`节点执行超时（${Math.round(timeoutMs / 1000)}s）：上游没有在时限内返回`))
+        }, timeoutMs)
+        timer.unref?.()
+      })
       try {
-        const value = await tool.execute(args, { signal })
+        const value = await Promise.race([tool.execute(args, { signal: combined }), timeoutPromise])
         const extracted = extractOutcome(value)
         if (this.deps.cache !== false && typeof extracted.outputPath === 'string') {
           await this.deps.store.rememberNodeCache?.({
@@ -339,7 +367,7 @@ export class WorkflowRunner {
         // 上游抖动这类瞬时失败自动重试（owner 要求 ≥3 次），确定性失败立即收手
         if (attempt < maxAttempts && isTransientFailure(lastMessage)) {
           this.deps.onError?.(`node ${node.id} attempt ${attempt}/${maxAttempts} failed transiently: ${lastMessage}`)
-          const delay = (this.deps.retryDelayMs ?? 800) * attempt
+          const delay = this.deps.retryBackoffMs?.(attempt) ?? (this.deps.retryDelayMs ?? 800) * attempt
           await new Promise(resolve => { setTimeout(resolve, delay) })
           continue
         }
@@ -347,6 +375,9 @@ export class WorkflowRunner {
           nodeId: node.id, kind: node.kind, status: 'failed', startedAt,
           finishedAt: (this.deps.now?.() ?? new Date()).toISOString(), attempts: attempt, error: lastMessage,
         }
+      } finally {
+        if (timer !== undefined) clearTimeout(timer)
+        void timedOut
       }
     }
     return {
