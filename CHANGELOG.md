@@ -2,7 +2,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.5-workbench-5] - 2026-10-18
 
 （下一轮的改动写这里）
 
@@ -11,6 +11,10 @@
 ### 批次三
 - **A18 诊断暴露输出占用**：`diagnostics` 增加 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`，与 `maintenance/retention` 配合使用
 - **A17 时间轴 schema v3**：新增 2→3 迁移（片段特效/转场字段均可选，旧数据无需改写）；迁移链 1→2→3
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.4-workbench-4] - 2026-10-18
 
