@@ -82,9 +82,14 @@ describe('structured logs (T7-3)', () => {
     }
     const job = registry.start(timeline)
     await new Promise(resolve => { setTimeout(resolve, 100) })
-    expect(entries).toHaveLength(1)
-    expect(entries[0]).toMatchObject({
+    const started = entries.filter(entry => entry.event === 'render')
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({
       event: 'render', renderId: job.id, timelineId: 'tml-1', status: 'succeeded', outputPath: '/tmp/outputs/movie.mp4',
     })
+    // `A21`：完成后另有一条 render-finished（带实际耗时），供诊断统计
+    const finished = entries.find(entry => entry.event === 'render-finished')
+    expect(finished).toMatchObject({ renderId: job.id })
+    expect(typeof finished?.durationMs).toBe('number')
   })
 })

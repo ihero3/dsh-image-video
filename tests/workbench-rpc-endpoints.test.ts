@@ -171,7 +171,7 @@ describe('workbench channel endpoints', () => {
     const snapshot = await ok<{
       plugin: { name: string; version: string }
       data: { projects: number; assets: number; writeCount: number; fileBytes: number; runningRuns: number }
-      renders: { running: number; queued: number; recent: unknown[] }
+      renders: { running: number; queued: number; recent: unknown[]; stats: { finished: number; failed: number; cancelled: number } }
       cache: { nodeResults: number }
       outputs: { files: number; bytes: number; referenced: number; oldestAt?: string }
       errors: { errors: unknown[]; errorCount: number }
@@ -184,6 +184,7 @@ describe('workbench channel endpoints', () => {
     expect(snapshot.data.fileBytes).toBeGreaterThan(0)
     expect(snapshot.data.runningRuns).toBe(0)
     expect(snapshot.renders).toMatchObject({ running: 0, queued: 0 })
+    expect(snapshot.renders.stats).toMatchObject({ finished: 0, failed: 0, cancelled: 0 })
     expect(Array.isArray(snapshot.renders.recent)).toBe(true)
     expect(snapshot.cache.nodeResults).toBe(0)
     // `A18`：输出目录占用（空目录至少字段齐全可读）

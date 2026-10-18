@@ -34,6 +34,8 @@ export declare class RenderRegistry {
     private readonly deps;
     private readonly jobs;
     private readonly controllers;
+    /** 最近完成任务的实际耗时（毫秒，`A21`；最多留 50 条）。 */
+    private readonly durations;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
     constructor(deps: {
@@ -50,6 +52,21 @@ export declare class RenderRegistry {
     private stamp;
     private patch;
     /** 列出任务（最新在前），可按项目过滤。 */
+    /** 记一次耗时（`A21`）：成功/失败/取消都算，最多留 50 条。 */
+    private recordDuration;
+    /**
+     * 渲染统计（`A21` 诊断用）：各结局计数 + 耗时中位数/P90。
+     * @returns 统计快照（没有样本时 `durationMs` 为 `undefined`）。
+     */
+    stats(): {
+        finished: number;
+        failed: number;
+        cancelled: number;
+        durationMs?: {
+            p50: number;
+            p90: number;
+        };
+    };
     list(projectId?: string): RenderJob[];
     /** 取一个任务。 */
     get(id: string): RenderJob | undefined;

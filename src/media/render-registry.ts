@@ -35,6 +35,9 @@ export interface RenderJob {
 export class RenderRegistry {
   private readonly jobs = new Map<string, RenderJob>()
   private readonly controllers = new Map<string, AbortController>()
+  /** 最近完成任务的实际耗时（毫秒，`A21`；最多留 50 条）。 */
+  private readonly durations: number[] = []
+
   /** 等待槽位的任务（FIFO，`A4`）。 */
   private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord }> = []
 
@@ -61,6 +64,44 @@ export class RenderRegistry {
   }
 
   /** 列出任务（最新在前），可按项目过滤。 */
+  /** 记一次耗时（`A21`）：成功/失败/取消都算，最多留 50 条。 */
+  private recordDuration(id: string): void {
+    const job = this.jobs.get(id)
+    if (job === undefined) return
+    const started = Date.parse(job.startedAt)
+    if (!Number.isFinite(started)) return
+    this.durations.push(Math.max(0, Date.now() - started))
+    if (this.durations.length > 50) this.durations.shift()
+    const finished = this.jobs.get(id)
+    this.deps.log?.({
+      event: 'render-finished', renderId: id, status: finished?.status ?? 'unknown',
+      durationMs: this.durations[this.durations.length - 1],
+    })
+  }
+
+  /**
+   * 渲染统计（`A21` 诊断用）：各结局计数 + 耗时中位数/P90。
+   * @returns 统计快照（没有样本时 `durationMs` 为 `undefined`）。
+   */
+  stats(): {
+    finished: number; failed: number; cancelled: number
+    durationMs?: { p50: number; p90: number }
+  } {
+    const jobs = [...this.jobs.values()]
+    const sortedDurations = [...this.durations].sort((left, right) => left - right)
+    const percentile = (ratio: number): number => {
+      if (sortedDurations.length === 0) return 0
+      const index = Math.min(sortedDurations.length - 1, Math.floor(sortedDurations.length * ratio))
+      return Math.round(sortedDurations[index] as number)
+    }
+    return {
+      finished: jobs.filter(job => job.status === 'succeeded').length,
+      failed: jobs.filter(job => job.status === 'failed').length,
+      cancelled: jobs.filter(job => job.status === 'cancelled').length,
+      ...sortedDurations.length === 0 ? {} : { durationMs: { p50: percentile(0.5), p90: percentile(0.9) } },
+    }
+  }
+
   list(projectId?: string): RenderJob[] {
     return [...this.jobs.values()]
       .filter(job => projectId === undefined || job.projectId === projectId)
@@ -162,6 +203,7 @@ export class RenderRegistry {
         ...error instanceof RenderError ? { code: error.code } : {}, error: message,
       })
     }).finally(() => {
+      this.recordDuration(id)
       this.controllers.delete(id)
       // 腾出槽位 → 按 FIFO 拉起下一个排队任务（`A4`）
       const next = this.pending.shift()

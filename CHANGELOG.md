@@ -9,6 +9,7 @@
 ## [Unreleased]
 
 ### 批次四
+- **A21 渲染耗时可观测**：最近 50 次渲染的耗时 + `render-finished` 结构化日志（status/durationMs）+ `RenderRegistry.stats()`（成功/失败/取消 + p50/p90），并通过 `diagnostics.renders.stats` 暴露
 - **A20 音频淡入淡出 + 响度归一化**：音轨 `fadeMs`(0–5000ms) 与文档 `normalizeLoudness`（缺省关）；导出链每轨 `afade=t=in/out`，混音后可选 `loudnorm=I=-16:TP=-1.5:LRA=11`；真机验证仍有音轨且时长 ±80ms
 
 ### 批次三

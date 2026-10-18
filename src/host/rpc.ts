@@ -320,6 +320,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         renders: {
           running, queued,
           recent: jobs.slice(0, 5).map(job => ({ id: job.id, status: job.status, percent: job.percent, queued: job.queued ?? false })),
+          stats: deps.renders.stats(),
         },
         runs: { running: data.runningRuns },
         cache: { nodeResults: data.nodeCache },

@@ -102,6 +102,26 @@ describe('render queue (A4)', () => {
     void running
   })
 
+  it('reports duration percentiles and outcome counts (A21)', async () => {
+    const { service, gates } = controllableService()
+    const registry = new RenderRegistry({ render: service, maxConcurrent: 2 })
+    expect(registry.stats()).toEqual({ finished: 0, failed: 0, cancelled: 0 })
+    const first = registry.start(timeline('t1'))
+    const second = registry.start(timeline('t2'))
+    await flush()
+    gates[0]!.resolve(done('t1'))
+    gates[1]!.reject(new Error('boom'))
+    await flush()
+    await flush()
+    const stats = registry.stats()
+    expect(stats.finished).toBe(1)
+    expect(stats.failed).toBe(1)
+    expect(stats.durationMs?.p50).toBeGreaterThanOrEqual(0)
+    expect(stats.durationMs?.p90).toBeGreaterThanOrEqual(stats.durationMs?.p50 ?? 0)
+    void first
+    void second
+  })
+
   it('logs queue events so operators can see saturation', async () => {
     const entries: Array<Record<string, unknown>> = []
     const { service } = controllableService()
