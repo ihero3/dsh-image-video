@@ -15,6 +15,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
+import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -82,6 +83,28 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       projectId: { type: 'string', description: 'rename 时的项目 id' },
       filter: { type: 'string', description: 'list 时按名称包含此子串过滤（可选）' },
       limit: { type: 'integer', description: `list 最多返回多少行（默认 ${MAX_TOOL_ROWS}）` },
+      trims: {
+        type: 'array',
+        description: `trim 时改哪些片段（≤${MAX_TOOL_CLIPS}）：每项 {clipId, startMs?, durationMs?, inMs?}`,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            clipId: { type: 'string', description: '片段 id（timeline list 里拿）' },
+            startMs: { type: 'integer', description: '新的起点（毫秒）' },
+            durationMs: { type: 'integer', description: '新的时长（毫秒）' },
+            inMs: { type: 'integer', description: '源内偏移（毫秒）' },
+          },
+        },
+      },
+      clipIds: { type: 'array', description: 'drop-clip 时要移出时间轴的片段 id', items: { type: 'string', description: '片段 id' } },
+      width: { type: 'integer', description: 'set-format 时导出宽度（偶数 128–4096）' },
+      height: { type: 'integer', description: 'set-format 时导出高度（偶数 128–4096）' },
+      frameRate: { type: 'integer', description: 'set-format 时导出帧率（24/25/30/60）' },
+      bitrateKbps: { type: 'integer', description: 'set-format 时视频码率（kbps，可选）' },
+      track: { type: 'string', description: 'set-track 时的轨道：video / audio / subtitle（默认 audio）' },
+      volume: { type: 'number', description: 'set-track 时的轨道音量（0–2）' },
+      muted: { type: 'boolean', description: 'set-track 时是否静音' },
     },
     async execute(args) {
       const input = asRecord(args)
@@ -159,7 +182,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const timeline = defineTool({
     name: 'workbench_timeline',
     description:
-      '时间轴（成片）：list（列出项目里的时间轴）、add-clip（把素材或字幕加到轨道上；同一素材可多次加入）、'
+      '时间轴（成片）：list、add-clip（加素材/字幕）、trim（改片段起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
+      + 'set-format（导出分辨率/帧率/码率）、set-track（轨道音量/静音）、'
       + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度）。'
       + `一次最多加 ${MAX_TOOL_CLIPS} 个片段。视频轨片段带 startMs/durationMs（毫秒）；没有 startMs 时自动接在末尾。`,
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
@@ -222,7 +246,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           const end = target.clips.reduce((longest, item) => Math.max(longest, item.startMs + item.durationMs), 0)
           const startMs = typeof clip.startMs === 'number' && Number.isFinite(clip.startMs) ? Math.round(clip.startMs) : end
           const durationMs = typeof clip.durationMs === 'number' && Number.isFinite(clip.durationMs) ? Math.round(clip.durationMs) : 3000
-          const id = `clip-${Date.now().toString(36)}-${index}`
+          // 片段 id 必须真唯一：早先 `clip-${毫秒}-${下标}` 在同一毫秒内会撞 id（不同轨道下标都是 0）
+          const id = newWorkbenchId('clip')
           if (trackKind === 'subtitle') {
             const text = typeof clip.text === 'string' ? clip.text : ''
             if (text.trim() === '') throw new Error(`第 ${index + 1} 个字幕片段缺 text`)
@@ -242,6 +267,96 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         return json({ timeline: { id: saved.id, tracks: saved.tracks.map(track => ({ kind: track.kind, clips: track.clips.length })) } })
       }
+      if (action === 'trim') {
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline trim')
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const trims = Array.isArray(input.trims) ? input.trims : []
+        if (trims.length === 0) throw new Error('trim 需要 trims 数组，且至少一项')
+        if (trims.length > MAX_TOOL_CLIPS) throw new Error(`一次最多改 ${MAX_TOOL_CLIPS} 个片段`)
+        const byId = new Map(trims.map(raw => {
+          const trim = asRecord(raw)
+          return [requireString(trim, 'clipId', 'workbench_timeline trim'), trim] as const
+        }))
+        let touched = 0
+        const tracks = current.tracks.map(track => ({
+          ...track,
+          clips: track.clips.map(clip => {
+            const trim = byId.get(clip.id)
+            if (trim === undefined) return clip
+            touched += 1
+            return {
+              ...clip,
+              ...typeof trim.startMs === 'number' ? { startMs: Math.max(0, Math.round(trim.startMs)) } : {},
+              ...typeof trim.durationMs === 'number' ? { durationMs: Math.max(1, Math.round(trim.durationMs)) } : {},
+              ...typeof trim.inMs === 'number' ? { inMs: Math.max(0, Math.round(trim.inMs)) } : {},
+            }
+          }),
+        }))
+        if (touched !== byId.size) throw new Error(`有 ${byId.size - touched} 个 clipId 不存在；先 action=list 确认`)
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name,
+          tracks, frameRate: current.frameRate, burnSubtitles: current.burnSubtitles,
+          exportFormat: current.exportFormat,
+        })
+        return json({ timeline: { id: saved.id, trimmed: touched, tracks: saved.tracks.map(track => ({ kind: track.kind, clips: track.clips.length })) } })
+      }
+      if (action === 'drop-clip') {
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline drop-clip')
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const clipIds = (Array.isArray(input.clipIds) ? input.clipIds : []).filter((id): id is string => typeof id === 'string')
+        if (clipIds.length === 0) throw new Error('drop-clip 需要 clipIds 数组')
+        if (clipIds.length > MAX_TOOL_CLIPS) throw new Error(`一次最多移出 ${MAX_TOOL_CLIPS} 个片段`)
+        const drop = new Set(clipIds)
+        let removed = 0
+        const tracks = current.tracks.map(track => ({
+          ...track,
+          clips: track.clips.filter(clip => {
+            const hit = drop.has(clip.id)
+            if (hit) removed += 1
+            return !hit
+          }),
+        }))
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name, tracks,
+          frameRate: current.frameRate, burnSubtitles: current.burnSubtitles, exportFormat: current.exportFormat,
+        })
+        return json({ timeline: { id: saved.id, dropped: removed } })
+      }
+      if (action === 'set-format') {
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline set-format')
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name, tracks: current.tracks,
+          frameRate: current.frameRate, burnSubtitles: current.burnSubtitles,
+          exportFormat: {
+            ...current.exportFormat ?? {},
+            ...typeof input.width === 'number' ? { width: input.width } : {},
+            ...typeof input.height === 'number' ? { height: input.height } : {},
+            ...typeof input.frameRate === 'number' ? { frameRate: input.frameRate } : {},
+            ...typeof input.bitrateKbps === 'number' ? { bitrateKbps: input.bitrateKbps } : {},
+          },
+        })
+        return json({ timeline: { id: saved.id, exportFormat: saved.exportFormat } })
+      }
+      if (action === 'set-track') {
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline set-track')
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const kind = input.track === 'video' || input.track === 'subtitle' ? input.track : 'audio'
+        const tracks = current.tracks.map(track => track.kind !== kind ? track : {
+          ...track,
+          ...typeof input.volume === 'number' ? { volume: input.volume } : {},
+          ...typeof input.muted === 'boolean' ? { muted: input.muted } : {},
+        })
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name, tracks,
+          frameRate: current.frameRate, burnSubtitles: current.burnSubtitles, exportFormat: current.exportFormat,
+        })
+        return json({ timeline: { id: saved.id, tracks: saved.tracks.map(track => ({ kind: track.kind, volume: track.volume ?? null, muted: track.muted ?? false })) } })
+      }
       if (action === 'export') {
         const timelineId = requireString(input, 'timelineId', 'workbench_timeline export')
         const doc = await store.findTimeline(timelineId)
@@ -249,7 +364,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const job = renders.start(doc)
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
-      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'export'])
+      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
     },
   })
 
@@ -386,6 +501,16 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const rows = renders.list(projectId).slice(0, optionalLimit(input))
         return json({ renders: rows.map(job => ({ id: job.id, timelineId: job.timelineId, status: job.status, percent: job.percent, ...job.outputPath === undefined ? {} : { outputPath: job.outputPath } })), count: rows.length })
       }
+      if (action === 'render-cancel') {
+        const renderId = requireString(input, 'renderId', 'workbench_tasks render-cancel')
+        const cancelled = renders.cancel(renderId)
+        const job = renders.list().find(candidate => candidate.id === renderId)
+        return json({
+          cancelled,
+          status: job?.status ?? null,
+          hint: cancelled ? '已请求取消（排队中的会直接摘掉，在跑的会杀掉 ffmpeg 并清理半成品）' : '没有找到在跑的导出任务（可能已结束）',
+        })
+      }
       if (action === 'cancel') {
         const taskId = typeof input.taskId === 'string' && input.taskId !== '' ? input.taskId : undefined
         const renderId = typeof input.renderId === 'string' && input.renderId !== '' ? input.renderId : undefined
@@ -394,7 +519,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const cancelledRender = renderId === undefined ? false : renders.cancel(renderId)
         return json({ cancelledTask, cancelledRender, hint: cancelledTask || cancelledRender ? undefined : '没有找到在跑的任务（可能已经结束）' })
       }
-      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel'])
+      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel', 'render-cancel'])
     },
   })
 

@@ -187,6 +187,63 @@ describe('agent tool surface (T6-3)', () => {
       .rejects.toThrow(/至少一个片段/)
   })
 
+  it('edits timelines through the tool surface: trim / remove-clip / set-format / set-track (A6)', async () => {
+    const { call, store, outputs } = await harness()
+    const project = await store.createProject('工具剪片')
+    const assetPath = await touch(outputs, 'clip.mp4')
+    await store.attachAsset({ projectId: project.id, path: assetPath, kind: 'video' })
+    const timeline = await store.saveTimeline({ projectId: project.id, tracks: [
+      { id: 'v1', kind: 'video', clips: [] },
+      { id: 'a1', kind: 'audio', clips: [] },
+    ] })
+    await call('workbench_timeline', {
+      action: 'add-clip', projectId: project.id, timelineId: timeline.id, track: 'video',
+      clips: [{ assetPath, durationMs: 5000 }],
+    })
+    const before = (await store.findTimeline(timeline.id))!
+    const clipId = before.tracks[0]!.clips[0]!.id
+
+    // trim：改起点/时长/源偏移
+    await call('workbench_timeline', {
+      action: 'trim', projectId: project.id, timelineId: timeline.id,
+      trims: [{ clipId, startMs: 1000, durationMs: 2500, inMs: 500 }],
+    })
+    const trimmed = (await store.findTimeline(timeline.id))!.tracks[0]!.clips[0]!
+    expect(trimmed).toMatchObject({ startMs: 1000, durationMs: 2500, inMs: 500 })
+    // 不存在的 clipId 要报错（不许猜）
+    await expect(call('workbench_timeline', {
+      action: 'trim', projectId: project.id, timelineId: timeline.id, trims: [{ clipId: 'nope', startMs: 0 }],
+    })).rejects.toThrow(/不存在/)
+
+    // set-format：导出规格（越界由 store 校验拒绝）
+    const formatted = await call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id,
+      width: 1080, height: 1920, frameRate: 30,
+    })
+    expect((formatted.value as { timeline: { exportFormat: { width: number } } }).timeline.exportFormat.width).toBe(1080)
+    await expect(call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id, width: 641, height: 360, frameRate: 30,
+    })).rejects.toThrow(/even number/)
+
+    // set-track：音量与静音
+    const tracked = await call('workbench_timeline', {
+      action: 'set-track', projectId: project.id, timelineId: timeline.id, track: 'audio', volume: 0.6, muted: false,
+    })
+    const audio = (tracked.value as { timeline: { tracks: Array<{ kind: string; volume: number | null }> } }).timeline.tracks.find(row => row.kind === 'audio')
+    expect(audio?.volume).toBe(0.6)
+
+    // drop-clip：把片段移出时间轴
+    await call('workbench_timeline', { action: 'drop-clip', projectId: project.id, timelineId: timeline.id, clipIds: [clipId] })
+    expect((await store.findTimeline(timeline.id))!.tracks[0]!.clips).toHaveLength(0)
+  })
+
+  it('reports render-cancel honestly for unknown ids (A6)', async () => {
+    const { call } = await harness()
+    const result = await call('workbench_tasks', { action: 'render-cancel', renderId: 'render-nope' })
+    expect(result.value).toMatchObject({ cancelled: false, status: null })
+    expect((result.value as { hint: string }).hint).toContain('没有找到')
+  })
+
   it('saves, runs and reports workflow runs through the tool surface', async () => {
     const { call, store } = await harness()
     const project = await store.createProject('工具跑图')

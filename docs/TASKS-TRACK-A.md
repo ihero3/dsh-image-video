@@ -14,7 +14,7 @@
 
 ## P1（能力补齐与规模化）
 
-- [ ] **A6 Agent 工具面扩展**：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
+- [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
 - [ ] **A7 项目迁移框架**：`schemaVersion` → 迁移函数链（v1→v2…）+ 迁移前自动 `.bak`；损坏文件已能自动回滚（已做）；测试：旧版本文件加载后字段齐全。*（§8.1）*
 - [ ] **A8 存储规模化**：单 JSON 在 1 万素材量级的读写优化（按项目分片 or 冷热分层 + 索引），保留现有原子写与 `.bak`；压测脚本 + 指标写进文档。*（§8）*
 - [ ] **A9 诊断与可观测**：`/image-video/diagnostics`（版本、数据规模、最近错误、渲染队列、缓存命中率）；结构化日志补 `durationMs` 分位；测试：端点字段齐全。*（§13/§六.4 运行日志）*

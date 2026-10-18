@@ -27,6 +27,13 @@
 | 撤销/重做 | **纯逻辑模块** `src/workbench/history.ts` 的 `HistoryStack<T>`（commit/commitWith/undo/redo/peekUndo/peekRedo/reset）→ B 包一层 React hook 即可 | ✅ A3 |
 | 渲染排队 | `timelines/renders` 任务多出**加法字段** `queued?`/`queuePosition?`（`status` 仍是 running，不破坏编译）；`timelines/render-cancel` 可取消排队项 | ✅ A4 |
 
+## Agent 工具面（`src/tools/workbench.ts`）
+
+- `workbench_projects` / `workbench_assets` / `workbench_workflow` / `workbench_tasks` / `workbench_timeline`
+- 时间轴动作：`list | add-clip | trim | drop-clip | set-format | set-track | export`
+- 任务动作：`list | renders | cancel | render-cancel`
+- 护栏：单次片段 ≤20；**不提供**项目/素材级删除（`T6-5`，只在 UI 里做）
+
 ## B 申请区（B 写需求，A 认领）
 
 | 需求 | 用途 | 状态 |
