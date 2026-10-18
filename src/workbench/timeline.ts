@@ -394,10 +394,9 @@ export function timelineDurationMs(tracks: readonly TimelineTrack[]): number {
         const clipEnd = start + effectiveDurationMs(clip)
         // 转场让两段重叠：仅当两段首尾相接（无空档）且都在视频轨上时才扣
         const previous = ordered[index - 1]
-        const overlap = track.kind === 'video' && previous !== undefined && clip.transition !== undefined
-          && start <= previous.startMs + effectiveDurationMs(previous) + 1
-          ? Math.min(transitionDurationMs(clip), Math.floor(Math.min(effectiveDurationMs(clip), effectiveDurationMs(previous)) / 2))
-          : 0
+        // 重叠只在视频轨、且两段首尾相接（无空档）时生效——复用 transitionOverlapMs 单一实现
+        const adjacent = previous !== undefined && start <= previous.startMs + effectiveDurationMs(previous) + 1
+        const overlap = track.kind === 'video' && adjacent ? transitionOverlapMs(clip, previous) : 0
         end = Math.max(end, clipEnd - overlap)
       }
       return Math.max(longest, end)
