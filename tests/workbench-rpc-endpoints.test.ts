@@ -153,6 +153,17 @@ describe('workbench channel endpoints', () => {
     await rm(work, { recursive: true, force: true })
   }, 60_000)
 
+  it('plans output retention with a dry run by default (A15)', async () => {
+    const { ok } = await makeHandler()
+    // 空 outputs 目录：预演应返回空计划且不报错
+    const planned = await ok<{ dryRun: boolean; plan: { remove: unknown[]; overQuota: boolean } }>(
+      'maintenance/retention', { maxFiles: 10 },
+    )
+    expect(planned.dryRun).toBe(true)
+    expect(planned.plan.remove).toEqual([])
+    expect(planned.plan.overQuota).toBe(false)
+  })
+
   it('reports a diagnostics snapshot with data scale and render queue (A9)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '诊断项目' })

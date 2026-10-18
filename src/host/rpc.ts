@@ -21,7 +21,10 @@ import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { sep } from 'node:path'
 import { resolve } from 'node:path'
+import { unlink } from 'node:fs/promises'
+import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
+import { planRetention } from '../media/retention.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
@@ -409,6 +412,41 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
+    case 'maintenance/retention': {
+      // `A15`：输出目录配额清理。默认 dryRun，只算不删；被素材库引用的文件永不动
+      const files = (await listOutputs(deps.outputsDir)).map(file => ({
+        name: file.name, bytes: file.bytes, mtimeMs: Date.parse(file.modifiedAt ?? '') || 0,
+      }))
+      const referenced = new Set((await deps.store.referencedAssetPaths()).map(path => path.split('/').pop() ?? path))
+      const plan = planRetention(files, {
+        ...optionalNumber(payload, 'maxBytes') === undefined ? {} : { maxBytes: optionalNumber(payload, 'maxBytes') },
+        ...optionalNumber(payload, 'maxFiles') === undefined ? {} : { maxFiles: optionalNumber(payload, 'maxFiles') },
+        ...optionalNumber(payload, 'keepNewest') === undefined ? {} : { keepNewest: optionalNumber(payload, 'keepNewest') },
+        protect: referenced,
+      })
+      const dryRun = field(payload, 'dryRun') !== false
+      let deleted = 0
+      if (!dryRun) {
+        for (const file of plan.removed) {
+          // 只删 outputs 目录里的、名字里不含路径分隔符的（防目录穿越）
+          if (file.name.includes('/') || file.name.includes('\\')) continue
+          try {
+            await unlink(join(deps.outputsDir, file.name))
+            deleted += 1
+          } catch {
+            // 删不掉的跳过（可能正被播放器占用）
+          }
+        }
+      }
+      return {
+        dryRun, deleted,
+        plan: {
+          remove: plan.removed.map(file => ({ name: file.name, bytes: file.bytes })),
+          keptFiles: plan.keptFiles, keptBytes: plan.keptBytes, freedBytes: plan.freedBytes, overQuota: plan.overQuota,
+        },
+        hint: dryRun ? '这是预演：确认无误后用 dryRun=false 真正清理' : '已按计划清理',
+      }
+    }
     case 'maintenance/compact':
       return { removed: await deps.store.compactAssets() }
     case 'tasks/cancel':

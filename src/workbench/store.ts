@@ -532,6 +532,15 @@ export class WorkbenchStore {
   }
 
   /**
+   * 素材库引用的全部文件路径（`A15` 输出清理的保护名单）。
+   * @returns 路径数组（去重）。
+   */
+  async referencedAssetPaths(): Promise<string[]> {
+    const document = await this.load()
+    return [...new Set(document.assets.map(asset => asset.path))]
+  }
+
+  /**
    * 数据规模快照（`A9` 诊断用）：各实体条数、真实落盘次数、数据文件字节数。
    * @returns 计数（只读，不触发写盘）。
    */
