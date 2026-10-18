@@ -21,12 +21,21 @@ export interface RenderJob {
     /** 失败时的机器码（`RenderError#code`）。 */
     readonly code?: string;
     readonly error?: string;
+    /**
+     * 是否在**排队**等渲染槽位（`A4`）。注意这是加法字段：`status` 仍是 `running`，
+     * 客户端不会因未知枚举而编译失败；等界面准备好后再用它显示"排队第 N 位"。
+     */
+    readonly queued?: boolean;
+    /** 排队位置（1 = 下一个开跑）；不在排队时为 `undefined`。 */
+    readonly queuePosition?: number;
 }
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export declare class RenderRegistry {
     private readonly deps;
     private readonly jobs;
     private readonly controllers;
+    /** 等待槽位的任务（FIFO，`A4`）。 */
+    private readonly pending;
     constructor(deps: {
         readonly render: RenderService;
         /** 成功后把产物登记成素材（可选）。 */
@@ -35,6 +44,8 @@ export declare class RenderRegistry {
         readonly onError?: (message: string) => void;
         /** 结构化日志钩子（`T7-3`）。 */
         readonly log?: (entry: Record<string, unknown>) => void;
+        /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
+        readonly maxConcurrent?: number;
     });
     private stamp;
     private patch;
@@ -56,6 +67,8 @@ export declare class RenderRegistry {
      * @returns 刚建立的任务。
      */
     start(timeline: TimelineRecord): RenderJob;
+    /** 真正开跑一个任务（内部：start 或出队时调用）。 */
+    private launch;
     /** 进程重启时把遗留的"运行中"任务按失败收尾。 */
     failStale(reason: string): number;
 }

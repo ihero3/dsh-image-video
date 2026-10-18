@@ -22,12 +22,21 @@ export interface RenderJob {
   /** 失败时的机器码（`RenderError#code`）。 */
   readonly code?: string
   readonly error?: string
+  /**
+   * 是否在**排队**等渲染槽位（`A4`）。注意这是加法字段：`status` 仍是 `running`，
+   * 客户端不会因未知枚举而编译失败；等界面准备好后再用它显示"排队第 N 位"。
+   */
+  readonly queued?: boolean
+  /** 排队位置（1 = 下一个开跑）；不在排队时为 `undefined`。 */
+  readonly queuePosition?: number
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export class RenderRegistry {
   private readonly jobs = new Map<string, RenderJob>()
   private readonly controllers = new Map<string, AbortController>()
+  /** 等待槽位的任务（FIFO，`A4`）。 */
+  private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord }> = []
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -37,6 +46,8 @@ export class RenderRegistry {
     readonly onError?: (message: string) => void
     /** 结构化日志钩子（`T7-3`）。 */
     readonly log?: (entry: Record<string, unknown>) => void
+    /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
+    readonly maxConcurrent?: number
   }) {}
 
   private stamp(): string {
@@ -73,7 +84,15 @@ export class RenderRegistry {
    */
   cancel(id: string): boolean {
     const controller = this.controllers.get(id)
-    if (controller === undefined) return false
+    if (controller === undefined) {
+      // 排队中的任务：直接从队列摘掉并标记取消（`A4`）
+      const index = this.pending.findIndex(entry => entry.job.id === id)
+      if (index < 0) return false
+      this.pending.splice(index, 1)
+      this.pending.forEach((entry, position) => { this.patch(entry.job.id, { queuePosition: position + 1 }) })
+      this.patch(id, { status: 'cancelled', queued: false, queuePosition: undefined, finishedAt: this.stamp(), error: '排队时已取消' })
+      return true
+    }
     controller.abort()
     return true
   }
@@ -85,11 +104,28 @@ export class RenderRegistry {
    */
   start(timeline: TimelineRecord): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
     const job: RenderJob = {
       id, timelineId: timeline.id, projectId: timeline.projectId,
       status: 'running', percent: 0, startedAt: this.stamp(),
     }
     this.jobs.set(id, job)
+    if (this.controllers.size >= maxConcurrent) {
+      // 槽位满了：进队列（status 仍是 running，额外标记 queued + 位置）
+      this.pending.push({ job, timeline })
+      this.patch(id, { queued: true, queuePosition: this.pending.length })
+      this.deps.log?.({ event: 'render-queued', renderId: id, timelineId: timeline.id, position: this.pending.length })
+      return this.jobs.get(id) ?? job
+    }
+    this.launch(job.id, timeline)
+    return this.jobs.get(id) ?? job
+  }
+
+  /** 真正开跑一个任务（内部：start 或出队时调用）。 */
+  private launch(id: string, timeline: TimelineRecord): void {
+    const job = this.jobs.get(id)
+    if (job === undefined) return
+    this.patch(id, { queued: false, queuePosition: undefined })
     const controller = new AbortController()
     this.controllers.set(id, controller)
 
@@ -125,9 +161,15 @@ export class RenderRegistry {
         status: cancelled ? 'cancelled' : 'failed', durationMs: Date.now() - Date.parse(job.startedAt),
         ...error instanceof RenderError ? { code: error.code } : {}, error: message,
       })
-    }).finally(() => { this.controllers.delete(id) })
-
-    return job
+    }).finally(() => {
+      this.controllers.delete(id)
+      // 腾出槽位 → 按 FIFO 拉起下一个排队任务（`A4`）
+      const next = this.pending.shift()
+      if (next !== undefined) {
+        this.pending.forEach((entry, index) => { this.patch(entry.job.id, { queuePosition: index + 1 }) })
+        this.launch(next.job.id, next.timeline)
+      }
+    })
   }
 
   /** 进程重启时把遗留的"运行中"任务按失败收尾。 */
