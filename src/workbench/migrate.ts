@@ -38,6 +38,12 @@ export const WORKBENCH_MIGRATIONS: readonly WorkbenchMigration[] = [
       resourceUsage: document.resourceUsage ?? [],
     }),
   },
+  {
+    from: 2,
+    to: 3,
+    describe: 'v3：片段支持特效（speed/fade/crop）与跨段转场（transition）——字段均可选，无需改写旧数据',
+    migrate: document => ({ ...document, schemaVersion: 3 }),
+  },
 ]
 
 /** 迁移结果。 */

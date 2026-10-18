@@ -27,12 +27,15 @@ const v1ToV2: WorkbenchMigration = {
   }),
 }
 
+const v2ToV3: WorkbenchMigration = {
+  from: 2, to: 3, describe: '测试迁移：v2→v3 标记', migrate: document => ({ ...document, schemaVersion: 3 }),
+}
+
 describe('migrateDocument (A7)', () => {
   it('applies the chain step by step', () => {
-    const result = migrateDocument({ schemaVersion: 1, projects: [{ id: 'p1' }] }, [v1ToV2])
+    const result = migrateDocument({ schemaVersion: 1, projects: [{ id: 'p1' }] }, [v1ToV2, v2ToV3])
     expect(result.fromVersion).toBe(1)
-    expect(result.applied).toHaveLength(1)
-    expect(result.document.schemaVersion).toBe(2)
+    expect(result.applied).toHaveLength(2) // 1→2→3 两步
     expect((result.document.projects as Array<Record<string, unknown>>)[0]).toMatchObject({ id: 'p1', color: '#4176e6' })
   })
 
@@ -57,7 +60,7 @@ describe('store migration integration (A7)', () => {
     await writeFile(join(directory, 'workbench.json'), JSON.stringify(legacy), 'utf8')
 
     // 注入链：验证"迁移前备份 + 自动落盘"的机制（真实链 1→2 见 setup 里的默认迁移）
-    const store = new WorkbenchStore({ directory, migrations: [v1ToV2] })
+    const store = new WorkbenchStore({ directory, migrations: [v1ToV2, v2ToV3] })
     const projects = await store.listProjects()
     expect(projects[0]).toMatchObject({ id: 'prj-legacy', name: '老项目' })
 
@@ -68,7 +71,7 @@ describe('store migration integration (A7)', () => {
     const onDisk = JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8')) as {
       schemaVersion: number; projects: Array<{ color?: string }>
     }
-    expect(onDisk.schemaVersion).toBe(2)
+    expect(onDisk.schemaVersion).toBe(3)
     expect(onDisk.projects[0]?.color).toBe('#4176e6')
   })
 })

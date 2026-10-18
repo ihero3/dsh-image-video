@@ -19,6 +19,12 @@
 - [x] **A15 输出配额与清理** ✅ 2026-10-18：`src/media/retention.ts` 纯函数计划器（最旧优先、受保护引用不动、至少保留最新 N、可预演）；端点 `maintenance/retention`（**默认 dryRun**，`dryRun=false` 才真删，且只删 outputs 目录内、名字不含路径分隔符的文件）；`store.referencedAssetPaths()` 提供保护名单；测试 5 例：outputs 上限、`maintenance` 扩展、诊断暴露
 - [x] **A16 发布 `v0.3.4-workbench-4`** ✅ 2026-10-18：版本 0.3.4 / CHANGELOG 定稿（A13–A15）/ lib 构建提交 / tag / Harness 指针同步；全量测试与四道门见发布提交说明
 
+## 批次三（A17–A19）
+
+- [x] **A17 时间轴 schema v3 + 真实迁移** ✅ 2026-10-18：`WORKBENCH_SCHEMA_VERSION=3`，新增 2→3 迁移（A13/A13b 的 `speed/fade/crop/transition` 均为可选字段，无需改写旧数据）；迁移链 1→2→3 全绿；测试适配（注入链两步）
+- [ ] **A18 诊断暴露 outputs/保留策略状态**
+- [ ] **A19 发布 `v0.3.5-workbench-5`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

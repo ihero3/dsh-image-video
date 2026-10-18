@@ -31,7 +31,7 @@
 
 > 时间轴片段支持 `speed`(0.25–4) / `fade`(0–2000ms) / `crop{x,y,width,height}` / `transition`(`fade|wipeleft|circleopen`) + `transitionDurationMs`(0–2000，缺省 400)（`A13`/`A13b`，可选字段，不改变 schemaVersion）。
 >
-> 数据文件带 `schemaVersion`（当前 **2**）：读入时按迁移链自动升级，**只升不降**（更高版本会拒绝打开并提示升级插件），迁移前自动备份 `workbench.json.pre-migrate-v<N>`。
+> 数据文件带 `schemaVersion`（当前 **3**）：读入时按迁移链自动升级，**只升不降**（更高版本会拒绝打开并提示升级插件），迁移前自动备份 `workbench.json.pre-migrate-v<N>`。
 
 ## Agent 工具面（`src/tools/workbench.ts`）
 
