@@ -48,8 +48,8 @@ describe('error actionability (T7-2)', () => {
     const error = await store.listProjects().catch(caught => caught as Error)
     expect(error).toBeInstanceOf(Error)
     expect(error.message).toContain('workbench.json')
-    expect(error.message).toMatch(/备份/)
-    expect(error.message).toMatch(/空工作台/)
+    expect(error.message).toMatch(/\.bak/)
+    expect(error.message).toMatch(/corrupt|空工作台/)
   })
 
   it('keeps ffmpeg failures actionable (missing / not executable / encoder)', async () => {

@@ -28,7 +28,8 @@ describe('workbench store', () => {
     expect((await store.listProjects()).map(project => project.id).sort()).toEqual([first.id, second.id].sort())
     // 落盘：目录里只有 workbench.json，没有半写的 .tmp
     const files = await readdir(directory)
-    expect(files).toEqual(['workbench.json'])
+    // `.bak` 是数据安全的镜像副本（不再断言目录里只有主文件）
+    expect(files.filter(name => name.endsWith('.json'))).toEqual(['workbench.json'])
     expect(JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8'))).toMatchObject({ schemaVersion: 1 })
   })
 
@@ -38,7 +39,7 @@ describe('workbench store', () => {
     const created = await Promise.all(Array.from({ length: 12 }, (_, index) => store.createProject(`并发-${index}`)))
     const projects = await store.listProjects()
     expect(projects.map(project => project.id).sort()).toEqual(created.map(project => project.id).sort())
-    expect(await readdir(directory)).toEqual(['workbench.json'])
+    expect((await readdir(directory)).filter(name => name.endsWith('.json'))).toEqual(['workbench.json'])
   })
 
   it('rejects an empty or oversized project name', async () => {

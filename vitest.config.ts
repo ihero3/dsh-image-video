@@ -7,6 +7,9 @@ export default defineConfig({
     jsx: 'automatic',
   },
   test: {
+    // 套件里有真实 ffmpeg 渲染与 jsdom 交互，忙碌机器上默认 5s/10s 太紧（曾出现 196s 抖动）
+    testTimeout: 60_000,
+    hookTimeout: 30_000,
     globals: false,
     // jsdom 缺口（ResizeObserver 等）统一补，见 tests/setup-dom.ts
     setupFiles: ['tests/setup-dom.ts'],

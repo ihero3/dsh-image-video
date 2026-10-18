@@ -19,6 +19,8 @@ import {
 } from '../runtime-defaults.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
+import { sep } from 'node:path'
+import { resolve } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
@@ -303,10 +305,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'packages/export': {
       const projectId = text(payload, 'projectId')
       const target = optionalText(payload, 'targetDir')
-      const { manifestPath, manifest } = await exportProjectPackage({
-        store: deps.store, projectId,
-        targetDir: target === undefined || target === '' ? `${deps.outputsDir}/../packages/${projectId}` : target,
-      })
+      const base = resolve(deps.outputsDir, '..', 'packages')
+      const chosen = target === undefined || target === '' ? resolve(base, projectId) : resolve(target)
+      // 安全边界：导出是**写盘**动作，只允许落在 packages/ 之下（防止任意路径写入）
+      if (chosen !== base && !chosen.startsWith(base + sep)) {
+        throw new Error(`导出目录必须在 ${base} 之下（收到 ${chosen}）：这是安全边界，避免任意路径写入。`)
+      }
+      const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
     }
     case 'packages/import': {
@@ -321,10 +326,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'packages/export-resources': {
       const projectId = text(payload, 'projectId')
       const target = optionalText(payload, 'targetDir')
-      const { manifestPath, manifest } = await exportResourcePackage({
-        store: deps.store, projectId,
-        targetDir: target === undefined || target === '' ? `${deps.outputsDir}/../packages/${projectId}-resources` : target,
-      })
+      const base = resolve(deps.outputsDir, '..', 'packages')
+      const chosen = target === undefined || target === '' ? resolve(base, `${projectId}-resources`) : resolve(target)
+      if (chosen !== base && !chosen.startsWith(base + sep)) {
+        throw new Error(`资源包目录必须在 ${base} 之下（收到 ${chosen}）：这是安全边界，避免任意路径写入。`)
+      }
+      const { manifestPath, manifest } = await exportResourcePackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, resources: manifest.resources.length } }
     }
     case 'packages/import-resources': {

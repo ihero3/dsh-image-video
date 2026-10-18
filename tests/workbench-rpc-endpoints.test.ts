@@ -153,6 +153,18 @@ describe('workbench channel endpoints', () => {
     await rm(work, { recursive: true, force: true })
   }, 60_000)
 
+  it('refuses package exports outside the packages directory (security boundary)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '安全边界' })
+    const inside = await ok<{ package: { manifestPath: string } }>('packages/export', { projectId: created.project.id })
+    expect(inside.package.manifestPath).toContain('packages/')
+    // 任意路径必须被拒（写盘动作的安全边界）
+    await expect(ok('packages/export', { projectId: created.project.id, targetDir: '/tmp/evil-export' }))
+      .rejects.toThrow(/安全边界/)
+    await expect(ok('packages/export-resources', { projectId: created.project.id, targetDir: '/etc/dsh' }))
+      .rejects.toThrow(/安全边界/)
+  })
+
   it('refuses an unforced delete of a referenced asset through the channel (T2-4)', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '引用检查' })

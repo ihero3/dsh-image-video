@@ -8,7 +8,7 @@
  * a project) removes records only — deleting media is a separate, explicit act
  * (`D2`: hard delete with a confirmation, and never a cascade over user files).
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
@@ -89,6 +89,9 @@ export interface AssetInput {
 /**
  * Projects and assets on disk.
  */
+/** 任务账本最多保留多少条（规模化：账本只留最近这批，避免 JSON 无界膨胀）。 */
+export const MAX_TASKS = 1000
+
 export class WorkbenchStore {
   /** Absolute directory holding the document. */
   readonly directory: string
@@ -101,6 +104,8 @@ export class WorkbenchStore {
   private writes: Promise<void> = Promise.resolve()
   /** Distinguishes temporary files written by queued saves within this process. */
   private writeSequence = 0
+  /** 上次成功落盘的内容（相同则跳过写盘） */
+  private lastSerialized: string | undefined
 
   /**
    * @param options - directory and optional clock.
@@ -663,6 +668,7 @@ export class WorkbenchStore {
       ...input.error === undefined ? {} : { error: input.error },
     }
     document.tasks.push(task)
+    if (document.tasks.length > MAX_TASKS) document.tasks = document.tasks.slice(-MAX_TASKS)
     await this.save(document)
     return task
   }
@@ -727,6 +733,22 @@ export class WorkbenchStore {
     return closed
   }
 
+  /** 把任意读到的对象补成完整文档（缺字段补默认值）。 */
+  private normalize(raw: Partial<WorkbenchDocument>): WorkbenchDocument {
+    return {
+      schemaVersion: raw.schemaVersion ?? WORKBENCH_SCHEMA_VERSION,
+      projects: raw.projects ?? [],
+      assets: raw.assets ?? [],
+      tasks: raw.tasks ?? [],
+      resources: raw.resources ?? [],
+      workflows: raw.workflows ?? [],
+      runs: raw.runs ?? [],
+      timelines: raw.timelines ?? [],
+      nodeCache: raw.nodeCache ?? [],
+      resourceUsage: raw.resourceUsage ?? [],
+    }
+  }
+
   /** Read the document, caching it after the first read. */
   private async load(): Promise<WorkbenchDocument> {
     if (this.cache !== undefined) return this.cache
@@ -738,26 +760,24 @@ export class WorkbenchStore {
   private async readDocument(): Promise<WorkbenchDocument> {
     try {
       const raw = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkbenchDocument>
-      this.cache = {
-        schemaVersion: raw.schemaVersion ?? WORKBENCH_SCHEMA_VERSION,
-        projects: raw.projects ?? [],
-        assets: raw.assets ?? [],
-        tasks: raw.tasks ?? [],
-        resources: raw.resources ?? [],
-        workflows: raw.workflows ?? [],
-        runs: raw.runs ?? [],
-        timelines: raw.timelines ?? [],
-        nodeCache: raw.nodeCache ?? [],
-        resourceUsage: raw.resourceUsage ?? [],
-      }
+      this.cache = this.normalize(raw)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        // 文件坏了要**说清楚是哪个文件、下一步做什么**，不能把 SyntaxError 直接甩给上层
+        // 商用底线：**数据坏了也不能把用户卡死**。
+        // 顺序：主文件 → `<file>.bak`（上次成功保存的副本）→ 把坏文件留证后以空工作台继续。
         const reason = error instanceof Error ? error.message : String(error)
+        const backup = `${this.file}.bak`
+        const recovered = await readFile(backup, 'utf8').then(text => JSON.parse(text)).catch(() => undefined)
+        if (recovered !== undefined && typeof recovered === 'object' && recovered !== null) {
+          this.cache = this.normalize(recovered as Partial<WorkbenchDocument>)
+          await copyFile(this.file, `${this.file}.corrupt-${Date.now()}`).catch(() => undefined)
+          return this.cache
+        }
+        await copyFile(this.file, `${this.file}.corrupt-${Date.now()}`).catch(() => undefined)
         throw new Error(
           `工作台数据文件读不出来（${this.file}）：${reason}。`
-          + `先备份成 ${this.file}.bak 再删掉原文件，插件会以空工作台重新开始；`
-          + '别让它一直坏着，否则每次读写都会失败。',
+          + `已把坏文件留证为 .corrupt-*；可以删掉原文件让插件以空工作台重来，`
+          + `或者把一份可用的 ${this.file}.bak 放回去再重启。`,
           { cause: error },
         )
       }
@@ -773,12 +793,19 @@ export class WorkbenchStore {
   private async save(document: WorkbenchDocument): Promise<void> {
     // 并发保存（后台运行收尾 + 新一轮 begin）曾共用 `<file>.<pid>.tmp`：先完成的那次
     // rename 移走临时文件，后一次 rename 直接 ENOENT。写队列保证顺序，序号保证临时名唯一。
+    const serialized = `${JSON.stringify(document, null, 2)}\n`
+    // 没有变化就别碰磁盘（轮询/重复保存很常见，省掉无意义的写放大）
+    if (serialized === this.lastSerialized) return
     const write = this.writes.then(async () => {
       await mkdir(dirname(this.file), { recursive: true })
       this.writeSequence += 1
       const temporary = `${this.file}.${process.pid}.${this.writeSequence}.tmp`
-      await writeFile(temporary, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+      await writeFile(temporary, serialized, 'utf8')
       await rename(temporary, this.file)
+      // 成功落盘后再镜像一份 .bak：这是"损坏自动恢复"的数据来源，
+      // 且镜像的是**最新成功状态**（恢复时不丢最后一次保存）
+      await copyFile(this.file, `${this.file}.bak`).catch(() => undefined)
+      this.lastSerialized = serialized
     })
     // 队列不能因一次失败而中断；错误仍由下面的 `await write` 交给调用方
     this.writes = write.then(() => undefined, () => undefined)
