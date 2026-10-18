@@ -34,7 +34,11 @@ export interface TimelineTrack {
     readonly kind: TrackKind;
     readonly clips: readonly TimelineClip[];
     readonly muted?: boolean;
+    /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
+    readonly volume?: number;
 }
+/** 轨道音量上限（`R-TML-4`：允许增益到 2 倍，超了就是削波，交给用户自己负责）。 */
+export declare const MAX_TRACK_VOLUME = 2;
 /** 时间轴文档。 */
 export interface TimelineRecord {
     readonly schemaVersion: 1;

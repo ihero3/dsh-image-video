@@ -4,7 +4,10 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 新增（Track A / A1 音轨能力）
+- **轨道音量与静音**：`TimelineTrack` 增加 `volume`（0–2，缺省 1）与 `muted`，越界一律拒（不静默截断）
+- **导出真实混音**：音轨按 `aresample → volume → concat → amix(normalize=0)` 参与 filter graph；静音/零音量轨不输出；无音轨时仍 `-an`
+- 真机验证（零生成花费）：产物含 `Audio: aac`、时长与时间轴 ±1 帧；测试 3 例
 
 ## [0.3.2-workbench-2] - 2026-10-18
 

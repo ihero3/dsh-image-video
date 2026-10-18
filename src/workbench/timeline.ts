@@ -38,7 +38,12 @@ export interface TimelineTrack {
   readonly kind: TrackKind
   readonly clips: readonly TimelineClip[]
   readonly muted?: boolean
+  /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
+  readonly volume?: number
 }
+
+/** 轨道音量上限（`R-TML-4`：允许增益到 2 倍，超了就是削波，交给用户自己负责）。 */
+export const MAX_TRACK_VOLUME = 2
 
 /** 时间轴文档。 */
 export interface TimelineRecord {
@@ -137,11 +142,23 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       }
       return { id, assetPath, startMs, durationMs, ...inMs === undefined ? {} : { inMs } }
     })
+    // 音量：缺省不写（= 1）；给非法值一律拒，不做静默截断
+    let volume: number | undefined
+    if (track.volume !== undefined) {
+      if (typeof track.volume !== 'number' || !Number.isFinite(track.volume)) {
+        throw new Error(`track ${trackIndex} volume must be a finite number`)
+      }
+      if (track.volume < 0 || track.volume > MAX_TRACK_VOLUME) {
+        throw new Error(`track ${trackIndex} volume must be between 0 and ${MAX_TRACK_VOLUME}`)
+      }
+      volume = Math.round(track.volume * 100) / 100
+    }
     return {
       id: typeof track.id === 'string' && track.id !== '' ? track.id : `track-${trackIndex + 1}`,
       kind: kind as TrackKind,
       clips: normalized,
       ...track.muted === true ? { muted: true } : {},
+      ...volume === undefined ? {} : { volume },
     }
   })
   return tracks

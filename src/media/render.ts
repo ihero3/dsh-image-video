@@ -13,6 +13,7 @@ import { mkdir, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
+import { MAX_TRACK_VOLUME } from '../workbench/timeline.ts'
 
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
 export interface TimelineSnapshot {
@@ -152,6 +153,7 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   const fps = snapshot.frameRate
   const args: string[] = ['-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1']
 
+  const audioTracks = planAudioTracks(snapshot)
   segments.forEach(segment => {
     if (segment.kind === 'filler') {
       args.push('-f', 'lavfi', '-t', (segment.durationMs / 1000).toFixed(3),
@@ -160,6 +162,17 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     }
     if (segment.inMs > 0) args.push('-ss', (segment.inMs / 1000).toFixed(3))
     args.push('-t', (segment.durationMs / 1000).toFixed(3), '-i', segment.assetPath)
+  })
+  // 音轨的输入排在画面输入之后：下面按 videoSegments.length + 偏移 计算输入下标
+  audioTracks.forEach(track => {
+    track.segments.forEach(segment => {
+      if (segment.kind === 'filler') {
+        args.push('-f', 'lavfi', '-t', (segment.durationMs / 1000).toFixed(3), '-i', 'anullsrc=r=48000:cl=stereo')
+        return
+      }
+      if (segment.inMs > 0) args.push('-ss', (segment.inMs / 1000).toFixed(3))
+      args.push('-t', (segment.durationMs / 1000).toFixed(3), '-i', segment.assetPath)
+    })
   })
 
   const chains: string[] = []
@@ -196,10 +209,84 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     chains.push(`[vcat]${drawFilters.join(',')}[vout]`)
   }
 
+  // 音轨：每段先 aresample+volume，轨内 concat，轨间再 amix（>1 轨时）
+  const audioLabels: string[] = []
+  let audioInput = segments.length
+  audioTracks.forEach((track, trackIndex) => {
+    const labels: string[] = []
+    track.segments.forEach((_segment, segmentIndex) => {
+      const label = `a${trackIndex}_${segmentIndex}`
+      chains.push(
+        `[${audioInput}:a]aresample=48000,aformat=channel_layouts=stereo,volume=${track.volume.toFixed(2)}[${label}]`,
+      )
+      labels.push(`[${label}]`)
+      audioInput += 1
+    })
+    const out = `at${trackIndex}`
+    chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
+    audioLabels.push(`[${out}]`)
+  })
+  if (audioLabels.length === 1) {
+    chains.push(`${audioLabels[0]}anull[aout]`)
+  } else if (audioLabels.length > 1) {
+    chains.push(`${audioLabels.join('')}amix=inputs=${audioLabels.length}:duration=longest:normalize=0[aout]`)
+  }
+
   args.push('-filter_complex', chains.join(';'))
-  args.push('-map', '[vout]', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+  args.push('-map', '[vout]')
+  if (audioLabels.length === 0) {
+    args.push('-an')
+  } else {
+    args.push('-map', '[aout]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
+  }
+  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', options.outputPath)
   return args
+}
+
+/** 一条要参与混音的音轨（已排除静音/零音量轨）。 */
+export interface PlannedAudioTrack {
+  readonly trackId: string
+  readonly volume: number
+  readonly segments: readonly VideolessSegment[]
+}
+
+/** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */
+export type VideolessSegment =
+  | { readonly kind: 'clip'; readonly clipId: string; readonly assetPath: string; readonly inMs: number; readonly durationMs: number }
+  | { readonly kind: 'filler'; readonly durationMs: number }
+
+/**
+ * 规划参与导出的音轨（`R-TML-4`）：静音轨与 0 音量轨直接不输出；轨内重叠报错；
+ * 间隙与尾部补静音，保证与画面等长。
+ * @param snapshot - 冻结快照。
+ * @returns 需要混音的音轨（可能为空 = 输出无音轨）。
+ */
+export function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[] {
+  const tracks: PlannedAudioTrack[] = []
+  for (const track of snapshot.tracks.filter(candidate => candidate.kind === 'audio')) {
+    if (track.muted === true || (track.volume ?? 1) <= 0) continue
+    if (track.clips.length === 0) continue
+    const volume = Math.min(MAX_TRACK_VOLUME, Math.max(0, track.volume ?? 1))
+    const ordered = [...track.clips].sort((left, right) => left.startMs - right.startMs)
+    const segments: VideolessSegment[] = []
+    let cursor = 0
+    for (const clip of ordered) {
+      if (clip.startMs < cursor) {
+        throw new RenderError('MEDIA_TIMELINE_OVERLAP', `音轨 ${track.id} 上片段 ${clip.id} 与前一片段重叠：请把起点错开或缩短前一片段。`)
+      }
+      if (clip.startMs > cursor) segments.push({ kind: 'filler', durationMs: clip.startMs - cursor })
+      const assetPath = clip.assetPath
+      if (assetPath === undefined) {
+        throw new RenderError('MEDIA_ASSET_MISSING', `音轨片段 ${clip.id} 没有素材路径：重新选一次音频素材。`)
+      }
+      segments.push({ kind: 'clip', clipId: clip.id, assetPath, inMs: clip.inMs ?? 0, durationMs: clip.durationMs })
+      cursor = clip.startMs + clip.durationMs
+    }
+    if (snapshot.durationMs > cursor) segments.push({ kind: 'filler', durationMs: snapshot.durationMs - cursor })
+    tracks.push({ trackId: track.id, volume, segments })
+  }
+  return tracks
 }
 
 /** 跑 ffmpeg 并解析 `-progress` 输出。 */

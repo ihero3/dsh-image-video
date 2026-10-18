@@ -64,6 +64,30 @@ export declare function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     width?: number;
     height?: number;
 }): string[];
+/** 一条要参与混音的音轨（已排除静音/零音量轨）。 */
+export interface PlannedAudioTrack {
+    readonly trackId: string;
+    readonly volume: number;
+    readonly segments: readonly VideolessSegment[];
+}
+/** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */
+export type VideolessSegment = {
+    readonly kind: 'clip';
+    readonly clipId: string;
+    readonly assetPath: string;
+    readonly inMs: number;
+    readonly durationMs: number;
+} | {
+    readonly kind: 'filler';
+    readonly durationMs: number;
+};
+/**
+ * 规划参与导出的音轨（`R-TML-4`）：静音轨与 0 音量轨直接不输出；轨内重叠报错；
+ * 间隙与尾部补静音，保证与画面等长。
+ * @param snapshot - 冻结快照。
+ * @returns 需要混音的音轨（可能为空 = 输出无音轨）。
+ */
+export declare function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[];
 /** 跑 ffmpeg 并解析 `-progress` 输出。 */
 export interface RenderRunner {
     (args: {
