@@ -74,6 +74,8 @@ export interface WorkbenchRpcDeps {
   runner: WorkflowRunner
   /** 导出任务表（`T5-5`）。 */
   renders: RenderRegistry
+  /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
+  readonly diagnostics?: { snapshot: () => { errors: readonly unknown[]; errorCount: number } }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
   /** 默认值编辑器的可选项；缺省时不带该字段。 */
@@ -292,6 +294,26 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const previous = await deps.store.findRun(runId)
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
+    }
+    // 诊断快照（`A9`）：版本、数据规模、渲染队列、近错；出问题不用翻日志
+    case 'diagnostics': {
+      const data = await deps.store.stats()
+      const jobs = deps.renders.list()
+      const running = jobs.filter(job => job.status === 'running' && job.queued !== true).length
+      const queued = jobs.filter(job => job.queued === true).length
+      return {
+        plugin: { name: 'dsh-image-video', version: PLUGIN_VERSION },
+        provider: deps.provider,
+        outputsDir: deps.outputsDir,
+        data,
+        renders: {
+          running, queued,
+          recent: jobs.slice(0, 5).map(job => ({ id: job.id, status: job.status, percent: job.percent, queued: job.queued ?? false })),
+        },
+        runs: { running: data.runningRuns },
+        cache: { nodeResults: data.nodeCache },
+        errors: deps.diagnostics?.snapshot() ?? { errors: [], errorCount: 0 },
+      }
     }
     // 资源使用记录（`R-QCK-3`）
     case 'resources/usage':

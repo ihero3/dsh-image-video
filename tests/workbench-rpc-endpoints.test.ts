@@ -153,6 +153,30 @@ describe('workbench channel endpoints', () => {
     await rm(work, { recursive: true, force: true })
   }, 60_000)
 
+  it('reports a diagnostics snapshot with data scale and render queue (A9)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '诊断项目' })
+    await ok('assets/attach', { projectId: created.project.id, path: 'outputs/diag.png', kind: 'image' })
+    const snapshot = await ok<{
+      plugin: { name: string; version: string }
+      data: { projects: number; assets: number; writeCount: number; fileBytes: number; runningRuns: number }
+      renders: { running: number; queued: number; recent: unknown[] }
+      cache: { nodeResults: number }
+      errors: { errors: unknown[]; errorCount: number }
+    }>('diagnostics', {})
+    expect(snapshot.plugin.name).toBe('dsh-image-video')
+    expect(snapshot.plugin.version).toBeTruthy()
+    expect(snapshot.data.projects).toBe(1)
+    expect(snapshot.data.assets).toBe(1)
+    expect(snapshot.data.writeCount).toBeGreaterThan(0)
+    expect(snapshot.data.fileBytes).toBeGreaterThan(0)
+    expect(snapshot.data.runningRuns).toBe(0)
+    expect(snapshot.renders).toMatchObject({ running: 0, queued: 0 })
+    expect(Array.isArray(snapshot.renders.recent)).toBe(true)
+    expect(snapshot.cache.nodeResults).toBe(0)
+    expect(snapshot.errors).toMatchObject({ errorCount: expect.any(Number) })
+  })
+
   it('refuses package exports outside the packages directory (security boundary)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '安全边界' })

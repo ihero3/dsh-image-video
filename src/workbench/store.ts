@@ -8,7 +8,7 @@
  * a project) removes records only — deleting media is a separate, explicit act
  * (`D2`: hard delete with a confirmation, and never a cascade over user files).
  */
-import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
@@ -529,6 +529,26 @@ export class WorkbenchStore {
       ...document.nodeCache.filter(existing => existing.key !== entry.key),
     ].slice(0, MAX_NODE_CACHE)
     await this.save(document)
+  }
+
+  /**
+   * 数据规模快照（`A9` 诊断用）：各实体条数、真实落盘次数、数据文件字节数。
+   * @returns 计数（只读，不触发写盘）。
+   */
+  async stats(): Promise<{
+    projects: number; assets: number; tasks: number; resources: number; workflows: number
+    runs: number; timelines: number; nodeCache: number; resourceUsage: number
+    runningRuns: number; writeCount: number; fileBytes: number
+  }> {
+    const document = await this.load()
+    const fileBytes = await stat(this.file).then(info => info.size).catch(() => 0)
+    return {
+      projects: document.projects.length, assets: document.assets.length, tasks: document.tasks.length,
+      resources: document.resources.length, workflows: document.workflows.length, runs: document.runs.length,
+      timelines: document.timelines.length, nodeCache: document.nodeCache.length,
+      resourceUsage: document.resourceUsage.length, writeCount: this.writeCount, fileBytes,
+      runningRuns: document.runs.filter(run => run.status === 'running').length,
+    }
   }
 
   /**

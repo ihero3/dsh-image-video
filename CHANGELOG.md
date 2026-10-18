@@ -21,7 +21,8 @@
 - **A6 Agent 工具面扩展**：时间轴 trim / drop-clip / set-format / set-track + 导出 render-cancel（排队项也能取消）；批量护栏沿用 ≤20；修复片段 id 同毫秒撞车（改唯一生成器）
 - **A7 项目迁移框架 + schema v2**：迁移链（只升不降、无路径拒绝）；读入即迁移、迁移前自动备份 `.pre-migrate-v<N>`、结果立即落盘；新增真实 1→2 迁移（资源补 `scope`、文档补 `resourceUsage`）
 - **A8 存储规模化**：`writeCount` 可观测 + 一万素材压测基线（1.64 MB / 冷加载 11.7 ms / 落盘 12.5 ms）→ **V1 不需要分片**；曾加按项目索引，实测发现读路径本来就够快且索引带来过期风险，**已撤销**（简单优先）；基线 `docs/PERF.md`
-- 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 + A7 4 + A8 1 例
+- **A9 诊断与可观测**：`diagnostics` 端点（版本/数据规模/`writeCount`/文件字节/运行中用例/渲染队列/缓存/近 50 条错误）；`DiagnosticsCollector` 有界环（不落盘、不含敏感内容）；runner 错误自动入环
+- 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 + A7 4 + A8 1 + A9 6 例
 
 ## [0.3.2-workbench-2] - 2026-10-18
 

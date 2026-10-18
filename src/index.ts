@@ -38,6 +38,7 @@ import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defau
 import { createRuntimeDefaultsStore, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
+import { DiagnosticsCollector } from './host/diagnostics.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
 import { withTaskLedger } from './workbench/ledger.ts'
@@ -136,6 +137,8 @@ export function apply(ctx: Context, config: Config): void {
 
   // 工作台数据（项目/素材/任务账本）：目录由输出目录派生，全进程一个实例，
   // 生成工具的账本写入与 RPC 端点读写共用它。
+  // 诊断收集器（`A9`）：只留最近 50 条错误，不落盘、不含提示词
+  const diagnostics = new DiagnosticsCollector()
   const workbenchStore = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
 
   // 在飞的生成任务：账本包装器按 taskId 注册可取消句柄，RPC 的 tasks/cancel 掐它。
@@ -281,7 +284,10 @@ export function apply(ctx: Context, config: Config): void {
         bytes: job.bytes, provider: config.provider, prompt: `时间轴导出（${job.timelineId}）`,
       })
     },
-    onError: message => { ctx.logger?.warn?.(`image-video workbench: ${message}`) },
+    onError: message => {
+      ctx.logger?.warn?.(`image-video workbench: ${message}`)
+      diagnostics.recordError('runner', message)
+    },
   })
   // 进程重启后遗留的"运行中"导出按失败收尾，避免永远转圈
   renderRegistry.failStale('宿主重启中断（无法继续这次导出）')
@@ -295,6 +301,7 @@ export function apply(ctx: Context, config: Config): void {
       onError: message => { ctx.logger?.warn?.(`image-video workbench: ${message}`) },
     })
     registerWorkbenchRpc(rpcCtx, {
+    diagnostics,
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
       runner: workflowRunner, renders: renderRegistry,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
