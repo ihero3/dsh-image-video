@@ -13,7 +13,10 @@ import { mkdir, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
-import { DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, effectiveDurationMs, normalizeExportFormat, type TimelineExportFormat } from '../workbench/timeline.ts'
+import {
+  DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, effectiveDurationMs, normalizeExportFormat, timelineDurationMs,
+  type TimelineExportFormat,
+} from '../workbench/timeline.ts'
 
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
 export interface TimelineSnapshot {
@@ -97,13 +100,9 @@ export function freezeTimeline(timeline: TimelineRecord): TimelineSnapshot {
       ...clip.style === undefined ? {} : { style: { ...clip.style } },
     })),
   }))
-  const durationMs = tracks.reduce(
-    (longest, track) => track.clips.reduce(
-      (trackLongest, clip) => Math.max(trackLongest, clip.startMs + clip.durationMs),
-      longest,
-    ),
-    0,
-  )
+  // 总时长必须走 timelineDurationMs（它按变速折算）——早先这里另算一遍原始 durationMs，
+  // 导致 2 倍速片段后面被补了 0.5s 黑场，成片长度与时间轴不一致（`A13` 抓到的真 bug）。
+  const durationMs = timelineDurationMs(tracks)
   return {
     id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
     exportFormat: normalizeExportFormat(timeline.exportFormat), durationMs, tracks,

@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 ### 批次二
-- **A13 片段特效（部分）**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`），导出链加入 `crop→setpts→fade`；**已知偏差**：端到端时长仍测得 1s（手工 ffmpeg 同链 0.5s），待定位
+- **A13 片段特效**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`）；导出链 `crop→setpts→fade`；**修掉一个真 bug**——`freezeTimeline` 另算总时长导致 2 倍速后补 0.5s 黑场，成片与时间轴不一致（现统一走 `timelineDurationMs`，真机 500ms ±70ms ✓）
 
 ## [0.3.3-workbench-3] - 2026-10-18
 

@@ -14,7 +14,7 @@
 
 ## 批次二（A13–A16）
 
-- [x] **A13 变速/淡入淡出/裁剪（部分完成）** ✅ 2026-10-18：片段新增 `speed`(0.25–4)/`fade`(0–2000ms)/`crop`（偶数宽高）；**时间轴所有占位计算按变速折算**（`effectiveDurationMs` 已用于 `timelineDurationMs`/`activeClipAt`/导出排布，避免成片与时间轴错位）；导出链 `crop → setpts → fade → fps → scale/pad` 已落地并验到 filter 里；测试 4 例。**未闭环**：经 `RenderService` 的端到端时长仍测得 1000ms（手工 ffmpeg 同链为 0.50s）→ 已记为待查项，测试里显式 NOTE，不假装通过
+- [x] **A13 变速/淡入淡出/裁剪（已完成）** ✅ 2026-10-18：片段新增 `speed`(0.25–4)/`fade`(0–2000ms)/`crop`（偶数宽高）；**时间轴所有占位计算按变速折算**（`effectiveDurationMs` 已用于 `timelineDurationMs`/`activeClipAt`/导出排布，避免成片与时间轴错位）；导出链 `crop → setpts → fade → fps → scale/pad` 已落地并验到 filter 里；测试 4 例。**已闭环**：端到端时长偏差的根因是 `freezeTimeline` 里另算了一遍总时长（用原始 `durationMs`），导致 2 倍速片段后补了 0.5s 黑场 → 改为统一走 `timelineDurationMs`（按变速折算）；真机 2 倍速 + 裁剪 + 淡入淡出输出 **500ms ±70ms** ✓
 - [ ] **A14 字幕批量生成**：按句切分 + 时间分配 + 工具面动作
 - [ ] **A15 输出配额与清理**：outputs 上限、`maintenance` 扩展、诊断暴露
 - [ ] **A16 发布 `v0.3.4-workbench-4`**

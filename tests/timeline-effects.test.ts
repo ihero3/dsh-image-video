@@ -94,10 +94,7 @@ describe('effects in the filter graph and a real render (A13, 零生成花费)',
       speed: 2, fade: 150, crop: { x: 0, y: 0, width: 240, height: 180 },
     }))
     expect(result.bytes).toBeGreaterThan(1000)
-    // 输出时长不能比源更长（最低要求）；"严格约 0.5s" 目前**不过**——见下方 NOTE
-    expect(result.durationMs).toBeLessThanOrEqual(1050)
-    // NOTE(A13 待查)：手工 ffmpeg 同参数链输出 0.50s，但经 RenderService 仍测到 1000ms。
-    // 已知差异点候选：measureDuration 的实现（读 `-i` 输出 vs 读最后一个包）、或构建参数里
-    // 与手工命令不一致的某处（如 `-t` 与滤镜的相对位置）。留待下一轮定位，不在本轮假装通过。
+    // 1 秒素材 2 倍速 → 约 0.5 秒（曾因 freeze 另算总时长多补 0.5s 黑场，已修复）
+    expect(Math.abs(result.durationMs - 500)).toBeLessThanOrEqual(70)
   }, 60_000)
 })
