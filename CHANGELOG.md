@@ -10,6 +10,15 @@
 - 真机验证（零生成花费）：产物含 `Audio: aac`、时长与时间轴 ±1 帧；测试 3 例
 - **导出参数化（A2）**：`TimelineRecord.exportFormat`（分辨率/帧率/码率，越界一律拒）随文档保存；导出按规格出片（`scale/pad/fps` + `-b:v`/`-crf`）；**产物规格实测复核**——宽高不符或帧率差 >1 直接判 `MEDIA_OUTPUT_INVALID`，不只信参数；真机 640×360@24 验证；测试 4 例
 
+## [Unreleased]
+
+### 新增（Track A：A1–A4）
+- **A1 音轨能力**：轨道 `volume`(0–2)/`muted` 入库；导出真实混音（aresample→volume→concat→amix）；静音轨不输出；真机产物含 AAC
+- **A2 导出参数化**：`exportFormat`（分辨率/帧率 24·25·30·60/码率）入库；按规格出片并**实测复核**宽高与帧率
+- **A3 撤销/重做**：`HistoryStack<T>` 纯逻辑（相同状态不记历史/新编辑清 redo/50 步上限/peek 元信息），画布与时间轴共用语义
+- **A4 渲染队列**：`maxConcurrent` 默认 1 + FIFO 队列；排队任务加法字段 `queued/queuePosition`；出队自动拉起、排队可取消、事件进日志
+- 测试：A1 3 例 + A2 4 例 + A3 5 例 + A4 5 例
+
 ## [0.3.2-workbench-2] - 2026-10-18
 
 ### 深度优化（商用/大规模基线第一批）
