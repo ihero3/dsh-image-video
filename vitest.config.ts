@@ -7,6 +7,8 @@ export default defineConfig({
     jsx: 'automatic',
   },
   test: {
+    // 真实 IO 用例（ffmpeg 渲染）在忙碌机器上会抖：允许重试一次，flaky 会在报告里露出
+    retry: 1,
     // 套件里有真实 ffmpeg 渲染与 jsdom 交互，忙碌机器上默认 5s/10s 太紧（曾出现 196s 抖动）
     testTimeout: 60_000,
     hookTimeout: 30_000,

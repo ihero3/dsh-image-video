@@ -18,6 +18,14 @@
 | `docs/TASKS-TRACK-A.md` / `docs/TASKS-TRACK-B.md` / 各自新增文档 | 各自 | A 维护 COLLABORATION、REQUIREMENTS、EXECUTION、RELEASE；B 维护 UI 文档 |
 | `package.json` / `pnpm-lock.yaml` / 依赖 | **A** | 需要新依赖先跟 A 说，由 A 添加（避免 lock 冲突） |
 
+**自动化越界自检（两边都用）**：
+
+```bash
+node scripts/check-scope.mjs --track=a    # A 跑这个
+node scripts/check-scope.mjs --track=b    # B 跑这个
+# 越界会列出具体文件并非零退出；矩阵在脚本里，与本文一致
+```
+
 **B 的每日自检（防止越界）**：
 
 ```bash

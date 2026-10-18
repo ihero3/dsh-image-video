@@ -23,6 +23,7 @@
 - **A8 存储规模化**：`writeCount` 可观测 + 一万素材压测基线（1.64 MB / 冷加载 11.7 ms / 落盘 12.5 ms）→ **V1 不需要分片**；曾加按项目索引，实测发现读路径本来就够快且索引带来过期风险，**已撤销**（简单优先）；基线 `docs/PERF.md`
 - **A9 诊断与可观测**：`diagnostics` 端点（版本/数据规模/`writeCount`/文件字节/运行中用例/渲染队列/缓存/近 50 条错误）；`DiagnosticsCollector` 有界环（不落盘、不含敏感内容）；runner 错误自动入环
 - **A10 漫剧/连续剧模板**：`drama-series`（剧情→剧本→分镜→定妆图→镜头→字幕→合成，7 节点全 runnable 且校验零问题）；Agent 工具面新增 `workflow templates` / `workflow from-template`；角色基准改为运行时挂 `resource-reference`（因 `resourceId` 必填）
+- **A11 CI 强化（部分）**：`scripts/check-scope.mjs` 轨道越界自检（A/B 各自跑，越界非零退出）；真实 IO 用例 `retry: 1` 兜底抖动；覆盖率门禁因 vitest 3.x 与 coverage-v8 4.x 版本不匹配暂缓（需依赖对齐，单独排期）
 - 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 + A7 4 + A8 1 + A9 6 + A10 4 例
 
 ## [0.3.2-workbench-2] - 2026-10-18
