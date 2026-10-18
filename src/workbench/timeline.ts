@@ -46,6 +46,68 @@ export interface TimelineTrack {
 export const MAX_TRACK_VOLUME = 2
 
 /** 时间轴文档。 */
+/** 导出规格（`R-TML-5` / 总任务书 §7.3）：分辨率、帧率、码率。 */
+export interface TimelineExportFormat {
+  readonly width: number
+  readonly height: number
+  readonly frameRate: number
+  /** 视频码率（kbps，可选；缺省由编码器 CRF 决定）。 */
+  readonly bitrateKbps?: number
+}
+
+/** 默认导出规格：720p30（与 V1 的固定行为一致）。 */
+export const DEFAULT_EXPORT_FORMAT: TimelineExportFormat = { width: 1280, height: 720, frameRate: 30 }
+/** 允许的帧率档位。 */
+export const EXPORT_FRAME_RATES: readonly number[] = [24, 25, 30, 60]
+/** 分辨率范围（偶数、2 的倍数；下限 128，上限 4096）。 */
+export const EXPORT_DIMENSION_RANGE = { min: 128, max: 4096 } as const
+/** 码率范围（kbps）。 */
+export const EXPORT_BITRATE_RANGE = { min: 500, max: 50_000 } as const
+
+/**
+ * 校验并归一化导出规格。
+ * @param raw - 原始取值；缺省即默认 720p30。
+ * @returns 归一化规格。
+ * @throws {Error} 尺寸/帧率/码率越界时（不静默截断）。
+ */
+export function normalizeExportFormat(raw: unknown): TimelineExportFormat {
+  if (raw === undefined || raw === null) return DEFAULT_EXPORT_FORMAT
+  if (typeof raw !== 'object') throw new Error('timeline exportFormat must be an object')
+  const value = raw as Record<string, unknown>
+  const dimension = (key: 'width' | 'height'): number => {
+    const candidate = value[key] ?? DEFAULT_EXPORT_FORMAT[key]
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
+      throw new Error(`exportFormat ${key} must be a finite number`)
+    }
+    const rounded = Math.round(candidate)
+    if (rounded % 2 !== 0) throw new Error(`exportFormat ${key} must be an even number (got ${rounded})`)
+    if (rounded < EXPORT_DIMENSION_RANGE.min || rounded > EXPORT_DIMENSION_RANGE.max) {
+      throw new Error(`exportFormat ${key} must be between ${EXPORT_DIMENSION_RANGE.min} and ${EXPORT_DIMENSION_RANGE.max}`)
+    }
+    return rounded
+  }
+  const frameRate = value.frameRate ?? DEFAULT_EXPORT_FORMAT.frameRate
+  if (typeof frameRate !== 'number' || !EXPORT_FRAME_RATES.includes(Math.round(frameRate))) {
+    throw new Error(`exportFormat frameRate must be one of ${EXPORT_FRAME_RATES.join('/')}`)
+  }
+  let bitrateKbps: number | undefined
+  if (value.bitrateKbps !== undefined) {
+    const candidate = value.bitrateKbps
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
+      throw new Error('exportFormat bitrateKbps must be a finite number')
+    }
+    const rounded = Math.round(candidate)
+    if (rounded < EXPORT_BITRATE_RANGE.min || rounded > EXPORT_BITRATE_RANGE.max) {
+      throw new Error(`exportFormat bitrateKbps must be between ${EXPORT_BITRATE_RANGE.min} and ${EXPORT_BITRATE_RANGE.max}`)
+    }
+    bitrateKbps = rounded
+  }
+  return {
+    width: dimension('width'), height: dimension('height'), frameRate: Math.round(frameRate),
+    ...bitrateKbps === undefined ? {} : { bitrateKbps },
+  }
+}
+
 export interface TimelineRecord {
   readonly schemaVersion: 1
   readonly id: string
@@ -55,6 +117,8 @@ export interface TimelineRecord {
   readonly tracks: readonly TimelineTrack[]
   /** 导出时是否把字幕烧进画面（`T5-3`）：关掉时字幕数据仍保留，只是不烧录。 */
   readonly burnSubtitles: boolean
+  /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
+  readonly exportFormat?: TimelineExportFormat
   readonly createdAt: string
   readonly updatedAt: string
 }

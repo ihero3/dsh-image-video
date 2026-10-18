@@ -13,13 +13,15 @@ import { mkdir, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
-import { MAX_TRACK_VOLUME } from '../workbench/timeline.ts'
+import { DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, normalizeExportFormat, type TimelineExportFormat } from '../workbench/timeline.ts'
 
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
 export interface TimelineSnapshot {
   readonly id: string
   readonly frameRate: number
   readonly burnSubtitles: boolean
+  /** 导出规格（冻结后不受后续编辑影响）。 */
+  readonly exportFormat: TimelineExportFormat
   readonly durationMs: number
   readonly tracks: readonly TimelineTrack[]
 }
@@ -90,7 +92,10 @@ export function freezeTimeline(timeline: TimelineRecord): TimelineSnapshot {
     ),
     0,
   )
-  return { id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles, durationMs, tracks }
+  return {
+    id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
+    exportFormat: normalizeExportFormat(timeline.exportFormat), durationMs, tracks,
+  }
 }
 
 /**
@@ -146,11 +151,15 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   fontFile?: string
   width?: number
   height?: number
+  frameRate?: number
+  format?: TimelineExportFormat
 }): string[] {
   const segments = planVideoSegments(snapshot)
-  const width = options.width ?? RENDER_WIDTH
-  const height = options.height ?? RENDER_HEIGHT
-  const fps = snapshot.frameRate
+  const format = options.format ?? snapshot.exportFormat ?? DEFAULT_EXPORT_FORMAT
+  const width = options.width ?? format.width ?? RENDER_WIDTH
+  const height = options.height ?? format.height ?? RENDER_HEIGHT
+  const fps = options.frameRate ?? format.frameRate ?? snapshot.frameRate
+  const bitrateKbps = format.bitrateKbps
   const args: string[] = ['-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-progress', 'pipe:1']
 
   const audioTracks = planAudioTracks(snapshot)
@@ -239,7 +248,8 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   } else {
     args.push('-map', '[aout]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
   }
-  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+  args.push('-c:v', 'libx264', '-preset', 'veryfast',
+    ...bitrateKbps === undefined ? ['-crf', '20'] : ['-b:v', `${bitrateKbps}k`],
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', options.outputPath)
   return args
 }
@@ -411,7 +421,8 @@ export class RenderService {
     const fontFile = snapshot.burnSubtitles && (snapshot.tracks.find(track => track.kind === 'subtitle')?.clips.length ?? 0) > 0
       ? await firstExisting(SUBTITLE_FONT_CANDIDATES)
       : undefined
-    const args = buildRenderArgs(snapshot, { outputPath, ...fontFile === undefined ? {} : { fontFile } })
+    const format = snapshot.exportFormat ?? DEFAULT_EXPORT_FORMAT
+    const args = buildRenderArgs(snapshot, { outputPath, format, ...fontFile === undefined ? {} : { fontFile } })
     const run = this.deps.run ?? defaultRenderRunner
 
     try {
@@ -436,6 +447,22 @@ export class RenderService {
         )
       }
     }
+    // 规格复核：导出参数可配之后，必须确认产物**真的是这个规格**（不能只信参数）
+    const spec = await probeMediaSpec(probe.path ?? 'ffmpeg', outputPath)
+    if (spec !== undefined && spec.width !== undefined && spec.height !== undefined) {
+      if (spec.width !== format.width || spec.height !== format.height) {
+        throw new RenderError(
+          'MEDIA_OUTPUT_INVALID',
+          `导出分辨率 ${spec.width}x${spec.height} 与请求的 ${format.width}x${format.height} 不一致：检查素材能否解码到该尺寸。`,
+        )
+      }
+      if (spec.fps !== undefined && Math.abs(spec.fps - format.frameRate) > 1) {
+        throw new RenderError(
+          'MEDIA_OUTPUT_INVALID',
+          `导出帧率 ${spec.fps} 与请求的 ${format.frameRate} 不一致：检查素材帧率与滤镜链。`,
+        )
+      }
+    }
     return { outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs }
   }
 }
@@ -446,6 +473,34 @@ async function firstExisting(paths: readonly string[]): Promise<string | undefin
     if (await stat(path).then(() => true).catch(() => false)) return path
   }
   return undefined
+}
+
+/**
+ * 用 `ffmpeg -i` 的输出探测产物规格（不依赖 ffprobe 单独安装）。
+ * @param ffmpegPath - ffmpeg 可执行文件。
+ * @param file - 待探测文件。
+ * @returns 宽/高/帧率/是否含音轨；解析不出来时为 `undefined`。
+ */
+export async function probeMediaSpec(
+  ffmpegPath: string,
+  file: string,
+): Promise<{ width?: number; height?: number; fps?: number; hasAudio: boolean } | undefined> {
+  const stream = await new Promise<{ stderr: string; ok: boolean }>(resolve => {
+    const child = spawn(ffmpegPath, ['-hide_banner', '-i', file], { stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr?.on('data', chunk => { stderr += String(chunk) })
+    child.on('error', () => resolve({ stderr: '', ok: false }))
+    child.on('close', () => resolve({ stderr, ok: true }))
+  })
+  if (!stream.ok) return undefined
+  const hasAudio = /Stream #\d+:\d+.*: Audio: /.test(stream.stderr)
+  const video = /Stream #\d+:\d+.*: Video: .*?(\d{2,5})x(\d{2,5})/.exec(stream.stderr)
+  if (video === null) return hasAudio ? { hasAudio } : undefined
+  const fpsMatch = /(\d+(?:\.\d+)?) fps/.exec(stream.stderr)
+  return {
+    width: Number(video[1]), height: Number(video[2]), hasAudio,
+    ...fpsMatch === null ? {} : { fps: Number(fpsMatch[1]) },
+  }
 }
 
 /** 用 `ffmpeg -i` 的输出量一下真实时长（不依赖 ffprobe 是否单独安装）。 */

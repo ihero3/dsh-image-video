@@ -8,6 +8,7 @@
 - **轨道音量与静音**：`TimelineTrack` 增加 `volume`（0–2，缺省 1）与 `muted`，越界一律拒（不静默截断）
 - **导出真实混音**：音轨按 `aresample → volume → concat → amix(normalize=0)` 参与 filter graph；静音/零音量轨不输出；无音轨时仍 `-an`
 - 真机验证（零生成花费）：产物含 `Audio: aac`、时长与时间轴 ±1 帧；测试 3 例
+- **导出参数化（A2）**：`TimelineRecord.exportFormat`（分辨率/帧率/码率，越界一律拒）随文档保存；导出按规格出片（`scale/pad/fps` + `-b:v`/`-crf`）；**产物规格实测复核**——宽高不符或帧率差 >1 直接判 `MEDIA_OUTPUT_INVALID`，不只信参数；真机 640×360@24 验证；测试 4 例
 
 ## [0.3.2-workbench-2] - 2026-10-18
 

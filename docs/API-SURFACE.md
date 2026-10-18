@@ -13,7 +13,7 @@
 | `resources/list` / `create` / `remove` / `usage` | — | resource / `{removed}` / `{usage[]}` | 资源含 `scope`（V1 恒为 `project`）与轨迹关键帧 |
 | `tasks/list` / `assign` / `cancel` | — | task 记录 | 取消会真的中止在飞生成 |
 | `workflows/list` / `save` / `remove` / `run` / `runs` / `run-cancel` / `run-retry` | — | — | `run` 默认复用成功结果缓存；`run-retry` 只重跑失败节点及下游 |
-| `timelines/list` / `save` / `remove` / `render` / `renders` / `render-cancel` | — | — | `render` 起导出任务；`renders` 轮询；`render-cancel` 杀 ffmpeg 并清理半成品；**轨道支持 `volume`(0–2) 与 `muted`**（A1，导出会真实混音） |
+| `timelines/list` / `save` / `remove` / `render` / `renders` / `render-cancel` | — | — | `render` 起导出任务；`renders` 轮询；`render-cancel` 杀 ffmpeg 并清理半成品；**轨道支持 `volume`(0–2) 与 `muted`**（A1，导出真实混音）；**`exportFormat`** `{width,height,frameRate(24/25/30/60),bitrateKbps?}` 可存可改，导出按此出片并**实测复核**（A2） |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界） |
 | `outputs/list` / `maintenance/compact` | — | — | 清理重复素材记录 |

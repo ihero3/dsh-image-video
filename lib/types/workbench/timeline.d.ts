@@ -40,6 +40,35 @@ export interface TimelineTrack {
 /** 轨道音量上限（`R-TML-4`：允许增益到 2 倍，超了就是削波，交给用户自己负责）。 */
 export declare const MAX_TRACK_VOLUME = 2;
 /** 时间轴文档。 */
+/** 导出规格（`R-TML-5` / 总任务书 §7.3）：分辨率、帧率、码率。 */
+export interface TimelineExportFormat {
+    readonly width: number;
+    readonly height: number;
+    readonly frameRate: number;
+    /** 视频码率（kbps，可选；缺省由编码器 CRF 决定）。 */
+    readonly bitrateKbps?: number;
+}
+/** 默认导出规格：720p30（与 V1 的固定行为一致）。 */
+export declare const DEFAULT_EXPORT_FORMAT: TimelineExportFormat;
+/** 允许的帧率档位。 */
+export declare const EXPORT_FRAME_RATES: readonly number[];
+/** 分辨率范围（偶数、2 的倍数；下限 128，上限 4096）。 */
+export declare const EXPORT_DIMENSION_RANGE: {
+    readonly min: 128;
+    readonly max: 4096;
+};
+/** 码率范围（kbps）。 */
+export declare const EXPORT_BITRATE_RANGE: {
+    readonly min: 500;
+    readonly max: 50000;
+};
+/**
+ * 校验并归一化导出规格。
+ * @param raw - 原始取值；缺省即默认 720p30。
+ * @returns 归一化规格。
+ * @throws {Error} 尺寸/帧率/码率越界时（不静默截断）。
+ */
+export declare function normalizeExportFormat(raw: unknown): TimelineExportFormat;
 export interface TimelineRecord {
     readonly schemaVersion: 1;
     readonly id: string;
@@ -49,6 +78,8 @@ export interface TimelineRecord {
     readonly tracks: readonly TimelineTrack[];
     /** 导出时是否把字幕烧进画面（`T5-3`）：关掉时字幕数据仍保留，只是不烧录。 */
     readonly burnSubtitles: boolean;
+    /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
+    readonly exportFormat?: TimelineExportFormat;
     readonly createdAt: string;
     readonly updatedAt: string;
 }

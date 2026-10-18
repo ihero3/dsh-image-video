@@ -7,7 +7,7 @@
 ## P0（解锁界面的关键底层，先做）
 
 - [x] **A1 时间轴音轨能力（领域+导出）**：`TimelineTrack` 增加 `volume`（0–2）/`muted`；校验入库；导出 filter graph 支持 `volume=` 与 `-an` 静音；测试：音量字段往返 + filter 含 volume。*（对应总任务书 §7.2）* ✅ 2026-10-18 完成：`volume`(0–2)/`muted` 入库并往返；导出真实混音（aresample→volume→concat→amix，多轨 `normalize=0`）；静音轨不输出；真机验证产物含 `Audio: aac` 且时长 ±1 帧；测试 3 例
-- [ ] **A2 导出参数化**：`RenderService` 支持 `{ width, height, frameRate, bitrate? }`，校验（分辨率白名单/帧率 24/25/30/60）；输出规格复核（宽高/帧率实测）；测试：非默认规格导出可播放且时长 ±1 帧。*（§7.3）*
+- [x] **A2 导出参数化**：`RenderService` 支持 `{ width, height, frameRate, bitrate? }`，校验（分辨率白名单/帧率 24/25/30/60）；输出规格复核（宽高/帧率实测）；测试：非默认规格导出可播放且时长 ±1 帧。*（§7.3）* ✅ 2026-10-18 完成：`TimelineRecord.exportFormat`（宽高偶数 128–4096 / 帧率 24·25·30·60 / 码率 500–50000 kbps）入库校验；导出按规格出片（scale/pad/fps/`-b:v`）；**产物实测复核**（`probeMediaSpec` 校验宽高与帧率，不符报 `MEDIA_OUTPUT_INVALID`）；真机 640×360@24 验证；测试 4 例
 - [ ] **A3 撤销/重做领域支撑**：给 store 增加**命令式变更 API**（`apply(ops)` 返回反操作）+ 快照栈接口（供 B 接线 UI）；测试：编辑→撤销→重做后文档逐字段一致。*（§6.2、§7.1 的 undo/redo）*
 - [ ] **A4 渲染队列与并发控制**：导出同时最多 1 个、其余排队（状态 `queued`）；工作流节点并发上限可配；测试：两个导出排队顺序 + 取消排队项。
 - [ ] **A5 节点级超时与重试策略化**：`timeoutMs` 可配（默认按 kind）、重试次数/退避可配；测试：超时节点记为 failed 且带可操作文案。

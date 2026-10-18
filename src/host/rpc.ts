@@ -366,6 +366,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           tracks: field(payload, 'tracks') ?? [],
           ...typeof field(payload, 'frameRate') === 'number' ? { frameRate: field(payload, 'frameRate') as number } : {},
           ...typeof field(payload, 'burnSubtitles') === 'boolean' ? { burnSubtitles: field(payload, 'burnSubtitles') as boolean } : {},
+          ...field(payload, 'exportFormat') === undefined ? {} : { exportFormat: field(payload, 'exportFormat') },
         }),
       }
     case 'timelines/remove':

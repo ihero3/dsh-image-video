@@ -1,10 +1,13 @@
 import { type FfmpegProbe } from './ffmpeg.ts';
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts';
+import { type TimelineExportFormat } from '../workbench/timeline.ts';
 /** 渲染用的时间轴快照（冻结后与原文档再无关系）。 */
 export interface TimelineSnapshot {
     readonly id: string;
     readonly frameRate: number;
     readonly burnSubtitles: boolean;
+    /** 导出规格（冻结后不受后续编辑影响）。 */
+    readonly exportFormat: TimelineExportFormat;
     readonly durationMs: number;
     readonly tracks: readonly TimelineTrack[];
 }
@@ -63,6 +66,8 @@ export declare function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     fontFile?: string;
     width?: number;
     height?: number;
+    frameRate?: number;
+    format?: TimelineExportFormat;
 }): string[];
 /** 一条要参与混音的音轨（已排除静音/零音量轨）。 */
 export interface PlannedAudioTrack {
@@ -125,5 +130,17 @@ export declare class RenderService {
         fileName?: string;
     }): Promise<RenderResult>;
 }
+/**
+ * 用 `ffmpeg -i` 的输出探测产物规格（不依赖 ffprobe 单独安装）。
+ * @param ffmpegPath - ffmpeg 可执行文件。
+ * @param file - 待探测文件。
+ * @returns 宽/高/帧率/是否含音轨；解析不出来时为 `undefined`。
+ */
+export declare function probeMediaSpec(ffmpegPath: string, file: string): Promise<{
+    width?: number;
+    height?: number;
+    fps?: number;
+    hasAudio: boolean;
+} | undefined>;
 /** 用 `ffmpeg -i` 的输出量一下真实时长（不依赖 ffprobe 是否单独安装）。 */
 export declare function measureDuration(ffmpegPath: string, file: string): Promise<number | undefined>;

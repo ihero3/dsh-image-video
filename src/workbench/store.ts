@@ -19,7 +19,7 @@ import {
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ResourceUsageRecord } from './records.ts'
-import { DEFAULT_FRAME_RATE, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import { DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
@@ -436,6 +436,7 @@ export class WorkbenchStore {
     tracks: unknown
     frameRate?: number
     burnSubtitles?: boolean
+    exportFormat?: unknown
   }): Promise<TimelineRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -451,6 +452,7 @@ export class WorkbenchStore {
       frameRate: input.frameRate ?? existing?.frameRate ?? DEFAULT_FRAME_RATE,
       tracks,
       burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
+      exportFormat: normalizeExportFormat(input.exportFormat ?? existing?.exportFormat),
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
