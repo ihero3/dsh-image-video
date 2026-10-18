@@ -13,6 +13,7 @@
 | `src/workbench-contract.ts`、`src/host/rpc.ts`（**新增端点/字段**） | **A** | A 改完必须同步 `docs/API-SURFACE.md` |
 | `src/client/api.ts` 里对接新端点的调用代码 | **B** | B 只消费契约，不改契约 |
 | `lib/**`（构建产物，仓库入库） | **A** | **B 不提交 lib**（本地可 build 自测，但别 `git add lib`） |
+| **Harness 里的子模块指针**（bump `plugins/dsh-image-video`） | **A 独占** | 2026-10-18 实测：两人同时 bump 指针 → rebase 必冲突。**B 永远不碰指针**；A 每次推送插件后在 Harness 里 bump 一次 |
 | `scripts/**`、`.github/**` | **A** | |
 | `docs/TASKS-TRACK-A.md` / `docs/TASKS-TRACK-B.md` / 各自新增文档 | 各自 | A 维护 COLLABORATION、REQUIREMENTS、EXECUTION、RELEASE；B 维护 UI 文档 |
 | `package.json` / `pnpm-lock.yaml` / 依赖 | **A** | 需要新依赖先跟 A 说，由 A 添加（避免 lock 冲突） |
