@@ -46,7 +46,15 @@
 
 | 需求 | 用途 | 状态 |
 | --- | --- | --- |
-| （示例）`timelines/save` 增加 `volume`/`muted` | 音轨音量与静音 | A1 实现中 |
-| 改 RPC 端点/数据模型/渲染参数 | 改 RPC 端点/数据模型/渲染参数 | 待A 认领
+**怎么写一条能被我直接认领的申请**（照下面这行格式）：
+
+| 想要什么（端点/字段/动作，写具体名字） | 界面要做什么（一句话） | 期望入参/出参 | 状态 |
+| --- | --- | --- | --- |
+| （示例）`timelines/save` 增加 `track.duckingDb` | 旁白压背景音乐 | `{duckingDb: number}`；导出按 `sidechaincompress` 处理 | 示例 |
+| | | | |
+
+**当前待认领：无**（2026-10-19 核对：只有一行占位"改 RPC 端点/数据模型/渲染参数"，不是可执行需求）。
+已就绪、无需申请的新契约（直接接）：`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
+`timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
 

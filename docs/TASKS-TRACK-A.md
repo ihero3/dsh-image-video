@@ -32,6 +32,14 @@
 - [ ] **A22 覆盖率门禁依赖对齐（⏸ 试过并回滚，待根级依赖方案）** 2026-10-18 实测：在根执行 `pnpm add -D --filter dsh-image-video @vitest/coverage-v8@3.2.7` 安装成功（10.7s，插件 devDep=3.2.7 且解析到匹配 vitest@3.2.7 的构建），但触发 pnpm 重新链接 96 个包后，**Track B 的 `tests/client-rpc-transport.test.ts` 直接挂了**（`@deepseek-ai/dsh-client-connection/src/client/rpc.ts` 解析不到）→ 立刻回滚（`pnpm-lock.yaml` + 插件 `package.json`/`vitest.config.ts` + `pnpm install --filter`），B 的用例恢复 3/3 绿。**结论：单独给插件加 coverage devDep 会扰动工作区的 client-connection 解析，正确做法是根级统一升/对齐 vitest 大版本（属跨仓依赖治理），需要 owner 决策后排期**；在此之前 A11 的覆盖率门禁保持暂缓
 - [x] **A23 发布 `v0.3.6-workbench-6`** ✅ 2026-10-18：A20（音频淡入淡出+响度归一化）+ A21（渲染耗时分位数与诊断统计）；A22 记为待 owner 决策
 
+## 批次五（A24–A27，2026-10-19 起）
+
+- [ ] **A24 时间轴片段拆分/复制（域 + 工具）**：按播放头把片段一分为二（`split-clip`）、片段复制到指定轨道/起点；供 B 的"拆分/复制"按钮使用（域层先落地，UI 后接）
+- [ ] **A25 字幕排版增强**：多行字幕换行（`\n` → drawtext 正确渲染）、长句自动折行（按像素宽度估算）、字体回退链与可配置字体文件
+- [ ] **A26 项目包 v2**：包格式版本升到 2，包含片段特效/转场/音轨淡入淡出/响度开关/资源使用记录；**旧包（v1）可读**（导入时向上兼容）
+- [ ] **A27 发布 `v0.3.8-workbench-8`**
+- [ ] **A22 覆盖率门禁（仍阻塞）**：需 root 级 vitest 对齐决策（见该条证据）
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

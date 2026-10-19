@@ -21,6 +21,13 @@
 - [x] **B10 空态与引导**：首次打开有 3 步引导（选项目→快速创作→放时间轴）、空列表有"下一步做什么"、模板卡片化选择。
 - [x] **B11 视觉回归**：对三个模式各存一张截图基线（`docs/ui-baseline/*.png`），改样式后对比。**机制就绪**：`scripts/capture-ui-baseline.mjs`（Playwright）+ `docs/ui-baseline/README.md` 已就位；PNG 基线需在**带显示的 CI / 本地浏览器**中由 A 执行采集（本无显示环境无法出图，约束已文档化）。
 
+## 第二批（B14–B16，A 已备好契约，直接接）
+
+- [ ] **B14 接新契约**：转场选择器（clip.transition + transitionDurationMs）、变速/淡入淡出/裁剪控件（speed/fade/crop）、音轨淡入淡出滑块（track.fadeMs）、导出响度开关（timeline.normalizeLoudness）
+- [ ] **B15 新面板**：字幕批量按钮（`timeline add-subtitles`，输入一段台词一键铺字幕）、模板市场（`workflow templates` / `from-template`，含 `drama-series`）、诊断面板（`diagnostics` 的 outputs 占用 + renders.stats 耗时）
+- [ ] **B16 体积回收**：当前占预算 83%（基线 682,374 raw / 151,212 gzip + 20%），目标**回收到 ≤ 80%**；做法：按需加载图标、拆样式表、去掉未用 locale
+- [ ] **B17 拆分/复制/裁剪手柄**：接 A24 的 `split-clip`（域层实现后 B 再接线）
+
 ## P2
 
 - [x] **B12 bundle 瘦身**：实测 raw 682,873 B（占预算 **104%**，超 24,935 B）、gzip 152,407 B（占预算 **105%**，超 7,014 B）——**未达 ≤85% 目标**。完整分析见 `docs/B12-BUNDLE-REPORT.md`。根因：产物体积被画布必需的 `@xyflow/react` + `d3-*` 主导；三档瘦身杠杆中「图标按需」不适用（包内无图标库）、「减少重复样式」无安全收益（看似重复的选择器实为状态/后代复合选择器）、「避免整包内联」需改 `tsdown.config.ts` 并外部化 React Flow/d3，属 A 的构建/加载策略范畴。**不提交 lib**，数值已汇报。
