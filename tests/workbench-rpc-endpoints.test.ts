@@ -210,6 +210,25 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('retries a FAILED render (the main use case, R7)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试失败' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      // 素材不存在 → 导出必然失败 → 正好验证"失败任务重试"这条主路径
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/ghost.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    const first = await ok<{ render: { id: string; status: string } }>('timelines/render', { timelineId: saved.timeline.id })
+    await vi.waitFor(async () => {
+      const listed = await ok<{ renders: Array<{ id: string; status: string }> }>('timelines/renders', {})
+      expect(listed.renders.find(entry => entry.id === first.render.id)?.status).toBe('failed')
+    }, { timeout: 20_000 })
+
+    const retried = await ok<{ render: { id: string; status: string }; retriedFrom: string }>('timelines/render-retry', { renderId: first.render.id })
+    expect(retried.retriedFrom).toBe(first.render.id)
+    expect(retried.render.id).not.toBe(first.render.id)
+  })
+
   it('retries a finished render with the same timeline (A59)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试' })

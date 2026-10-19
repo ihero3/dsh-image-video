@@ -12,7 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
-import { groupRenderSets } from '../media/render-registry.ts'
+import { groupRenderSets, retryError } from '../media/render-registry.ts'
 import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import {
@@ -520,9 +520,8 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const renderId = text(payload, 'renderId')
       const previous = deps.renders.list().find(job => job.id === renderId)
       if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}：先用 timelines/renders 看现有任务`)
-      if (previous.status === 'running' || previous.queued === true) {
-        throw new Error('这个导出还在跑或排队中：等它结束，或先 render-cancel 再重试')
-      }
+      const blocked = retryError(previous)
+      if (blocked !== undefined) throw new Error(blocked)
       const timeline = await deps.store.findTimeline(previous.timelineId)
       if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除，无法重试：请重新选择时间轴导出`)
       const render = deps.renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } })

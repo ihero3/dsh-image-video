@@ -80,6 +80,25 @@ export function computeSegmentTimings(
   }
 }
 
+/**
+ * 判断一个渲染任务能否"一键重试"（`A59`/`R7`）。
+ *
+ * 抽成纯函数是为了把三个分支都测到（运行中 / 排队中 / 可重试），
+ * 而不是靠在端点里构造时序巧合。
+ *
+ * @param job - 目标任务。
+ * @returns 不能重试时返回面向人的原因；可重试返回 `undefined`。
+ */
+export function retryError(job: RenderJob): string | undefined {
+  if (job.status === 'running' && job.queued !== true) {
+    return '这个导出正在跑：等它结束，或先 render-cancel 再重试'
+  }
+  if (job.queued === true) {
+    return '这个导出还在排队：等它开始，或先 render-cancel 再重试'
+  }
+  return undefined
+}
+
 export function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[] {
   const groups = new Map<string, RenderJob[]>()
   for (const job of jobs) {

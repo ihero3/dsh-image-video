@@ -13,6 +13,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
+import { retryError } from '../media/render-registry.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
@@ -607,7 +608,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const renderId = requireString(input, 'renderId', 'workbench_tasks render-retry')
         const previous = renders.list().find(job => job.id === renderId)
         if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}`)
-        if (previous.status === 'running' || previous.queued === true) throw new Error('这个导出还在跑或排队中')
+        const blocked = retryError(previous)
+        if (blocked !== undefined) throw new Error(blocked)
         const timeline = await store.findTimeline(previous.timelineId)
         if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除`)
         return json(renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } }))

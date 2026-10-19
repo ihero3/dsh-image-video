@@ -54,6 +54,16 @@ export declare function computeSegmentTimings(bounds: readonly number[], samples
         ms: number;
     };
 };
+/**
+ * 判断一个渲染任务能否"一键重试"（`A59`/`R7`）。
+ *
+ * 抽成纯函数是为了把三个分支都测到（运行中 / 排队中 / 可重试），
+ * 而不是靠在端点里构造时序巧合。
+ *
+ * @param job - 目标任务。
+ * @returns 不能重试时返回面向人的原因；可重试返回 `undefined`。
+ */
+export declare function retryError(job: RenderJob): string | undefined;
 export declare function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[];
 /** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
 export interface RenderSet {
