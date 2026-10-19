@@ -61,13 +61,25 @@ async function touch(dir: string, name: string): Promise<string> {
 }
 
 describe('agent tool surface (T6-3)', () => {
+  it('probes real media through the tool surface (A63/A65)', async () => {
+    const { call } = await harness()
+    const result = await call('workbench_assets', { action: 'probe', path: 'outputs/good.mp4' })
+    // 结构化断言（`json()` 输出是格式化的，别用字符串匹配）
+    expect(result.value).toMatchObject({ path: 'outputs/good.mp4', spec: { width: 320, height: 240, durationMs: 2000 } })
+  })
+
+  it('rejects probe paths outside the allowed boundary (A63/A65)', async () => {
+    const { call } = await harness()
+    await expect(call('workbench_assets', { action: 'probe', path: '/etc/passwd' })).rejects.toThrow(/探测失败/)
+  })
+
 
   it('registers the five tools and documents every allowed action', async () => {
     const { byName } = await harness()
     expect([...byName.keys()].sort()).toEqual(['workbench_assets', 'workbench_projects', 'workbench_tasks', 'workbench_timeline', 'workbench_workflow'])
     const expected: Record<string, string[]> = {
       workbench_projects: ['list', 'create', 'rename'],
-      workbench_assets: ['list', 'attach'],
+      workbench_assets: ['list', 'attach', 'probe'],
       workbench_timeline: ['list', 'add-clip', 'export'],
       workbench_workflow: ['list', 'save', 'run', 'runs'],
       workbench_tasks: ['list', 'renders', 'cancel'],

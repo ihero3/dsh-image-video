@@ -153,7 +153,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const assets = defineTool({
     name: 'workbench_assets',
     description:
-      '工作台的素材（生成出来的图/视频文件）：list（按项目列出，可按素材种类过滤）、attach（把一个已存在的文件路径登记成素材）。'
+      '工作台的素材（生成出来的图/视频文件）：list（按项目列出，可按素材种类过滤）、attach（把一个已存在的文件路径登记成素材）、probe（探测真实时长/分辨率/帧率/有无音轨，用于决定片段该给多长）。'
       + '素材不复制文件，只记录路径；重复登记同一路径会返回已有的那条（created=false）。',
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -163,8 +163,9 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / attach' },
-      projectId: { type: 'string', required: true, description: '项目 id（先 list workbench_projects）' },
+      action: { type: 'string', required: true, description: 'list / attach / probe' },
+      // `A65`：去掉 required —— `probe` 不需要项目上下文；list/attach 在 execute 里各自校验
+      projectId: { type: 'string', description: '项目 id（list / attach 必填；先 list workbench_projects）' },
       path: { type: 'string', description: 'attach 时的文件绝对路径' },
       kind: { type: 'string', description: "attach 时的素材种类：image / video（默认按扩展名推断）" },
       prompt: { type: 'string', description: 'attach 时记录产生它的提示词（可选）' },
@@ -173,8 +174,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_assets')
-      const projectId = requireString(input, 'projectId', 'workbench_assets')
+      // `A65`：`probe` 不需要项目上下文 → projectId 改为按需校验（此前全局 required 会把 probe 直接拒掉）
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_assets list 需要 projectId')
         const kind = typeof input.kind === 'string' && (input.kind === 'image' || input.kind === 'video') ? input.kind : undefined
         const rows = (await store.listAssets(projectId))
           .filter(asset => kind === undefined || asset.kind === kind)
@@ -193,6 +196,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         return json({ path: relative, spec })
       }
       if (action === 'attach') {
+        if (projectId === undefined) throw new Error('workbench_assets attach 需要 projectId')
         const path = requireString(input, 'path', 'workbench_assets attach')
         const kind = input.kind === 'image' || input.kind === 'video'
           ? input.kind
