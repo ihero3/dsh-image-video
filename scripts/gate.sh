@@ -26,7 +26,10 @@ pnpm run typecheck || fail "typecheck"
 
 step "tests (full suite)"
 TEST_LOG="/tmp/dsh-test-$(date +%s).log"
-if ! pnpm run test > "$TEST_LOG" 2>&1; then
+# Bound worker count: on a loaded machine vitest can fail to START workers
+# ("Timeout waiting for worker to respond") even though every test passes.
+# Fewer workers = slower but reliable; correctness of the gate matters more.
+if ! pnpm exec vitest run --maxWorkers=2 > "$TEST_LOG" 2>&1; then
   echo "--- tail of test log ($TEST_LOG) ---"
   tail -40 "$TEST_LOG"
   echo "------------------------------------"
