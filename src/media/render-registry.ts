@@ -7,8 +7,26 @@
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { buildRenderSummary, type RenderSummary } from './render-summary.ts'
+import { freezeTimeline, planVideoSegments } from './render.ts'
 
 /** 一次导出任务的状态。 */
+/**
+ * 把全局百分比换算成"第 N 段 / 共 M 段"（`A41`）。
+ * @param bounds - 各段**累计结束**毫秒（升序）。
+ * @param percent - 全局进度（0–100）。
+ * @returns 段序号；边界为空时返回 `undefined`。
+ */
+export function segmentStepAt(
+  bounds: readonly number[],
+  percent: number,
+): { readonly current: number; readonly total: number } | undefined {
+  const totalMs = bounds[bounds.length - 1]
+  if (totalMs === undefined || totalMs <= 0) return undefined
+  const atMs = (Math.max(0, Math.min(100, percent)) / 100) * totalMs
+  const index = bounds.findIndex(bound => atMs <= bound)
+  return { current: index < 0 ? bounds.length : index + 1, total: bounds.length }
+}
+
 export interface RenderJob {
   readonly id: string
   readonly timelineId: string
@@ -32,6 +50,8 @@ export interface RenderJob {
   readonly queuePosition?: number
   /** 导出完成摘要（`A37`，加法字段：产物/时长/规格/轨道概览）。 */
   readonly summary?: RenderSummary
+  /** 进度细分（`A41`）：当前在第几段（按视频段+补边段的累计时长换算）。 */
+  readonly progressStep?: { readonly current: number; readonly total: number }
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -59,6 +79,12 @@ export class RenderRegistry {
     /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
     readonly maxConcurrent?: number
   }) {}
+
+  /** 百分比 → 第 N 段（`A41`；边界为空时不带该字段）。 */
+  private stepAt(timeline: TimelineRecord, percent: number): { progressStep?: { current: number; total: number } } {
+    const step = segmentStepAt(this.segmentBounds(timeline), percent)
+    return step === undefined ? {} : { progressStep: step }
+  }
 
   private stamp(): string {
     return (this.deps.now?.() ?? new Date()).toISOString()
@@ -150,6 +176,24 @@ export class RenderRegistry {
    * @param timeline - 要渲染的时间轴（内部由 {@link RenderService} 冻结成快照）。
    * @returns 刚建立的任务。
    */
+  /** 把"全局百分比"换算成"第 N 段"用的累计边界（`A41`；纯函数计划，失败就算了）。 */
+  private segmentBounds(timeline: TimelineRecord): number[] {
+    try {
+      const snapshot = freezeTimeline(timeline)
+      const segments = planVideoSegments(snapshot)
+      const bounds: number[] = []
+      let accumulated = 0
+      for (const segment of segments) {
+        const ms = segment.kind === 'filler' ? segment.durationMs : Math.max(1, Math.round(segment.durationMs / (segment.speed ?? 1)))
+        accumulated += ms
+        bounds.push(accumulated)
+      }
+      return bounds
+    } catch {
+      return []
+    }
+  }
+
   start(timeline: TimelineRecord): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
@@ -210,10 +254,13 @@ export class RenderRegistry {
 
     void this.deps.render.render(timeline, {
       signal: controller.signal,
-      onProgress: progress => { this.patch(id, { percent: progress.percent }) },
+      onProgress: progress => {
+        this.patch(id, { percent: progress.percent, ...this.stepAt(timeline, progress.percent) })
+      },
     }).then(async (result: RenderResult) => {
       this.patch(id, {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(),
+        ...this.stepAt(timeline, 100),
         summary: await this.summarise(timeline, result),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
