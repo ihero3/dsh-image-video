@@ -90,6 +90,66 @@ export function computeSegmentTimings(
  * @param job - 目标任务。
  * @returns 不能重试时返回面向人的原因；可重试返回 `undefined`。
  */
+/** 导出队列全景（`A90`）。 */
+export interface RenderOverview {
+  readonly running: { readonly count: number; readonly items: readonly { id: string; timelineId: string; percent: number; etaSec?: number; step?: string }[] }
+  readonly queued: { readonly count: number; readonly items: readonly { id: string; timelineId: string; position: number; priority?: number }[] }
+  readonly recent: { readonly succeeded: number; readonly failed: number; readonly cancelled: number }
+  readonly throughput: { readonly lastHour: number; readonly p50Ms?: number; readonly p90Ms?: number; readonly samples: number }
+  readonly failedWithDiagnosis: number
+}
+
+/**
+ * 汇总导出队列全景（`A90`）：给界面/Agent 一个"一眼看懂"的视图。
+ *
+ * @param jobs - 所有渲染任务。
+ * @param stats - `RenderRegistry.stats()` 的结果（耗时分位）。
+ * @param nowMs - 当前时间（测试可注入）。
+ * @returns 全景摘要。
+ */
+export function renderOverview(
+  jobs: readonly RenderJob[],
+  stats: { readonly p50Ms?: number; readonly p90Ms?: number; readonly samples?: number },
+  nowMs: number = Date.now(),
+): RenderOverview {
+  const hourAgo = nowMs - 60 * 60 * 1000
+  const running = jobs.filter(job => job.status === 'running' && job.queued !== true)
+  const queued = jobs.filter(job => job.queued === true)
+  const recent = jobs.filter(job => typeof job.finishedAt === 'string' && Date.parse(job.finishedAt) >= hourAgo)
+  return {
+    running: {
+      count: running.length,
+      items: running.map(job => ({
+        id: job.id, timelineId: job.timelineId, percent: job.percent,
+        ...job.progressEtaSec === undefined ? {} : { etaSec: job.progressEtaSec },
+        ...job.progressStep === undefined ? {} : { step: `${job.progressStep.current}/${job.progressStep.total}` },
+      })),
+    },
+    queued: {
+      count: queued.length,
+      items: queued
+        .slice()
+        .sort((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0))
+        .map(job => ({
+          id: job.id, timelineId: job.timelineId, position: job.queuePosition ?? 0,
+          ...job.priority === undefined ? {} : { priority: job.priority },
+        })),
+    },
+    recent: {
+      succeeded: recent.filter(job => job.status === 'succeeded').length,
+      failed: recent.filter(job => job.status === 'failed').length,
+      cancelled: recent.filter(job => job.status === 'cancelled').length,
+    },
+    throughput: {
+      lastHour: recent.length,
+      ...stats.p50Ms === undefined ? {} : { p50Ms: stats.p50Ms },
+      ...stats.p90Ms === undefined ? {} : { p90Ms: stats.p90Ms },
+      samples: stats.samples ?? 0,
+    },
+    failedWithDiagnosis: jobs.filter(job => job.status === 'failed' && job.diagnosis !== undefined).length,
+  }
+}
+
 export function retryError(job: RenderJob): string | undefined {
   if (job.status === 'running' && job.queued !== true) {
     return '这个导出正在跑：等它结束，或先 render-cancel 再重试'

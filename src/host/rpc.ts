@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { renderOverview } from '../media/render-registry.ts'
 import { reportAssetUsage } from '../workbench/usage.ts'
 import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -622,6 +623,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const render = deps.renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } })
       return { render, retriedFrom: previous.id }
     }
+    // `A90`：导出队列全景（正在跑/排队/最近成败/吞吐与耗时分布）
+    case 'renders/overview':
+      {
+        const stats = deps.renders.stats()
+        return {
+          overview: renderOverview(deps.renders.list(), {
+            ...stats.durationMs === undefined ? {} : { p50Ms: stats.durationMs.p50, p90Ms: stats.durationMs.p90 },
+            samples: stats.finished,
+          }),
+        }
+      }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------

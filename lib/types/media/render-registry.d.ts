@@ -64,6 +64,53 @@ export declare function computeSegmentTimings(bounds: readonly number[], samples
  * @param job - 目标任务。
  * @returns 不能重试时返回面向人的原因；可重试返回 `undefined`。
  */
+/** 导出队列全景（`A90`）。 */
+export interface RenderOverview {
+    readonly running: {
+        readonly count: number;
+        readonly items: readonly {
+            id: string;
+            timelineId: string;
+            percent: number;
+            etaSec?: number;
+            step?: string;
+        }[];
+    };
+    readonly queued: {
+        readonly count: number;
+        readonly items: readonly {
+            id: string;
+            timelineId: string;
+            position: number;
+            priority?: number;
+        }[];
+    };
+    readonly recent: {
+        readonly succeeded: number;
+        readonly failed: number;
+        readonly cancelled: number;
+    };
+    readonly throughput: {
+        readonly lastHour: number;
+        readonly p50Ms?: number;
+        readonly p90Ms?: number;
+        readonly samples: number;
+    };
+    readonly failedWithDiagnosis: number;
+}
+/**
+ * 汇总导出队列全景（`A90`）：给界面/Agent 一个"一眼看懂"的视图。
+ *
+ * @param jobs - 所有渲染任务。
+ * @param stats - `RenderRegistry.stats()` 的结果（耗时分位）。
+ * @param nowMs - 当前时间（测试可注入）。
+ * @returns 全景摘要。
+ */
+export declare function renderOverview(jobs: readonly RenderJob[], stats: {
+    readonly p50Ms?: number;
+    readonly p90Ms?: number;
+    readonly samples?: number;
+}, nowMs?: number): RenderOverview;
 export declare function retryError(job: RenderJob): string | undefined;
 export declare function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[];
 /** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
