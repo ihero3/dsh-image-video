@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.8-workbench-8] - 2026-10-19
 
 ### 批次五
@@ -9,7 +13,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.9-workbench-9] - 2026-10-19
 
 ### 批次六
 - **A31 导出预设**：抖音竖屏 / 小红书 3:4 / 方形 / YouTube 1080p / 4K / 默认 720p（全部过校验）；`presets/list` 端点 + `timeline set-format presetId` 整份套用；未知预设报错并列出可选值
