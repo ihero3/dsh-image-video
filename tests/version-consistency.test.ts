@@ -23,6 +23,16 @@ describe('version consistency (A73)', () => {
     expect(newest![1]).toBe(PLUGIN_VERSION)
   })
 
+  it('changelog entries are contiguous (no missing releases)', async () => {
+    const changelog = await readFile(join(ROOT, 'CHANGELOG.md'), 'utf8')
+    const patches = [...changelog.matchAll(/^## \[\d+\.\d\.(\d+)-workbench-(\d+)\]/gm)].map(match => Number(match[1]))
+    expect(patches.length).toBeGreaterThan(10)
+    const sorted = [...patches].sort((left, right) => left - right)
+    for (let index = 1; index < sorted.length; index += 1) {
+      expect(sorted[index]! - sorted[index - 1]!, `缺了 0.3.${sorted[index - 1]! + 1}`).toBe(1)
+    }
+  })
+
   it('the newest git tag matches the version and the changelog number', async () => {
     const changelog = await readFile(join(ROOT, 'CHANGELOG.md'), 'utf8')
     const newest = /^## \[(\d+\.\d+\.\d+)-workbench-(\d+)\]/m.exec(changelog)!

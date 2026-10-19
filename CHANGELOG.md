@@ -2,51 +2,68 @@
 
 （下一轮的改动写这里）
 
-### 批次二十八
-- **A73 版本一致性漂移测试**：断言 package.json / version.ts / CHANGELOG 最新条目 / git tag 四处一致；修复 0.3.25 条目缺失与顺序错乱；记录"CHANGELOG 奇数版本条目缺失"为已知问题
+### 批次二十九
+- **A75 CHANGELOG 历史缺口回填**：补齐 0.3.13/15/17/19/21/23 六个版本；版本条目现为 0.3.11 → 0.3.26 连续无缺口；A73 测试新增「版本连续」断言防复发
 
 ## [0.3.26-workbench-26] - 2026-10-19
 
 ### 批次二十八
 - **A73 版本一致性漂移测试**：断言 package.json / version.ts / CHANGELOG 最新条目 / git tag 四处一致
 - **A74 发版脚本**：统一更新三处并保证 CHANGELOG 时间倒序，修掉「发版替换链覆盖中间版本」的根因
-
 ## [0.3.25-workbench-25] - 2026-10-19
 
 ### 批次二十六
 - **A71 RPC 契约漂移测试 + 文档补齐**：漂移测试首跑抓出 **23 个端点没写进 API-SURFACE.md**（同事无法对接）→ 补齐「完整端点表」；以后新增端点忘写文档测试直接红
-
 ## [0.3.24-workbench-24] - 2026-10-19
 
 ### 批次二十四
 - **修 gate.sh 乱码（真 bug #14）**：A60 重写时中文双重编码，变量名含坏字节 → 测试真失败时报"未绑定变量"而非真错误；改用纯 ASCII 重写门禁脚本
 - **A69 工具描述与真实动作同步**：5 个 Agent 工具的描述/允许清单补全（此前 `set-format`/`split-clip`/`render-retry` 等对模型"不存在"）；新增漂移测试钉住「代码分支 ↔ 允许清单 ↔ 描述」三者一致
+## [0.3.23-workbench-23] - 2026-10-19
 
+### 批次二十二
+- **A67 Agent 工具 schema 审计**：`timeline`/`workflow` 工具的 `projectId` 从**全局必填**改为按需校验，解锁 `templates`/`add-clip`/`export`/`run` 等不需要项目上下文的动作；`add-clip` 的项目上下文改从时间轴自身取
 ## [0.3.22-workbench-22] - 2026-10-19
 
 （下一轮的改动写这里）
+## [0.3.21-workbench-21] - 2026-10-19
 
+### 批次十九
+- **A63 Agent 也能探测素材**：`workbench_assets action=probe`（与端点同一套边界）
+- **修字幕 id 撞车（真 bug #11）**：`planSubtitleClips` 默认 id 加随机段，避免同毫秒两批字幕生成相同 id
 ## [0.3.20-workbench-20] - 2026-10-19
 
 ### 持续交付轮次
 - **对抗性扫荡 R7**：补"重试失败任务"主用例（此前只测了成功任务）；抽出纯函数 `retryError` 覆盖运行中/排队中/可重试三分支；补 `groupRenderSets` 边界
+## [0.3.19-workbench-19] - 2026-10-19
 
+（下一轮的改动写这里）
 ## [0.3.18-workbench-18] - 2026-10-19
 
 （下一轮的改动写这里）
+## [0.3.17-workbench-17] - 2026-10-19
 
+### 持续交付轮次
+- **对抗性扫荡 R6**：修 `saveExportPreset` 用未知 id 时**静默新建**的契约问题（改为明确报错）；补 ETA 极端边界与"21 个素材只探测前 20 个"的断言
 ## [0.3.16-workbench-16] - 2026-10-19
 
 ### 批次十四
 - **A53 项目包 v3**：清单纳入自定义导出预设（导入去重合并）；**修真遗漏**：`burnLanguage` 之前导入丢失；v1/v2/v3 全部可导入
 - **A52 渲染 ETA**：`estimateEtaSec` 线性外推剩余秒数，**过早（<5%）或过短（<1s）不给估计**避免乱跳；`progressEtaSec` 加法字段，成功归零
+## [0.3.15-workbench-15] - 2026-10-19
 
+### 批次十三
+- **A50 渲染队列优先级**：`start(timeline, {priority})` 数值大的先跑、同优先级 FIFO；`queuePosition` 按优先级重算；`timelines/render` 与 `timeline export` 支持 `priority`
 ## [0.3.14-workbench-14] - 2026-10-19
 
 ### 批次十二
 - **A48 自定义导出预设 + schema v4**：用户预设存进工作台文档（全局库），`presets/save`/`remove`，`presets/list` 内置与自定义合并（`custom` 标记）；`set-format presetId` 支持自定义；schema 3→4 真实迁移，旧数据不受影响
 - **A47 门禁脚本修假红与误导**：测试日志完整落盘不再截断；失败时区分"真失败 vs 全过但退出码非 0（worker 抖动）"；"五道门全过"移到第 5 道之后；编号统一 N/5；构建 grep 不再假失败
+## [0.3.13-workbench-13] - 2026-10-19
 
+### 批次十一
+- **A45 片段越界检测**：`findClipOverruns` 纯函数 + 端点探测真实时长，报出"片段比素材还长"（导出后半段会没画面）；含源内偏移与 120ms 容差，探测失败不影响校验
+- **A44 素材探测端点**：`probeMediaSpec` 增加真实时长；`assets/probe` 端点（安全边界：只允许 outputs 内或已登记素材）；真机验证 video/audio/坏文件三态
 ## [0.3.12-workbench-12] - 2026-10-19
 
 ### 持续交付轮次
@@ -55,7 +72,13 @@
 - **对抗性扫荡 R3**：定位"重复导入"——导入行为正确（每次建新项目），真问题是**同名**让用户分不清 → 导入时**自动去重命名**（`（导入） 2`…）；断言加严为"3 个项目 / 3 个唯一名字"
 - **对抗性扫荡 R2**：保留建议钩子加 **2s 超时**（慢扫描不再拖住"渲染成功"）；校验器 500 片段 < 500ms；发现并记录"重复导入"开放问题（未定位，`it.skip` + NOTE）
 - **对抗性质量扫荡 R1（修 3 个真 bug）**：① 自指侧链 → 同一标签用两次（渲染跳过 + `self-ducking` 校验码）；② `crossfadeMs` 超长 → `acrossfade` d 超限（逐对夹到较短片段一半）；③ 缺素材误用 `empty-subtitle` 码 → 新增 `missing-asset`；回归断言 4 例
+## [0.3.11-workbench-11] - 2026-10-19
 
+### 批次八
+- **A38 保留策略触发点**：渲染完成后可在摘要里带 `retention` 建议（阈值 `DSH_OUTPUT_MAX_FILES` / `DSH_OUTPUT_MAX_GB`，未配置不提示；**只报告不删除**；钩子异常不影响渲染结果）
+- **A37 导出完成摘要**：渲染结束后任务上带 `summary`（产物/字节/实测时长/规格/各轨片段数/有无音轨/有无字幕/是否烧录）+ `describeTimeline` 概览；加法字段，老客户端不受影响；测试 4 例
+- **A36 覆盖率门禁落地**：插件 vitest 对齐到根的 **4.x**（复用根已装的 `@vitest/coverage-v8@4.1.11`）；实测 **statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36%**，阈值取实测 −2pp；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**（低于阈值即失败）
+- 踩坑与修复（写进提交说明）：vitest 4 对 workspace 深层源码导入更严格（需顶层 `resolve.alias` + `server.deps.inline`）；安装后必须在**根**跑完整 `pnpm install`，否则 workspace 包会被链接成两份导致 typecheck 红
 ## [0.3.10-workbench-10] - 2026-10-19
 
 ### 批次七
@@ -63,7 +86,12 @@
 - **A33 音频侧链压缩**：音轨 `duckUnderTrackId` + `duckingDb`(-30..0)，导出用 `sidechaincompress`（ratio 由分贝换算）；**修复标签复用 bug**（触发轨需先 `asplit` 才能在侧链与混音里各用一次）
 
 （下一轮的改动写这里）
+## [0.3.9-workbench-9] - 2026-10-19
 
+### 批次六
+- **A31 导出预设**：抖音竖屏 / 小红书 3:4 / 方形 / YouTube 1080p / 4K / 默认 720p（全部过校验）；`presets/list` 端点 + `timeline set-format presetId` 整份套用；未知预设报错并列出可选值
+- **A30 音轨交叉淡化**：音轨 `crossfadeMs`(0–3000ms)；相邻片段用 `acrossfade` 重叠淡入淡出，**中间有空档时自动回落普通拼接**；真机验证（2×1s + 300ms 交叉，成片 2s ±150ms，仍有音轨）
+- **A29 修复 `speed` 被取整**：`numberField` 原先对所有数值都 `Math.round`，导致 `speed: 1.5` 存成 2（毫秒字段该取整、倍数不该）→ 新增 `integer: false` 只保留 2 位小数；package 往返严格断言 `speed === 1.5` 恢复
 ## [0.3.8-workbench-8] - 2026-10-19
 
 ### 批次五
@@ -74,64 +102,6 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-
-
-## [0.3.23-workbench-23] - 2026-10-19
-
-### 批次二十二
-- **A67 Agent 工具 schema 审计**：`timeline`/`workflow` 工具的 `projectId` 从**全局必填**改为按需校验，解锁 `templates`/`add-clip`/`export`/`run` 等不需要项目上下文的动作；`add-clip` 的项目上下文改从时间轴自身取
-
-## [0.3.21-workbench-21] - 2026-10-19
-
-### 批次十九
-- **A63 Agent 也能探测素材**：`workbench_assets action=probe`（与端点同一套边界）
-- **修字幕 id 撞车（真 bug #11）**：`planSubtitleClips` 默认 id 加随机段，避免同毫秒两批字幕生成相同 id
-
-## [0.3.19-workbench-19] - 2026-10-19
-
-（下一轮的改动写这里）
-
-## [0.3.17-workbench-17] - 2026-10-19
-
-### 持续交付轮次
-- **对抗性扫荡 R6**：修 `saveExportPreset` 用未知 id 时**静默新建**的契约问题（改为明确报错）；补 ETA 极端边界与"21 个素材只探测前 20 个"的断言
-
-## [0.3.15-workbench-15] - 2026-10-19
-
-### 批次十三
-- **A50 渲染队列优先级**：`start(timeline, {priority})` 数值大的先跑、同优先级 FIFO；`queuePosition` 按优先级重算；`timelines/render` 与 `timeline export` 支持 `priority`
-
-## [0.3.13-workbench-13] - 2026-10-19
-
-### 批次十一
-- **A45 片段越界检测**：`findClipOverruns` 纯函数 + 端点探测真实时长，报出"片段比素材还长"（导出后半段会没画面）；含源内偏移与 120ms 容差，探测失败不影响校验
-- **A44 素材探测端点**：`probeMediaSpec` 增加真实时长；`assets/probe` 端点（安全边界：只允许 outputs 内或已登记素材）；真机验证 video/audio/坏文件三态
-
-## [0.3.11-workbench-11] - 2026-10-19
-
-### 批次八
-- **A38 保留策略触发点**：渲染完成后可在摘要里带 `retention` 建议（阈值 `DSH_OUTPUT_MAX_FILES` / `DSH_OUTPUT_MAX_GB`，未配置不提示；**只报告不删除**；钩子异常不影响渲染结果）
-- **A37 导出完成摘要**：渲染结束后任务上带 `summary`（产物/字节/实测时长/规格/各轨片段数/有无音轨/有无字幕/是否烧录）+ `describeTimeline` 概览；加法字段，老客户端不受影响；测试 4 例
-- **A36 覆盖率门禁落地**：插件 vitest 对齐到根的 **4.x**（复用根已装的 `@vitest/coverage-v8@4.1.11`）；实测 **statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36%**，阈值取实测 −2pp；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**（低于阈值即失败）
-- 踩坑与修复（写进提交说明）：vitest 4 对 workspace 深层源码导入更严格（需顶层 `resolve.alias` + `server.deps.inline`）；安装后必须在**根**跑完整 `pnpm install`，否则 workspace 包会被链接成两份导致 typecheck 红
-
-## [0.3.9-workbench-9] - 2026-10-19
-
-### 批次六
-- **A31 导出预设**：抖音竖屏 / 小红书 3:4 / 方形 / YouTube 1080p / 4K / 默认 720p（全部过校验）；`presets/list` 端点 + `timeline set-format presetId` 整份套用；未知预设报错并列出可选值
-- **A30 音轨交叉淡化**：音轨 `crossfadeMs`(0–3000ms)；相邻片段用 `acrossfade` 重叠淡入淡出，**中间有空档时自动回落普通拼接**；真机验证（2×1s + 300ms 交叉，成片 2s ±150ms，仍有音轨）
-- **A29 修复 `speed` 被取整**：`numberField` 原先对所有数值都 `Math.round`，导致 `speed: 1.5` 存成 2（毫秒字段该取整、倍数不该）→ 新增 `integer: false` 只保留 2 位小数；package 往返严格断言 `speed === 1.5` 恢复
-
-## [0.3.5-workbench-5] - 2026-10-18
-
-（下一轮的改动写这里）
-
-## [Unreleased]
-
-### 批次十
-- **A42 多语言字幕轨**：字幕轨 `language` + 时间轴 `burnLanguage` 只烧选定语言（不设则沿用老行为），避免多语言字幕叠在一起；校验器新增悬空语言/重复语言/叠烧提醒三个码
-- **A41 渲染进度按镜头细分**：`segmentStepAt` 把全局百分比换算成"第 N/共 M 段"（含变速折算），任务字段 `progressStep`（加法，老客户端不受影响）；进度回调与成功收尾都刷新
-
 ## [0.3.7-workbench-7] - 2026-10-19
 
 ### 客户端（同事 B：B1–B13 收口）
@@ -144,7 +114,6 @@
 - **抬体积基线**：`BUNDLE_BASELINE` raw 548,282 → **682,374**、gzip 121,161 → **151,212**。
   原因：上述界面工作带来 +24% 的真实增量（新样式表/图标集/交互组件），属功能性增长；
   预算仍维持「基线 + 20%」口径，并在 TASKS-TRACK-B B12 记录"下次性能专项回收预算"的目标。
-
 ## [0.3.6-workbench-6] - 2026-10-18
 
 ### 批次四
@@ -154,11 +123,9 @@
 ### 批次三
 - **A18 诊断暴露输出占用**：`diagnostics` 增加 `outputs{files,bytes,referenced,oldestAt?,newestAt?}`，与 `maintenance/retention` 配合使用
 - **A17 时间轴 schema v3**：新增 2→3 迁移（片段特效/转场字段均可选，旧数据无需改写）；迁移链 1→2→3
-
-## [Unreleased]
+## [0.3.5-workbench-5] - 2026-10-18
 
 （下一轮的改动写这里）
-
 ## [0.3.4-workbench-4] - 2026-10-18
 
 ### 批次二
@@ -166,7 +133,6 @@
 - **A15 输出保留策略**：`planRetention` 纯函数（最旧优先/受保护不动/保留最新 N/可预演）+ `maintenance/retention` 端点（默认 dryRun）+ `store.referencedAssetPaths()` 保护名单；测试 4 例
 - **A14 字幕批量生成**：`splitSubtitleSentences`（句末标点 → 逗号 → 硬切，单条长度上限可控）；`planSubtitleClips` 按字数比例分配时间、保底最短显示、窗口放不下就截断；工具面 `timeline add-subtitles` 一键把台词变成连续的定时字幕（缺省接在字幕轨末尾）
 - **A13 片段特效**：`speed`(0.25–4) / `fade`(0–2000ms) / `crop` 入模型并校验；时间轴占位一律按变速折算（`effectiveDurationMs`）；导出链 `crop→setpts→fade`；**修掉一个真 bug**——`freezeTimeline` 另算总时长导致 2 倍速后补 0.5s 黑场，成片与时间轴不一致（现统一走 `timelineDurationMs`，真机 500ms ±70ms ✓）
-
 ## [0.3.3-workbench-3] - 2026-10-18
 
 ### Track A（底层）A5–A11：面向大规模与商用
@@ -186,23 +152,6 @@
 - **导出真实混音**：音轨按 `aresample → volume → concat → amix(normalize=0)` 参与 filter graph；静音/零音量轨不输出；无音轨时仍 `-an`
 - 真机验证（零生成花费）：产物含 `Audio: aac`、时长与时间轴 ±1 帧；测试 3 例
 - **导出参数化（A2）**：`TimelineRecord.exportFormat`（分辨率/帧率/码率，越界一律拒）随文档保存；导出按规格出片（`scale/pad/fps` + `-b:v`/`-crf`）；**产物规格实测复核**——宽高不符或帧率差 >1 直接判 `MEDIA_OUTPUT_INVALID`，不只信参数；真机 640×360@24 验证；测试 4 例
-
-## [Unreleased]
-
-### 新增（Track A：A1–A4）
-- **A1 音轨能力**：轨道 `volume`(0–2)/`muted` 入库；导出真实混音（aresample→volume→concat→amix）；静音轨不输出；真机产物含 AAC
-- **A2 导出参数化**：`exportFormat`（分辨率/帧率 24·25·30·60/码率）入库；按规格出片并**实测复核**宽高与帧率
-- **A3 撤销/重做**：`HistoryStack<T>` 纯逻辑（相同状态不记历史/新编辑清 redo/50 步上限/peek 元信息），画布与时间轴共用语义
-- **A4 渲染队列**：`maxConcurrent` 默认 1 + FIFO 队列；排队任务加法字段 `queued/queuePosition`；出队自动拉起、排队可取消、事件进日志
-- **A5 节点级超时与重试策略化**：默认超时按种类（图像 180s / 视频 900s / 其它 120s），可注入 `nodeTimeoutMs`；每次尝试独立 `AbortController` + `Promise.race` 护栏（工具无视取消也能结束）；超时算瞬时失败并重试；`retryBackoffMs` 可配
-- **A6 Agent 工具面扩展**：时间轴 trim / drop-clip / set-format / set-track + 导出 render-cancel（排队项也能取消）；批量护栏沿用 ≤20；修复片段 id 同毫秒撞车（改唯一生成器）
-- **A7 项目迁移框架 + schema v2**：迁移链（只升不降、无路径拒绝）；读入即迁移、迁移前自动备份 `.pre-migrate-v<N>`、结果立即落盘；新增真实 1→2 迁移（资源补 `scope`、文档补 `resourceUsage`）
-- **A8 存储规模化**：`writeCount` 可观测 + 一万素材压测基线（1.64 MB / 冷加载 11.7 ms / 落盘 12.5 ms）→ **V1 不需要分片**；曾加按项目索引，实测发现读路径本来就够快且索引带来过期风险，**已撤销**（简单优先）；基线 `docs/PERF.md`
-- **A9 诊断与可观测**：`diagnostics` 端点（版本/数据规模/`writeCount`/文件字节/运行中用例/渲染队列/缓存/近 50 条错误）；`DiagnosticsCollector` 有界环（不落盘、不含敏感内容）；runner 错误自动入环
-- **A10 漫剧/连续剧模板**：`drama-series`（剧情→剧本→分镜→定妆图→镜头→字幕→合成，7 节点全 runnable 且校验零问题）；Agent 工具面新增 `workflow templates` / `workflow from-template`；角色基准改为运行时挂 `resource-reference`（因 `resourceId` 必填）
-- **A11 CI 强化（部分）**：`scripts/check-scope.mjs` 轨道越界自检（A/B 各自跑，越界非零退出）；真实 IO 用例 `retry: 1` 兜底抖动；覆盖率门禁因 vitest 3.x 与 coverage-v8 4.x 版本不匹配暂缓（需依赖对齐，单独排期）
-- 测试：A1 3 + A2 4 + A3 5 + A4 5 + A5 3 + A6 2 + A7 4 + A8 1 + A9 6 + A10 4 例
-
 ## [0.3.2-workbench-2] - 2026-10-18
 
 ### 深度优化（商用/大规模基线第一批）
@@ -243,15 +192,6 @@
 - **层次与排版**：14px 品牌名 / 12.5px 正文 / 12px 控件 / 11px 元信息 / 10px 眉题五档字阶，行高 1.55，数字 tabular-nums；面板头部统一 24px 着色瓷砖图标；快速创作改为"三步引导 + 统计卡"；素材行图片缩略图；时间轴 clip 块化（左侧色条 + 时长徽章 + 内联编辑）；画布节点库按「可用 / 规划中」分组
 - **体积**：客户端产物 raw 611,536 B / gzip 134,051 B（预算 raw 657,938 / gzip 145,393，占 93%/92%），`check:bundle` 通过；构建注意：沙箱会拦 `rmSync('lib')`，需删目录后手动 `npx tsdown && npx tsc -p tsconfig.client.json`
 - **回归**：客户端 46 项测试（workbench 32 + canvas 7 + bundle 2 + no-hardcoding 3 + lifecycle 2）全过；宿主侧 8 例超时类失败为本机文件 I/O 慢（加大超时即过），1 例 ffmpeg stderr 映射失败属工作区既有未提交改动（`src/media/render.ts`），与本次无关
-
-## [Unreleased]
-
-### 新增（需求覆盖审计补全）
-- **`R-PRJ-4` 引用完整性**：删资源前除工作流外**还扫时间轴**；"项目默认绑定"在 V1 无该字段（空集，复核锚点在 `references.ts` 注释里）
-- **`R-QCK-3` 资源使用记录**：跑图产出时自动记录"这张图用到了哪些资源"，资源库显示「被哪些素材用过」（端点 `resources/usage`；同产物去重、随项目级联）
-- **`R-COL-1` 资源作用域**：`ResourceRecord.scope` 保留 `project/team/public`，V1 缺省写 `project`、UI 不给团队/公共入口
-- **`R-CFG-2` 默认值可见可改**：工作台内直接编辑 7 个生效默认值（`POST /image-video/defaults`，留空 = 清覆盖）；有个真 bug 是客户端测试抓到的——下发时误用了界面文案键而非接口字段名
-
 ## [0.3.1-workbench-1] - 2026-10-16
 
 ### 工程
@@ -348,49 +288,3 @@
 - **构建改为双面**：`build = clean && tsdown（宿主角 + 客户端角）&& tsc -p tsconfig.client.json`；`bundle` 复用 `build`（Harness 根 `build:plugins` 直接可用）；`files` 纳入 `lib/client/**` 与 `lib/types/client/**`
 - **README 与源码注释口径收敛**：视频时长上限统一为 1–30 秒（原注释/README 写 1–10）、`pollTimeoutMs` 默认 600000（原写 300000）、参考视频上限如实写为"上游文档声明 + 本地只强制 ≤15 秒 / 压缩后 ≤6MB"、`runtime-defaults` 的"六个字段"改回"七个字段"、`http-client.ts` 指向的契约文档名修正、`image-preflight` 去掉"threerouter 是唯一异步图片服务商"的过期断言、`media.ts` 陈旧注释改为与实现一致（是否注入模型可见 image 块由路由能力决定）
 - **文档**：新增 `docs/REQUIREMENTS.md`（需求 + 验收 + 追踪矩阵 + 16 条实现前必须收敛的事实）、`docs/EXECUTION.md`（工作区/环境/执行流程/验证证据/回滚/发布/排错）、`docs/TASKS.md`（59 个原子任务的唯一进度账本）
-
-## [0.3.1] - 2026-09-20
-
-### 变更
-- **构建产物随仓库提交**：`lib/index.js` 与 `lib/index.d.ts` 入库（`.gitignore` 移除 `lib/`），移除 `prepare` 脚本（保留 `build`，新增 `prepublishOnly`）。此前以 git 安装会因 pnpm 的 `allowBuilds` 拦截 `prepare` 而报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`，需手动"允许并重试"；现在 `dsh plugin add github:ihero3/dsh-image-video` 一次装好
-- **peerDependencies 改为 `*` 且标记 `optional`**：此前的 `^0.1.1-rc.2` 按 semver 预发布规则不匹配 harness 的 `0.1.6-alpha.2`；而 `optional: false` 会让 pnpm 到 registry 自动拉取 peer 链（实测因 `@deepseek-ai/dsh-type-meta` 未发布而 404，或在可解析时装出第二份 `dsh-tools`/`cordis` 与宿主并存）
-- 类型声明路径由不存在的 `lib/types/index.d.ts` 修正为实际产物 `lib/index.d.ts`（`types` / `exports.types` / `files` 三处）；`tsdown.config.ts` 固定 dts 文件名，避免内容哈希导致路径漂移
-- 文档同步：说明 `lib/` 已随仓库提交、消费方无需构建；`CONTRIBUTING` 增加"改 `src/` 后必须重新构建并提交 `lib/`"的约定
-
-## [0.3.0] - 2026-08-21
-
-### 变更
-- `generate_image` 工具结果不再向模型返回 `image` 内容块，改为纯文本摘要（本地路径、服务商、尺寸、大小），修复纯文本模型生成图片后下一轮请求 400（`unknown variant 'image_url', expected 'text'`）的问题
-- 图片字节仍通过 attachment 服务持久化，附件引用改经 `output.presentationMeta` 持久化为 UI-only 数据（`tool/result` 事件 `meta` 字段），对模型不可见，客户端可消费做内嵌渲染
-- `media.ts` 拆分为 `saveImageAttachment`（持久化附件引用）与 `createImageSummaryText`（模型可见文本），原 `createImageContent` 移除
-- 文档与工具描述同步更新：图片"内嵌渲染在对话中"→"模型只见文本摘要，附件走 UI-only 通道"
-
-### 修复
-- 修复：使用不支持图片输入的对话模型（如 pi-ai 的 threerouter 网关）时，`generate_image` 成功生成图片后，会话的后续请求因历史含 `image` 块而持续 400，会话无法继续
-
-## [0.2.0] - 2026-08-20
-
-### 变更
-- 阿里系服务商统一使用 万象 wanx（阿里云百炼）：`provider` 取值 `'wanx'`，配置字段 `wanx:`，适配器 `wanxAdapter`（文件 `providers/wanx.ts`）
-- `generate_video` 默认模型改为 `wan2.2-t2v-plus`（无需开通独立产品即可使用）
-- 默认图片尺寸改为 `1024*1024`（百炼接口要求 `*` 分隔，`1024x1024` 会报 "size is not in the correct format"）
-- 文档、工具描述、报错文案中的表述统一为 万象 wanx
-- Seedance2.5 相关代码与配置保持不变
-
-## [0.1.0] - 2026-08-20
-
-首次发布。文生图与文生视频工具插件，支持 万象 wanx（阿里云百炼）与 Seedance2.5（火山引擎）服务商切换。
-
-### 新增
-- `generate_image` 工具：文生图，wanx / Seedance2.5 切换，结果内嵌对话并落地 `outputs/`
-- `generate_video` 工具：文生短视频（上限 10s），后台异步轮询不阻塞对话，结果落地 `outputs/`
-- 配置 Schema：`provider` 切换、API Key、自定义 baseURL、默认图片尺寸、默认视频时长、超时、重试次数、outputs 目录
-- 统一 HTTP 客户端：异常分类（鉴权/配额/任务/超时/网络）+ 中文友好提示 + 可配置重试
-- 异步任务管理器：基于 `ctx.effect` 托管轮询生命周期，卸载自动取消任务 + 清理定时器
-- 媒体渲染模块：图片通过 attachment 服务内嵌，视频返回本地文件链接
-- `cordis.patch.yml`：`- insert` 新增 `image-video` 行，不覆盖现有插件
-- 双安装方式：本地文件夹 `dsh plugin add ./` + GitHub `dsh plugin add github:ihero3/dsh-image-video`
-
-### 服务依赖声明
-- `tools`（必需）：`inject = ['tools']` 顶部声明
-- `attachments`（generate_image 必需）：`ctx.inject(['attachments'], cb)` 显式声明，服务撤销时自动注销工具
