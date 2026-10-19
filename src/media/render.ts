@@ -8,8 +8,9 @@
  * - **失败要能照着修**：素材丢失 / 磁盘满 / 编码器不支持 / ffmpeg 缺失都给机器码 +
  *   一句话下一步（`R-TML-5`/`R-TML-6`）。
  */
+import { serializeSrt } from '../workbench/srt.ts'
 import { spawn } from 'node:child_process'
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import { estimateMaxCharsForWidth, wrapSubtitleLines } from '../workbench/subtitles.ts'
@@ -65,6 +66,8 @@ export interface RenderResult {
   readonly outputPath: string
   readonly bytes: number
   readonly durationMs: number
+  /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
+  readonly subtitlePath?: string
 }
 
 /** 渲染失败的机器码。 */
@@ -624,7 +627,19 @@ export class RenderService {
         )
       }
     }
-    return { outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs }
+    // `A120`：时间轴有字幕片段时，顺手把 SRT 写在成片旁边（成片 + 字幕一起交付）
+    let subtitlePath: string | undefined
+    const subtitleClips = snapshot.tracks
+      .filter(track => track.kind === 'subtitle')
+      .flatMap(track => track.clips)
+      .filter(clip => (clip.text ?? '').trim() !== '')
+    if (subtitleClips.length > 0) {
+      subtitlePath = outputPath.replace(/\.[^.]+$/, '') + '.srt'
+      await writeFile(subtitlePath, serializeSrt(subtitleClips.map(clip => ({
+        index: 0, startMs: clip.startMs, endMs: clip.startMs + clip.durationMs, text: clip.text ?? '',
+      }))), 'utf8')
+    }
+    return { outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs, ...subtitlePath === undefined ? {} : { subtitlePath } }
   }
 }
 

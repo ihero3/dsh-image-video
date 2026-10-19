@@ -50,6 +50,8 @@ export interface RenderResult {
     readonly outputPath: string;
     readonly bytes: number;
     readonly durationMs: number;
+    /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
+    readonly subtitlePath?: string;
 }
 /** 渲染失败的机器码。 */
 export type RenderErrorCode = 'MEDIA_FFMPEG_UNAVAILABLE' | 'MEDIA_FFMPEG_ENCODER_MISSING' | 'MEDIA_ASSET_MISSING' | 'MEDIA_TIMELINE_OVERLAP' | 'MEDIA_TIMELINE_EMPTY' | 'MEDIA_DISK_FULL' | 'MEDIA_ENCODER_UNSUPPORTED' | 'MEDIA_RENDER_FAILED' | 'MEDIA_RENDER_CANCELLED' | 'MEDIA_OUTPUT_INVALID';

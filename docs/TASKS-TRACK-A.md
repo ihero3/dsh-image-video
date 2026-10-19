@@ -269,6 +269,11 @@
 - [x] **A118 SRT 字幕导入/导出** ✅ 2026-10-20：`src/workbench/srt.ts` 纯编解码（时间码 ↔ 毫秒；**容错** BOM/CRLF/多余空行/序号缺失/`.` 毫秒；跳过坏块并报告）+ 端点 `subtitles/export`（字幕轨 → 标准 SRT）与 `subtitles/import`（SRT → 字幕片段，支持 `offsetMs` 平移与 `replace` 追加/替换）；测试 4 例（往返、脏文件、坏块、时间码）
 - [ ] **A119 发布 `v0.3.48-workbench-48`**
 
+## 批次五十一（A120 起，2026-10-20）
+
+- [x] **A120 导出时同时输出 SRT** ✅ 2026-10-20：渲染成功后若时间轴有字幕片段 → 在成片旁写 `<成片名>.srt`（复用 A118 序列化，时间轴与成片严格对齐）+ `RenderResult.subtitlePath` + 摘要 `subtitleFile`；无字幕片段则不产生文件；测试 2 例（真机渲染生成 SRT 且时间码/多行文本正确、无字幕不生成）
+- [ ] **A121 发布 `v0.3.49-workbench-49`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
