@@ -62,7 +62,7 @@ export class RenderRegistry {
   private readonly durations: number[] = []
 
   /** 等待槽位的任务（FIFO，`A4`）。 */
-  private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord }> = []
+  private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number }> = []
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -194,7 +194,7 @@ export class RenderRegistry {
     }
   }
 
-  start(timeline: TimelineRecord): RenderJob {
+  start(timeline: TimelineRecord, options: { priority?: number } = {}): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
     const job: RenderJob = {
@@ -203,9 +203,13 @@ export class RenderRegistry {
     }
     this.jobs.set(id, job)
     if (this.controllers.size >= maxConcurrent) {
-      // 槽位满了：进队列（status 仍是 running，额外标记 queued + 位置）
-      this.pending.push({ job, timeline })
-      this.patch(id, { queued: true, queuePosition: this.pending.length })
+      // 槽位满了：按**优先级**有序插入（数值大的先跑；同优先级保持 FIFO，不插队到同伴前面）
+      const priority = Number.isFinite(options.priority) ? Math.round(options.priority as number) : 0
+      const insertAt = this.pending.findIndex(entry => entry.priority < priority)
+      const entry = { job, timeline, priority }
+      if (insertAt < 0) this.pending.push(entry)
+      else this.pending.splice(insertAt, 0, entry)
+      this.pending.forEach((queued, index) => { this.patch(queued.job.id, { queued: true, queuePosition: index + 1 }) })
       this.deps.log?.({ event: 'render-queued', renderId: id, timelineId: timeline.id, position: this.pending.length })
       return this.jobs.get(id) ?? job
     }

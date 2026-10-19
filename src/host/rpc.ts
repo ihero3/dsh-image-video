@@ -505,7 +505,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (projectId !== undefined && projectId !== '' && projectId !== timeline.projectId) {
         throw new Error(`timeline ${timelineId} does not belong to project ${projectId}`)
       }
-      return { render: deps.renders.start(timeline) }
+      return { render: deps.renders.start(timeline, { ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number } }) }
     }
     case 'timelines/renders':
       return { renders: deps.renders.list(optionalText(payload, 'projectId')) }

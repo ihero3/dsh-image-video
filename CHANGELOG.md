@@ -34,7 +34,8 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次十三
+- **A50 渲染队列优先级**：`start(timeline, {priority})` 数值大的先跑、同优先级 FIFO；`queuePosition` 按优先级重算；`timelines/render` 与 `timeline export` 支持 `priority`
 
 ## [0.3.13-workbench-13] - 2026-10-19
 

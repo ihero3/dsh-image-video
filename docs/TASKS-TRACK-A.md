@@ -95,6 +95,11 @@
 - [x] **A48 自定义导出预设（schema v4）** ✅ 2026-10-19：**schema 升到 v4** + 真实 3→4 迁移（新增空 `exportPresets`，不影响既有数据）；store CRUD（名称 1–40 字、重名拒绝、规格走 `normalizeExportFormat`）；端点 `presets/list`（内置+自定义合并，带 `custom` 标记）/`presets/save`（支持按 id 覆盖）/`presets/remove`；工具 `set-format presetId` 也能解析自定义预设；测试 8 例（CRUD/校验/持久化/迁移/端点）
 - [x] **A49 发布 `v0.3.14-workbench-14`** ✅ 2026-10-19：版本 0.3.14 / CHANGELOG 定稿（A47 门禁脚本 / A48 自定义预设 + schema v4）/ lib 重建 / tag / Harness 指针同步
 
+## 批次十三（A50 起，2026-10-19）
+
+- [x] **A50 渲染队列优先级** ✅ 2026-10-19：`start(timeline, {priority})`（数值大的先跑，**同优先级保持 FIFO**）；入队按优先级有序插入并重算 `queuePosition`；端点 `timelines/render` 与工具 `timeline export` 均支持 `priority`；测试 2 例（优先级顺序 + 同优先级 FIFO）
+- [ ] **A51 发布 `v0.3.15-workbench-15`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

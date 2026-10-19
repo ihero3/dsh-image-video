@@ -115,7 +115,9 @@ export declare class RenderRegistry {
      */
     /** 把"全局百分比"换算成"第 N 段"用的累计边界（`A41`；纯函数计划，失败就算了）。 */
     private segmentBounds;
-    start(timeline: TimelineRecord): RenderJob;
+    start(timeline: TimelineRecord, options?: {
+        priority?: number;
+    }): RenderJob;
     /** 真正开跑一个任务（内部：start 或出队时调用）。 */
     /**
      * 构建摘要并在需要时附上保留建议（`A38`）：钩子失败只记日志，绝不让渲染结果失败。

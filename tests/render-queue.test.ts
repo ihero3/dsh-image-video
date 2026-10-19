@@ -122,6 +122,52 @@ describe('render queue (A4)', () => {
     void second
   })
 
+  it('runs higher priority jobs first but keeps FIFO within the same priority (A50)', async () => {
+    const { service, gates } = controllableService()
+    const registry = new RenderRegistry({ render: service, maxConcurrent: 1 })
+    const first = registry.start(timeline('t1'))                       // 占住槽位
+    const low = registry.start(timeline('t2'), { priority: 0 })        // 最低
+    const high = registry.start(timeline('t3'), { priority: 5 })       // 最高
+    const mid = registry.start(timeline('t4'), { priority: 1 })        // 中间
+    // 队列位置按优先级排：high=1, mid=2, low=3
+    expect(registry.get(high.id)?.queuePosition).toBe(1)
+    expect(registry.get(mid.id)?.queuePosition).toBe(2)
+    expect(registry.get(low.id)?.queuePosition).toBe(3)
+
+    await flush()
+    expect(gates).toHaveLength(1) // 只有 first 在跑
+    // 共 4 个任务：每 resolve 一个就拉起下一个（gates 下标即启动顺序）
+    for (let index = 0; index < 4; index += 1) {
+      await vi.waitFor(() => { expect(gates.length).toBeGreaterThan(index) }, { timeout: 5000 })
+      gates[index]!.resolve(done(`t${index}`))
+      await flush()
+    }
+    // 启动顺序：first → high(5) → mid(1) → low(0)
+    expect(gates).toHaveLength(4)
+    void first
+    // 收尾：全部成功
+    for (const job of [first, low, high, mid]) {
+      expect(registry.get(job.id)?.status).toBe('succeeded')
+    }
+  })
+
+  it('keeps FIFO for equal priorities (A50)', async () => {
+    const { service, gates } = controllableService()
+    const registry = new RenderRegistry({ render: service, maxConcurrent: 1 })
+    registry.start(timeline('t1'))
+    const a = registry.start(timeline('a'), { priority: 3 })
+    const b = registry.start(timeline('b'), { priority: 3 })
+    expect(registry.get(a.id)?.queuePosition).toBe(1)
+    expect(registry.get(b.id)?.queuePosition).toBe(2)
+    await flush()
+    gates[0]!.resolve(done('t1'))
+    await flush()
+    await flush()
+    expect(gates).toHaveLength(2)
+    expect(registry.get(a.id)?.queued).toBe(false) // a 先被拉起
+    expect(registry.get(b.id)?.queued).toBe(true)
+  })
+
   it('logs queue events so operators can see saturation', async () => {
     const entries: Array<Record<string, unknown>> = []
     const { service } = controllableService()

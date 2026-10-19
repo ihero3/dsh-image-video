@@ -112,6 +112,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       maxChars: { type: 'integer', description: 'add-subtitles 时单条字幕最多字数（默认 28）' },
       clipId: { type: 'string', description: 'split-clip / copy-clip 的片段 id' },
       presetId: { type: 'string', description: 'set-format 时用导出预设（先看 presets/list，如 douyin-vertical / youtube-1080p）' },
+      priority: { type: 'integer', description: 'export 时的队列优先级（数值大的先跑；同优先级 FIFO，默认 0）' },
       atMs: { type: 'integer', description: 'split-clip 的拆分点（时间轴绝对毫秒，必须在片段内部）' },
       startMs: { type: 'integer', description: '起始时间（毫秒）；add-subtitles 缺省接在字幕轨末尾' },
       endMs: { type: 'integer', description: '结束时间（毫秒）；add-subtitles 缺省到时间轴末尾' },
@@ -441,7 +442,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const timelineId = requireString(input, 'timelineId', 'workbench_timeline export')
         const doc = await store.findTimeline(timelineId)
         if (doc === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
-        const job = renders.start(doc)
+        const job = renders.start(doc, { ...typeof input.priority === 'number' ? { priority: input.priority } : {} })
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
       return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'validate', 'export'])
