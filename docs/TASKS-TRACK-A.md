@@ -89,6 +89,12 @@
 - [x] **A45 校验器接入真实时长** ✅ 2026-10-19：新增 `findClipOverruns`（**纯函数**，把源内偏移也计入需求时长，120ms 容差）；`timelines/validate` 端点先用 `probeMediaSpec` 探测最多 20 个唯一素材的真实时长再判定；探测失败不影响校验；问题码 `clip-longer-than-asset`；测试 4 例（越界/容差/偏移/未知时长 + 端点容错）
 - [x] **A46 发布 `v0.3.13-workbench-13`** ✅ 2026-10-19：版本 0.3.13 / CHANGELOG 定稿（A44 素材探测 / A45 越界检测）/ lib 重建 / tag / Harness 指针同步
 
+## 批次十二（A47 起，2026-10-19）
+
+- [x] **A47 门禁脚本修假红与误导** ✅ 2026-10-19：重写 `scripts/gate.sh` —— ① 测试步骤不再 `| tail -5` **截断失败详情**（完整日志落 `/tmp/dsh-test-*.log`）；② 失败时区分"真有失败"与"全过但退出码非 0（worker 抖动）"并给出单跑命令；③ **"五道门全过"移到第 5 道之后**（此前会先宣告成功再失败）；④ 步骤编号统一 `N/5`；⑤ 构建步骤 `grep` 无匹配不再假失败
+- [ ] **A48 项目包 v3（自定义导出预设）**
+- [ ] **A49 发布 `v0.3.14-workbench-14`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
