@@ -46,6 +46,11 @@ git diff --name-only origin/main...HEAD | grep -vE '^(src/client/|tests/.*client
 3. 若 B 需要新端点：在 `docs/API-SURFACE.md` 的「B 申请」区写一行需求（不要自己改 host ✗），A 认领后实现。
 4. **契约冻结窗口**：每次发布（打 tag）前 24h 不再改契约，只修 bug。
 
+## 三点五、体积预算（谁能改）
+
+- `scripts/bundle-budget.mjs` 的基线**只有 A 能改**；B 的超预算交给她→写进「B 申请」或直接说明原因，A 决定"瘦身还是抬基线"并在 CHANGELOG 记录。
+- 当前预算：基线（2026-10-19 抬过）raw 682,374 / gzip 151,212，阈值 = 基线 + 20%。
+
 ## 四、冲突兜底
 
 - 真撞车时：**B 让 A**（A 的改动是数据层，B 的界面可重放）；就地 rebase 解决，不要 force-push 到 main。

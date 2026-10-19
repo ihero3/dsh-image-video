@@ -5,8 +5,15 @@
  * 超了就要么瘦身、要么在 CHANGELOG 里说明为什么值得抬预算——不能悄悄漂。
  */
 
-/** 首次基线（2026-10-16 于 `lib/client/plugin.js` 实测）与 +20% 预算。 */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 548_282, gzip: 121_161 })
+/**
+ * 基线（于 `lib/client/plugin.js` 实测）与 +20% 预算。
+ *
+ * 2026-10-16 首次可发布：raw 548,282 / gzip 121,161。
+ * 2026-10-19 抬基线：同事 B 的 B1–B13 界面工作（达芬奇风格样式表、图标集、统一轮询/虚拟列表/
+ * 错误边界/导出面板/a11y）带来真实增量 → raw 682,374 / gzip 151,212（+24%）。
+ * 这是**功能性增长**，不是打包失控；下一次性能专项应设"回收预算"目标（目标值见 TASKS-TRACK-B B12）。
+ */
+export const BUNDLE_BASELINE = Object.freeze({ raw: 682_374, gzip: 151_212 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

@@ -15,6 +15,15 @@ import type { FfmpegProbe } from '../media/ffmpeg.ts';
 import type { ResourceUsageRecord } from '../workbench/records.ts';
 import type { RenderJob } from '../media/render-registry.ts';
 import type { OutputFile } from '../workbench/outputs.ts';
+/** Export parameters the export panel lets the user pick (B6). */
+export interface TimelineExportOptions {
+    /** Resolution preset id: `default` | `480` | `768` | `2k`. */
+    resolution?: string;
+    /** Target frames per second. */
+    fps?: number;
+    /** Aspect-ratio preset id: `landscape` | `portrait` | `square` | `vertical`. */
+    aspect?: string;
+}
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
     /** Host facts (version, provider, output directory). */
@@ -67,7 +76,7 @@ export interface WorkbenchApi {
         projectId?: string;
     }) => Promise<ResourceUsageRecord[]>;
     /** Start rendering a timeline into an mp4 (returns the job to poll). */
-    renderTimeline: (timelineId: string, projectId?: string) => Promise<RenderJob>;
+    renderTimeline: (timelineId: string, projectId?: string, options?: TimelineExportOptions) => Promise<RenderJob>;
     /** Export jobs, newest first. */
     listRenders: (projectId?: string) => Promise<RenderJob[]>;
     /** Cancel a running export. */
@@ -99,8 +108,8 @@ export interface WorkbenchApi {
     removeWorkflow: (id: string) => Promise<boolean>;
     /** Merge duplicate asset records; returns how many were removed. */
     compactAssets: () => Promise<number>;
-    /** Start a run of the stored workflow. */
-    runWorkflow: (workflowId: string) => Promise<WorkflowRunRecord>;
+    /** Start a run of the stored workflow. `only` limits the run to those nodes and their downstream (B4 single-node run). */
+    runWorkflow: (workflowId: string, only?: readonly string[]) => Promise<WorkflowRunRecord>;
     /** Run records for a project (optionally one workflow), newest first. */
     listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>;
     /** Cancel a running workflow run. */

@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from 'react';
 /** 图标名（与 `STROKE` / `SHAPES` 的键一致）。 */
-export type IconName = 'bolt' | 'flow' | 'film' | 'folder' | 'plus' | 'refresh' | 'trash' | 'check' | 'alert' | 'x' | 'download' | 'sliders' | 'image' | 'video' | 'clock' | 'layers' | 'eye' | 'user' | 'play' | 'filter' | 'upload' | 'link' | 'box' | 'script' | 'storyboard' | 'input' | 'subtitle' | 'music' | 'motion' | 'sparkles' | 'tag' | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron';
+export type IconName = 'bolt' | 'flow' | 'film' | 'folder' | 'plus' | 'refresh' | 'trash' | 'check' | 'alert' | 'x' | 'download' | 'sliders' | 'image' | 'video' | 'clock' | 'layers' | 'eye' | 'user' | 'play' | 'filter' | 'upload' | 'link' | 'box' | 'script' | 'storyboard' | 'input' | 'subtitle' | 'music' | 'motion' | 'sparkles' | 'tag' | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron' | 'undo' | 'redo' | 'clipboard';
 /** 图标组件的对外属性。 */
 export interface IconProps {
     /** 图标名。 */

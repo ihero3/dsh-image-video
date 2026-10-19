@@ -7,6 +7,10 @@ export interface CanvasNodeData extends Record<string, unknown> {
     params: Record<string, NodeParamValue>;
     /** `T4-3` 校验把这个节点标记为有问题时置位（只影响样式）。 */
     invalid?: boolean;
+    /** `B4`：最近一次运行里这个节点的状态（来自运行记录，只影响样式）。 */
+    runStatus?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped';
+    /** `B4`：该节点失败时的错误文案（错误气泡用）。 */
+    runError?: string;
 }
 /** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
 export type CanvasNode = Node<CanvasNodeData, 'workbench'>;
@@ -18,7 +22,7 @@ export interface WorkflowCanvasProps {
     readonly onChange: (record: WorkflowRecord) => void;
     /** 文案取用。 */
     readonly t: (key: WorkbenchLocaleKey) => string;
-    /** 运行控制（`T4-4`）：状态展示 + 起跑/取消/重试。 */
+    /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
     readonly run?: {
         readonly latest?: WorkflowRunRecord;
         /** 历史运行（最新在前），点一条即可回看它当时的节点产出与图快照。 */
@@ -28,6 +32,8 @@ export interface WorkflowCanvasProps {
         readonly onStart: () => void;
         readonly onCancel: () => void;
         readonly onRetry: () => void;
+        /** `B4`：只跑这一个节点（含下游）。宿主端点认领中，调用即下发 `only`。 */
+        readonly onRunNode?: (nodeId: string) => void;
         readonly onSelectRun: (runId: string) => void;
     };
 }
