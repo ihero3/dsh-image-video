@@ -207,16 +207,17 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         return json({ asset: { id: attached.asset.id, kind: attached.asset.kind, path: attached.asset.path }, created: attached.created })
       }
-      return unknownAction('workbench_assets', action, ['list', 'attach'])
+      return unknownAction('workbench_assets', action, ['list', 'attach', 'probe'])
     },
   })
 
   const timeline = defineTool({
     name: 'workbench_timeline',
     description:
-      '时间轴（成片）：list、validate（导出前自查）、add-clip（加素材/字幕）、trim（改片段起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
-      + 'set-format（导出分辨率/帧率/码率）、set-track（轨道音量/静音）、'
-      + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度）。'
+      '时间轴（成片）：list、add-clip（往某条轨加片段）、add-subtitles（把一段文案切成字幕片段）、validate（导出自查）、'
+      + 'split-clip（在指定时间点切开）、copy-clip（复制片段）、trim（改起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
+      + 'set-format（分辨率/帧率/码率/导出预设，可用 presets/list 的预设 id）、set-track（轨道音量/静音/淡入淡出/交叉淡化/侧链）、'
+      + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度；可传 priority 插队）。'
       + `一次最多加 ${MAX_TOOL_CLIPS} 个片段。视频轨片段带 startMs/durationMs（毫秒）；没有 startMs 时自动接在末尾。`,
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -226,7 +227,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / add-clip / export' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / add-clip / add-subtitles / validate / split-clip / copy-clip / trim / drop-clip / set-format / set-track / export',
+      },
       projectId: { type: 'string', description: '项目 id（仅 list 必填）' },
       timelineId: { type: 'string', description: 'add-clip / export 时的时间轴 id（list 里拿）' },
       track: { type: 'string', description: "add-clip 时的轨道：video / audio / subtitle（默认 video）" },
@@ -474,7 +478,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const workflow = defineTool({
     name: 'workbench_workflow',
     description:
-      '专业工作流（画布图）：list（列项目的流程）、save（创建/覆盖一张图；节点 kind 必须来自节点目录）、'
+      '专业工作流（画布图）：list（列项目的流程）、templates（看内置模板：如 drama-series）、'
+      + 'from-template（用模板新建一张图，需要 templateId）、save（创建/覆盖一张图；节点 kind 必须来自节点目录）、'
       + 'run（跑起来，返回 runId；默认**复用同参数上次的成功产物**，refresh=true 才强制重新生成）、'
       + 'runs（查运行记录与每个节点的状态/产物）。'
       + '跑之前宿主会用与画布同一份校验拒绝非法图（必填/端口/环），所以先 save 再 run。',
@@ -486,7 +491,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / save / run / runs' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / templates / from-template / save / run / runs',
+      },
       projectId: { type: 'string', description: '项目 id（list / save 必填）' },
       workflowId: { type: 'string', description: 'save 覆盖时 / run 时的流程 id' },
       name: { type: 'string', description: 'save 时的流程名' },
@@ -584,7 +592,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           count: rows.length,
         })
       }
-      return unknownAction('workbench_workflow', action, ['list', 'save', 'run', 'runs'])
+      return unknownAction('workbench_workflow', action, ['list', 'templates', 'from-template', 'save', 'run', 'runs'])
     },
   })
 
@@ -593,7 +601,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const tasks = defineTool({
     name: 'workbench_tasks',
     description:
-      '任务与运行记录：list（生成任务账本：模型/提示词/状态/产物/耗时）、renders（导出任务与进度）、cancel（按 id 取消生成任务或导出）。'
+      '任务与运行记录：list（生成任务账本：模型/提示词/状态/产物/耗时）、renders（导出任务与进度）、'
+      + 'render-retry（用原时间轴与原优先级重跑失败的导出）、render-cancel（取消导出）、cancel（按 id 取消生成任务）。'
       + '取消是不可逆动作，只有在用户明确要求时才调用。',
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -603,7 +612,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / renders / cancel' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / renders / render-retry / render-cancel / cancel',
+      },
       projectId: { type: 'string', description: 'list 时按项目过滤（可选）' },
       taskId: { type: 'string', description: 'cancel 时的生成任务 id' },
       renderId: { type: 'string', description: 'cancel 时的导出任务 id' },
@@ -657,7 +669,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const cancelledRender = renderId === undefined ? false : renders.cancel(renderId)
         return json({ cancelledTask, cancelledRender, hint: cancelledTask || cancelledRender ? undefined : '没有找到在跑的任务（可能已经结束）' })
       }
-      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel', 'render-cancel'])
+      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel', 'render-cancel', 'render-retry'])
     },
   })
 

@@ -359,8 +359,7 @@ describe('agent tool surface (T6-3)', () => {
 
     const listed = await call('workbench_workflow', { action: 'list', projectId: project.id })
     expect((listed.value as { count: number }).count).toBe(1)
-    await expect(call('workbench_workflow', { action: 'explode', projectId: project.id }))
-      .rejects.toThrow(/合法取值：list \/ save \/ run \/ runs/)
+    await expect(call('workbench_workflow', { action: 'explode' })).rejects.toThrow(/不认识 action=explode.*templates/)
   })
 
   it('lists tasks and reports a no-op cancel honestly', async () => {
