@@ -6,6 +6,7 @@
  */
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
+import { normalizeExportFormat } from '../workbench/timeline.ts'
 import { buildRenderSummary, type RenderSummary } from './render-summary.ts'
 import { diagnoseRenderError, type Diagnosis } from './diagnose.ts'
 import { freezeTimeline, planVideoSegments } from './render.ts'
@@ -306,6 +307,8 @@ export class RenderRegistry {
   private readonly samples = new Map<string, Array<{ percent: number; atMs: number }>>()
   /** 每个任务的 ETA 平滑器（`A92`）。 */
   private readonly etas = new Map<string, EtaTracker>()
+  /** 最近成功导出的样本（`A98`：带输出规格，用于预测新导出耗时）。 */
+  private readonly renderSamples: Array<{ renderMs: number; durationMs: number; width: number; height: number; frameRate: number }> = []
 
   /** 等待槽位的任务（FIFO，`A4`）。 */
   private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number }> = []
@@ -339,6 +342,25 @@ export class RenderRegistry {
     this.etas.set(id, tracker)
     const eta = tracker.update(percent, Date.now())
     return eta === undefined ? {} : { progressEtaSec: eta }
+  }
+
+  /** 记一条预测样本（`A98`；最多保留 50 条，超出丢最旧的）。 */
+  private recordSample(timeline: TimelineRecord, result: { readonly durationMs: number; readonly renderMs: number }): Record<string, never> {
+    const format = normalizeExportFormat(timeline.exportFormat)
+    this.renderSamples.push({
+      renderMs: result.renderMs,
+      durationMs: result.durationMs,
+      width: format.width ?? 1920,
+      height: format.height ?? 1080,
+      frameRate: format.frameRate ?? 30,
+    })
+    while (this.renderSamples.length > 50) this.renderSamples.shift()
+    return {}
+  }
+
+  /** 最近成功导出的样本（`A98`，给耗时预测用）。 */
+  exportSamples(): readonly { renderMs: number; durationMs: number; width: number; height: number; frameRate: number }[] {
+    return this.renderSamples
   }
 
   private stamp(): string {
@@ -532,6 +554,7 @@ export class RenderRegistry {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(), progressEtaSec: 0,
         ...this.stepAt(timeline, 100),
         summary: await this.summarise(id, timeline, result),
+        ...this.recordSample(timeline, { durationMs: result.durationMs, renderMs: Date.now() - Date.parse(job.startedAt) }),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
       this.deps.log?.({

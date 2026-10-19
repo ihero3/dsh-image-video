@@ -204,6 +204,8 @@ export declare class RenderRegistry {
     private readonly samples;
     /** 每个任务的 ETA 平滑器（`A92`）。 */
     private readonly etas;
+    /** 最近成功导出的样本（`A98`：带输出规格，用于预测新导出耗时）。 */
+    private readonly renderSamples;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
     constructor(deps: {
@@ -231,6 +233,16 @@ export declare class RenderRegistry {
     private stepAt;
     /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
     private etaAt;
+    /** 记一条预测样本（`A98`；最多保留 50 条，超出丢最旧的）。 */
+    private recordSample;
+    /** 最近成功导出的样本（`A98`，给耗时预测用）。 */
+    exportSamples(): readonly {
+        renderMs: number;
+        durationMs: number;
+        width: number;
+        height: number;
+        frameRate: number;
+    }[];
     private stamp;
     private patch;
     /** 列出任务（最新在前），可按项目过滤。 */

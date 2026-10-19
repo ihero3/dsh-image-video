@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
 import { reportAssetUsage } from '../workbench/usage.ts'
@@ -574,6 +575,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const summaryLine = [
         blocking.length === 0 ? '可以导出' : `暂不建议导出（${blocking.length} 个问题要先处理）`,
         `约 ${formatBytes(estimate.estimatedBytes)}`,
+        `导出预计 ${formatDuration(predictRenderMs({ durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate }, deps.renders.exportSamples()))}`,
         `预计 ${Math.round(estimate.durationMs / 1000)} 秒 / ${estimate.aspect}`,
         usage.summary.unused > 0 ? `项目里有 ${usage.summary.unused} 个素材从未使用（可选清理 ${formatBytes(usage.summary.unusedBytes)}）` : '素材都在用',
       ].join('；')
@@ -596,7 +598,18 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         ...optionalNumber(payload, 'frameRate') === undefined ? {} : { frameRate: optionalNumber(payload, 'frameRate') as number },
         ...optionalNumber(payload, 'bitrateKbps') === undefined ? {} : { bitrateKbps: optionalNumber(payload, 'bitrateKbps') as number },
       })
-      return { estimate: { ...estimate, humanBytes: formatBytes(estimate.estimatedBytes) } }
+      const predicted = predictRenderMs(
+        { durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate },
+        deps.renders.exportSamples(),
+      )
+      return {
+        estimate: {
+          ...estimate,
+          humanBytes: formatBytes(estimate.estimatedBytes),
+          predictedRenderMs: predicted,
+          humanPredicted: formatDuration(predicted),
+        },
+      }
     }
     case 'timelines/render': {
       const timelineId = text(payload, 'timelineId')

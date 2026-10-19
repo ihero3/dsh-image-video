@@ -214,6 +214,11 @@
 - [x] **A96 项目包导入预检** ✅ 2026-10-20：`inspectProjectPackage`（**只读**，不落地数据）+ 端点 `packages/inspect` —— 返回版本与兼容性（更高版本明确拒绝并说明原因）、项目名/时间轴数/素材数、**缺失素材清单**（导出时就缺的 + 交付文件不在包里的）、**同名项目冲突**（导入会自动加后缀）、人话 warnings；测试 2 例（真包预检只读 + 未来版本不兼容）
 - [ ] **A97 发布 `v0.3.37-workbench-37`**
 
+## 批次四十（A98 起，2026-10-20）
+
+- [x] **A98 导出耗时预测（历史校准）** ✅ 2026-10-20：`src/media/render-predict.ts` 把历史导出归纳成**归一化成本**（渲染耗时 ÷ 输出时长 ÷ 像素率，同机同规格下稳定）→ 预测新导出耗时（中位数 × 1.1 安全系数；无历史时按 1080p30 基准 × 像素率折算）；registry 保留最近 50 条带规格样本；`timelines/estimate` 返回 `predictedRenderMs`/`humanPredicted`，`preflight` 总结句加「导出预计 X 分 Y 秒」；测试 3 例
+- [ ] **A99 发布 `v0.3.38-workbench-38`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
