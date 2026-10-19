@@ -45,4 +45,10 @@ const next = changelog.slice(0, anchor.index + anchor[0].length) + insertion + c
 await writeFile(changelogFile, next)
 
 console.log(`版本已更新到 ${version}（workbench ${workbenchNo}）`)
-console.log(`下一步：bash scripts/gate.sh && git commit -am "chore(release): ${version}-workbench-${workbenchNo} 定稿" && git tag -a v${version}-workbench-${workbenchNo} -m "..."`)
+// 必须**先构建再提交**：lib/ 是入库产物，提交后才构建会把旧版本号的 lib 打进 tag（实测踩过）
+console.log(`下一步（顺序很重要）：`)
+console.log(`  1. pnpm run build                      # 先把 lib/ 重建好（lib 是入库产物）`)
+console.log(`  2. bash scripts/gate.sh                # 五道门全绿才能继续`)
+console.log(`  3. git add -A && git commit -m "chore(release): ${version}-workbench-${workbenchNo} 定稿"`)
+console.log(`  4. git tag -a v${version}-workbench-${workbenchNo} -m "..."`)
+console.log(`  5. git push origin main && git push origin v${version}-workbench-${workbenchNo}`)
