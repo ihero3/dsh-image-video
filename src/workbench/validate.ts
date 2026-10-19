@@ -71,6 +71,7 @@ export type TimelineIssueCode =
   | 'dangling-burn-language'
   | 'duplicate-subtitle-language'
   | 'subtitle-burn-overlap'
+  | 'clip-longer-than-asset'
 
 /** 一条问题。 */
 export interface TimelineIssue {
@@ -93,6 +94,42 @@ export interface ValidateTimelineOptions {
  * @param options - 校验选项。
  * @returns 问题清单（空数组 = 可以导出）。
  */
+/**
+ * 用**真实素材时长**找"片段比素材还长"的越界（`A45`）。
+ *
+ * 分成纯函数是为了可单测：探测由调用方做（`assets/probe` / RPC 端点），这里只做判定。
+ * 越界片段在导出时会被截断或补黑，用户看到的是"后半段没画面"，很难自查。
+ *
+ * @param timeline - 时间轴。
+ * @param durations - 素材路径 → 真实时长（毫秒）；缺的跳过。
+ * @param toleranceMs - 容差（默认 120ms，覆盖编码器的时间基误差）。
+ * @returns 问题清单。
+ */
+export function findClipOverruns(
+  timeline: TimelineRecord,
+  durations: ReadonlyMap<string, number>,
+  toleranceMs = 120,
+): TimelineIssue[] {
+  const issues: TimelineIssue[] = []
+  for (const track of timeline.tracks) {
+    for (const clip of track.clips) {
+      if (clip.assetPath === undefined) continue
+      const available = durations.get(clip.assetPath)
+      if (available === undefined) continue
+      const needed = (clip.inMs ?? 0) + clip.durationMs
+      if (needed > available + toleranceMs) {
+        issues.push({
+          code: 'clip-longer-than-asset',
+          trackId: track.id,
+          clipId: clip.id,
+          message: `片段 ${clip.id} 需要 ${needed}ms（源内偏移 ${clip.inMs ?? 0}ms + 时长 ${clip.durationMs}ms），但素材只有 ${available}ms：缩短片段或降低速度，否则成片后半段没画面。`,
+        })
+      }
+    }
+  }
+  return issues
+}
+
 export function validateTimeline(
   timeline: TimelineRecord,
   options: ValidateTimelineOptions = {},

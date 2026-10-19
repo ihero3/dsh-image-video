@@ -29,6 +29,7 @@
 ## [Unreleased]
 
 ### 批次十一
+- **A45 片段越界检测**：`findClipOverruns` 纯函数 + 端点探测真实时长，报出"片段比素材还长"（导出后半段会没画面）；含源内偏移与 120ms 容差，探测失败不影响校验
 - **A44 素材探测端点**：`probeMediaSpec` 增加真实时长；`assets/probe` 端点（安全边界：只允许 outputs 内或已登记素材）；真机验证 video/audio/坏文件三态
 
 ## [0.3.11-workbench-11] - 2026-10-19

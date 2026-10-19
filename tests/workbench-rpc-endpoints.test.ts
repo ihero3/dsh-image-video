@@ -197,6 +197,18 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('survives asset probing when files are missing (A45)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '越界' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/ghost.mp4', startMs: 0, durationMs: 3000 }] }],
+    })
+    // 素材不存在 → 探测拿不到时长 → 不应崩，也不应误报越界
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    expect(checked.issues.map(issue => issue.code)).not.toContain('clip-longer-than-asset')
+  })
+
   it('probes a registered asset through the channel and rejects paths outside outputs (A44)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '探测' })

@@ -27,7 +27,7 @@ import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { probeMediaSpec } from '../media/render.ts'
 import { planRetention } from '../media/retention.ts'
 import { EXPORT_PRESETS } from '../workbench/presets.ts'
-import { checkInlineTimelineBounds, validateTimeline } from '../workbench/validate.ts'
+import { checkInlineTimelineBounds, findClipOverruns, validateTimeline } from '../workbench/validate.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
@@ -319,7 +319,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         throw new Error('timelines/validate 需要 timelineId 或 document')
       }
       const known = new Set(await deps.store.referencedAssetPaths())
-      const issues = validateTimeline(document, { knownAssetPaths: known })
+      const issues = [...validateTimeline(document, { knownAssetPaths: known })]
+      // `A45`：探测真实素材时长，找出"片段比素材还长"（导出后半段没画面，用户很难自查）
+      try {
+        const probe = await probeFfmpeg()
+        if (probe.available) {
+          const paths = [...new Set(document.tracks
+            .flatMap(track => track.clips)
+            .map(clip => clip.assetPath)
+            .filter((path): path is string => typeof path === 'string'))].slice(0, 20)
+          const durations = new Map<string, number>()
+          for (const relative of paths) {
+            const spec = await probeMediaSpec(probe.path ?? 'ffmpeg', resolve(deps.outputsDir, relative))
+            if (spec?.durationMs !== undefined) durations.set(relative, spec.durationMs)
+          }
+          issues.push(...findClipOverruns(document, durations))
+        }
+      } catch {
+        // 探测失败不影响校验结果（只是少了这一项检查）
+      }
       return { ok: issues.length === 0, issues }
     }
     // 素材探测（`A44`）：真实时长/分辨率/帧率/有无音轨，供界面拖拽与 Agent 预估
