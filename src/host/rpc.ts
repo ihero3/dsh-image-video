@@ -16,6 +16,7 @@ import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
 import { reportAssetUsage } from '../workbench/usage.ts'
+import { sizeReport } from '../workbench/size-report.ts'
 import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
@@ -353,6 +354,19 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         // 探测失败不影响校验结果（只是少了这一项检查）
       }
       return { ok: issues.length === 0, issues }
+    }
+    // `A116`：素材体积排行（Top N + 总量/中位数/占比；只报告）
+    case 'assets/size-report': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      const usage = reportAssetUsage(assets, timelines)
+      const unusedPaths = new Set(usage.assets.filter(row => row.unused).map(row => row.assetPath))
+      const report = sizeReport(
+        assets.map(asset => ({ path: asset.path, ...asset.bytes === undefined ? {} : { bytes: asset.bytes }, unused: unusedPaths.has(asset.path) })),
+        { ...optionalNumber(payload, 'topN') === undefined ? {} : { topN: optionalNumber(payload, 'topN') as number } },
+      )
+      return { size: report }
     }
     // `A112`：素材内容去重检测（按大小分组 + 仅同大小算 sha256；只报告不删除）
     case 'assets/duplicates': {
