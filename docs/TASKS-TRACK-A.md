@@ -144,6 +144,10 @@
 - [x] **A64 发布 `v0.3.21-workbench-21`** ✅ 2026-10-19：版本 0.3.21 / CHANGELOG 定稿（A63 Agent 探测 + 字幕 id 撞车修复）/ lib 重建 / tag / Harness 指针同步
 - [x] **A65 补 A63 专属单测 + 修掉 A63 的可用性缺陷** ✅ 2026-10-19：读错误信息定位到根因 —— **框架 schema 里 `projectId` 是 required** ✗ → `probe`（不需要项目上下文）**一律被框架拒掉** ✗（A63 的动作实际不可用）；改为 schema 不强制 required + `list`/`attach` 在 execute 里各自校验；工具描述与 action 说明补上 `probe`；两条用例通过（结构化断言，避免格式化 JSON 的字符串匹配）
 
+## 批次二十一（A66 起，2026-10-19）
+
+- [x] **A66 发布 `v0.3.22-workbench-22`** ✅ 2026-10-19：版本 0.3.22 / CHANGELOG 定稿（A63 可用性修复 / A65 单测）/ lib 重建 / tag / Harness 指针同步
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
