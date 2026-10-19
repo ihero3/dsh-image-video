@@ -25,6 +25,7 @@
  * @module dsh-image-video
  */
 
+import { ProbeCache } from './media/probe-cache.ts'
 import { probeMediaSpec } from './media/render.ts'
 import { probeFfmpeg } from './media/ffmpeg.ts'
 import { sep } from 'node:path'
@@ -302,6 +303,15 @@ export function apply(ctx: Context, config: Config): void {
       overQuota: plan.overQuota,
     }
   }
+  // `A77`：素材探测缓存（同一素材重复探测不再起 ffmpeg 进程；素材变则自动失效）
+  const probeCache = new ProbeCache({
+    probe: async file => {
+      const available = await probeFfmpeg()
+      if (!available.available) return undefined
+      return probeMediaSpec(available.path ?? 'ffmpeg', file)
+    },
+  })
+
   const renderRegistry = new RenderRegistry({
     render: renderService,
     retention: retentionHint,
@@ -332,6 +342,7 @@ export function apply(ctx: Context, config: Config): void {
     diagnostics,
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
       runner: workflowRunner, renders: renderRegistry,
+      probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
       // 下拉白名单由宿主下发：浏览器包不内置服务商名（`T2-11`）

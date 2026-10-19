@@ -82,6 +82,8 @@ export interface WorkbenchRpcDeps {
   runner: WorkflowRunner
   /** 导出任务表（`T5-5`）。 */
   renders: RenderRegistry
+  /** 素材探测缓存（`A77`；未注入时退回每次直连探测）。 */
+  probeCache?: { get: (file: string) => Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> }
   /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
   readonly diagnostics?: { snapshot: () => { errors: readonly unknown[]; errorCount: number } }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
@@ -331,7 +333,10 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
             .filter((path): path is string => typeof path === 'string'))].slice(0, 20)
           const durations = new Map<string, number>()
           for (const relative of paths) {
-            const spec = await probeMediaSpec(probe.path ?? 'ffmpeg', resolve(deps.outputsDir, relative))
+            const absolute = resolve(deps.outputsDir, relative)
+            const spec = deps.probeCache === undefined
+              ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+              : await deps.probeCache.get(absolute)
             if (spec?.durationMs !== undefined) durations.set(relative, spec.durationMs)
           }
           issues.push(...findClipOverruns(document, durations))
@@ -352,7 +357,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
       const probe = await probeFfmpeg()
       if (!probe.available) throw new Error(probe.message ?? 'ffmpeg 不可用，无法探测素材')
-      const spec = await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+      const spec = deps.probeCache === undefined
+        ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+        : await deps.probeCache.get(absolute)
       if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件`)
       return { path: relative, spec }
     }
