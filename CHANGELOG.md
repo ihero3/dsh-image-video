@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.12-workbench-12] - 2026-10-19
 
 ### 持续交付轮次
 - **对抗性扫荡 R5（收尾）**：预设→存储→导出端到端验证——横屏源按"抖音竖屏"预设真出 1080×1920（实测规格一致）；6 个预设均可存取原样
@@ -25,6 +25,10 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.11-workbench-11] - 2026-10-19
 
