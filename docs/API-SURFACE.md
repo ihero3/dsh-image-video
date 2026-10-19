@@ -137,7 +137,7 @@
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
 | `packages/export` | `{projectId,targetDir,nameSuffix?}` | `{manifestPath}`（目标必须在 `packages/` 之下） |
-| `packages/inspect` | `{packageDir}` | `{inspection}`（`A96` 只读预检：版本兼容/项目信息/缺失素材/同名冲突，不落地数据）|
+| `packages/inspect` | `{packageDir,verifyFiles?}` | `{inspection}`（`A96` 只读预检：版本兼容/项目信息/缺失素材/同名冲突，不落地数据）|
 | `packages/import` | `{packageDir,nameSuffix?,structureOnly?}` | 导入结果（项目/素材/缺失清单） |
 | `packages/export-resources` | `{targetDir}` | `{manifestPath}`（全量资源包） |
 | `packages/import-resources` | `{packageDir}` | 导入结果（跳过统计） |

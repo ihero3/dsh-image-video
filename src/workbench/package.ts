@@ -422,6 +422,10 @@ export interface PackageInspection {
   readonly warnings: readonly string[]
   /** 包内自描述摘要（`A106`；旧包没有则为 undefined）。 */
   readonly exportedSummary?: { readonly projectName: string; readonly assets: number; readonly timelines: number; readonly totalDurationMs: number; readonly pluginVersion: string }
+  /** 逐文件校验结果（`A110`；未要求校验时为 undefined）。 */
+  readonly verified?: boolean
+  /** 哈希对不上的文件（被改坏/篡改）。 */
+  readonly tampered?: readonly { readonly path: string; readonly expected: string; readonly actual: string }[]
 }
 
 /**
@@ -433,12 +437,14 @@ export interface PackageInspection {
 export async function inspectProjectPackage(input: {
   packageDir: string
   store: { listProjects(): Promise<Array<{ name: string }>> }
+  /** 逐文件重算 sha256（`A110`；默认关——包里可能有几百 MB）。 */
+  verifyFiles?: boolean
 }): Promise<PackageInspection> {
   const manifestPath = join(input.packageDir, 'manifest.json')
   const raw = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     formatVersion?: number
     project?: { name?: string }
-    assets?: Array<{ file?: string; originPath?: string }>
+    assets?: Array<{ file?: string; originPath?: string; sha256?: string }>
     timelines?: unknown[]
     missing?: string[]
     summary?: { projectName: string; assets: number; timelines: number; totalDurationMs: number; pluginVersion: string }
@@ -455,6 +461,21 @@ export async function inspectProjectPackage(input: {
     const exists = await stat(join(input.packageDir, entry.file)).then(() => true).catch(() => false)
     if (exists) delivered += 1
     else if (entry.originPath !== undefined) missing.push(entry.originPath)
+  }
+  // `A110`：逐文件校验（仅当调用方要求）
+  let verified: boolean | undefined
+  let tampered: Array<{ path: string; expected: string; actual: string }> = []
+  if (input.verifyFiles === true) {
+    for (const entry of raw.assets ?? []) {
+      if (entry.file === undefined || entry.sha256 === undefined) continue
+      const expected = entry.sha256
+      const actual = await sha256File(join(input.packageDir, entry.file)).catch(() => undefined)
+      if (actual !== undefined && actual !== expected) {
+        tampered.push({ path: entry.originPath ?? entry.file, expected, actual })
+      }
+    }
+    verified = tampered.length === 0
+    if (tampered.length > 0) warnings.push(`有 ${tampered.length} 个素材与清单里的 sha256 不一致：包可能被改动或损坏`)
   }
   const compatible = formatVersion >= 1 && formatVersion <= PACKAGE_FORMAT_VERSION
   const projectName = raw.project?.name ?? '未命名项目'
@@ -476,5 +497,6 @@ export async function inspectProjectPackage(input: {
     conflicts,
     warnings,
     ...raw.summary === undefined ? {} : { exportedSummary: raw.summary },
+    ...verified === undefined ? {} : { verified, tampered },
   }
 }

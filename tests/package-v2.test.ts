@@ -143,6 +143,33 @@ describe('package format v2 (A26)', () => {
   })
 })
 
+describe('package sha256 verification (A110)', () => {
+  it('verifies delivered files and flags tampered ones', async () => {
+    const { store, projectId } = await seed()
+    const targetDir = await temp('dsh-pkg-verify-')
+    const { manifestPath } = await exportProjectPackage({ store, projectId, targetDir })
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { assets: Array<{ file?: string }> }
+
+    // 干净包：校验通过
+    const clean = await inspectProjectPackage({ packageDir: targetDir, store, verifyFiles: true })
+    expect(clean.verified).toBe(true)
+    expect(clean.tampered).toEqual([])
+
+    // 默认不校验（省时间）
+    expect((await inspectProjectPackage({ packageDir: targetDir, store })).verified).toBeUndefined()
+
+    // 改坏一个包内素材 → 哈希对不上
+    const entry = manifest.assets.find(asset => asset.file !== undefined)
+    if (entry?.file !== undefined) {
+      await writeFile(join(targetDir, entry.file), 'corrupted-bytes')
+      const dirty = await inspectProjectPackage({ packageDir: targetDir, store, verifyFiles: true })
+      expect(dirty.verified).toBe(false)
+      expect(dirty.tampered?.length).toBeGreaterThan(0)
+      expect(dirty.warnings.join(' ')).toContain('sha256')
+    }
+  })
+})
+
 describe('package self-description (A106)', () => {
   it('writes a summary into the manifest and surfaces it on inspect', async () => {
     const { store, projectId } = await seed()

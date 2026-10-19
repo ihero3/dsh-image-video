@@ -474,7 +474,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     // `A96`：项目包预检（只读，不落地任何数据）
     case 'packages/inspect':
-      return { inspection: await inspectProjectPackage({ packageDir: text(payload, 'packageDir'), store: deps.store }) }
+      return {
+        inspection: await inspectProjectPackage({
+          packageDir: text(payload, 'packageDir'),
+          store: deps.store,
+          ...field(payload, 'verifyFiles') === true ? { verifyFiles: true } : {},
+        }),
+      }
     case 'packages/import': {
       const result = await importProjectPackage({
         store: deps.store,

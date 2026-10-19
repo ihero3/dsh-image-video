@@ -244,6 +244,11 @@
 - [x] **A108 渲染队列按项目公平调度** ✅ 2026-10-20：`reorderPending` 按「优先级降序 → **项目内轮次**（rank）升序 → 入队序号」重排 —— 项目 A 连提 3 个、B 提 1 个时顺序为 `a2、b1、a3`（B 排到 A 第 3 个之前，不被饿死）；显式 `priority` 仍优先于公平性；同项目内部严格 FIFO；测试 1 例（并用排队位次断言）
 - [ ] **A109 发布 `v0.3.43-workbench-43`**
 
+## 批次四十六（A110 起，2026-10-20）
+
+- [x] **A110 项目包自校验（sha256）** ✅ 2026-10-20：清单里**本来就有**每个素材的 sha256（导出时已算）→ inspect 新增可选 `verifyFiles` **逐文件重算并比对**，返回 `verified` 与 `tampered[]`（路径/期望/实际）+ 人话警告；**默认不校验**（包里可能几百 MB）；测试 1 例（干净包通过、默认不校验、改坏一个文件后 tampered 命中）
+- [ ] **A111 发布 `v0.3.44-workbench-44`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
