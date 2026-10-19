@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.16-workbench-16] - 2026-10-19
 
 ### 批次十四
@@ -38,7 +42,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.17-workbench-17] - 2026-10-19
 
 ### 持续交付轮次
 - **对抗性扫荡 R6**：修 `saveExportPreset` 用未知 id 时**静默新建**的契约问题（改为明确报错）；补 ETA 极端边界与"21 个素材只探测前 20 个"的断言
