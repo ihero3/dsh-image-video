@@ -11,6 +11,7 @@
  * **sha256 与字节数**，导入侧能校验；③ 源文件已经丢了就**如实记进 `missing`**，
  * 不假装导出成功。
  */
+import { PLUGIN_VERSION } from '../version.ts'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
@@ -54,6 +55,17 @@ export interface ProjectPackageManifest {
   readonly resourceUsage?: readonly ResourceUsageRecord[]
   /** 用户自定义导出预设（`A53` / v3 新增）：导入时按名称去重后并入全局预设库。 */
   readonly exportPresets?: readonly ExportPresetRecord[]
+  /** 自描述摘要（`A106`）：不导入包也能看出内容；与实测扫描结果对照可发现缺件。 */
+  readonly summary?: {
+    readonly projectName: string
+    readonly assets: number
+    readonly timelines: number
+    readonly workflows: number
+    readonly totalDurationMs: number
+    readonly missing: number
+    readonly exportedAt: string
+    readonly pluginVersion: string
+  }
   /** 导出时找不到的源文件（导入时会进"缺失清单"）。 */
   readonly missing: readonly string[]
 }
@@ -121,6 +133,17 @@ export async function exportProjectPackage(input: {
     resources: await store.listResources(projectId) as readonly ResourceRecord[],
     timelines: await store.listTimelines(projectId),
     resourceUsage: (await store.listResourceUsage({ projectId })).map(entry => ({ ...entry })),
+    // `A106`：自描述摘要（离线可读；与实测扫描结果对照能发现缺件）
+    summary: {
+      projectName: project.name,
+      assets: (await store.listAssets(projectId)).length,
+      timelines: (await store.listTimelines(projectId)).length,
+      workflows: (await store.listWorkflows(projectId)).length,
+      totalDurationMs: (await store.listTimelines(projectId)).reduce((longest, timeline) => Math.max(longest, timeline.tracks.reduce((end, track) => Math.max(end, track.clips.reduce((inner, clip) => Math.max(inner, clip.startMs + clip.durationMs), 0)), 0)), 0),
+      missing: 0,
+      exportedAt: new Date().toISOString(),
+      pluginVersion: PLUGIN_VERSION,
+    },
     // `A53`：自定义导出预设随包走（全局库，导入侧按名称去重合并）
     exportPresets: await store.listExportPresets(),
     workflows: await store.listWorkflows(projectId),
@@ -397,6 +420,8 @@ export interface PackageInspection {
   /** 已经存在的同名项目（导入会自动加后缀，但先告知用户）。 */
   readonly conflicts: readonly string[]
   readonly warnings: readonly string[]
+  /** 包内自描述摘要（`A106`；旧包没有则为 undefined）。 */
+  readonly exportedSummary?: { readonly projectName: string; readonly assets: number; readonly timelines: number; readonly totalDurationMs: number; readonly pluginVersion: string }
 }
 
 /**
@@ -416,6 +441,7 @@ export async function inspectProjectPackage(input: {
     assets?: Array<{ file?: string; originPath?: string }>
     timelines?: unknown[]
     missing?: string[]
+    summary?: { projectName: string; assets: number; timelines: number; totalDurationMs: number; pluginVersion: string }
   }
   const formatVersion = typeof raw.formatVersion === 'number' ? raw.formatVersion : 1
   const warnings: string[] = []
@@ -436,6 +462,10 @@ export async function inspectProjectPackage(input: {
     .map(project => project.name)
     .filter(name => name === projectName || name.startsWith(`${projectName}（导入）`))
   if (missing.length > 0) warnings.push(`有 ${missing.length} 个素材缺失：导入后这些片段会显示为缺失，需要重新生成或替换`)
+  // `A106`：包里声称的素材数与实测交付数不一致 → 包可能不完整/被改动过
+  if (raw.summary !== undefined && raw.summary.assets !== delivered) {
+    warnings.push(`包内摘要声称 ${raw.summary.assets} 个素材，实际交付 ${delivered} 个：包可能不完整`)
+  }
   if (conflicts.length > 0) warnings.push(`已有 ${conflicts.length} 个同名项目：导入会自动加「（导入）」后缀`)
   return {
     formatVersion,
@@ -445,5 +475,6 @@ export async function inspectProjectPackage(input: {
     assets: { total: (raw.assets ?? []).length, missing },
     conflicts,
     warnings,
+    ...raw.summary === undefined ? {} : { exportedSummary: raw.summary },
   }
 }

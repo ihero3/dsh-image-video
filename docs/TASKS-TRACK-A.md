@@ -234,6 +234,11 @@
 - [x] **A104 工作台数据完整性巡检** ✅ 2026-10-20：`inspectIntegrity` 纯函数找**悬空引用**（片段引用了不在素材库的素材、资源使用指向不存在的资源）与**孤儿记录**（挂在已删项目上的素材/时间轴/工作流/资源），每条带具体记录 id 与详情；`store.integrityReport` + 端点 `maintenance/integrity`（**只报告不修复**）；测试 2 例（干净文档 healthy、混合问题分类与计数正确）
 - [ ] **A105 发布 `v0.3.41-workbench-41`**
 
+## 批次四十四（A106 起，2026-10-20）
+
+- [x] **A106 项目包自描述** ✅ 2026-10-20：导出时在 `manifest.json` 写入 `summary`（项目名/素材数/时间轴数/工作流数/总时长/导出时间/**插件版本**）；`packages/inspect` 返回 `exportedSummary` 并**对照实测交付数** —— 声称与实际不一致时明确警告「包可能不完整」；旧包无 summary 自动回退现扫描逻辑；测试 1 例
+- [ ] **A107 发布 `v0.3.42-workbench-42`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

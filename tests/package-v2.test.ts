@@ -143,6 +143,20 @@ describe('package format v2 (A26)', () => {
   })
 })
 
+describe('package self-description (A106)', () => {
+  it('writes a summary into the manifest and surfaces it on inspect', async () => {
+    const { store, projectId } = await seed()
+    const targetDir = await temp('dsh-pkg-summary-')
+    const { manifestPath } = await exportProjectPackage({ store, projectId, targetDir })
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { summary?: { projectName: string; pluginVersion: string; timelines: number } }
+    expect(manifest.summary?.projectName.length).toBeGreaterThan(0)
+    expect(manifest.summary?.pluginVersion.length).toBeGreaterThan(0)
+    expect(manifest.summary?.timelines).toBeGreaterThanOrEqual(0)
+    const inspection = await inspectProjectPackage({ packageDir: targetDir, store })
+    expect(inspection.exportedSummary?.pluginVersion).toBe(manifest.summary?.pluginVersion)
+  })
+})
+
 describe('inspectProjectPackage (A96)', () => {
   it('reports a real package without touching any data', async () => {
     const { store, projectId } = await seed()
