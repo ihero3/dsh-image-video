@@ -91,6 +91,8 @@ export interface PlannedAudioTrack {
     readonly volume: number;
     /** 淡入淡出时长（毫秒，`A20`）。 */
     readonly fadeMs: number;
+    /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
+    readonly crossfadeMs: number;
     readonly segments: readonly VideolessSegment[];
 }
 /** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */

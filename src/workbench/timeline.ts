@@ -39,6 +39,8 @@ export const CLIP_SPEED_RANGE = { min: 0.25, max: 4 } as const
 export const MAX_CLIP_FADE_MS = 2000
 /** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
 export const MAX_TRACK_FADE_MS = 5000
+/** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
+export const MAX_TRACK_CROSSFADE_MS = 3000
 
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
@@ -83,6 +85,12 @@ export interface TimelineTrack {
   readonly volume?: number
   /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
   readonly fadeMs?: number
+  /**
+   * 相邻音频片段之间的**交叉淡化**时长（毫秒，0–3000；缺省 0 = 直接拼接）。
+   * 导出用 `acrossfade` 实现（`A30`）：两段重叠该时长，因此音轨总长会相应变短。
+   * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
+   */
+  readonly crossfadeMs?: number
 }
 
 /**
@@ -326,6 +334,10 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
     if (track.fadeMs !== undefined) {
       fadeMs = Math.round(numberField(track.fadeMs, `track ${trackIndex} fadeMs`, { min: 0, max: MAX_TRACK_FADE_MS }))
     }
+    let crossfadeMs: number | undefined
+    if (track.crossfadeMs !== undefined) {
+      crossfadeMs = Math.round(numberField(track.crossfadeMs, `track ${trackIndex} crossfadeMs`, { min: 0, max: MAX_TRACK_CROSSFADE_MS }))
+    }
     return {
       id: typeof track.id === 'string' && track.id !== '' ? track.id : `track-${trackIndex + 1}`,
       kind: kind as TrackKind,
@@ -333,6 +345,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       ...track.muted === true ? { muted: true } : {},
       ...volume === undefined ? {} : { volume },
       ...fadeMs === undefined ? {} : { fadeMs },
+      ...crossfadeMs === undefined ? {} : { crossfadeMs },
     }
   })
   return tracks

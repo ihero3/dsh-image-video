@@ -43,7 +43,7 @@
 ## 批次六（A29–A32，2026-10-19 起）
 
 - [x] **A29 修复 `speed` 被悄悄取整** ✅ 2026-10-19：根因是 `numberField` 一律 `Math.round`（毫秒字段该如此，但 `speed` 是倍数）→ 新增 `integer: false` 选项（保留 2 位小数）并给 `speed` 使用；恢复 package 往返的严格断言 `speed === 1.5`；4 个相关测试文件 17 例全绿
-- [ ] **A30 音轨交叉淡化（acrossfade）**
+- [x] **A30 音轨交叉淡化（acrossfade）** ✅ 2026-10-19：音轨 `crossfadeMs`(0–3000)；相邻片段用 `acrossfade=d=…:c1=tri:c2=tri`，**有空档时回落 concat**（不硬套）；真机验证仍有音轨、成片时长由视频轨决定；测试 3 例
 - [ ] **A31 导出预设**
 - [ ] **A32 发布 `v0.3.9-workbench-9`**
 

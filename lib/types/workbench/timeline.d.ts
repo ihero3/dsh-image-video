@@ -37,6 +37,8 @@ export declare const CLIP_SPEED_RANGE: {
 export declare const MAX_CLIP_FADE_MS = 2000;
 /** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
 export declare const MAX_TRACK_FADE_MS = 5000;
+/** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
+export declare const MAX_TRACK_CROSSFADE_MS = 3000;
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
     readonly id: string;
@@ -79,6 +81,12 @@ export interface TimelineTrack {
     readonly volume?: number;
     /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
     readonly fadeMs?: number;
+    /**
+     * 相邻音频片段之间的**交叉淡化**时长（毫秒，0–3000；缺省 0 = 直接拼接）。
+     * 导出用 `acrossfade` 实现（`A30`）：两段重叠该时长，因此音轨总长会相应变短。
+     * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
+     */
+    readonly crossfadeMs?: number;
 }
 /**
  * 片段在时间轴上**实际占用**的时长（变速折算后）。

@@ -317,7 +317,20 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
       audioInput += 1
     })
     const out = `at${trackIndex}`
-    chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
+    // `A30`：全部首尾相接且设了 crossfadeMs → 用 acrossfade 交叉淡化；否则普通拼接
+    const allClips = track.segments.every(segment => segment.kind === 'clip')
+    if (track.crossfadeMs > 0 && allClips && labels.length > 1) {
+      const fade = (track.crossfadeMs / 1000).toFixed(3)
+      let accumulator = labels[0]!
+      for (let index = 1; index < labels.length; index += 1) {
+        const next = `ac${trackIndex}_${index}`
+        chains.push(`${accumulator}${labels[index]}acrossfade=d=${fade}:c1=tri:c2=tri[${next}]`)
+        accumulator = `[${next}]`
+      }
+      chains.push(`${accumulator}anull[${out}]`)
+    } else {
+      chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
+    }
     // 淡入淡出（`A20`）：轨内总长 = 快照时长（间隙已补静音），所以淡出从末尾往前推
     if (track.fadeMs > 0) {
       const fadeSeconds = (track.fadeMs / 1000).toFixed(3)
@@ -358,6 +371,8 @@ export interface PlannedAudioTrack {
   readonly volume: number
   /** 淡入淡出时长（毫秒，`A20`）。 */
   readonly fadeMs: number
+  /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
+  readonly crossfadeMs: number
   readonly segments: readonly VideolessSegment[]
 }
 
@@ -394,7 +409,12 @@ export function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[]
       cursor = clip.startMs + clip.durationMs
     }
     if (snapshot.durationMs > cursor) segments.push({ kind: 'filler', durationMs: snapshot.durationMs - cursor })
-    tracks.push({ trackId: track.id, volume, fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))), segments })
+    tracks.push({
+      trackId: track.id, volume,
+      fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))),
+      crossfadeMs: Math.max(0, Math.min(3000, Math.round(track.crossfadeMs ?? 0))),
+      segments,
+    })
   }
   return tracks
 }

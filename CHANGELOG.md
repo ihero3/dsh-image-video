@@ -12,6 +12,7 @@
 ## [Unreleased]
 
 ### 批次六
+- **A30 音轨交叉淡化**：音轨 `crossfadeMs`(0–3000ms)；相邻片段用 `acrossfade` 重叠淡入淡出，**中间有空档时自动回落普通拼接**；真机验证（2×1s + 300ms 交叉，成片 2s ±150ms，仍有音轨）
 - **A29 修复 `speed` 被取整**：`numberField` 原先对所有数值都 `Math.round`，导致 `speed: 1.5` 存成 2（毫秒字段该取整、倍数不该）→ 新增 `integer: false` 只保留 2 位小数；package 往返严格断言 `speed === 1.5` 恢复
 
 ## [0.3.5-workbench-5] - 2026-10-18
