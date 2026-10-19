@@ -122,6 +122,10 @@
 - [x] **A59 导出一键重试** ✅ 2026-10-19：端点 `timelines/render-retry`（找原任务 → 校验不在跑/排队 → 按原时间轴与原优先级重跑；原时间轴被删则明确报错）+ 工具 `tasks render-retry`；**修掉一个真 bug**：A50 的 `priority` 只写在入队分支，直接开跑的任务没有该字段（重试无法复用优先级）；测试（重试成功任务/未知 id 报错）
 - [x] **A60 `gate.sh --fast`** ✅ 2026-10-19（+ 顺手修一个测试竞态：35 个测试文件的 `rm` 加 `maxRetries/retryDelay`，此前覆盖率模式下偶发 `ENOTEMPTY`）：快速门只跑 typecheck + 全量测试（**实测 15.6s**，完整门含覆盖率约 10 分钟）；结束明确提示"未跑构建/体积/覆盖率，推送前必须跑完整门"；完整门行为不变（推送标准不降）；未知参数直接拒绝
 
+## 批次十七（A61 起，2026-10-19）
+
+- [x] **A61 发布 `v0.3.19-workbench-19`** ✅ 2026-10-19：版本 0.3.19 / CHANGELOG 定稿（A59 一键重试 / A60 快速门 / 测试竞态修复）/ lib 重建 / tag / Harness 指针同步
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
