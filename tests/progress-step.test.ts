@@ -3,7 +3,7 @@
  * 长成片导出时，用户看到"第 3/12 段"比一个干巴巴的 27% 有用得多。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { RenderRegistry, estimateEtaSec, segmentStepAt } from '../src/media/render-registry.ts'
+import { EtaTracker, RenderRegistry, estimateEtaSec, segmentStepAt } from '../src/media/render-registry.ts'
 import type { RenderService } from '../src/media/render.ts'
 import type { TimelineRecord } from '../src/workbench/timeline.ts'
 
@@ -39,6 +39,53 @@ describe('estimateEtaSec (A52)', () => {
     const job = registry.start(timeline())
     await vi.waitFor(() => { expect(registry.get(job.id)?.status).toBe('succeeded') }, { timeout: 10_000 })
     expect(registry.get(job.id)?.progressEtaSec).toBe(0)
+  })
+})
+
+describe('EtaTracker smoothing (A92)', () => {
+  it('refuses to estimate too early and ignores repeated samples', () => {
+    const tracker = new EtaTracker()
+    expect(tracker.update(3, 1000)).toBeUndefined() // <5%
+    // 第二个采样就建立了速率，且 10% ≥ 5% → 立刻有估计
+    expect(tracker.update(10, 2000)).toBeGreaterThan(0)
+    expect(new EtaTracker().update(50, 1000)).toBeUndefined() // 首个采样
+  })
+
+  it('smooths a jittery rate instead of jumping with every sample', () => {
+    const tracker = new EtaTracker({ alpha: 0.3 })
+    // 速率在 100ms/1% 与 400ms/1% 之间抖动：原始外推会在 ~18s 与 ~72s 间跳
+    const raw: number[] = []
+    const smoothed: number[] = []
+    let percent = 10
+    let at = 2000
+    const deltas = [100, 400, 100, 400, 100, 400, 100, 400] // 每 1% 的耗时
+    for (const delta of deltas) {
+      at += delta
+      percent += 1
+      const eta = tracker.update(percent, at)
+      if (eta === undefined) continue
+      smoothed.push(eta)
+      raw.push(Math.round((delta * (100 - percent)) / 1000))
+    }
+    expect(smoothed.length).toBeGreaterThan(4)
+    // 抖动幅度：平滑后的极差应明显小于原始外推的极差
+    const spread = (values: number[]): number => Math.max(...values) - Math.min(...values)
+    expect(spread(smoothed)).toBeLessThan(spread(raw))
+  })
+
+  it('converges to the true remaining time at a steady rate', () => {
+    const tracker = new EtaTracker({ alpha: 0.5 })
+    // 稳定 200ms/1%：从 10% 走到 90%（每步 1%）
+    let percent = 10
+    let at = 0
+    for (; percent < 90; percent += 1) {
+      at += 200
+      tracker.update(percent, at)
+    }
+    const eta = tracker.update(90, at + 200)!
+    // 真实剩余 = 10% × 200ms = 2s
+    expect(eta).toBeGreaterThanOrEqual(1)
+    expect(eta).toBeLessThanOrEqual(3)
   })
 })
 

@@ -25,6 +25,31 @@ import { type Diagnosis } from './diagnose.ts';
  * @param elapsedMs - 已耗时（毫秒）。
  * @returns 预计剩余秒数（四舍五入）；不该给估计时返回 `undefined`。
  */
+/**
+ * ETA 平滑器（`A92`）：用**指数滑动平均**估计"每 1% 进度要多久"。
+ *
+ * 为什么不直接线性外推：ffmpeg 各段耗时差异大（转场/滤镜段明显更慢），
+ * 逐次外推的 ETA 会来回跳。丢几个抖动采样进 EMA 后就稳得多，且最终收敛到真实速率。
+ */
+export declare class EtaTracker {
+    /** 平滑系数：越大越跟手、越小越稳（0.3 是经验值）。 */
+    private readonly alpha;
+    private ratePerPercent?;
+    private lastPercent?;
+    private lastAtMs?;
+    constructor(options?: {
+        alpha?: number;
+    });
+    /**
+     * 喂一个进度采样。
+     * @param percent - 当前进度（0–100，应单调不减）。
+     * @param atMs - 采样时刻。
+     * @returns 平滑后的预计剩余秒数；过早（<5%）或首个采样时返回 `undefined`。
+     */
+    update(percent: number, atMs: number): number | undefined;
+    /** 用当前平滑速率算剩余秒数（过早不给）。 */
+    private currentEta;
+}
 export declare function estimateEtaSec(percent: number, elapsedMs: number): number | undefined;
 /**
  * 把渲染任务归组成"成片集"（`A56`）：同一项目 + 同一时间轴的多次导出算一集。
@@ -177,6 +202,8 @@ export declare class RenderRegistry {
     private readonly durations;
     /** 每个任务的进度采样（`A57`；上限 200 条，防长任务吃内存）。 */
     private readonly samples;
+    /** 每个任务的 ETA 平滑器（`A92`）。 */
+    private readonly etas;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
     constructor(deps: {
