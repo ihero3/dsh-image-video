@@ -5,6 +5,12 @@
 ### 批次二十八
 - **A73 版本一致性漂移测试**：断言 package.json / version.ts / CHANGELOG 最新条目 / git tag 四处一致；修复 0.3.25 条目缺失与顺序错乱；记录"CHANGELOG 奇数版本条目缺失"为已知问题
 
+## [0.3.26-workbench-26] - 2026-10-19
+
+### 批次二十八
+- **A73 版本一致性漂移测试**：断言 package.json / version.ts / CHANGELOG 最新条目 / git tag 四处一致
+- **A74 发版脚本**：统一更新三处并保证 CHANGELOG 时间倒序，修掉「发版替换链覆盖中间版本」的根因
+
 ## [0.3.25-workbench-25] - 2026-10-19
 
 ### 批次二十六
