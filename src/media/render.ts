@@ -649,7 +649,10 @@ export class RenderService {
       await writeFile(subtitlePath, format === 'vtt' ? serializeVtt(cues) : serializeSrt(cues), 'utf8')
     }
     // `A124`：抽一帧做缩略图（界面列表/分享预览用）；失败不影响成片
-    const thumbnailPath = await this.extractThumbnail(outputPath, options.thumbnailAtMs ?? 1000).catch(() => undefined)
+    // `R8`：封面帧位置超出片长时夹到片尾前 100ms —— 否则 ffmpeg 抽不到帧、用户"没有封面"却不知为何
+    const outputMs = measured ?? snapshot.durationMs
+    const thumbnailAt = Math.max(0, Math.min(options.thumbnailAtMs ?? 1000, Math.max(0, outputMs - 100)))
+    const thumbnailPath = await this.extractThumbnail(outputPath, thumbnailAt).catch(() => undefined)
     return {
       outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs,
       ...subtitlePath === undefined ? {} : { subtitlePath },

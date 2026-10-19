@@ -60,3 +60,24 @@ describe('thumbnail frame position (A126)', () => {
     expect((await stat(result.thumbnailPath!)).size).toBeGreaterThan(500)
   }, 60_000)
 })
+
+describe('thumbnail clamping (R8)', () => {
+  it('clamps an out-of-range thumbnailAtMs instead of producing no frame', async () => {
+    const work = await temp('dsh-thumb3-work-')
+    const outputs = await temp('dsh-thumb3-out-')
+    const video = join(work, 'v.mp4')
+    await new Promise<void>((resolve, reject) => {
+      execFile(FFMPEG, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+        '-i', 'testsrc=size=320x240:rate=30:duration=1', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', video],
+        error => { error === null ? resolve() : reject(error) })
+    })
+    const service = new RenderService({ outputsDir: outputs })
+    const result = await service.render({
+      schemaVersion: 4, id: 'tml-thumb3', projectId: 'prj-1', name: '越界封面', frameRate: 30, burnSubtitles: false,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'v', assetPath: video, startMs: 0, durationMs: 1000 }] }],
+      createdAt: '', updatedAt: '',
+    }, { thumbnailAtMs: 999_999 }) // 远超片长 → 应被夹取到片尾前 100ms
+    expect(result.thumbnailPath).toBeDefined()
+    expect((await stat(result.thumbnailPath!)).size).toBeGreaterThan(500)
+  }, 60_000)
+})

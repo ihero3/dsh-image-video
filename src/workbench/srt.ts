@@ -24,7 +24,8 @@ export interface ParseResult {
 
 /** 时间码 → 毫秒：`00:01:02,500` 或 `00:01:02.500`。 */
 export function parseTimecode(raw: string): number | undefined {
-  const match = /^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})$/.exec(raw.trim())
+  // 小时允许任意位数：`formatTimecode` 对超长素材会输出 25:00:00,000，解析必须能读回（R8 修的往返缺陷）
+  const match = /^(\d+):(\d{2}):(\d{2})[,.](\d{1,3})$/.exec(raw.trim())
   if (match === null) return undefined
   const [, hours, minutes, seconds, millis] = match
   const ms = Number(millis!.padEnd(3, '0'))
