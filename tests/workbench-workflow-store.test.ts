@@ -15,7 +15,7 @@ async function makeStore(): Promise<{ store: WorkbenchStore; directory: string }
   return { store: new WorkbenchStore({ directory, now: () => new Date('2026-10-15T00:00:00.000Z') }), directory }
 }
 
-afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 describe('workflow documents', () => {
   it('saves, updates, lists and removes a workflow', async () => {

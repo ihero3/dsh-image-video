@@ -13,7 +13,7 @@ import { WorkbenchStore } from '../src/workbench/store.ts'
 const ASSETS = 10_000
 const PROJECTS = 20
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 async function temp(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-scale-'))
   dirs.push(directory)

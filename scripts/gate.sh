@@ -5,7 +5,19 @@
 # 不跑测试。所以把五道门做成一条命令，推之前一律先跑它：
 #   bash scripts/gate.sh
 # 任何一步失败就**不许推**（脚本以非零退出并指出是哪一步 + 日志路径）。
+#
+# 用法：
+#   bash scripts/gate.sh          # 完整五道门（推送前必须跑这个）
+#   bash scripts/gate.sh --fast   # 快速门：只跑 typecheck + 全量测试（日常迭代用，**不能**作为推送依据）
 set -uo pipefail
+
+FAST=0
+for argument in "$@"; do
+  case "$argument" in
+    --fast) FAST=1 ;;
+    *) echo "未知参数：$argument（只支持 --fast）"; exit 2 ;;
+  esac
+done
 cd "$(dirname "$0")/.."
 
 STEP=0
@@ -33,6 +45,13 @@ if ! pnpm run test > "$TEST_LOG" 2>&1; then
   exit 1
 fi
 grep -E "Test Files|Tests  " "$TEST_LOG" | tail -2
+
+if [ "$FAST" -eq 1 ]; then
+  echo
+  echo "快速门通过（typecheck + 全量测试）。"
+  echo "⚠ 未跑：构建 / 客户端体积 / 覆盖率 —— **推送前必须**跑完整门：bash scripts/gate.sh"
+  exit 0
+fi
 
 step "构建（lib 是入库产物）"
 BUILD_LOG="/tmp/dsh-build-$(date +%s).log"

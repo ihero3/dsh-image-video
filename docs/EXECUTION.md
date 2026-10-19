@@ -247,3 +247,12 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
    构建 / 体积 / **覆盖率**）+ 真机证据 + 推送 + bump Harness 指针；批次结束发 tag。
 
 停止方式：`bash ~/dsh-agent-stop.sh`（只停自动化，不碰 App），或直接跟我说停。
+
+### 门禁两种模式（`A60`）
+
+| 命令 | 包含 | 用时 | 允许推送吗 |
+| --- | --- | --- | --- |
+| `bash scripts/gate.sh --fast` | typecheck + 全量测试 | ~15s | **不可以**（明确提示） |
+| `bash scripts/gate.sh` | 五道门：typecheck / 全量测试 / 构建 / 体积 / 覆盖率 | ~10min | 可以（必须退出码 0） |
+
+纪律：**日常迭代用 --fast 快速确认，推送前一律跑完整门**；不许用 --fast 的绿灯当推送依据。

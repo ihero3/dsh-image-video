@@ -31,7 +31,7 @@ async function tempDir(prefix: string): Promise<string> {
   return dir
 }
 
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 /** 造一个 n 秒的测试片段（320x240 testsrc）。 */
 async function makeClip(dir: string, name: string, seconds: number): Promise<string> {

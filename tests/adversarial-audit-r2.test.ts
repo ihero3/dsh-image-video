@@ -13,7 +13,7 @@ import { WorkbenchStore } from '../src/workbench/store.ts'
 import type { TimelineClip, TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 async function temp(prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix))
   dirs.push(directory)

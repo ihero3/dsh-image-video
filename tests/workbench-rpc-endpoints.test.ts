@@ -150,7 +150,7 @@ describe('workbench channel endpoints', () => {
 
     // 已结束的任务取消不了
     expect(await ok<{ cancelled: boolean }>('timelines/render-cancel', { renderId: started.render.id })).toEqual({ cancelled: false })
-    await rm(work, { recursive: true, force: true })
+    await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }, 60_000)
 
   it('plans output retention with a dry run by default (A15)', async () => {

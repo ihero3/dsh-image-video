@@ -18,7 +18,7 @@ import { RenderService } from '../src/media/render.ts'
 import { timelineDurationMs } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 /** 一套真实依赖 + 假生成工具（不花任何生成额度）。 */
 async function harness() {
