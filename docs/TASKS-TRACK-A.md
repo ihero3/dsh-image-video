@@ -309,6 +309,11 @@
 - [x] **A134 覆盖率缓冲加固** ✅ 2026-10-20：补齐**已知薄弱点**的边界断言（WebVTT 空/仅头/乱序/时间码倒退、比例描述超宽屏、空轨道复制、**6 类诊断错误码全覆盖**、`failStale` 重启遗留收尾）→ 语句 82.35 / 分支 71.35 / 函数 81.29 / 行 85.24（**全达标**）；**顺带修一个真缺陷**：`describeAspect` 容差 0.01 太紧，导致真实超宽屏 2560×1080 被算成 `64:27` 而非 `21:9` → 放宽到 0.05（常见比例间距 ≥0.1，不会误判）；**已知债**：函数覆盖缓冲仍薄（81.29 vs 阈值 80），后续新增功能需同步补测
 - [ ] **A135 发布 `v0.3.56-workbench-56`**
 
+## 批次五十九（A136 起，2026-10-20）
+
+- [x] **A136 定位并覆盖未测函数** ✅ 2026-10-20：先用**逐文件覆盖率表**定位（不猜 ✗）——`rpc.ts` 函数覆盖仅 51.35%（大量新端点只在纯函数层测过、路由层没测 ✗）→ 新增 `tests/rpc-new-endpoints.test.ts` 覆盖 **11 个端点**（diagnostics/archive/overview/integrity/usage/size-report/project-stats/subtitles export+import/estimate/preflight）→ **`rpc.ts` 函数覆盖 51.35% → 75.67%**（+24.3pp）、全局函数 **81.29% → 83.21%**（+1.92pp，**达到 83%+ 目标** ✓）；语句 83.77 / 分支 72.34 / 行 86.57
+- [ ] **A137 发布 `v0.3.57-workbench-57`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
