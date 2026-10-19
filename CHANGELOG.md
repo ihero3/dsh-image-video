@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.10-workbench-10] - 2026-10-19
 
 ### 批次七
@@ -17,7 +21,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.11-workbench-11] - 2026-10-19
 
 ### 批次八
 - **A38 保留策略触发点**：渲染完成后可在摘要里带 `retention` 建议（阈值 `DSH_OUTPUT_MAX_FILES` / `DSH_OUTPUT_MAX_GB`，未配置不提示；**只报告不删除**；钩子异常不影响渲染结果）

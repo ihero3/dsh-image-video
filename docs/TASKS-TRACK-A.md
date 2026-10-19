@@ -59,7 +59,7 @@
 - [x] **A36 覆盖率门禁落地（方案 A：对齐 4.x）** ✅ 2026-10-19：插件 `vitest ^3.1.0 → ^4.1.11`（与根一致，复用根 `@vitest/coverage-v8@4.1.11`）；vitest 4 下 workspace 深层源码导入需**顶层 `resolve.alias` + `server.deps.inline`**；**实测** statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36% → 阈值取 −2pp（81/70/80/83）；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**；全量 584 passed 保持绿。**回滚**：还原 `package.json`/`pnpm-lock.yaml`/`vitest.config.ts` 后在根跑 `pnpm install`（详见提交说明）
 - [x] **A37 导出完成摘要** ✅ 2026-10-19：`src/media/render-summary.ts`（产物路径/字节/实测时长/规格/各轨片段数/是否有音轨/是否有字幕/是否烧录），渲染任务完成时作为**加法字段** `summary` 挂上（老客户端不受影响）；另提供 `describeTimeline`（变速折算后的轨道概览）；测试 4 例（纯函数 3 + 真机集成 1）
 - [x] **A38 保留策略触发点** ✅ 2026-10-19：渲染成功后摘要可带 `retention`（输出目录文件数/字节、建议清理条数、可释放字节、是否仍超限）；阈值由 **`DSH_OUTPUT_MAX_FILES` / `DSH_OUTPUT_MAX_GB`** 环境变量控制，**未配置则完全不提示**；钩子异常只记 `render-retention-failed` 日志、**绝不让渲染失败**；**只报告不删除**（真删仍只走 `maintenance/retention` 的显式 `dryRun:false`）；测试 2 例
-- [ ] **A39 发布 `v0.3.11-workbench-11`**
+- [x] **A39 发布 `v0.3.11-workbench-11`** ✅ 2026-10-19：版本 0.3.11 / CHANGELOG 定稿（A36 覆盖率门禁 / A37 导出摘要 / A38 保留建议）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 
