@@ -29,6 +29,7 @@
 
 - [x] **A20 音频淡入淡出 + 响度归一化** ✅ 2026-10-18：音轨 `fadeMs`(0–5000) + 文档 `normalizeLoudness`（缺省关）；导出链 `afade=t=in/out`（轨内）+ `loudnorm=I=-16:TP=-1.5:LRA=11`（混音后）；真机出片仍有音轨且时长不变；测试 3 例
 - [x] **A21 耗时分位数日志 + 诊断渲染统计** ✅ 2026-10-18：`RenderRegistry` 记最近 50 次渲染耗时并输出 `render-finished` 结构化日志（含 status/durationMs）；新增 `stats()`（成功/失败/取消计数 + p50/p90）；`diagnostics.renders.stats` 暴露；节点侧 `durationMs` 早已在 runner 日志里；测试 +2
+- [x] **A28 覆盖率门禁方案文档** ✅ 2026-10-19：`docs/COVERAGE-PLAN.md`（问题实测证据、方案 A 根级 vitest 对齐的步骤/6 条验证清单/一条命令回滚/风险耗时、方案 B 保守项、待 owner 决策）；**未执行任何依赖改动**
 - [ ] **A22 覆盖率门禁依赖对齐（⏸ 试过并回滚，待根级依赖方案）** 2026-10-18 实测：在根执行 `pnpm add -D --filter dsh-image-video @vitest/coverage-v8@3.2.7` 安装成功（10.7s，插件 devDep=3.2.7 且解析到匹配 vitest@3.2.7 的构建），但触发 pnpm 重新链接 96 个包后，**Track B 的 `tests/client-rpc-transport.test.ts` 直接挂了**（`@deepseek-ai/dsh-client-connection/src/client/rpc.ts` 解析不到）→ 立刻回滚（`pnpm-lock.yaml` + 插件 `package.json`/`vitest.config.ts` + `pnpm install --filter`），B 的用例恢复 3/3 绿。**结论：单独给插件加 coverage devDep 会扰动工作区的 client-connection 解析，正确做法是根级统一升/对齐 vitest 大版本（属跨仓依赖治理），需要 owner 决策后排期**；在此之前 A11 的覆盖率门禁保持暂缓
 - [x] **A23 发布 `v0.3.6-workbench-6`** ✅ 2026-10-18：A20（音频淡入淡出+响度归一化）+ A21（渲染耗时分位数与诊断统计）；A22 记为待 owner 决策
 
