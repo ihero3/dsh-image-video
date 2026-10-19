@@ -16,6 +16,16 @@ import type { ResourceUsageRecord } from '../workbench/records.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 
+/** Export parameters the export panel lets the user pick (B6). */
+export interface TimelineExportOptions {
+  /** Resolution preset id: `default` | `480` | `768` | `2k`. */
+  resolution?: string
+  /** Target frames per second. */
+  fps?: number
+  /** Aspect-ratio preset id: `landscape` | `portrait` | `square` | `vertical`. */
+  aspect?: string
+}
+
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
@@ -61,8 +71,17 @@ export interface WorkbenchApi {
   saveDefaults: (patch: Record<string, string | number | null>) => Promise<void>
   /** 资源使用记录（`R-QCK-3`）：资源库据此显示「被哪些素材用过」。 */
   listResourceUsage: (options?: { resourceId?: string; projectId?: string }) => Promise<ResourceUsageRecord[]>
+  /** Export parameters the export panel lets the user pick (B6). */
+  export interface TimelineExportOptions {
+    /** Resolution preset id: `default` | `480` | `768` | `2k`. */
+    resolution?: string
+    /** Target frames per second. */
+    fps?: number
+    /** Aspect-ratio preset id: `landscape` | `portrait` | `square` | `vertical`. */
+    aspect?: string
+  }
   /** Start rendering a timeline into an mp4 (returns the job to poll). */
-  renderTimeline: (timelineId: string, projectId?: string) => Promise<RenderJob>
+  renderTimeline: (timelineId: string, projectId?: string, options?: TimelineExportOptions) => Promise<RenderJob>
   /** Export jobs, newest first. */
   listRenders: (projectId?: string) => Promise<RenderJob[]>
   /** Cancel a running export. */
@@ -94,8 +113,8 @@ export interface WorkbenchApi {
   removeWorkflow: (id: string) => Promise<boolean>
   /** Merge duplicate asset records; returns how many were removed. */
   compactAssets: () => Promise<number>
-  /** Start a run of the stored workflow. */
-  runWorkflow: (workflowId: string) => Promise<WorkflowRunRecord>
+  /** Start a run of the stored workflow. `only` limits the run to those nodes and their downstream (B4 single-node run). */
+  runWorkflow: (workflowId: string, only?: readonly string[]) => Promise<WorkflowRunRecord>
   /** Run records for a project (optionally one workflow), newest first. */
   listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>
   /** Cancel a running workflow run. */
@@ -151,8 +170,12 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     },
     listResourceUsage: async options =>
       (await call<{ usage: ResourceUsageRecord[] }>('resources/usage', options ?? {})).usage,
-    renderTimeline: async (timelineId, projectId) =>
-      (await call<{ render: RenderJob }>('timelines/render', projectId === undefined ? { timelineId } : { timelineId, projectId })).render,
+    renderTimeline: async (timelineId, projectId, options) =>
+      (await call<{ render: RenderJob }>('timelines/render', {
+        timelineId,
+        ...(projectId !== undefined ? { projectId } : {}),
+        ...(options !== undefined ? { resolution: options.resolution, fps: options.fps, aspect: options.aspect } : {}),
+      })).render,
     listRenders: async projectId =>
       (await call<{ renders: RenderJob[] }>('timelines/renders', projectId === undefined ? {} : { projectId })).renders,
     cancelRender: async renderId => (await call<{ cancelled: boolean }>('timelines/render-cancel', { renderId })).cancelled,
@@ -165,7 +188,11 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     saveWorkflow: async input => (await call<{ workflow: WorkflowRecord }>('workflows/save', input)).workflow,
     removeWorkflow: async id => (await call<{ removed: boolean }>('workflows/remove', { id })).removed,
     compactAssets: async () => (await call<{ removed: number }>('maintenance/compact', {})).removed,
-    runWorkflow: async workflowId => (await call<{ run: WorkflowRunRecord }>('workflows/run', { workflowId })).run,
+    runWorkflow: async (workflowId, only) =>
+      (await call<{ run: WorkflowRunRecord }>('workflows/run', {
+        workflowId,
+        ...only === undefined ? {} : { only },
+      })).run,
     listRuns: async (projectId, workflowId) =>
       (await call<{ runs: WorkflowRunRecord[] }>('workflows/runs', { projectId, workflowId })).runs,
     cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,

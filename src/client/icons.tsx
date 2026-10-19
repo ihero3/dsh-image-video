@@ -13,7 +13,7 @@ export type IconName =
   | 'alert' | 'x' | 'download' | 'sliders' | 'image' | 'video' | 'clock' | 'layers'
   | 'eye' | 'user' | 'play' | 'filter' | 'upload' | 'link' | 'box' | 'script'
   | 'storyboard' | 'input' | 'subtitle' | 'music' | 'motion' | 'sparkles' | 'tag'
-  | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron'
+  | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron' | 'undo' | 'redo' | 'clipboard'
 
 /** 单路径图标：一个 `d` 讲完（圆用小圆弧拼）；多元素图形见 {@link SHAPES}。 */
 const STROKE: Partial<Record<IconName, string>> = {
@@ -51,6 +51,9 @@ const STROKE: Partial<Record<IconName, string>> = {
   pause: 'M8.6 5v14M15.4 5v14',
   pencil: 'M4.6 19.4l.8-3.6L16.2 5a1.7 1.7 0 0 1 2.4 0l.4.4a1.7 1.7 0 0 1 0 2.4L8 18.6z',
   chevron: 'M9.5 5.5 16 12l-6.5 6.5',
+  undo: 'M4 9h9.5a4.5 4.5 0 0 1 0 9H10M8 5 4 9l4 4',
+  redo: 'M20 9h-9.5a4.5 4.5 0 0 0 0 9H14M16 5l4 4-4 4',
+  clipboard: 'M9.5 4.5h5v2.2h-5zM7 6.2h10V20H7zM10.2 11h3.6M10.2 14.4h3.6',
 }
 
 /** 多元素图标（矩形/圆等无法用一个 `d` 表达的图形）。 */

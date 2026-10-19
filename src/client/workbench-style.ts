@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-18.2'
+export const WORKBENCH_STYLE_VERSION = '2026-10-18.5'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -164,6 +164,9 @@ export const WORKBENCH_STYLE = `
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%238e96a3' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 7px center}
 .iv-textarea{min-height:42px;height:auto;padding:5px 8px;line-height:1.45;resize:vertical}
+.iv-select--sm{height:20px;padding:0 18px 0 6px;font-size:10.5px}
+.iv-toolbar--export .iv-field{grid-template-columns:auto minmax(56px,72px);gap:4px}
+.iv-toolbar--export .iv-field-label{font-size:10px}
 .iv-check{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--iv-tx2);cursor:pointer;user-select:none;white-space:nowrap}
 .iv-check input{accent-color:var(--iv-acc);width:12px;height:12px;margin:0}
 .iv-scrub{flex:1;height:14px;appearance:none;-webkit-appearance:none;background:transparent;cursor:pointer;min-width:60px}
@@ -340,10 +343,22 @@ export const WORKBENCH_STYLE = `
 .iv-t-head .micro{font-size:9px}
 .iv-t-kind{font-size:8.5px;color:var(--iv-tx3)}
 .iv-t-lane{position:relative;padding:4px 8px;display:flex;flex-direction:column;gap:5px;min-height:40px}
-.iv-clips{display:flex;flex-wrap:wrap;gap:4px}
-.iv-clip{display:flex;flex-direction:column;gap:3px;min-width:0;flex-basis:0;min-height:34px;
+/* B5：片段按**时间**绝对定位（left=起点比例、width=时长比例），拖拽/手柄才有"落点即时间" */
+.iv-clips{position:relative;display:block;height:58px}
+.iv-clip{display:flex;flex-direction:column;gap:3px;min-width:16px;flex-basis:auto;min-height:34px;
   padding:3px 7px 3px 9px;border-radius:3px;border:1px solid var(--iv-line-2);background:var(--iv-panel);
-  font-size:10.5px;position:relative;overflow:hidden}
+  font-size:10.5px;position:absolute;top:0;bottom:0;overflow:hidden;cursor:grab}
+.iv-clip:active{cursor:grabbing}
+.iv-clip--sel{border-color:var(--iv-acc);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-acc) 30%,transparent)}
+/* B5：左右手柄改起点/时长 */
+.iv-clip-h{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:2;border:0;background:transparent;padding:0}
+.iv-clip-h--l{left:0}
+.iv-clip-h--r{right:0}
+.iv-clip-h::after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:2px;height:16px;border-radius:1px;background:color-mix(in srgb,currentColor 42%,transparent)}
+.iv-clip-h:hover::after{background:var(--iv-acc);width:3px}
+/* B5：放置落点高亮 */
+.iv-t-lane--drop{background:var(--iv-acc-soft);outline:1px dashed var(--iv-acc);outline-offset:-2px}
 .iv-clip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
 .iv-clip--video{border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);
   background:linear-gradient(90deg,var(--iv-acc-soft),transparent 46%),var(--iv-panel)}
@@ -408,19 +423,39 @@ export const WORKBENCH_STYLE = `
 .iv-field textarea.iv-input{height:auto}
 
 /* ---- xyflow 节点卡片（画布内） ---- */
-.iv-node{min-width:148px;border-radius:var(--iv-r);border:1px solid var(--iv-line-2);background:var(--iv-panel);
-  color:var(--iv-tx);font-size:11px;overflow:hidden}
+.iv-node{position:relative;min-width:148px;border-radius:var(--iv-r);border:1px solid var(--iv-line-2);background:var(--iv-panel);
+  color:var(--iv-tx);font-size:11px}
 .iv-node[data-workflow-node-selected=true]{border-color:var(--iv-acc);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--iv-acc) 20%,transparent)}
 .iv-node[data-availability=planned]{border-style:dashed}
 .iv-node[data-invalid=true]{border-color:var(--iv-danger)}
 .iv-node-head{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--iv-panel-3);
-  border-bottom:1px solid var(--iv-line);font-weight:600}
+  border-bottom:1px solid var(--iv-line);font-weight:600;min-width:0}
 .iv-node-head .iv-ico{color:var(--iv-acc)}
-.iv-node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iv-node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .iv-node-planned{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:8.5px;font-weight:500;
   color:var(--iv-tx3);white-space:nowrap}
 .iv-node-body{padding:5px 8px;display:grid;gap:2px;font-size:10px;color:var(--iv-tx2);overflow:hidden;text-overflow:ellipsis}
+/* B4：节点运行状态徽章（卡片右上角的小圆点） */
+.iv-node-run{margin-left:auto;display:grid;place-items:center;flex:none}
+.iv-node-planned+.iv-node-run{margin-left:4px}
+.iv-node-run .iv-dot{width:7px;height:7px}
+.iv-node-run--running{color:var(--iv-acc)}
+.iv-node-run--running .iv-dot{animation:iv-pulse 1.2s ease-in-out infinite}
+.iv-node-run--succeeded{color:var(--iv-ok)}
+.iv-node-run--failed{color:var(--iv-danger)}
+.iv-node-run--cancelled,.iv-node-run--skipped{color:var(--iv-tx3)}
+@media (prefers-reduced-motion:reduce){.iv-node-run--running .iv-dot{animation:none}}
+/* B4：失败节点的错误开关 + 气泡（气泡要能溢出卡片，故卡片本身不裁切） */
+.iv-node-err{margin-left:2px;width:16px;height:16px;display:grid;place-items:center;flex:none;padding:0;
+  border:0;border-radius:3px;background:var(--iv-danger-soft);color:var(--iv-danger);cursor:pointer}
+.iv-node-err:hover{background:color-mix(in srgb,var(--iv-danger) 22%,transparent)}
+.iv-node-bubble{position:absolute;left:8px;right:8px;top:calc(100% + 5px);z-index:40;
+  background:var(--iv-surface);border:1px solid color-mix(in srgb,var(--iv-danger) 45%,transparent);
+  border-radius:5px;padding:5px 8px;font-size:10px;line-height:1.45;color:var(--iv-danger);
+  box-shadow:0 8px 20px color-mix(in srgb,#000 30%,transparent);white-space:pre-wrap;word-break:break-all}
+/* B4：画布工具栏分组分隔 */
+.iv-toolbar-sep{width:1px;height:15px;background:var(--iv-line-2);flex:none;margin:0 3px}
 
 /* ---- xyflow 主题覆盖（特异性高于官方样式表） ---- */
 .iv-flow .react-flow{--xy-edge-stroke-default:var(--iv-line-2,#555);--xy-connectionline-stroke-default:var(--iv-acc,#4d6bfe);
@@ -435,6 +470,18 @@ export const WORKBENCH_STYLE = `
   border-radius:var(--iv-r);overflow:hidden;border:1px solid var(--iv-line)}
 .iv-flow .react-flow__attribution{background:transparent;color:var(--iv-tx3)}
 .iv-flow .react-flow__attribution a{color:var(--iv-tx3)}
+/* B7：窄窗（<768px）紧凑排版——右侧空间不足时缩小间距/字号，停靠区强制单列可滚，隐藏轨道文字（用悬浮提示代替） */
+@media (max-width:768px){
+.iv{padding:6px;font-size:11px}
+.iv-top{padding:6px 8px;gap:6px}
+.iv-rail{width:42px}
+.iv-rail-txt{display:none}
+.iv-dock{grid-template-columns:1fr;max-height:44vh;overflow:auto}
+.iv-pane-head{padding:6px 8px}
+.iv-hero{padding:10px}
+.iv-steps{flex-wrap:wrap}
+.iv-toolbar{flex-wrap:wrap}
+}
 `
 
 /**

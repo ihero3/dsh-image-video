@@ -5,11 +5,11 @@
  * 只验"交互 + 单一事实源"这条边界：节点库能加节点、参数写进 `WorkflowRecord`、
  * 连线可删、**选择状态不进文档**（`R-FLW-1`）。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { WorkflowCanvas } from '../src/client/WorkflowCanvas.tsx'
 import { en, type WorkbenchLocaleKey } from '../src/client/locales.ts'
-import type { WorkflowRecord } from '../src/workbench/workflow.ts'
+import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 
 // 每个用例互不干扰：上一次挂载的画布必须卸载，否则 screen 会查到重复元素
 afterEach(() => { cleanup() })
@@ -135,5 +135,166 @@ describe('workflow canvas', () => {
     fireEvent.click(view.container.querySelector('[data-workflow-action="delete-node"]') as HTMLElement)
     await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
     expect(current().nodes).toHaveLength(0)
+  })
+})
+
+describe('B4 canvas interaction', () => {
+  /** 带一个已知 id 节点的文档（运行状态/错误气泡用例用）。 */
+  function makeRecordWithNode(): WorkflowRecord {
+    return {
+      ...makeRecord(),
+      nodes: [{ id: 'n1', kind: 'script', position: { x: 12, y: 34 }, params: { text: '第一句' } }],
+    }
+  }
+
+  /** 一次失败运行：n1 失败并带错误文案。 */
+  function failedRun(): WorkflowRunRecord {
+    return {
+      schemaVersion: 1, id: 'run-1', workflowId: 'wfl-1', projectId: 'prj-1', status: 'failed',
+      graph: { nodes: [], edges: [] },
+      nodeRuns: [{
+        nodeId: 'n1', kind: 'script', status: 'failed',
+        startedAt: '2026-10-15T00:00:00.000Z', error: 'provider said no',
+      }],
+      startedAt: '2026-10-15T00:00:00.000Z', finishedAt: '2026-10-15T00:00:01.000Z',
+    }
+  }
+
+  /** 渲染画布并跟踪事实源；可传入 run 控制面。 */
+  function renderWith(record: WorkflowRecord, run?: WorkflowCanvasProps['run']) {
+    let latest = record
+    const onRunNode = vi.fn()
+    const view = render(
+      <WorkflowCanvas
+        record={latest}
+        onChange={next => { latest = next }}
+        t={t}
+        run={run === undefined ? undefined : { ...run, onRunNode }}
+      />,
+    )
+    return { view, current: () => latest, onRunNode }
+  }
+
+  /** 点选一个节点（xyflow 的选择在 mousedown 上裁决）。 */
+  async function selectNode(view: ReturnType<typeof render>, nodeId: string): Promise<void> {
+    const card = await waitFor(() => {
+      const element = view.container.querySelector(`[data-workflow-node]`)
+      if (element === null) throw new Error('卡片还没渲染')
+      return element as HTMLElement
+    })
+    void nodeId
+    fireEvent.mouseDown(card)
+    fireEvent.click(card)
+  }
+
+  it('undoes and redoes node additions, and the record follows', async () => {
+    const { view, current } = renderWith(makeRecord())
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    expect(canvas(view).getAttribute('data-workflow-history')).toBe('1/0')
+    expect(current().nodes).toHaveLength(1)
+
+    // 撤销：节点没了，事实源同步回滚
+    fireEvent.click(view.container.querySelector('[data-workflow-action="undo"]') as HTMLElement)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
+    expect(canvas(view).getAttribute('data-workflow-history')).toBe('0/1')
+    expect(current().nodes).toHaveLength(0)
+
+    // 重做：节点回来，位置参数与撤销前一致
+    fireEvent.click(view.container.querySelector('[data-workflow-action="redo"]') as HTMLElement)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    expect(current().nodes).toHaveLength(1)
+  })
+
+  it('copies and pastes a node with a fresh id and an offset position', async () => {
+    const { view, current } = renderWith(makeRecord())
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    const original = current().nodes[0]!
+
+    // 新加的节点自动选中：⌘C 复制、⌘V 粘贴
+    fireEvent.keyDown(window, { key: 'c', metaKey: true })
+    fireEvent.keyDown(window, { key: 'v', metaKey: true })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('2') })
+
+    const pasted = current().nodes[1]!
+    expect(pasted.id).not.toBe(original.id)
+    expect(pasted.kind).toBe(original.kind)
+    expect(pasted.params).toEqual(original.params)
+    // 级联偏移：不会与原节点完全重合
+    expect(pasted.position.x).toBe(original.position.x + 24)
+    expect(pasted.position.y).toBe(original.position.y + 24)
+  })
+
+  it('deletes several selected nodes in one batch', async () => {
+    const { view, current } = renderWith(makeRecord())
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} preview` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('2') })
+
+    // 点选第一个（xyflow 的选择在 mousedown 上裁决）。jsdom 合成事件的 view 默认是
+    // null，d3-drag 要读 event.view.document 才会抛；`_globalProxy` 是 jsdom 内部
+    // 认的 Window（vitest 把全局 window 换成了代理，只有它过得去 instanceof 检查）。
+    const paneView = (window as unknown as { _globalProxy?: Window })._globalProxy
+    const cards = view.container.querySelectorAll('[data-workflow-node]')
+    fireEvent.mouseDown(cards[0] as HTMLElement, paneView === undefined ? {} : { view: paneView })
+    fireEvent.mouseUp(cards[0] as HTMLElement, paneView === undefined ? {} : { view: paneView })
+    fireEvent.click(cards[0] as HTMLElement)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-selected-count')).toBe('1') })
+    fireEvent.keyDown(window, { key: 'Control' })
+    fireEvent.mouseDown(cards[1] as HTMLElement, paneView === undefined ? {} : { view: paneView })
+    fireEvent.mouseUp(cards[1] as HTMLElement, paneView === undefined ? {} : { view: paneView })
+    fireEvent.click(cards[1] as HTMLElement)
+    fireEvent.keyUp(window, { key: 'Control' })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-selected-count')).toBe('2') })
+
+    // 批量删除：一次删完，历史记一步（初始空图 + 两次添加 + 一次删除）
+    fireEvent.click(view.container.querySelector('[data-workflow-action="delete-node"]') as HTMLElement)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
+    expect(current().nodes).toHaveLength(0)
+    expect(canvas(view).getAttribute('data-workflow-history')).toBe('3/0')
+  })
+
+  it('removes the selected node on the Delete key', async () => {
+    const { view } = renderWith(makeRecord())
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    fireEvent.keyDown(window, { key: 'Delete' })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
+  })
+
+  it('runs only the selected node (and its downstream) when asked', async () => {
+    const run = {
+      latest: undefined, history: [], busy: false,
+      onStart: () => {}, onCancel: () => {}, onRetry: () => {}, onSelectRun: () => {},
+    }
+    const { view, current, onRunNode } = renderWith(makeRecord(), run)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    const nodeId = current().nodes[0]?.id
+    expect(nodeId).toBeTruthy()
+
+    fireEvent.click(view.container.querySelector('[data-workflow-action="run-node"]') as HTMLElement)
+    expect(onRunNode).toHaveBeenCalledTimes(1)
+    expect(onRunNode.mock.calls[0]?.[0]).toBe(nodeId)
+  })
+
+  it('shows run status on the card and an error bubble for the failed node', async () => {
+    const run = { latest: failedRun(), history: [failedRun()], busy: false, onStart: () => {}, onCancel: () => {}, onRetry: () => {}, onSelectRun: () => {} }
+    const { view } = renderWith(makeRecordWithNode(), run)
+
+    // 失败状态徽章
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node]')?.getAttribute('data-workflow-node-run-status')).toBe('failed')
+    })
+    // 点错误开关 → 气泡给出失败原因
+    fireEvent.click(view.container.querySelector('[data-workflow-node-error-toggle]') as HTMLElement)
+    const bubble = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-node-error-bubble]')
+      if (element === null) throw new Error('气泡没出现')
+      return element
+    })
+    expect(bubble.textContent).toContain('provider said no')
   })
 })

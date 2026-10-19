@@ -12,7 +12,7 @@
  * colours resolve through the Harness design tokens with currentColor-mix
  * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -20,15 +20,21 @@ import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, Resource
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchOptions } from '../workbench-contract.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
-import { activeClipAt, timelineDurationMs, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
+import { activeClipAt, timelineDurationMs, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
+import { VirtualList } from './VirtualList.tsx'
+import { PaneBoundary } from './PaneBoundary.tsx'
+import {
+  LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
+} from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { WorkbenchApi } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
+import { useUnifiedPolling } from './use-unified-poll.ts'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -239,11 +245,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string> | undefined>(undefined)
   const [renderJob, setRenderJob] = useState<RenderJob | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
+  // B6 导出面板：分辨率 / 帧率 / 宽高比选择（默认 = 跟随模型 / 30fps / 16:9）。
+  const [exportResolution, setExportResolution] = useState('default')
+  const [exportFps, setExportFps] = useState(30)
+  const [exportAspect, setExportAspect] = useState('landscape')
+  // B6 导出成功后「登记到素材库」的反馈。
+  const [assetRegistered, setAssetRegistered] = useState(false)
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [assets, setAssets] = useState<readonly AssetRecord[]>([])
   const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
-  const [tasks, setTasks] = useState<readonly TaskRecord[]>([])
+  const [tasks, setTasksRaw] = useState<readonly TaskRecord[]>([])
+  const setTasks = (value: readonly TaskRecord[]): void => {
+    setTasksRaw(value)
+  }
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
   const [resourceKind, setResourceKind] = useState<ResourceKind>('role')
@@ -309,23 +324,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return () => { stale = true }
   }, [mode, activeProject, workflow?.id])
 
-  // 只在运行中轮询（没有宿主→客户端推送通道）
+  // 是否有运行中的流程（供统一轮判别节奏，`B1`）
   const runningRun = runs.some(run => run.status === 'running')
-  useEffect(() => {
-    if (!runningRun || activeProject === undefined) return
-    const project = activeProject
-    const workflowId = workflow?.id
-    const timer = setInterval(() => {
-      void (async () => {
-        try {
-          setRuns(await apiRef.current.listRuns(project.id, workflowId))
-        } catch {
-          // 轮询失败不打扰用户；状态留给下一次或手动刷新
-        }
-      })()
-    }, 2500)
-    return () => { clearInterval(timer) }
-  }, [runningRun, activeProject, workflow?.id])
 
   // 进入时间轴模式（或切项目）读回该项目的成片时间轴；没有就准备一份空的三轨文档
   useEffect(() => {
@@ -403,25 +403,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return () => { stale = true }
   }, [mode])
 
-  // 导出任务：进入时间轴时读回最近一次，运行中每 2 秒轮询（没有推送通道）
+  // 导出任务：进入时间轴时读回最近一次（运行中的进度刷新归统一轮询，`B1`）
   const renderRunning = renderJob?.status === 'running'
   useEffect(() => {
     if (mode !== 'timeline' || activeProject === undefined) return
     const project = activeProject
     let stale = false
-    const load = async (): Promise<void> => {
+    void (async () => {
       try {
         const jobs = await apiRef.current.listRenders(project.id)
         if (!stale) setRenderJob(jobs[0])
       } catch {
-        // 轮询失败不打扰用户
+        // 读失败不打扰用户；统一轮询会再试
       }
-    }
-    void load()
-    if (!renderRunning) return () => { stale = true }
-    const timer = setInterval(() => { void load() }, 2000)
-    return () => { stale = true; clearInterval(timer) }
-  }, [mode, activeProject, renderRunning])
+    })()
+    return () => { stale = true }
+  }, [mode, activeProject])
 
   // 时间轴改动 → 去抖落库
   const timelineDirty = timelineState === 'dirty'
@@ -473,7 +470,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [workflowDirty, workflow, mode])
 
   /** 时间轴总时长与当前播放头处的活动片段（顺序预览用）。 */
-  const timelineTotal = timeline === undefined ? 0 : timelineDurationMs(timeline.tracks)
+  // 时间轴总时长：空轨也要有一个可导航的尺度（默认 3s），否则落点换算会全部塌到 0。
+  const timelineTotal = timeline === undefined
+    ? MIN_TIMELINE_MS
+    : Math.max(MIN_TIMELINE_MS, timelineDurationMs(timeline.tracks))
   const playheadMs = Math.max(0, Math.min(previewMs, timelineTotal))
   // 与导出共用同一边界判断（`R-TML-3`）
   const activeVideo = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'video', playheadMs)
@@ -504,6 +504,235 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })
     void stamp
   }
+
+  // ============ B5 时间轴交互：拖拽入轨 / 片段移动 / 手柄 / 播放 ============
+  /** 拖拽载荷的约定 MIME（素材入轨 / 片段移动各一种，与轨道 drop 对齐）。 */
+  const ASSET_DRAG_TYPE = 'application/x-iv-asset'
+  const CLIP_DRAG_TYPE = 'application/x-iv-clip'
+  /** 当前拖放悬停的轨道（落点高亮）。 */
+  const [dropTrackId, setDropTrackId] = useState<string | undefined>(undefined)
+  /** 选中的片段（键盘 Delete 与复制按钮用；UI 瞬时状态，不入库）。 */
+  const [selectedClipId, setSelectedClipId] = useState<string | undefined>(undefined)
+  /** 正在拖的手柄（窗口级 mousemove/mouseup 期间活着）。 */
+  const [resizing, setResizing] = useState<{ trackId: string; clipId: string; side: 'left' | 'right'; startX: number } | undefined>(undefined)
+  /** 轨道 lane 的 DOM 引用（量 rect 用：像素 ↔ 毫秒的换算基准）。 */
+  const laneRefs = useRef(new Map<string, HTMLElement>())
+  /** 顺序播放开关。 */
+  const [playing, setPlaying] = useState(false)
+
+  /** 素材行开始拖拽：路径 + 媒体类型放进 dataTransfer。 */
+  const onAssetDragStart = (event: ReactDragEvent, asset: AssetRecord): void => {
+    const payload = JSON.stringify({ path: asset.path, kind: asset.kind })
+    event.dataTransfer.setData(ASSET_DRAG_TYPE, payload)
+    event.dataTransfer.setData('text/plain', payload)
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+
+  /** 片段开始拖拽：带上所在轨道与片段 id（换轨/移动都认这个载荷）。 */
+  const onClipDragStart = (event: ReactDragEvent, trackId: string, clipId: string): void => {
+    event.dataTransfer.setData(CLIP_DRAG_TYPE, JSON.stringify({ trackId, clipId }))
+    event.dataTransfer.effectAllowed = 'move'
+    setSelectedClipId(clipId)
+  }
+
+  /** 轨道接受放置：素材 → 入轨；片段 → 移动起点（同种类轨道间接驳）。 */
+  const onLaneDrop = (event: ReactDragEvent, track: TimelineTrack): void => {
+    event.preventDefault()
+    setDropTrackId(undefined)
+    const lane = laneRefs.current.get(track.id)
+    const rect = lane?.getBoundingClientRect()
+    const dropMs = laneTimeFromClientX(
+      event.clientX,
+      { left: rect?.left ?? 0, width: rect?.width ?? 0 },
+      timelineTotal,
+    )
+
+    // 1) 片段移动：从原轨道摘出，落到本轨新起点
+    const clipPayload = event.dataTransfer.getData(CLIP_DRAG_TYPE)
+    if (clipPayload !== '') {
+      let source: { trackId?: string; clipId?: string } = {}
+      try { source = JSON.parse(clipPayload) as { trackId?: string; clipId?: string } } catch { return }
+      if (source.clipId === undefined) return
+      const clipId = source.clipId
+      setTimeline(current => {
+        if (current === undefined) return current
+        let moved: TimelineClip | undefined
+        let fromTrack: TimelineTrack | undefined
+        for (const candidate of current.tracks) {
+          const found = candidate.clips.find(item => item.id === clipId)
+          if (found !== undefined) { moved = found; fromTrack = candidate; break }
+        }
+        // 字幕与视频互不串轨；找不到源片段就不动
+        if (moved === undefined || fromTrack === undefined || fromTrack.kind !== track.kind) return current
+        const updated = { ...moved, startMs: dropMs }
+        return {
+          ...current,
+          tracks: current.tracks.map(candidate => {
+            if (candidate.id === fromTrack?.id && candidate.id !== track.id) {
+              return { ...candidate, clips: candidate.clips.filter(item => item.id !== clipId) }
+            }
+            if (candidate.id === track.id) {
+              return { ...candidate, clips: candidate.clips.filter(item => item.id !== clipId).concat(updated) }
+            }
+            return candidate
+          }),
+        }
+      })
+      setTimelineState('dirty')
+      return
+    }
+
+    // 2) 素材入轨：字幕轨不吃素材；音频轨只接视频（宿主从视频取音）
+    const assetPayload = event.dataTransfer.getData(ASSET_DRAG_TYPE) !== ''
+      ? event.dataTransfer.getData(ASSET_DRAG_TYPE)
+      : event.dataTransfer.getData('text/plain')
+    if (assetPayload === '') return
+    let asset: { path?: string; kind?: string } = {}
+    try { asset = JSON.parse(assetPayload) as { path?: string; kind?: string } } catch { return }
+    if (asset.path === undefined || track.kind === 'subtitle') return
+    if (asset.kind !== 'video') return
+    patchTrack(track.id, current => ({
+      ...current,
+      clips: current.clips.concat({
+        id: `clip-${Date.now().toString(36)}-${current.clips.length}`,
+        assetPath: asset.path as string,
+        startMs: dropMs,
+        durationMs: 3000,
+      }),
+    }))
+  }
+
+  /** 手柄按下：记住起点，随后窗口级 mousemove 实时改片段。 */
+  const onHandleMouseDown = (event: ReactMouseEvent, trackId: string, clipId: string, side: 'left' | 'right'): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    setResizing({ trackId, clipId, side, startX: event.clientX })
+  }
+
+  // 手柄拖动：像素差 → 毫秒差（按 lane 宽度比例），实时落库（去抖保存兜底）
+  useEffect(() => {
+    if (resizing === undefined) return
+    const lane = laneRefs.current.get(resizing.trackId)
+    const onMove = (event: globalThis.MouseEvent): void => {
+      const rect = lane?.getBoundingClientRect()
+      const usable = (rect?.width ?? 0) - LANE_PADDING_PX * 2
+      if (usable <= 0) return
+      const deltaMs = ((event.clientX - resizing.startX) / usable) * timelineTotal
+      patchTrack(resizing.trackId, current => ({
+        ...current,
+        clips: current.clips.map(item => {
+          if (item.id !== resizing.clipId) return item
+          return resizing.side === 'left'
+            ? { ...item, ...resizeClipLeft(item, deltaMs) }
+            : { ...item, ...resizeClipRight(item, deltaMs) }
+        }),
+      }))
+    }
+    const onUp = (): void => { setResizing(undefined) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [resizing, timelineTotal])
+
+  /** 复制片段：紧随原片段之后放一份（新 id）。 */
+  const duplicateClip = (track: TimelineTrack, clip: TimelineClip): void => {
+    patchTrack(track.id, current => ({
+      ...current,
+      clips: current.clips.concat({
+        ...clip,
+        id: `clip-${Date.now().toString(36)}-${current.clips.length}`,
+        startMs: clip.startMs + clip.durationMs,
+      }),
+    }))
+    setSelectedClipId(undefined)
+  }
+
+  /** 删除选中的片段（键盘 Delete 与垃圾桶按钮共用）。 */
+  const removeSelectedClip = (): void => {
+    if (selectedClipId === undefined) return
+    setTimeline(current => current === undefined ? current : {
+      ...current,
+      tracks: current.tracks.map(track => ({ ...track, clips: track.clips.filter(clip => clip.id !== selectedClipId) })),
+    })
+    setTimelineState('dirty')
+    setSelectedClipId(undefined)
+  }
+
+  /** 播放/暂停：不在任何片段里（或已到尽头）就从头开始；顺序播放跳过空隙。 */
+  const togglePlay = (): void => {
+    if (playing) { setPlaying(false); return }
+    if (playheadMs >= timelineTotal || activeVideo === undefined) setPreviewMs(0)
+    setPlaying(true)
+  }
+
+  // 顺序播放：每 100ms 按真实流逝推进播放头；过了当前视频片段的结尾就跳到
+  // 下一个视频片段（跳过空隙）；没有下一个就停在尽头并暂停。
+  const previewMsRef = useRef(previewMs)
+  previewMsRef.current = playheadMs
+  useEffect(() => {
+    if (!playing || timeline === undefined) return
+    let last = Date.now()
+    const timer = setInterval(() => {
+      const now = Date.now()
+      const delta = now - last
+      last = now
+      const current = previewMsRef.current
+      const active = activeClipAt(timeline.tracks, 'video', current)
+      let next = current + delta
+      if (active !== undefined && next >= active.startMs + active.durationMs) {
+        const following = nextVideoClipStart(timeline.tracks, active.startMs + active.durationMs)
+        if (following === undefined) {
+          setPlaying(false)
+          previewMsRef.current = timelineTotal
+          setPreviewMs(timelineTotal)
+          return
+        }
+        next = following
+      }
+      if (next >= timelineTotal) {
+        setPlaying(false)
+        previewMsRef.current = timelineTotal
+        setPreviewMs(timelineTotal)
+        return
+      }
+      previewMsRef.current = next
+      setPreviewMs(next)
+    }, 100)
+    return () => { clearInterval(timer) }
+  }, [playing, timeline, timelineTotal])
+
+  // 离开时间轴模式就停播（播放头归零由下次进入决定）
+  useEffect(() => {
+    if (mode !== 'timeline') setPlaying(false)
+  }, [mode])
+
+  // B5/B13 时间轴快捷键：空格播放/暂停、Delete 删除选中片段。
+  // 输入控件里不劫持（让用户正常改数字）。
+  useEffect(() => {
+    if (mode !== 'timeline') return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target !== null && (
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+        || target.isContentEditable === true
+      )) return
+      if (event.key === ' ') {
+        event.preventDefault()
+        togglePlay()
+        return
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selectedClipId === undefined) return
+        event.preventDefault()
+        removeSelectedClip()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
+  })
 
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
@@ -536,7 +765,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [])
 
   const loadTasks = useCallback(async () => {
-    setTasks(await apiRef.current.listTasks())
+    const resolved = await apiRef.current.listTasks()
+    setTasks(resolved)
   }, [])
 
   const loadResources = useCallback(async (projectId: string) => {
@@ -560,28 +790,42 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })()
   }, [loadOutputs, loadProjects, loadTasks, run])
 
-  // 双向一致性（`T6-4`）：宿主→客户端没有通用推送通道，所以按**固定 5 秒**节奏轮询
-  // 项目/素材/任务，让 Agent（工具）那边的改动自动出现；口径与取舍：
-  //   · 延迟 ≤ 5 秒（面板不可见时不轮询，省掉无意义的往返）
-  //   · 本地正在编辑的文档（画布/时间轴处于 dirty/saving）**不覆盖**，避免打断输入
-  //     —— 这些面的"Agent 改名后工具能读到"方向本来就是宿主权威，无需客户端推送
-  //   · 轮询失败静默重试，不弹错
-  useEffect(() => {
-    if (!tab.visible) return
-    const timer = setInterval(() => {
+  // B1 统一轮询：原「导出 2s / 运行 2.5s / 项目 5s」三个定时器收敛成**一个**定时器链
+  // （有 running 任务 2s、否则 5s、±20% 抖动、`document.hidden` 停表、恢复可见立即补跳）。
+  // 双向一致性（`T6-4`）口径不变：宿主→客户端没有通用推送通道，靠这条线把 Agent
+  // （工具）那边的改动带进来；本地正在编辑的文档（画布/时间轴 dirty/saving）不在这条
+  // 线上，不会被轮询数据覆盖。
+  const pollingActive = runningRun || renderRunning
+    || tasks.some(task => task.status === 'running' || task.status === 'queued')
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const activeProjectRef = useRef(activeProject)
+  activeProjectRef.current = activeProject
+  const workflowIdRef = useRef(workflow?.id)
+  workflowIdRef.current = workflow?.id
+  useUnifiedPolling({
+    active: pollingActive,
+    enabled: tab.visible,
+    onTick: () => {
       void (async () => {
         try {
           await loadProjects()
           await loadTasks()
-          if (activeProject !== undefined) setAssets(await apiRef.current.listAssets(activeProject.id))
+          const project = activeProjectRef.current
+          if (project !== undefined) setAssets(await apiRef.current.listAssets(project.id))
+          if (modeRef.current === 'timeline' && project !== undefined) {
+            setRenderJob((await apiRef.current.listRenders(project.id))[0])
+          }
+          if (modeRef.current === 'workflow' && project !== undefined) {
+            setRuns(await apiRef.current.listRuns(project.id, workflowIdRef.current))
+          }
           setRefreshTick(current => current + 1)
         } catch {
-          // 下一轮再试
+          // 轮询失败静默重试，不弹错
         }
       })()
-    }, 5000)
-    return () => { clearInterval(timer) }
-  }, [tab.visible, activeProject?.id, loadProjects, loadTasks])
+    },
+  })
 
   // 自动保存：改名输入停下约 0.9 秒后落盘（手动"保存"仍在，四态照旧）。
   // 依赖里只放"是否处于未保存"，避免每次按键都重建定时器。
@@ -1022,6 +1266,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {mode === 'quick'
               ? (
                 <section className="iv-pane">
+                  <PaneBoundary label={t('modeQuick')} t={t}>
                   <div className="iv-hero">
                     <div className="iv-hero-top">
                       <span className="iv-hero-ico"><Icon name="bolt" size={19} /></span>
@@ -1046,6 +1291,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                     {outputs.length === 0 ? <p className="iv-meta">{t('noOutputs')}</p> : null}
                   </div>
+                  </PaneBoundary>
                 </section>
               )
               : null}
@@ -1053,6 +1299,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {mode === 'workflow' && workflow !== undefined
               ? (
                 <section className="iv-pane" data-workbench-pane="paneCanvas" data-workbench-planned="false">
+                  <PaneBoundary label={t('paneCanvas')} t={t}>
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="flow" size={13} /></span>
                     <h3 className="iv-pane-title">{t('paneCanvas')}</h3>
@@ -1115,8 +1362,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           }
                         })
                       },
+                      // B4 单节点运行：只跑选中节点及其下游（宿主 `workflows/run` 的 `only`，
+                      // 认领状态见 docs/API-SURFACE.md「B 申请」）
+                      onRunNode: nodeId => {
+                        void run(async () => {
+                          setRunBusy(true)
+                          try {
+                            const stored = await apiRef.current.saveWorkflow({
+                              id: workflow.id, projectId: workflow.projectId, name: workflow.name,
+                              nodes: workflow.nodes, edges: workflow.edges,
+                            })
+                            setWorkflow(stored)
+                            setWorkflowState('saved')
+                            const started = await apiRef.current.runWorkflow(stored.id, [nodeId])
+                            setSelectedRunId(started.id)
+                            setRuns(current => [started, ...current])
+                          } finally {
+                            setRunBusy(false)
+                          }
+                        })
+                      },
                     }}
                   />
+                  </PaneBoundary>
                 </section>
               )
               : null}
@@ -1124,6 +1392,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {mode === 'timeline' && timeline !== undefined
               ? (
                 <section className="iv-pane" data-workbench-pane="paneTimeline" data-workbench-planned="false">
+                  <PaneBoundary label={t('timelineTitle')} t={t}>
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="film" size={13} /></span>
                     <h3 className="iv-pane-title">{t('timelineTitle')}</h3>
@@ -1168,12 +1437,48 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </div>
 
                   {/* 导出操作行 */}
-                  <div className="iv-toolbar">
+                  <div className="iv-toolbar iv-toolbar--export">
+                    {/* B6 分辨率 / 帧率 / 宽高比选择 */}
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('paramResolution')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-resolution="true" aria-label={t('paramResolution')}
+                        value={exportResolution} onChange={event => { setExportResolution(event.target.value); setAssetRegistered(false) }}>
+                        <option value="default">{t('resolutionDefault')}</option>
+                        <option value="480">{t('resolution480')}</option>
+                        <option value="768">{t('resolution768')}</option>
+                        <option value="2k">{t('resolution2k')}</option>
+                      </select>
+                    </label>
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('fps')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-fps="true" aria-label={t('fps')}
+                        value={exportFps} onChange={event => { setExportFps(Number(event.target.value)); setAssetRegistered(false) }}>
+                        <option value={24}>24</option>
+                        <option value={25}>25</option>
+                        <option value={30}>30</option>
+                        <option value={60}>60</option>
+                      </select>
+                    </label>
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('paramRatio')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-aspect="true" aria-label={t('paramRatio')}
+                        value={exportAspect} onChange={event => { setExportAspect(event.target.value); setAssetRegistered(false) }}>
+                        <option value="landscape">{t('ratioLandscape')}</option>
+                        <option value="portrait">{t('ratioPortrait')}</option>
+                        <option value="square">{t('ratioSquare')}</option>
+                        <option value="vertical">{t('ratioVertical')}</option>
+                      </select>
+                    </label>
+
                     <button type="button" className="iv-btn iv-btn--acc iv-btn--sm" data-timeline-export="true"
                       disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
                       onClick={() => {
+                        setAssetRegistered(false)
                         void run(async () => {
-                          setRenderJob(await apiRef.current.renderTimeline(timeline.id, timeline.projectId))
+                          setRenderJob(await apiRef.current.renderTimeline(
+                            timeline.id, timeline.projectId,
+                            { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
+                          ))
                         })
                       }}>
                       <Icon name="download" />{t('exportStart')}
@@ -1206,6 +1511,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           {renderJob.status === 'running'
                             ? <span className="iv-progress"><i style={{ width: `${Math.max(2, renderJob.percent)}%` }} /></span>
                             : null}
+                          {renderJob.status === 'succeeded' && renderJob.outputPath !== undefined
+                            ? (
+                              <button type="button" className="iv-btn iv-btn--sm" data-timeline-register="true"
+                                disabled={assetRegistered}
+                                onClick={() => {
+                                  void run(async () => {
+                                    await apiRef.current.attachAsset({
+                                      projectId: timeline.projectId, path: renderJob.outputPath!, kind: 'video',
+                                    })
+                                    setAssetRegistered(true)
+                                  })
+                                }}>
+                                <Icon name="layers" />
+                                {assetRegistered ? t('alreadyRegistered') : t('registerAsAsset')}
+                              </button>
+                            )
+                            : null}
                         </>
                       )}
                   </div>
@@ -1237,8 +1559,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
                   {/* transport：播放头 + 时间码 */}
                   <div className="iv-transport">
-                    <button type="button" className="iv-tp-btn iv-tp-btn--play" aria-label={t('transportPlay')} title={t('transportPlay')}>
-                      <Icon name="play" size={11} />
+                    <button type="button" className="iv-tp-btn iv-tp-btn--play" data-timeline-play="true"
+                      aria-label={playing ? t('transportPause') : t('transportPlay')}
+                      title={playing ? t('transportPause') : t('transportPlay')}
+                      aria-pressed={playing}
+                      onClick={togglePlay}>
+                      <Icon name={playing ? 'pause' : 'play'} size={11} />
                     </button>
                     <span className="iv-tc-now">{timecode(playheadMs)}</span>
                     <input type="range" className="iv-scrub" data-timeline-playhead="true" min={0} max={Math.max(1, timelineTotal)}
@@ -1270,26 +1596,69 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             <span className="micro">{t(trackIdKey(track.kind))}</span>
                             <span className="iv-t-kind">{t(trackKindKey(track.kind))}</span>
                           </div>
-                          <div className="iv-t-lane">
+                          <div
+                            className={`iv-t-lane${dropTrackId === track.id ? ' iv-t-lane--drop' : ''}`}
+                            data-timeline-lane={track.kind}
+                            ref={element => {
+                              if (element === null) laneRefs.current.delete(track.id)
+                              else laneRefs.current.set(track.id, element)
+                            }}
+                            onDragOver={event => {
+                              // 只有本轨吃得下的载荷才给落点高亮
+                              const clipDrag = event.dataTransfer.types.includes(CLIP_DRAG_TYPE)
+                              const assetDrag = event.dataTransfer.types.includes(ASSET_DRAG_TYPE)
+                                || event.dataTransfer.types.includes('text/plain')
+                              if (clipDrag || (assetDrag && track.kind !== 'subtitle')) {
+                                event.preventDefault()
+                                setDropTrackId(track.id)
+                              }
+                            }}
+                            onDragLeave={() => { setDropTrackId(current => (current === track.id ? undefined : current)) }}
+                            onDrop={event => { onLaneDrop(event, track) }}
+                          >
                             {track.clips.length === 0
                               ? <p className="iv-meta">{t('timelineEmpty')}</p>
                               : (
                                 <div className="iv-clips">
-                                  {track.clips.map(clip => (
-                                    <div
-                                      key={clip.id}
-                                      className={`iv-clip iv-clip--${track.kind}`}
-                                      data-timeline-clip={clip.id}
-                                      data-timeline-clip-kind={track.kind}
-                                      style={{ flexGrow: String(Math.max(0.6, clip.durationMs / 1000)) }}
-                                    >
-                                      <div className="iv-clip-top">
-                                        <Icon name={TRACK_ICONS[track.kind]} size={11} />
-                                        <span className="iv-ellipsis" title={clip.assetPath ?? clip.text ?? ''}>
-                                          {track.kind === 'subtitle' ? (clip.text ?? '') : baseName(clip.assetPath ?? '')}
-                                        </span>
-                                        <span className="iv-clip-dur">{(clip.durationMs / 1000).toFixed(1)}s</span>
-                                      </div>
+                                  {track.clips.map(clip => {
+                                    const ratio = Math.max(1, timelineTotal)
+                                    const left = (clip.startMs / ratio) * 100
+                                    const width = Math.max(1.5, (clip.durationMs / ratio) * 100)
+                                    return (
+                                      <div
+                                        key={clip.id}
+                                        className={`iv-clip iv-clip--${track.kind}${selectedClipId === clip.id ? ' iv-clip--sel' : ''}`}
+                                        data-timeline-clip={clip.id}
+                                        data-timeline-clip-kind={track.kind}
+                                        data-timeline-clip-selected={selectedClipId === clip.id ? 'true' : 'false'}
+                                        draggable
+                                        onDragStart={event => { onClipDragStart(event, track.id, clip.id) }}
+                                        onClick={() => { setSelectedClipId(clip.id) }}
+                                        style={{ left: `${left}%`, width: `${width}%` }}
+                                      >
+                                        <div
+                                          className="iv-clip-h iv-clip-h--l"
+                                          data-timeline-clip-handle="left"
+                                          role="separator"
+                                          aria-orientation="vertical"
+                                          aria-label={`${t('clipResizeStart')} ${clip.id}`}
+                                          onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'left') }}
+                                        />
+                                        <div
+                                          className="iv-clip-h iv-clip-h--r"
+                                          data-timeline-clip-handle="right"
+                                          role="separator"
+                                          aria-orientation="vertical"
+                                          aria-label={`${t('clipResizeEnd')} ${clip.id}`}
+                                          onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'right') }}
+                                        />
+                                        <div className="iv-clip-top">
+                                          <Icon name={TRACK_ICONS[track.kind]} size={11} />
+                                          <span className="iv-ellipsis" title={clip.assetPath ?? clip.text ?? ''}>
+                                            {track.kind === 'subtitle' ? (clip.text ?? '') : baseName(clip.assetPath ?? '')}
+                                          </span>
+                                          <span className="iv-clip-dur">{(clip.durationMs / 1000).toFixed(1)}s</span>
+                                        </div>
                                       <div className="iv-clip-row">
                                         <input type="number" className="iv-input" value={clip.startMs} aria-label={`${t('clipStart')} ${clip.id}`}
                                           onChange={event => {
@@ -1350,6 +1719,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                             </>
                                           )
                                           : null}
+                                        <button type="button" className="iv-btn" aria-label={`${t('clipDuplicate')} ${clip.id}`}
+                                          title={t('clipDuplicate')}
+                                          onClick={event => { event.stopPropagation(); duplicateClip(track, clip) }}>
+                                          <Icon name="copy" size={11} />
+                                        </button>
                                         <button type="button" className="iv-btn" aria-label={`${t('remove')} ${clip.id}`}
                                           onClick={() => {
                                             patchTrack(track.id, current => ({
@@ -1360,7 +1734,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                         </button>
                                       </div>
                                     </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               )}
                             {track.kind === 'subtitle'
@@ -1401,6 +1776,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   </div>
                   <p className="iv-meta">{t('previewNote')}</p>
+                  </PaneBoundary>
                 </section>
               )
               : null}
@@ -1409,6 +1785,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           {/* ============ 下部停靠区：四个面板（常驻） ============ */}
           <div className="iv-dock">
             <section className="iv-pane" data-workbench-pane="paneAssets" data-workbench-planned="false">
+              <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneAssets')}</h3>
@@ -1482,85 +1859,88 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </div>
                 )
                 : (
-                  <ul className="iv-list">
-                    {visibleAssets.map(asset => (
-                      <li key={asset.id} className="iv-row" data-active={asset.id === selectedId ? 'true' : 'false'}>
-                        {asset.kind === 'image'
-                          ? (
-                            <img
-                              className="iv-thumb"
-                              src={`/outputs/${encodeURIComponent(baseName(asset.path))}`}
-                              alt=""
-                            />
-                          )
-                          : (
-                            <span className="iv-tile iv-tile--video"><Icon name="video" size={13} /></span>
-                          )}
+                  <VirtualList className="iv-list" items={visibleAssets} renderRow={(asset, _index) => (
+                    <li key={asset.id} className="iv-row" data-active={asset.id === selectedId ? 'true' : 'false'}
+                      draggable
+                      data-asset-draggable="true"
+                      onDragStart={event => { onAssetDragStart(event, asset) }}>
+                      {asset.kind === 'image'
+                        ? (
+                          <img
+                            className="iv-thumb"
+                            src={`/outputs/${encodeURIComponent(baseName(asset.path))}`}
+                            alt=""
+                          />
+                        )
+                        : (
+                          <span className="iv-tile iv-tile--video"><Icon name="video" size={13} /></span>
+                        )}
+                      <button
+                        type="button"
+                        className="iv-row-btn"
+                        aria-pressed={asset.id === selectedId}
+                        aria-label={`${t('panePreview')} ${baseName(asset.path)}`}
+                        onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}
+                      >
+                        <span className="iv-ellipsis">{baseName(asset.path)}</span>
+                        <span className="iv-meta">{formatBytes(asset.bytes)}</span>
+                      </button>
+                      <div className="iv-row-actions">
                         <button
                           type="button"
-                          className="iv-row-btn"
-                          aria-pressed={asset.id === selectedId}
-                          aria-label={`${t('panePreview')} ${baseName(asset.path)}`}
-                          onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}
+                          // 可访问名带上文件名：同一区域里可能有多个"删除"按钮
+                          className={`iv-btn iv-btn--icon iv-btn--sm${confirming === asset.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                          aria-label={`${confirming === asset.id ? t('confirmRemove') : t('remove')} ${baseName(asset.path)}`}
+                          title={confirming === asset.id ? t('confirmRemove') : t('remove')}
+                          disabled={busy}
+                          onClick={() => {
+                            if (confirming !== asset.id) { setConfirming(asset.id); setForceTarget(undefined); return }
+                            setConfirming(undefined)
+                            const force = forceTarget === asset.id
+                            void run(async () => {
+                              try {
+                                await apiRef.current.removeAsset(asset.id, force)
+                                setForceTarget(undefined)
+                                setAssets(await apiRef.current.listAssets(asset.projectId))
+                              } catch (error) {
+                                // 宿主会说明"谁在引用"；这里再给一次明确的二次确认
+                                if (!force) setForceTarget(asset.id)
+                                throw error
+                              }
+                            })
+                          }}
                         >
-                          <span className="iv-ellipsis">{baseName(asset.path)}</span>
-                          <span className="iv-meta">{formatBytes(asset.bytes)}</span>
+                          {confirming === asset.id ? t('confirmRemove') : <Icon name="trash" />}
                         </button>
-                        <div className="iv-row-actions">
-                          <button
-                            type="button"
-                            // 可访问名带上文件名：同一区域里可能有多个"删除"按钮
-                            className={`iv-btn iv-btn--icon iv-btn--sm${confirming === asset.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
-                            aria-label={`${confirming === asset.id ? t('confirmRemove') : t('remove')} ${baseName(asset.path)}`}
-                            title={confirming === asset.id ? t('confirmRemove') : t('remove')}
-                            disabled={busy}
-                            onClick={() => {
-                              if (confirming !== asset.id) { setConfirming(asset.id); setForceTarget(undefined); return }
-                              setConfirming(undefined)
-                              const force = forceTarget === asset.id
-                              void run(async () => {
-                                try {
-                                  await apiRef.current.removeAsset(asset.id, force)
+                        {forceTarget === asset.id
+                          ? (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--danger iv-btn--sm"
+                              data-workbench-force-remove={asset.id}
+                              aria-label={`${t('forceRemove')} ${baseName(asset.path)}`}
+                              disabled={busy}
+                              onClick={() => {
+                                void run(async () => {
+                                  await apiRef.current.removeAsset(asset.id, true)
                                   setForceTarget(undefined)
                                   setAssets(await apiRef.current.listAssets(asset.projectId))
-                                } catch (error) {
-                                  // 宿主会说明"谁在引用"；这里再给一次明确的二次确认
-                                  if (!force) setForceTarget(asset.id)
-                                  throw error
-                                }
-                              })
-                            }}
-                          >
-                            {confirming === asset.id ? t('confirmRemove') : <Icon name="trash" />}
-                          </button>
-                          {forceTarget === asset.id
-                            ? (
-                              <button
-                                type="button"
-                                className="iv-btn iv-btn--danger iv-btn--sm"
-                                data-workbench-force-remove={asset.id}
-                                aria-label={`${t('forceRemove')} ${baseName(asset.path)}`}
-                                disabled={busy}
-                                onClick={() => {
-                                  void run(async () => {
-                                    await apiRef.current.removeAsset(asset.id, true)
-                                    setForceTarget(undefined)
-                                    setAssets(await apiRef.current.listAssets(asset.projectId))
-                                  })
-                                }}
-                              >
-                                {t('forceRemove')}
-                              </button>
-                            )
-                            : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                                })
+                              }}
+                            >
+                              {t('forceRemove')}
+                            </button>
+                          )
+                          : null}
+                      </div>
+                    </li>
+                  )} />
                 )}
+              </PaneBoundary>
             </section>
 
             <section className="iv-pane" data-workbench-pane="panePreview" data-workbench-planned="false">
+              <PaneBoundary label={t('panePreview')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
                 <h3 className="iv-pane-title">{t('panePreview')}</h3>
@@ -1601,9 +1981,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       />
                     )}
               </div>
+              </PaneBoundary>
             </section>
 
             <section className="iv-pane" data-workbench-pane="paneResources" data-workbench-planned="false">
+              <PaneBoundary label={t('paneResources')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneResources')}</h3>
@@ -1664,78 +2046,78 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   )
                   : (
-                    <ul className="iv-list">
-                      {resources.map(resource => (
-                        <li key={resource.id} className="iv-row">
-                          <span className="iv-tile"><Icon name={RESOURCE_ICONS[resource.kind]} size={13} /></span>
-                          <span className="iv-row-main iv-ellipsis" title={resource.note ?? ''}>
-                            {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
+                  <VirtualList className="iv-list" items={resources} renderRow={(resource, _index) => (
+                    <li key={resource.id} className="iv-row">
+                      <span className="iv-tile"><Icon name={RESOURCE_ICONS[resource.kind]} size={13} /></span>
+                      <span className="iv-row-main iv-ellipsis" title={resource.note ?? ''}>
+                        {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
+                      </span>
+                      {(() => {
+                        const used = resourceUsage.filter(entry => entry.resourceId === resource.id)
+                        const latest = used[0]
+                        return (
+                          <span className="iv-badge" data-resource-usage={resource.id} title={latest?.assetPath ?? ''}>
+                            {used.length === 0
+                              ? t('resourceUnused')
+                              : `${t('resourceUsedBy')} ${used.length} ${t('resourceUseUnit')}${latest === undefined ? '' : ` · ${baseName(latest.assetPath)}`}`}
                           </span>
-                          {(() => {
-                            const used = resourceUsage.filter(entry => entry.resourceId === resource.id)
-                            const latest = used[0]
-                            return (
-                              <span className="iv-badge" data-resource-usage={resource.id} title={latest?.assetPath ?? ''}>
-                                {used.length === 0
-                                  ? t('resourceUnused')
-                                  : `${t('resourceUsedBy')} ${used.length} ${t('resourceUseUnit')}${latest === undefined ? '' : ` · ${baseName(latest.assetPath)}`}`}
-                              </span>
-                            )
-                          })()}
-                          <div className="iv-row-actions">
+                        )
+                      })()}
+                      <div className="iv-row-actions">
+                        <button
+                          type="button"
+                          className={`iv-btn iv-btn--icon iv-btn--sm${confirming === resource.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                          aria-label={`${confirming === resource.id ? t('confirmRemove') : t('remove')} ${resource.name}`}
+                          title={confirming === resource.id ? t('confirmRemove') : t('remove')}
+                          disabled={busy}
+                          onClick={() => {
+                            if (confirming !== resource.id) { setConfirming(resource.id); setForceTarget(undefined); return }
+                            setConfirming(undefined)
+                            const force = forceTarget === resource.id
+                            void run(async () => {
+                              try {
+                                await apiRef.current.removeResource(resource.id, force)
+                                setForceTarget(undefined)
+                                if (activeProject !== undefined) await loadResources(activeProject.id)
+                              } catch (error) {
+                                if (!force) setForceTarget(resource.id)
+                                throw error
+                              }
+                            })
+                          }}
+                        >
+                          {confirming === resource.id ? t('confirmRemove') : <Icon name="trash" />}
+                        </button>
+                        {forceTarget === resource.id
+                          ? (
                             <button
                               type="button"
-                              className={`iv-btn iv-btn--icon iv-btn--sm${confirming === resource.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
-                              aria-label={`${confirming === resource.id ? t('confirmRemove') : t('remove')} ${resource.name}`}
-                              title={confirming === resource.id ? t('confirmRemove') : t('remove')}
+                              className="iv-btn iv-btn--danger iv-btn--sm"
+                              data-workbench-force-remove={resource.id}
+                              aria-label={`${t('forceRemove')} ${resource.name}`}
                               disabled={busy}
                               onClick={() => {
-                                if (confirming !== resource.id) { setConfirming(resource.id); setForceTarget(undefined); return }
-                                setConfirming(undefined)
-                                const force = forceTarget === resource.id
                                 void run(async () => {
-                                  try {
-                                    await apiRef.current.removeResource(resource.id, force)
-                                    setForceTarget(undefined)
-                                    if (activeProject !== undefined) await loadResources(activeProject.id)
-                                  } catch (error) {
-                                    if (!force) setForceTarget(resource.id)
-                                    throw error
-                                  }
+                                  await apiRef.current.removeResource(resource.id, true)
+                                  setForceTarget(undefined)
+                                  if (activeProject !== undefined) await loadResources(activeProject.id)
                                 })
                               }}
                             >
-                              {confirming === resource.id ? t('confirmRemove') : <Icon name="trash" />}
+                              {t('forceRemove')}
                             </button>
-                            {forceTarget === resource.id
-                              ? (
-                                <button
-                                  type="button"
-                                  className="iv-btn iv-btn--danger iv-btn--sm"
-                                  data-workbench-force-remove={resource.id}
-                                  aria-label={`${t('forceRemove')} ${resource.name}`}
-                                  disabled={busy}
-                                  onClick={() => {
-                                    void run(async () => {
-                                      await apiRef.current.removeResource(resource.id, true)
-                                      setForceTarget(undefined)
-                                      if (activeProject !== undefined) await loadResources(activeProject.id)
-                                    })
-                                  }}
-                                >
-                                  {t('forceRemove')}
-                                </button>
-                              )
-                              : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                          )
+                          : null}
+                      </div>
+                    </li>
+                  )} />
+                )}
               </div>
+              </PaneBoundary>
             </section>
 
             <section className="iv-pane" data-workbench-pane="paneTasks" data-workbench-planned="false">
+              <PaneBoundary label={t('paneTasks')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneTasks')}</h3>
@@ -1749,77 +2131,76 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   )
                   : (
-                    <ul className="iv-list">
-                      {tasks.map(task => (
-                        <li key={task.id} className="iv-row">
-                          <span className={taskDotClass(task.status)} aria-hidden="true" />
-                          <button
-                            type="button"
-                            className="iv-row-btn"
-                            aria-label={`${t('previewOutput')} ${task.id}`}
-                            disabled={task.outputPath === undefined}
-                            onClick={() => {
-                              const path = task.outputPath
-                              if (path === undefined) return
-                              // 一律按路径预览：该产物可能登记在**别的项目**里，
-                              // 那样 assets（按当前项目过滤）里根本没有它。
-                              setPreviewPath({ path, kind: task.kind })
-                              setSelectedId(assets.find(asset => asset.path === path)?.id)
-                            }}
-                            title={task.error ?? task.prompt ?? task.outputPath ?? ''}
-                          >
-                            {t(statusKey(task.status))}{' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
-                          </button>
-                          <div className="iv-row-actions">
-                            {task.status === 'running'
-                              ? (
-                                <button
-                                  type="button"
-                                  className="iv-btn iv-btn--sm"
-                                  aria-label={`${t('cancelTask')} ${task.id}`}
-                                  title={t('cancelTask')}
-                                  disabled={busy}
-                                  onClick={() => {
-                                    void run(async () => {
-                                      await apiRef.current.cancelTask(task.id)
-                                      await loadTasks()
-                                    })
-                                  }}
-                                >
-                                  {t('cancelTask')}
-                                </button>
-                              )
-                              : null}
+                  <VirtualList className="iv-list" items={tasks} renderRow={(task, _index) => (
+                    <li key={task.id} className="iv-row">
+                      <span className={taskDotClass(task.status)} aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="iv-row-btn"
+                        aria-label={`${t('previewOutput')} ${task.id}`}
+                        disabled={task.outputPath === undefined}
+                        onClick={() => {
+                          const path = task.outputPath
+                          if (path === undefined) return
+                          // 一律按路径预览：该产物可能登记在**别的项目**里，
+                          // 那样 assets（按当前项目过滤）里根本没有它。
+                          setPreviewPath({ path, kind: task.kind })
+                          setSelectedId(assets.find(asset => asset.path === path)?.id)
+                        }}
+                        title={task.error ?? task.prompt ?? task.outputPath ?? ''}
+                      >
+                        {t(statusKey(task.status))}{' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
+                      </button>
+                      <div className="iv-row-actions">
+                        {task.status === 'running'
+                          ? (
                             <button
                               type="button"
                               className="iv-btn iv-btn--sm"
-                              aria-label={`${t('registerAsAsset')} ${task.id}`}
-                              title={t('registerAsAsset')}
-                              disabled={busy || activeProject === undefined || task.outputPath === undefined}
+                              aria-label={`${t('cancelTask')} ${task.id}`}
+                              title={t('cancelTask')}
+                              disabled={busy}
                               onClick={() => {
                                 void run(async () => {
-                                  const project = activeProject
-                                  const path = task.outputPath
-                                  if (project === undefined || path === undefined) return
-                                  const attached = await apiRef.current.attachAsset({
-                                    projectId: project.id, path, kind: task.kind,
-                                    bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
-                                  })
-                                  if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
-                                  await apiRef.current.assignTask(task.id, project.id)
-                                  setAssets(await apiRef.current.listAssets(project.id))
+                                  await apiRef.current.cancelTask(task.id)
                                   await loadTasks()
                                 })
                               }}
                             >
-                              {t('registerAsAsset')}
+                              {t('cancelTask')}
                             </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                          )
+                          : null}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--sm"
+                          aria-label={`${t('registerAsAsset')} ${task.id}`}
+                          title={t('registerAsAsset')}
+                          disabled={busy || activeProject === undefined || task.outputPath === undefined}
+                          onClick={() => {
+                            void run(async () => {
+                              const project = activeProject
+                              const path = task.outputPath
+                              if (project === undefined || path === undefined) return
+                              const attached = await apiRef.current.attachAsset({
+                                projectId: project.id, path, kind: task.kind,
+                                bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
+                              })
+                              if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
+                              await apiRef.current.assignTask(task.id, project.id)
+                              setAssets(await apiRef.current.listAssets(project.id))
+                              await loadTasks()
+                            })
+                          }}
+                        >
+                          {t('registerAsAsset')}
+                        </button>
+                      </div>
+                    </li>
+                  )} />
+                )}
               </div>
+              </PaneBoundary>
             </section>
           </div>
         </main>

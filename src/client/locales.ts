@@ -217,6 +217,22 @@ export type WorkbenchLocaleKey =
   | 'trackVideoId'
   | 'trackAudioId'
   | 'trackSubtitleId'
+  | 'paneError'
+  | 'paneErrorRetry'
+  | 'canvasUndo'
+  | 'canvasRedo'
+  | 'canvasCopy'
+  | 'canvasPaste'
+  | 'canvasPasteEmpty'
+  | 'canvasDeleteSelected'
+  | 'canvasRunNode'
+  | 'canvasSelected'
+  | 'nodeErrorDetails'
+  | 'clipDuplicate'
+  | 'transportPause'
+  | 'clipResizeStart'
+  | 'clipResizeEnd'
+  | 'fps'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -438,6 +454,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   trackVideoId: 'V1',
   trackAudioId: 'A1',
   trackSubtitleId: 'S1',
+  paneError: 'This panel hit an error',
+  paneErrorRetry: 'Retry',
+  canvasUndo: 'Undo',
+  canvasRedo: 'Redo',
+  canvasCopy: 'Copy nodes',
+  canvasPaste: 'Paste nodes',
+  canvasPasteEmpty: 'Clipboard is empty — select nodes and copy first',
+  canvasDeleteSelected: 'Delete selected nodes',
+  canvasRunNode: 'Run this node (with downstream)',
+  canvasSelected: 'selected',
+  nodeErrorDetails: 'Error details',
+  clipDuplicate: 'Duplicate clip',
+  transportPause: 'Pause',
+  clipResizeStart: 'Drag to change clip start',
+  clipResizeEnd: 'Drag to change clip duration',
+  fps: 'FPS',
 }
 
 /** Simplified Chinese copy. */
@@ -657,4 +689,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   trackVideoId: 'V1',
   trackAudioId: 'A1',
   trackSubtitleId: 'S1',
+  paneError: '该面板出错',
+  paneErrorRetry: '重试',
+  canvasUndo: '撤销',
+  canvasRedo: '重做',
+  canvasCopy: '复制节点',
+  canvasPaste: '粘贴节点',
+  canvasPasteEmpty: '剪贴板是空的——先选中节点再复制',
+  canvasDeleteSelected: '删除选中节点',
+  canvasRunNode: '运行此节点（含下游）',
+  canvasSelected: '已选中',
+  nodeErrorDetails: '错误详情',
+  clipDuplicate: '复制片段',
+  transportPause: '暂停',
+  clipResizeStart: '拖动改变片段起点',
+  clipResizeEnd: '拖动改变片段时长',
+  fps: '帧率',
 }
