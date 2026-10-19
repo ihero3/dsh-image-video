@@ -282,6 +282,19 @@ describe('agent tool surface (T6-3)', () => {
     expect((await store.findTimeline(timeline.id))!.tracks[0]!.clips).toHaveLength(0)
   })
 
+  it('applies an export preset through set-format (A31)', async () => {
+    const { call, store } = await harness()
+    const project = await store.createProject('预设项目')
+    const timeline = await store.saveTimeline({ projectId: project.id, tracks: [] })
+    await call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id, presetId: 'douyin-vertical',
+    })
+    expect((await store.findTimeline(timeline.id))?.exportFormat).toMatchObject({ width: 1080, height: 1920, frameRate: 30 })
+    await expect(call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id, presetId: 'nope',
+    })).rejects.toThrow(/没有导出预设/)
+  })
+
   it('reports render-cancel honestly for unknown ids (A6)', async () => {
     const { call } = await harness()
     const result = await call('workbench_tasks', { action: 'render-cancel', renderId: 'render-nope' })

@@ -164,6 +164,12 @@ describe('workbench channel endpoints', () => {
     expect(planned.plan.overQuota).toBe(false)
   })
 
+  it('lists export presets through the channel (A31)', async () => {
+    const { ok } = await makeHandler()
+    const result = await ok<{ presets: Array<{ id: string; width: number; height: number }> }>('presets/list', {})
+    expect(result.presets.some(preset => preset.id === 'douyin-vertical' && preset.width === 1080 && preset.height === 1920)).toBe(true)
+  })
+
   it('reports a diagnostics snapshot with data scale and render queue (A9)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '诊断项目' })

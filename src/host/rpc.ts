@@ -25,6 +25,7 @@ import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { planRetention } from '../media/retention.ts'
+import { EXPORT_PRESETS } from '../workbench/presets.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
@@ -298,6 +299,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
     }
+    // 导出预设（`A31`）：界面/Agent 共用同一套平台尺寸口径
+    case 'presets/list':
+      return { presets: EXPORT_PRESETS }
     // 诊断快照（`A9`）：版本、数据规模、渲染队列、近错；出问题不用翻日志
     case 'diagnostics': {
       const data = await deps.store.stats()

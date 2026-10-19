@@ -20,6 +20,7 @@ import { DRAMA_TEMPLATES, instantiateTemplate } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { timelineDurationMs } from '../workbench/timeline.ts'
+import { presetToFormat } from '../workbench/presets.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -109,6 +110,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       track: { type: 'string', description: 'set-track 时的轨道：video / audio / subtitle（默认 audio）' },
       maxChars: { type: 'integer', description: 'add-subtitles 时单条字幕最多字数（默认 28）' },
       clipId: { type: 'string', description: 'split-clip / copy-clip 的片段 id' },
+      presetId: { type: 'string', description: 'set-format 时用导出预设（先看 presets/list，如 douyin-vertical / youtube-1080p）' },
       atMs: { type: 'integer', description: 'split-clip 的拆分点（时间轴绝对毫秒，必须在片段内部）' },
       startMs: { type: 'integer', description: '起始时间（毫秒）；add-subtitles 缺省接在字幕轨末尾' },
       endMs: { type: 'integer', description: '结束时间（毫秒）；add-subtitles 缺省到时间轴末尾' },
@@ -398,7 +400,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           id: current.id, projectId: current.projectId, name: current.name, tracks: current.tracks,
           frameRate: current.frameRate, burnSubtitles: current.burnSubtitles,
           exportFormat: {
-            ...current.exportFormat ?? {},
+            // `A31`：给了 presetId 就整份按预设，否则按字段微调
+            ...typeof input.presetId === 'string' && input.presetId !== '' ? presetToFormat(input.presetId) : current.exportFormat ?? {},
             ...typeof input.width === 'number' ? { width: input.width } : {},
             ...typeof input.height === 'number' ? { height: input.height } : {},
             ...typeof input.frameRate === 'number' ? { frameRate: input.frameRate } : {},
