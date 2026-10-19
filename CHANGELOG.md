@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.14-workbench-14] - 2026-10-19
 
 ### 批次十二
@@ -32,7 +36,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.15-workbench-15] - 2026-10-19
 
 ### 批次十三
 - **A50 渲染队列优先级**：`start(timeline, {priority})` 数值大的先跑、同优先级 FIFO；`queuePosition` 按优先级重算；`timelines/render` 与 `timeline export` 支持 `priority`

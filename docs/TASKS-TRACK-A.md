@@ -98,7 +98,7 @@
 ## 批次十三（A50 起，2026-10-19）
 
 - [x] **A50 渲染队列优先级** ✅ 2026-10-19：`start(timeline, {priority})`（数值大的先跑，**同优先级保持 FIFO**）；入队按优先级有序插入并重算 `queuePosition`；端点 `timelines/render` 与工具 `timeline export` 均支持 `priority`；测试 2 例（优先级顺序 + 同优先级 FIFO）
-- [ ] **A51 发布 `v0.3.15-workbench-15`**
+- [x] **A51 发布 `v0.3.15-workbench-15`** ✅ 2026-10-19：版本 0.3.15 / CHANGELOG 定稿（A50 队列优先级）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 
