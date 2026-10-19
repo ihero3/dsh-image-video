@@ -231,3 +231,19 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 - 完成定义（DoD）：任务验收全过 + 单测/契约测试绿 + 真机走过一遍 + `CHANGELOG.md` 有记录 + `TASKS.md` 已勾选。
 
 ## 故障排查
+
+## 启动即续跑（自动化协议，2026-10-19 起）
+
+目标：**每次宿主启动后自动接着干**，不需要人喊"继续"。
+
+三层机制（缺一不可）：
+
+1. **常驻目标（goal）**：一个 open-ended 的目标（"持续交付 Track A，直到 owner 叫停"）。
+   目标处于 `armed` 时，每轮结束会自动开下一轮——这是续跑引擎。
+2. **重启安全网（recurring reminder）**：宿主重启会把目标置为 `disarmed`（引擎熄火）。
+   每 30 分钟一条提醒，脚本动作是：`get_goal` → 若 disarmed 就 `update_goal resume` → 继续；
+   若 armed 只需一句话确认（避免重复汇报）。
+3. **收工纪律**：每项完成必须 `bash scripts/gate.sh` **五道门**全绿（typecheck / 全量测试 /
+   构建 / 体积 / **覆盖率**）+ 真机证据 + 推送 + bump Harness 指针；批次结束发 tag。
+
+停止方式：`bash ~/dsh-agent-stop.sh`（只停自动化，不碰 App），或直接跟我说停。
