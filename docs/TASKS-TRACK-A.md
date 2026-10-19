@@ -48,6 +48,12 @@
 - [x] **A31 导出预设** ✅ 2026-10-19：`src/workbench/presets.ts`（抖音竖屏 1080×1920 / 小红书 3:4 / 方形 / YouTube 1080p / 4K / 默认 720p，全部经 `normalizeExportFormat` 校验）；端点 `presets/list`；工具 `set-format` 支持 `presetId` 整份套用；测试 4 例（含未知预设报错列出可选值）
 - [x] **A32 发布 `v0.3.9-workbench-9`** ✅ 2026-10-19：版本 0.3.9 / CHANGELOG 定稿（A29 speed 取整修复 / A30 音轨交叉淡化 / A31 导出预设）/ lib 重建 / tag / Harness 指针同步
 
+## 批次七（A33–A35，2026-10-19 起）
+
+- [x] **A33 音频侧链压缩（旁白压低背景音乐）** ✅ 2026-10-19：音轨 `duckUnderTrackId`（触发轨 id）+ `duckingDb`(-30..0，缺省 -12)；导出链 `sidechaincompress`（ratio 由分贝数换算）；**修掉标签复用 bug**——触发轨信号要被侧链与混音各用一次，必须先 `asplit` 否则 ffmpeg 报「标签已消费」；真机验证有音轨；测试 3 例
+- [ ] **A34 时间轴一致性校验器（`timelines/validate`）**
+- [ ] **A35 发布 `v0.3.10-workbench-10`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

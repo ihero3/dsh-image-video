@@ -341,6 +341,24 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
       audioLabels.push(`[${out}]`)
     }
   })
+  // 侧链压缩（`A33`）：被压轨 × 触发轨 → sidechaincompress（ratio 由压低分贝数换算）
+  audioTracks.forEach((track, trackIndex) => {
+    if (track.duckUnderTrackId === undefined) return
+    const trigger = audioTracks.findIndex(candidate => candidate.trackId === track.duckUnderTrackId)
+    if (trigger < 0) return
+    const label = audioLabels[trackIndex]
+    const triggerLabel = audioLabels[trigger]
+    if (label === undefined || triggerLabel === undefined) return
+    const ratio = Math.max(2, Math.min(20, Math.abs(track.duckingDb ?? -12) / 1.5)).toFixed(1)
+    const ducked = `duck${trackIndex}`
+    // 触发轨的信号要被用两次（侧链输入 + 最终混音）→ 必须先 asplit，否则 ffmpeg 报标签已被消费
+    const triggerBranch = `sct${trackIndex}`
+    chains.push(`${triggerLabel}asplit=2[${triggerBranch}a][${triggerBranch}b]`)
+    chains.push(`${label}[${triggerBranch}a]sidechaincompress=threshold=0.02:ratio=${ratio}:attack=10:release=300:makeup=1[${ducked}]`)
+    audioLabels[trackIndex] = `[${ducked}]`
+    audioLabels[trigger] = `[${triggerBranch}b]`
+  })
+
   if (audioLabels.length === 1) {
     chains.push(`${audioLabels[0]}anull[aout]`)
   } else if (audioLabels.length > 1) {
@@ -373,6 +391,9 @@ export interface PlannedAudioTrack {
   readonly fadeMs: number
   /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
   readonly crossfadeMs: number
+  /** 侧链压缩（`A33`）：被哪条轨触发，以及压低多少分贝。 */
+  readonly duckUnderTrackId?: string
+  readonly duckingDb?: number
   readonly segments: readonly VideolessSegment[]
 }
 
@@ -413,6 +434,10 @@ export function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[]
       trackId: track.id, volume,
       fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))),
       crossfadeMs: Math.max(0, Math.min(3000, Math.round(track.crossfadeMs ?? 0))),
+      ...track.duckUnderTrackId === undefined ? {} : {
+        duckUnderTrackId: track.duckUnderTrackId,
+        duckingDb: Math.max(-30, Math.min(0, track.duckingDb ?? -12)),
+      },
       segments,
     })
   }

@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### 批次七
+- **A33 音频侧链压缩**：音轨 `duckUnderTrackId` + `duckingDb`(-30..0)，导出用 `sidechaincompress`（ratio 由分贝换算）；**修复标签复用 bug**（触发轨需先 `asplit` 才能在侧链与混音里各用一次）
+
 （下一轮的改动写这里）
 
 ## [0.3.8-workbench-8] - 2026-10-19

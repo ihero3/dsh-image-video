@@ -39,6 +39,13 @@ export declare const MAX_CLIP_FADE_MS = 2000;
 export declare const MAX_TRACK_FADE_MS = 5000;
 /** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
 export declare const MAX_TRACK_CROSSFADE_MS = 3000;
+/** 侧链压低范围（分贝，`A33`）。 */
+export declare const DUCKING_DB_RANGE: {
+    readonly min: -30;
+    readonly max: 0;
+};
+/** 侧链压低缺省值（分贝，`A33`）。 */
+export declare const DEFAULT_DUCKING_DB = -12;
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
     readonly id: string;
@@ -87,6 +94,13 @@ export interface TimelineTrack {
      * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
      */
     readonly crossfadeMs?: number;
+    /**
+     * 侧链压缩（`A33`）：本轨是"被压"的背景音乐，`duckUnderTrackId` 指向触发它的音轨
+     * （通常是旁白轨），旁白一响就把本轨压低 `duckingDb` 分贝。缺省不启用。
+     */
+    readonly duckUnderTrackId?: string;
+    /** 侧链压低的分贝数（-30..0，缺省 -12；仅在 `duckUnderTrackId` 存在时生效）。 */
+    readonly duckingDb?: number;
 }
 /**
  * 片段在时间轴上**实际占用**的时长（变速折算后）。

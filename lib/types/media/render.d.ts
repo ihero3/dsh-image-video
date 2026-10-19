@@ -93,6 +93,9 @@ export interface PlannedAudioTrack {
     readonly fadeMs: number;
     /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
     readonly crossfadeMs: number;
+    /** 侧链压缩（`A33`）：被哪条轨触发，以及压低多少分贝。 */
+    readonly duckUnderTrackId?: string;
+    readonly duckingDb?: number;
     readonly segments: readonly VideolessSegment[];
 }
 /** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */

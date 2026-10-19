@@ -41,6 +41,10 @@ export const MAX_CLIP_FADE_MS = 2000
 export const MAX_TRACK_FADE_MS = 5000
 /** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
 export const MAX_TRACK_CROSSFADE_MS = 3000
+/** 侧链压低范围（分贝，`A33`）。 */
+export const DUCKING_DB_RANGE = { min: -30, max: 0 } as const
+/** 侧链压低缺省值（分贝，`A33`）。 */
+export const DEFAULT_DUCKING_DB = -12
 
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
@@ -91,6 +95,13 @@ export interface TimelineTrack {
    * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
    */
   readonly crossfadeMs?: number
+  /**
+   * 侧链压缩（`A33`）：本轨是"被压"的背景音乐，`duckUnderTrackId` 指向触发它的音轨
+   * （通常是旁白轨），旁白一响就把本轨压低 `duckingDb` 分贝。缺省不启用。
+   */
+  readonly duckUnderTrackId?: string
+  /** 侧链压低的分贝数（-30..0，缺省 -12；仅在 `duckUnderTrackId` 存在时生效）。 */
+  readonly duckingDb?: number
 }
 
 /**
@@ -338,6 +349,17 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
     if (track.crossfadeMs !== undefined) {
       crossfadeMs = Math.round(numberField(track.crossfadeMs, `track ${trackIndex} crossfadeMs`, { min: 0, max: MAX_TRACK_CROSSFADE_MS }))
     }
+    let duckUnderTrackId: string | undefined
+    if (track.duckUnderTrackId !== undefined) {
+      if (typeof track.duckUnderTrackId !== 'string' || track.duckUnderTrackId === '') {
+        throw new Error(`track ${trackIndex} duckUnderTrackId must be a non-empty track id`)
+      }
+      duckUnderTrackId = track.duckUnderTrackId
+    }
+    let duckingDb: number | undefined
+    if (track.duckingDb !== undefined) {
+      duckingDb = numberField(track.duckingDb, `track ${trackIndex} duckingDb`, { min: DUCKING_DB_RANGE.min, max: DUCKING_DB_RANGE.max, integer: false })
+    }
     return {
       id: typeof track.id === 'string' && track.id !== '' ? track.id : `track-${trackIndex + 1}`,
       kind: kind as TrackKind,
@@ -346,6 +368,8 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       ...volume === undefined ? {} : { volume },
       ...fadeMs === undefined ? {} : { fadeMs },
       ...crossfadeMs === undefined ? {} : { crossfadeMs },
+      ...duckUnderTrackId === undefined ? {} : { duckUnderTrackId },
+      ...duckingDb === undefined ? {} : { duckingDb },
     }
   })
   return tracks
