@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.22-workbench-22] - 2026-10-19
 
 （下一轮的改动写这里）
@@ -51,7 +55,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.23-workbench-23] - 2026-10-19
 
 ### 批次二十二
 - **A67 Agent 工具 schema 审计**：`timeline`/`workflow` 工具的 `projectId` 从**全局必填**改为按需校验，解锁 `templates`/`add-clip`/`export`/`run` 等不需要项目上下文的动作；`add-clip` 的项目上下文改从时间轴自身取
