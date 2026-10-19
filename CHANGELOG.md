@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.16-workbench-16] - 2026-10-19
 
 ### 批次十四
 - **A53 项目包 v3**：清单纳入自定义导出预设（导入去重合并）；**修真遗漏**：`burnLanguage` 之前导入丢失；v1/v2/v3 全部可导入
@@ -37,6 +37,10 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.15-workbench-15] - 2026-10-19
 

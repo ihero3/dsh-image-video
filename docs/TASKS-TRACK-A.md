@@ -104,7 +104,7 @@
 
 - [x] **A52 渲染 ETA** ✅ 2026-10-19：`estimateEtaSec(percent, elapsedMs)` 纯函数（线性外推；**<5% 或 <1s 不给估计**，避免数字乱跳）；任务字段 `progressEtaSec`（加法）；成功时归零；测试 3 例
 - [x] **A53 项目包 v3** ✅ 2026-10-19：`PACKAGE_FORMAT_VERSION` 2→3，清单新增**自定义导出预设**（导入按名称去重合并、不覆盖用户已有预设）；**修掉一个真遗漏**——`A42` 的 `burnLanguage` 导入时没传回去（会丢语言设置）；**v1/v2/v3 包都能导入**（版本区间 1..3）；测试 7 例（含 v2 老包兼容）
-- [ ] **A54 发布 `v0.3.16-workbench-16`**
+- [x] **A54 发布 `v0.3.16-workbench-16`** ✅ 2026-10-19：版本 0.3.16 / CHANGELOG 定稿（A52 ETA / A53 包 v3 + burnLanguage 修复）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 
