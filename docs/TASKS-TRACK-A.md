@@ -93,7 +93,7 @@
 
 - [x] **A47 门禁脚本修假红与误导** ✅ 2026-10-19：重写 `scripts/gate.sh` —— ① 测试步骤不再 `| tail -5` **截断失败详情**（完整日志落 `/tmp/dsh-test-*.log`）；② 失败时区分"真有失败"与"全过但退出码非 0（worker 抖动）"并给出单跑命令；③ **"五道门全过"移到第 5 道之后**（此前会先宣告成功再失败）；④ 步骤编号统一 `N/5`；⑤ 构建步骤 `grep` 无匹配不再假失败
 - [x] **A48 自定义导出预设（schema v4）** ✅ 2026-10-19：**schema 升到 v4** + 真实 3→4 迁移（新增空 `exportPresets`，不影响既有数据）；store CRUD（名称 1–40 字、重名拒绝、规格走 `normalizeExportFormat`）；端点 `presets/list`（内置+自定义合并，带 `custom` 标记）/`presets/save`（支持按 id 覆盖）/`presets/remove`；工具 `set-format presetId` 也能解析自定义预设；测试 8 例（CRUD/校验/持久化/迁移/端点）
-- [ ] **A49 发布 `v0.3.14-workbench-14`**
+- [x] **A49 发布 `v0.3.14-workbench-14`** ✅ 2026-10-19：版本 0.3.14 / CHANGELOG 定稿（A47 门禁脚本 / A48 自定义预设 + schema v4）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 
