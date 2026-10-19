@@ -319,6 +319,8 @@ export class RenderRegistry {
   private pendingSeq = 0
   /** 每个任务是否允许瞬时失败自动重试（`A114`，opt-in）。 */
   private readonly retryFlags = new Map<string, boolean>()
+  /** 每个任务的封面帧位置（`A126`）。 */
+  private readonly thumbnailAt = new Map<string, number>()
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -503,7 +505,7 @@ export class RenderRegistry {
     }
   }
 
-  start(timeline: TimelineRecord, options: { priority?: number; retryTransient?: boolean } = {}): RenderJob {
+  start(timeline: TimelineRecord, options: { priority?: number; retryTransient?: boolean; thumbnailAtMs?: number } = {}): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
     const job: RenderJob = {
@@ -513,6 +515,7 @@ export class RenderRegistry {
     const priority = Number.isFinite(options.priority) ? Math.round(options.priority as number) : 0
     this.jobs.set(id, job)
     if (options.retryTransient === true) this.retryFlags.set(id, true)
+    if (options.thumbnailAtMs !== undefined) this.thumbnailAt.set(id, options.thumbnailAtMs)
     // 优先级无条件记录（重试要复用它；早先只写在入队分支里 → 直接开跑的任务没有该字段）
     this.patch(id, { priority })
     if (this.controllers.size >= maxConcurrent) {

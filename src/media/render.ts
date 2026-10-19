@@ -8,7 +8,7 @@
  * - **失败要能照着修**：素材丢失 / 磁盘满 / 编码器不支持 / ffmpeg 缺失都给机器码 +
  *   一句话下一步（`R-TML-5`/`R-TML-6`）。
  */
-import { serializeSrt } from '../workbench/srt.ts'
+import { serializeSrt, formatTimecode } from '../workbench/srt.ts'
 import { spawn } from 'node:child_process'
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -562,6 +562,8 @@ export class RenderService {
     signal?: AbortSignal
     onProgress?: (progress: RenderProgress) => void
     fileName?: string
+    /** 封面帧位置（`A126`，毫秒；默认第 1 秒）。 */
+    thumbnailAtMs?: number
   } = {}): Promise<RenderResult> {
     const snapshot = freezeTimeline(timeline)
     const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
@@ -642,7 +644,7 @@ export class RenderService {
       }))), 'utf8')
     }
     // `A124`：抽一帧做缩略图（界面列表/分享预览用）；失败不影响成片
-    const thumbnailPath = await this.extractThumbnail(outputPath).catch(() => undefined)
+    const thumbnailPath = await this.extractThumbnail(outputPath, options.thumbnailAtMs ?? 1000).catch(() => undefined)
     return {
       outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs,
       ...subtitlePath === undefined ? {} : { subtitlePath },
@@ -655,11 +657,12 @@ export class RenderService {
    * @param videoPath - 成片路径。
    * @returns 缩略图路径；失败返回 undefined（不影响成片）。
    */
-  private async extractThumbnail(videoPath: string): Promise<string | undefined> {
+  private async extractThumbnail(videoPath: string, atMs = 1000): Promise<string | undefined> {
     const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
     const ffmpegPath = probe.path ?? 'ffmpeg'
     const thumbnailPath = videoPath.replace(/\.[^./]+$/, '') + '-thumb.jpg'
-    const seek = '00:00:01'
+    // ffmpeg 的 -ss 用点分隔毫秒（SRT 的逗号写法会被拒）
+    const seek = formatTimecode(Math.max(0, Math.round(atMs))).replace(',', '.')
     const args = ['-y', '-hide_banner', '-loglevel', 'error', '-ss', seek, '-i', videoPath, '-frames:v', '1', '-vf', 'scale=480:-2', thumbnailPath]
     const ok = await new Promise<boolean>(resolve => {
       const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'ignore'] })

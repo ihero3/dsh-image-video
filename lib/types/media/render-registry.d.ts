@@ -208,6 +208,8 @@ export declare class RenderRegistry {
     private pendingSeq;
     /** 每个任务是否允许瞬时失败自动重试（`A114`，opt-in）。 */
     private readonly retryFlags;
+    /** 每个任务的封面帧位置（`A126`）。 */
+    private readonly thumbnailAt;
     constructor(deps: {
         readonly render: RenderService;
         /** 成功后把产物登记成素材（可选）。 */
@@ -289,6 +291,7 @@ export declare class RenderRegistry {
     start(timeline: TimelineRecord, options?: {
         priority?: number;
         retryTransient?: boolean;
+        thumbnailAtMs?: number;
     }): RenderJob;
     /** 真正开跑一个任务（内部：start 或出队时调用）。 */
     /**

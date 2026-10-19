@@ -39,3 +39,24 @@ describe('render thumbnail (A124)', () => {
     expect(info.size).toBeGreaterThan(500) // 是个真 jpg
   }, 60_000)
 })
+
+describe('thumbnail frame position (A126)', () => {
+  it('uses thumbnailAtMs when provided', async () => {
+    const work = await temp('dsh-thumb2-work-')
+    const outputs = await temp('dsh-thumb2-out-')
+    const video = join(work, 'v.mp4')
+    await new Promise<void>((resolve, reject) => {
+      execFile(FFMPEG, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+        '-i', 'testsrc=size=320x240:rate=30:duration=2', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', video],
+        error => { error === null ? resolve() : reject(error) })
+    })
+    const service = new RenderService({ outputsDir: outputs })
+    const result = await service.render({
+      schemaVersion: 4, id: 'tml-thumb2', projectId: 'prj-1', name: '封面帧', frameRate: 30, burnSubtitles: false,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'v', assetPath: video, startMs: 0, durationMs: 2000 }] }],
+      createdAt: '', updatedAt: '',
+    }, { thumbnailAtMs: 1500 })
+    expect(result.thumbnailPath).toBeDefined()
+    expect((await stat(result.thumbnailPath!)).size).toBeGreaterThan(500)
+  }, 60_000)
+})

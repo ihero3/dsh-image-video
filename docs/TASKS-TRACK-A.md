@@ -284,6 +284,11 @@
 - [x] **A124 成片缩略图** ✅ 2026-10-20：渲染成功后抽第 1 秒一帧、缩到 480 宽生成 `<成片名>-thumb.jpg` + `RenderResult.thumbnailPath` + 摘要 `thumbnailFile`；**抽帧失败不影响成片**（静默跳过）；测试 1 例（真机渲染 → 有效 jpg）
 - [ ] **A125 发布 `v0.3.51-workbench-51`**
 
+## 批次五十四（A126 起，2026-10-20）
+
+- [x] **A126 封面帧可指定** ✅ 2026-10-20：`render(timeline,{thumbnailAtMs})` / `timelines/render` 端点透传 → 抽帧位置可自选（默认仍第 1 秒）；**修一个我自己引入的回归**：用 `formatTimecode` 输出逗号（SRT 风格）✗ → ffmpeg `-ss` 需要点号 → 抽帧全失败 ✗，被既有缩略图测试当场抓到 ✓；测试 2 例
+- [ ] **A127 发布 `v0.3.52-workbench-52`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

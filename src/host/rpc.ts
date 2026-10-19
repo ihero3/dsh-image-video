@@ -710,6 +710,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         render: deps.renders.start(timeline, {
           ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number },
           ...field(payload, 'retryTransient') === true ? { retryTransient: true } : {},
+          ...optionalNumber(payload, 'thumbnailAtMs') === undefined ? {} : { thumbnailAtMs: optionalNumber(payload, 'thumbnailAtMs') as number },
         }),
       }
     }
