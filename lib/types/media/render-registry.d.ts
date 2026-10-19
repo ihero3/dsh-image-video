@@ -14,6 +14,17 @@ import { type RenderSummary } from './render-summary.ts';
  * @param percent - 全局进度（0–100）。
  * @returns 段序号；边界为空时返回 `undefined`。
  */
+/**
+ * 估算剩余时间（`A52`）：按"已耗时 / 已完成比例"线性外推。
+ *
+ * 刻意**很早不给估计**（进度 < 5% 或已耗时 < 1s 时返回 `undefined`）：这时外推误差极大，
+ * 给出一个乱跳的数字比不给更糟。
+ *
+ * @param percent - 当前进度（0–100）。
+ * @param elapsedMs - 已耗时（毫秒）。
+ * @returns 预计剩余秒数（四舍五入）；不该给估计时返回 `undefined`。
+ */
+export declare function estimateEtaSec(percent: number, elapsedMs: number): number | undefined;
 export declare function segmentStepAt(bounds: readonly number[], percent: number): {
     readonly current: number;
     readonly total: number;
@@ -46,6 +57,8 @@ export interface RenderJob {
         readonly current: number;
         readonly total: number;
     };
+    /** 预计剩余秒数（`A52`；过早/过短时不给，成功时为 0）。 */
+    readonly progressEtaSec?: number;
 }
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export declare class RenderRegistry {
@@ -79,6 +92,8 @@ export declare class RenderRegistry {
     });
     /** 百分比 → 第 N 段（`A41`；边界为空时不带该字段）。 */
     private stepAt;
+    /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
+    private etaAt;
     private stamp;
     private patch;
     /** 列出任务（最新在前），可按项目过滤。 */

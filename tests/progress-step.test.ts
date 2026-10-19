@@ -3,7 +3,7 @@
  * 长成片导出时，用户看到"第 3/12 段"比一个干巴巴的 27% 有用得多。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { RenderRegistry, segmentStepAt } from '../src/media/render-registry.ts'
+import { RenderRegistry, estimateEtaSec, segmentStepAt } from '../src/media/render-registry.ts'
 import type { RenderService } from '../src/media/render.ts'
 import type { TimelineRecord } from '../src/workbench/timeline.ts'
 
@@ -16,6 +16,30 @@ const timeline = (): TimelineRecord => ({
     ],
   }],
   createdAt: '', updatedAt: '',
+})
+
+describe('estimateEtaSec (A52)', () => {
+  it('extrapolates linearly and refuses to guess too early', () => {
+    // 25% 用了 4s → 预计还要 12s
+    expect(estimateEtaSec(25, 4000)).toBe(12)
+    expect(estimateEtaSec(50, 10_000)).toBe(10)
+    expect(estimateEtaSec(90, 10_000)).toBe(1)
+    // 太早（<5%）或太短（<1s）不给估计，避免乱跳
+    expect(estimateEtaSec(2, 5000)).toBeUndefined()
+    expect(estimateEtaSec(50, 500)).toBeUndefined()
+    expect(estimateEtaSec(100, 5000)).toBeUndefined()
+    expect(estimateEtaSec(Number.NaN, 5000)).toBeUndefined()
+  })
+
+  it('clears the ETA to 0 when the render finishes', async () => {
+    const fakeService = {
+      async render() { return { outputPath: '/tmp/outputs/x.mp4', bytes: 1024, durationMs: 1000 } },
+    } as unknown as RenderService
+    const registry = new RenderRegistry({ render: fakeService })
+    const job = registry.start(timeline())
+    await vi.waitFor(() => { expect(registry.get(job.id)?.status).toBe('succeeded') }, { timeout: 10_000 })
+    expect(registry.get(job.id)?.progressEtaSec).toBe(0)
+  })
 })
 
 describe('progressStep (A41)', () => {

@@ -16,6 +16,22 @@ import { freezeTimeline, planVideoSegments } from './render.ts'
  * @param percent - 全局进度（0–100）。
  * @returns 段序号；边界为空时返回 `undefined`。
  */
+/**
+ * 估算剩余时间（`A52`）：按"已耗时 / 已完成比例"线性外推。
+ *
+ * 刻意**很早不给估计**（进度 < 5% 或已耗时 < 1s 时返回 `undefined`）：这时外推误差极大，
+ * 给出一个乱跳的数字比不给更糟。
+ *
+ * @param percent - 当前进度（0–100）。
+ * @param elapsedMs - 已耗时（毫秒）。
+ * @returns 预计剩余秒数（四舍五入）；不该给估计时返回 `undefined`。
+ */
+export function estimateEtaSec(percent: number, elapsedMs: number): number | undefined {
+  if (!Number.isFinite(percent) || percent < 5 || percent >= 100) return undefined
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 1000) return undefined
+  return Math.max(0, Math.round((elapsedMs * (100 - percent)) / percent / 1000))
+}
+
 export function segmentStepAt(
   bounds: readonly number[],
   percent: number,
@@ -52,6 +68,8 @@ export interface RenderJob {
   readonly summary?: RenderSummary
   /** 进度细分（`A41`）：当前在第几段（按视频段+补边段的累计时长换算）。 */
   readonly progressStep?: { readonly current: number; readonly total: number }
+  /** 预计剩余秒数（`A52`；过早/过短时不给，成功时为 0）。 */
+  readonly progressEtaSec?: number
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -84,6 +102,15 @@ export class RenderRegistry {
   private stepAt(timeline: TimelineRecord, percent: number): { progressStep?: { current: number; total: number } } {
     const step = segmentStepAt(this.segmentBounds(timeline), percent)
     return step === undefined ? {} : { progressStep: step }
+  }
+
+  /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
+  private etaAt(id: string, percent: number): { progressEtaSec?: number } {
+    const job = this.jobs.get(id)
+    const started = job === undefined ? Number.NaN : Date.parse(job.startedAt)
+    if (!Number.isFinite(started)) return {}
+    const eta = estimateEtaSec(percent, Date.now() - started)
+    return eta === undefined ? {} : { progressEtaSec: eta }
   }
 
   private stamp(): string {
@@ -259,11 +286,11 @@ export class RenderRegistry {
     void this.deps.render.render(timeline, {
       signal: controller.signal,
       onProgress: progress => {
-        this.patch(id, { percent: progress.percent, ...this.stepAt(timeline, progress.percent) })
+        this.patch(id, { percent: progress.percent, ...this.stepAt(timeline, progress.percent), ...this.etaAt(id, progress.percent) })
       },
     }).then(async (result: RenderResult) => {
       this.patch(id, {
-        status: 'succeeded', percent: 100, finishedAt: this.stamp(),
+        status: 'succeeded', percent: 100, finishedAt: this.stamp(), progressEtaSec: 0,
         ...this.stepAt(timeline, 100),
         summary: await this.summarise(timeline, result),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,

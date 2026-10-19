@@ -100,6 +100,12 @@
 - [x] **A50 渲染队列优先级** ✅ 2026-10-19：`start(timeline, {priority})`（数值大的先跑，**同优先级保持 FIFO**）；入队按优先级有序插入并重算 `queuePosition`；端点 `timelines/render` 与工具 `timeline export` 均支持 `priority`；测试 2 例（优先级顺序 + 同优先级 FIFO）
 - [x] **A51 发布 `v0.3.15-workbench-15`** ✅ 2026-10-19：版本 0.3.15 / CHANGELOG 定稿（A50 队列优先级）/ lib 重建 / tag / Harness 指针同步
 
+## 批次十四（A52 起，2026-10-19）
+
+- [x] **A52 渲染 ETA** ✅ 2026-10-19：`estimateEtaSec(percent, elapsedMs)` 纯函数（线性外推；**<5% 或 <1s 不给估计**，避免数字乱跳）；任务字段 `progressEtaSec`（加法）；成功时归零；测试 3 例
+- [ ] **A53 项目包 v3（纳入自定义预设/字幕语言/音轨侧链等新字段）**
+- [ ] **A54 发布 `v0.3.16-workbench-16`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
