@@ -55,6 +55,16 @@ if ! pnpm run build > "$BUILD_LOG" 2>&1; then
 fi
 grep -E "Build complete" "$BUILD_LOG" | tail -2 || echo "(build finished; no 'Build complete' marker found)"
 
+# A78: lib/ is a COMMITTED artifact. If the build changed it, it must be committed
+# before the submodule pointer moves -- otherwise the pushed release/pointer carries stale lib.
+if [ -n "$(git status --porcelain lib/ 2>/dev/null)" ]; then
+  echo
+  echo "WARNING: lib/ was rebuilt and differs from the committed version."
+  echo "         lib is a committed artifact: run 'git add -A && git commit' for it"
+  echo "         BEFORE bumping the submodule pointer (otherwise releases carry stale lib)."
+  git status --porcelain lib/ | head -5
+fi
+
 step "client bundle budget"
 pnpm run check:bundle || fail "client bundle over budget (slim it down, or document why in CHANGELOG and raise BUNDLE_BASELINE)"
 

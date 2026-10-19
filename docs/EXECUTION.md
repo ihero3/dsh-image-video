@@ -256,3 +256,24 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 | `bash scripts/gate.sh` | 五道门：typecheck / 全量测试 / 构建 / 体积 / 覆盖率 | ~10min | 可以（必须退出码 0） |
 
 纪律：**日常迭代用 --fast 快速确认，推送前一律跑完整门**；不许用 --fast 的绿灯当推送依据。
+
+### 提交纪律：`lib/` 是入库产物，先构建再提交（`A78`）
+
+踩过两次的真问题 ✗：
+
+1. 我先 `git commit`，**然后**才跑门禁；
+2. 门禁的第 3 步会 `pnpm run build` → 把 `lib/` 重建成**新版本号** ✗；
+3. 于是已提交/已打 tag 的内容里 `lib/index.js` 还是**旧版本** ✗（实测 tag 里写着 0.3.25，源码是 0.3.26）；
+4. 子模块因此变脏 ✗ → Harness 的 pre-commit 钩子 stash 失败 ✗ → 指针 bump 直接报 `Failed to save unstaged changes`。
+
+**正确顺序**（发版脚本会打印这几步）：
+
+```
+1. pnpm run build          # 先把 lib/ 重建好
+2. bash scripts/gate.sh    # 五道门全绿
+3. git add -A && git commit
+4. git tag -a vX.Y.Z-workbench-N
+5. git push main + tag     # 然后才 bump Harness 子模块指针
+```
+
+门禁现在会在构建后检测 `lib/` 是否与已提交版本不一致，并打印醒目提示 ✓。
