@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.20-workbench-20] - 2026-10-19
 
 ### 持续交付轮次
@@ -47,7 +51,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.21-workbench-21] - 2026-10-19
 
 ### 批次十九
 - **A63 Agent 也能探测素材**：`workbench_assets action=probe`（与端点同一套边界）
