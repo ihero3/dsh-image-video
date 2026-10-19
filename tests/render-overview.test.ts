@@ -39,3 +39,21 @@ describe('renderOverview (A90)', () => {
     })
   })
 })
+
+describe('recent finished renders (A128)', () => {
+  it('lists recent successes newest-first with video/thumbnail/subtitle paths', () => {
+    const overview = renderOverview([
+      job({ id: 'old', status: 'succeeded', finishedAt: '2026-10-20T00:10:00.000Z', outputPath: '/o/old.mp4' }),
+      job({
+        id: 'new', status: 'succeeded', finishedAt: '2026-10-20T00:50:00.000Z', outputPath: '/o/new.mp4', bytes: 2048,
+        summary: { durationMs: 5000, thumbnailFile: '/o/new-thumb.jpg', subtitleFile: '/o/new.srt' } as never,
+      }),
+      job({ id: 'failed', status: 'failed', finishedAt: '2026-10-20T00:55:00.000Z' }),
+    ], {}, Date.parse('2026-10-20T01:00:00.000Z'))
+    expect(overview.recentItems.map(item => item.id)).toEqual(['new', 'old'])
+    expect(overview.recentItems[0]).toMatchObject({
+      outputPath: '/o/new.mp4', bytes: 2048, durationMs: 5000,
+      thumbnailFile: '/o/new-thumb.jpg', subtitleFile: '/o/new.srt',
+    })
+  })
+})

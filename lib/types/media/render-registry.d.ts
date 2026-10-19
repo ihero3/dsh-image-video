@@ -116,6 +116,17 @@ export interface RenderOverview {
         readonly samples: number;
     };
     readonly failedWithDiagnosis: number;
+    /** 最近完成的成片（`A128`：带视频/封面/字幕路径，界面列表直接用）。 */
+    readonly recentItems: readonly {
+        readonly id: string;
+        readonly timelineId: string;
+        readonly outputPath: string;
+        readonly bytes?: number;
+        readonly durationMs?: number;
+        readonly thumbnailFile?: string;
+        readonly subtitleFile?: string;
+        readonly finishedAt?: string;
+    }[];
 }
 /**
  * 汇总导出队列全景（`A90`）：给界面/Agent 一个"一眼看懂"的视图。

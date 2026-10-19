@@ -147,6 +147,17 @@ export interface RenderOverview {
   readonly recent: { readonly succeeded: number; readonly failed: number; readonly cancelled: number }
   readonly throughput: { readonly lastHour: number; readonly p50Ms?: number; readonly p90Ms?: number; readonly samples: number }
   readonly failedWithDiagnosis: number
+  /** 最近完成的成片（`A128`：带视频/封面/字幕路径，界面列表直接用）。 */
+  readonly recentItems: readonly {
+    readonly id: string
+    readonly timelineId: string
+    readonly outputPath: string
+    readonly bytes?: number
+    readonly durationMs?: number
+    readonly thumbnailFile?: string
+    readonly subtitleFile?: string
+    readonly finishedAt?: string
+  }[]
 }
 
 /**
@@ -197,6 +208,21 @@ export function renderOverview(
       samples: stats.samples ?? 0,
     },
     failedWithDiagnosis: jobs.filter(job => job.status === 'failed' && job.diagnosis !== undefined).length,
+    // `A128`：最近成功的成片清单（最新在前，最多 10 条），带视频/封面/字幕三件套路径
+    recentItems: jobs
+      .filter(job => job.status === 'succeeded' && job.outputPath !== undefined)
+      .sort((left, right) => (right.finishedAt ?? '').localeCompare(left.finishedAt ?? ''))
+      .slice(0, 10)
+      .map(job => ({
+        id: job.id,
+        timelineId: job.timelineId,
+        outputPath: job.outputPath as string,
+        ...job.bytes === undefined ? {} : { bytes: job.bytes },
+        ...job.summary?.durationMs === undefined ? {} : { durationMs: job.summary.durationMs },
+        ...job.summary?.thumbnailFile === undefined ? {} : { thumbnailFile: job.summary.thumbnailFile },
+        ...job.summary?.subtitleFile === undefined ? {} : { subtitleFile: job.summary.subtitleFile },
+        ...job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt },
+      })),
   }
 }
 

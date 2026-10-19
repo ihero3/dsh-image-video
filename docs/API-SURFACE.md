@@ -124,7 +124,7 @@
 | `timelines/estimate` | `{timelineId,width?,height?,frameRate?,bitrateKbps?}` | `{estimate}`（时长/规格/比例/预估体积；覆盖分辨率时码率自动重估，`A80`）|
 | `timelines/render-retry` | `{renderId}` | `{render,retriedFrom}`（复用原时间轴与优先级） |
 | `timelines/renders` | `{projectId?}` | `{renders,sets}`（`sets` 为成片集聚合） |
-| `renders/overview` | — | `{overview}`（`A90` 队列全景：running/queued/recent/throughput + 带诊断的失败数）|
+| `renders/overview` | — | `{overview}`（`A90` 队列全景：running/queued/recent/throughput + 诊断失败数 + `recentItems`（`A128` 最近成片：视频/封面/字幕路径））|
 | `timelines/render-cancel` | `{renderId}` | `{cancelled}` |
 
 ### 任务（生成任务）

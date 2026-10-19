@@ -289,6 +289,11 @@
 - [x] **A126 封面帧可指定** ✅ 2026-10-20：`render(timeline,{thumbnailAtMs})` / `timelines/render` 端点透传 → 抽帧位置可自选（默认仍第 1 秒）；**修一个我自己引入的回归**：用 `formatTimecode` 输出逗号（SRT 风格）✗ → ffmpeg `-ss` 需要点号 → 抽帧全失败 ✗，被既有缩略图测试当场抓到 ✓；测试 2 例
 - [ ] **A127 发布 `v0.3.52-workbench-52`**
 
+## 批次五十五（A128 起，2026-10-20）
+
+- [x] **A128 成片列表带缩略图** ✅ 2026-10-20：`renders/overview` 新增 `recentItems`（最近成功成片最新在前，最多 10 条，带 `outputPath`/`thumbnailFile`/`subtitleFile`/字节/时长/完成时间）——界面列表可直接出"封面 + 视频 + 字幕"三件套；测试 1 例
+- [ ] **A129 发布 `v0.3.53-workbench-53`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
