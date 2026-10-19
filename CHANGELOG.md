@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.12-workbench-12] - 2026-10-19
 
 ### 持续交付轮次
@@ -26,7 +30,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.13-workbench-13] - 2026-10-19
 
 ### 批次十一
 - **A45 片段越界检测**：`findClipOverruns` 纯函数 + 端点探测真实时长，报出"片段比素材还长"（导出后半段会没画面）；含源内偏移与 120ms 容差，探测失败不影响校验

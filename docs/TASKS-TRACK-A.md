@@ -87,7 +87,7 @@
 
 - [x] **A44 素材探测端点** ✅ 2026-10-19：`probeMediaSpec` 增加 `durationMs`（复用 Duration 解析，音轨/视频都支持）；端点 `assets/probe`（**安全边界**：只允许 outputs 目录内或已登记素材，越界明确拒绝）；用于界面拿真实时长、Agent 决定片段长度；测试 4 例（真机 video/audio/坏文件 + 越界拒绝）
 - [x] **A45 校验器接入真实时长** ✅ 2026-10-19：新增 `findClipOverruns`（**纯函数**，把源内偏移也计入需求时长，120ms 容差）；`timelines/validate` 端点先用 `probeMediaSpec` 探测最多 20 个唯一素材的真实时长再判定；探测失败不影响校验；问题码 `clip-longer-than-asset`；测试 4 例（越界/容差/偏移/未知时长 + 端点容错）
-- [ ] **A46 发布 `v0.3.13-workbench-13`**
+- [x] **A46 发布 `v0.3.13-workbench-13`** ✅ 2026-10-19：版本 0.3.13 / CHANGELOG 定稿（A44 素材探测 / A45 越界检测）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 
