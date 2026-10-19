@@ -7,6 +7,7 @@
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { buildRenderSummary, type RenderSummary } from './render-summary.ts'
+import { diagnoseRenderError, type Diagnosis } from './diagnose.ts'
 import { freezeTimeline, planVideoSegments } from './render.ts'
 
 /** 一次导出任务的状态。 */
@@ -183,6 +184,8 @@ export interface RenderJob {
   readonly progressEtaSec?: number
   /** 入队优先级（`A50`；重试时复用，`A59`）。 */
   readonly priority?: number
+  /** 失败诊断（`A88`：错误码 → 人话 + 可执行动作）。 */
+  readonly diagnosis?: Diagnosis
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -438,6 +441,8 @@ export class RenderRegistry {
         finishedAt: this.stamp(),
         ...error instanceof RenderError ? { code: error.code } : {},
         error: message,
+        // `A88`：把错误码翻成"下一步该做什么"（取消不算失败，不给诊断）
+        ...cancelled ? {} : { diagnosis: diagnoseRenderError(error instanceof RenderError ? error.code : undefined, message) },
       })
       this.deps.log?.({
         event: 'render', renderId: id, timelineId: job.timelineId,
@@ -462,7 +467,7 @@ export class RenderRegistry {
     for (const [id, job] of this.jobs) {
       if (job.status !== 'running') continue
       closed += 1
-      this.jobs.set(id, { ...job, status: 'failed', finishedAt: this.stamp(), error: reason })
+      this.jobs.set(id, { ...job, status: 'failed', finishedAt: this.stamp(), error: reason, diagnosis: diagnoseRenderError(undefined, reason) })
       this.controllers.delete(id)
     }
     return closed

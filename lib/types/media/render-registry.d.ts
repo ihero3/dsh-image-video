@@ -7,6 +7,7 @@
 import { type RenderService } from './render.ts';
 import type { TimelineRecord } from '../workbench/timeline.ts';
 import { type RenderSummary } from './render-summary.ts';
+import { type Diagnosis } from './diagnose.ts';
 /** 一次导出任务的状态。 */
 /**
  * 把全局百分比换算成"第 N 段 / 共 M 段"（`A41`）。
@@ -117,6 +118,8 @@ export interface RenderJob {
     readonly progressEtaSec?: number;
     /** 入队优先级（`A50`；重试时复用，`A59`）。 */
     readonly priority?: number;
+    /** 失败诊断（`A88`：错误码 → 人话 + 可执行动作）。 */
+    readonly diagnosis?: Diagnosis;
 }
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export declare class RenderRegistry {

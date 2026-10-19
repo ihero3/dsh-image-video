@@ -189,6 +189,11 @@
 - [x] **A86 时间轴整条复制为副本** ✅ 2026-10-20：`duplicateTimeline` 纯函数（轨道/片段/效果/速度/转场/规格/字幕语言全部保留，**片段 id 与时间轴 id 重新生成**，素材路径**共享不复制文件**）+ `store.duplicateTimeline`（名字默认「原名 副本」，重名自动加序号）+ 端点 `timelines/duplicate`；原时间轴不被改动（有断言）；测试 2 例
 - [ ] **A87 发布 `v0.3.32-workbench-32`**
 
+## 批次三十五（A88 起，2026-10-20）
+
+- [x] **A88 渲染失败的诊断建议** ✅ 2026-10-20：`src/media/diagnose.ts`（错误码 → **人话结论 + 原因 + 可执行动作**，覆盖空时间轴/重叠/素材缺失/ffmpeg 不可用/编码器缺失/输出无效 + 未知码兜底）；渲染任务失败时挂 `diagnosis`（**加法字段**，取消不算失败不给 ✓）；重启遗留任务也给通用诊断；测试 3 例
+- [ ] **A89 发布 `v0.3.33-workbench-33`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
