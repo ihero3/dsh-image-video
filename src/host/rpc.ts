@@ -26,6 +26,8 @@ import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { planRetention } from '../media/retention.ts'
 import { EXPORT_PRESETS } from '../workbench/presets.ts'
+import { validateTimeline } from '../workbench/validate.ts'
+import type { TimelineRecord } from '../workbench/timeline.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
@@ -298,6 +300,23 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const previous = await deps.store.findRun(runId)
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
+    }
+    // 时间轴一致性校验（`A34`）：可传 timelineId，也可直接传一份未保存的 document 做保存前预检
+    case 'timelines/validate': {
+      const inline = field(payload, 'document')
+      const timelineId = optionalText(payload, 'timelineId')
+      let document: TimelineRecord | undefined
+      if (inline !== undefined && typeof inline === 'object') {
+        document = inline as TimelineRecord
+      } else if (timelineId !== undefined) {
+        document = await deps.store.findTimeline(timelineId)
+        if (document === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 timelines/list`)
+      } else {
+        throw new Error('timelines/validate 需要 timelineId 或 document')
+      }
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const issues = validateTimeline(document, { knownAssetPaths: known })
+      return { ok: issues.length === 0, issues }
     }
     // 导出预设（`A31`）：界面/Agent 共用同一套平台尺寸口径
     case 'presets/list':

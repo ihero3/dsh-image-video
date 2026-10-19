@@ -164,6 +164,27 @@ describe('workbench channel endpoints', () => {
     expect(planned.plan.overQuota).toBe(false)
   })
 
+  it('validates a timeline through the channel and also accepts an inline document (A34)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '校验项目' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }],
+    })
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    expect(checked.ok).toBe(false)
+    expect(checked.issues.map(issue => issue.code)).toContain('empty-video-track')
+
+    // 未保存的文档也能预检（界面拖拽时用）
+    const inline = await ok<{ ok: boolean }>('timelines/validate', {
+      document: {
+        schemaVersion: 3, id: 'x', projectId: created.project.id, name: 'inline', frameRate: 30, burnSubtitles: false,
+        tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/a.mp4', startMs: 0, durationMs: 1000 }] }],
+        createdAt: '', updatedAt: '',
+      },
+    })
+    expect(typeof inline.ok).toBe('boolean')
+  })
+
   it('lists export presets through the channel (A31)', async () => {
     const { ok } = await makeHandler()
     const result = await ok<{ presets: Array<{ id: string; width: number; height: number }> }>('presets/list', {})

@@ -21,6 +21,7 @@ import { planSubtitleClips } from '../workbench/subtitles.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { timelineDurationMs } from '../workbench/timeline.ts'
 import { presetToFormat } from '../workbench/presets.ts'
+import { validateTimeline } from '../workbench/validate.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -193,7 +194,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const timeline = defineTool({
     name: 'workbench_timeline',
     description:
-      '时间轴（成片）：list、add-clip（加素材/字幕）、trim（改片段起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
+      '时间轴（成片）：list、validate（导出前自查）、add-clip（加素材/字幕）、trim（改片段起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
       + 'set-format（导出分辨率/帧率/码率）、set-track（轨道音量/静音）、'
       + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度）。'
       + `一次最多加 ${MAX_TOOL_CLIPS} 个片段。视频轨片段带 startMs/durationMs（毫秒）；没有 startMs 时自动接在末尾。`,
@@ -308,6 +309,14 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           timeline: { id: saved.id, added: clips.length, window: { startMs: windowStart, endMs: windowEnd } },
           subtitles: clips.map(clip => ({ id: clip.id, text: clip.text, startMs: clip.startMs, durationMs: clip.durationMs })),
         })
+      }
+      if (action === 'validate') {
+        // `A34`：保存/导出前先拿问题清单（与渲染器同一套域规则）
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline validate')
+        const document = await store.findTimeline(timelineId)
+        if (document === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const issues = validateTimeline(document, { knownAssetPaths: new Set(await store.referencedAssetPaths()) })
+        return json({ ok: issues.length === 0, count: issues.length, issues })
       }
       if (action === 'split-clip' || action === 'copy-clip') {
         // `A24`：片段拆分 / 复制（域层算好源内偏移与变速折算，工具只负责落库）
@@ -433,7 +442,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const job = renders.start(doc)
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
-      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
+      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'validate', 'export'])
     },
   })
 
