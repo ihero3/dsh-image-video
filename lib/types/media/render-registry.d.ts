@@ -34,6 +34,26 @@ export declare function estimateEtaSec(percent: number, elapsedMs: number): numb
  * @param jobs - 渲染任务（任意顺序）。
  * @returns 按最近导出时间倒序的成片集。
  */
+/**
+ * 把进度采样归因成各段耗时（`A57`）。
+ *
+ * 归因是近似：每个采样间隔的耗时记到该间隔起点所在的那一段。不追求毫秒级精确，
+ * 目标是回答「哪一段慢得离谱」——足以指导优化（该段是否该预转码/降分辨率/剪短）。
+ *
+ * @param bounds - 各段累计结束毫秒（升序）。
+ * @param samples - 进度采样（percent 与 atMs 均单调不减）。
+ * @returns 各段耗时与最慢段；样本不足 2 条时返回空对象。
+ */
+export declare function computeSegmentTimings(bounds: readonly number[], samples: readonly {
+    readonly percent: number;
+    readonly atMs: number;
+}[]): {
+    segmentTimingsMs?: number[];
+    slowestSegment?: {
+        index: number;
+        ms: number;
+    };
+};
 export declare function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[];
 /** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
 export interface RenderSet {
@@ -93,6 +113,8 @@ export declare class RenderRegistry {
     private readonly controllers;
     /** 最近完成任务的实际耗时（毫秒，`A21`；最多留 50 条）。 */
     private readonly durations;
+    /** 每个任务的进度采样（`A57`；上限 200 条，防长任务吃内存）。 */
+    private readonly samples;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
     constructor(deps: {

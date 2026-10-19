@@ -47,6 +47,13 @@ export interface RenderSummary {
     readonly renderedAt: string;
     /** 导出后的保留建议（`A38`）：仅当配置了上限时才出现，且只建议不删除。 */
     readonly retention?: RetentionSuggestion;
+    /** 各段实际耗时（`A57`，毫秒；按进度采样归因，用于找最慢的段）。 */
+    readonly segmentTimingsMs?: readonly number[];
+    /** 最慢的一段（`A57`）。 */
+    readonly slowestSegment?: {
+        readonly index: number;
+        readonly ms: number;
+    };
 }
 /**
  * 从时间轴与渲染结果生成摘要。

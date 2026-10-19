@@ -41,6 +41,45 @@ export function estimateEtaSec(percent: number, elapsedMs: number): number | und
  * @param jobs - 渲染任务（任意顺序）。
  * @returns 按最近导出时间倒序的成片集。
  */
+/**
+ * 把进度采样归因成各段耗时（`A57`）。
+ *
+ * 归因是近似：每个采样间隔的耗时记到该间隔起点所在的那一段。不追求毫秒级精确，
+ * 目标是回答「哪一段慢得离谱」——足以指导优化（该段是否该预转码/降分辨率/剪短）。
+ *
+ * @param bounds - 各段累计结束毫秒（升序）。
+ * @param samples - 进度采样（percent 与 atMs 均单调不减）。
+ * @returns 各段耗时与最慢段；样本不足 2 条时返回空对象。
+ */
+export function computeSegmentTimings(
+  bounds: readonly number[],
+  samples: readonly { readonly percent: number; readonly atMs: number }[],
+): { segmentTimingsMs?: number[]; slowestSegment?: { index: number; ms: number } } {
+  const totalMs = bounds[bounds.length - 1]
+  if (totalMs === undefined || totalMs <= 0 || samples.length < 2) return {}
+  const timings = new Array<number>(bounds.length).fill(0)
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1]!
+    const current = samples[index]!
+    const delta = current.atMs - previous.atMs
+    if (!Number.isFinite(delta) || delta <= 0) continue
+    const atMs = (Math.max(0, Math.min(100, previous.percent)) / 100) * totalMs
+    const found = bounds.findIndex(bound => atMs <= bound)
+    const segment = Math.min(bounds.length - 1, Math.max(0, found))
+    timings[segment]! += delta
+  }
+  const total = timings.reduce((sum, value) => sum + value, 0)
+  if (total <= 0) return {}
+  let slowestIndex = 0
+  for (let index = 1; index < timings.length; index += 1) {
+    if (timings[index]! > timings[slowestIndex]!) slowestIndex = index
+  }
+  return {
+    segmentTimingsMs: timings,
+    slowestSegment: { index: slowestIndex + 1, ms: timings[slowestIndex]! },
+  }
+}
+
 export function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[] {
   const groups = new Map<string, RenderJob[]>()
   for (const job of jobs) {
@@ -131,6 +170,8 @@ export class RenderRegistry {
   private readonly controllers = new Map<string, AbortController>()
   /** 最近完成任务的实际耗时（毫秒，`A21`；最多留 50 条）。 */
   private readonly durations: number[] = []
+  /** 每个任务的进度采样（`A57`；上限 200 条，防长任务吃内存）。 */
+  private readonly samples = new Map<string, Array<{ percent: number; atMs: number }>>()
 
   /** 等待槽位的任务（FIFO，`A4`）。 */
   private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number }> = []
@@ -302,10 +343,15 @@ export class RenderRegistry {
    * 构建摘要并在需要时附上保留建议（`A38`）：钩子失败只记日志，绝不让渲染结果失败。
    */
   private async summarise(
+    id: string,
     timeline: TimelineRecord,
     result: { readonly outputPath: string; readonly bytes: number; readonly durationMs: number },
   ): Promise<RenderSummary> {
-    const summary = buildRenderSummary(timeline, result)
+    const timing = computeSegmentTimings(this.segmentBounds(timeline), this.samples.get(id) ?? [])
+    const summary = timing.segmentTimingsMs === undefined
+      ? buildRenderSummary(timeline, result)
+      : { ...buildRenderSummary(timeline, result), ...timing }
+    this.samples.delete(id)
     if (this.deps.retention === undefined) return summary
     const timeoutMs = Math.max(200, this.deps.retentionTimeoutMs ?? 2000)
     let timedOut = false
@@ -339,13 +385,16 @@ export class RenderRegistry {
     void this.deps.render.render(timeline, {
       signal: controller.signal,
       onProgress: progress => {
+        const bucket = this.samples.get(id) ?? []
+        if (bucket.length < 200) bucket.push({ percent: progress.percent, atMs: Date.now() })
+        this.samples.set(id, bucket)
         this.patch(id, { percent: progress.percent, ...this.stepAt(timeline, progress.percent), ...this.etaAt(id, progress.percent) })
       },
     }).then(async (result: RenderResult) => {
       this.patch(id, {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(), progressEtaSec: 0,
         ...this.stepAt(timeline, 100),
-        summary: await this.summarise(timeline, result),
+        summary: await this.summarise(id, timeline, result),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
       this.deps.log?.({
