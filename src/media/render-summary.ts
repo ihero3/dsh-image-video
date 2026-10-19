@@ -7,6 +7,18 @@
  */
 import { DEFAULT_EXPORT_FORMAT, effectiveDurationMs, normalizeExportFormat, type TimelineRecord } from '../workbench/timeline.ts'
 
+/** 导出后的保留建议（`A38`）：只报告"建议清理什么"，**从不自动删除**。 */
+export interface RetentionSuggestion {
+  /** 输出目录现有文件数与总字节。 */
+  readonly files: number
+  readonly bytes: number
+  /** 按当前策略建议清理的条数与可释放字节。 */
+  readonly removeCount: number
+  readonly freedBytes: number
+  /** 清理后是否仍超上限（说明受保护文件挡住了）。 */
+  readonly overQuota: boolean
+}
+
 /** 一次导出的产物摘要。 */
 export interface RenderSummary {
   readonly outputPath: string
@@ -26,6 +38,8 @@ export interface RenderSummary {
   /** 是否把字幕烧进了画面。 */
   readonly burnedSubtitles: boolean
   readonly renderedAt: string
+  /** 导出后的保留建议（`A38`）：仅当配置了上限时才出现，且只建议不删除。 */
+  readonly retention?: RetentionSuggestion
 }
 
 /**

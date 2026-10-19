@@ -69,6 +69,43 @@ describe('buildRenderSummary (A37)', () => {
   })
 })
 
+describe('retention suggestion on finished render (A38)', () => {
+  it('attaches the suggestion from the hook, and stays silent without one', async () => {
+    const fakeService = {
+      async render() { return { outputPath: '/tmp/outputs/x.mp4', bytes: 2048, durationMs: 1000 } },
+    } as unknown as RenderService
+    const withHint = new RenderRegistry({
+      render: fakeService,
+      retention: async () => ({ files: 120, bytes: 900_000_000, removeCount: 7, freedBytes: 120_000_000, overQuota: false }),
+    })
+    const job = withHint.start(timeline())
+    await vi.waitFor(() => { expect(withHint.get(job.id)?.status).toBe('succeeded') }, { timeout: 10_000 })
+    expect(withHint.get(job.id)?.summary?.retention).toMatchObject({ files: 120, removeCount: 7, overQuota: false })
+
+    // 没配上限（钩子返回 undefined）→ 摘要里不出现 retention
+    const without = new RenderRegistry({ render: fakeService, retention: async () => undefined })
+    const job2 = without.start(timeline())
+    await vi.waitFor(() => { expect(without.get(job2.id)?.status).toBe('succeeded') }, { timeout: 10_000 })
+    expect(without.get(job2.id)?.summary?.retention).toBeUndefined()
+  })
+
+  it('does not fail the render when the retention hook throws', async () => {
+    const fakeService = {
+      async render() { return { outputPath: '/tmp/outputs/x.mp4', bytes: 2048, durationMs: 1000 } },
+    } as unknown as RenderService
+    const logs: Array<Record<string, unknown>> = []
+    const registry = new RenderRegistry({
+      render: fakeService,
+      log: entry => { logs.push(entry) },
+      retention: async () => { throw new Error('磁盘扫描失败') },
+    })
+    const job = registry.start(timeline())
+    await vi.waitFor(() => { expect(registry.get(job.id)?.status).toBe('succeeded') }, { timeout: 10_000 })
+    expect(registry.get(job.id)?.summary?.retention).toBeUndefined()
+    expect(logs.some(entry => entry.event === 'render-retention-failed')).toBe(true)
+  })
+})
+
 describe('render registry attaches the summary (A37)', () => {
   it('puts a summary on a really finished render', async () => {
     const work = await temp('dsh-sum-work-')

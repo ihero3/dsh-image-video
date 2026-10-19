@@ -52,6 +52,8 @@ export class RenderRegistry {
     readonly onError?: (message: string) => void
     /** 结构化日志钩子（`T7-3`）。 */
     readonly log?: (entry: Record<string, unknown>) => void
+    /** 导出后的保留建议钩子（`A38`）：返回 `undefined` 表示没配上限、不用提示。 */
+    readonly retention?: () => Promise<{ files: number; bytes: number; removeCount: number; freedBytes: number; overQuota: boolean } | undefined>
     /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
     readonly maxConcurrent?: number
   }) {}
@@ -166,6 +168,24 @@ export class RenderRegistry {
   }
 
   /** 真正开跑一个任务（内部：start 或出队时调用）。 */
+  /**
+   * 构建摘要并在需要时附上保留建议（`A38`）：钩子失败只记日志，绝不让渲染结果失败。
+   */
+  private async summarise(
+    timeline: TimelineRecord,
+    result: { readonly outputPath: string; readonly bytes: number; readonly durationMs: number },
+  ): Promise<RenderSummary> {
+    const summary = buildRenderSummary(timeline, result)
+    if (this.deps.retention === undefined) return summary
+    try {
+      const retention = await this.deps.retention()
+      return retention === undefined ? summary : { ...summary, retention }
+    } catch (error) {
+      this.deps.log?.({ event: 'render-retention-failed', message: error instanceof Error ? error.message : String(error) })
+      return summary
+    }
+  }
+
   private launch(id: string, timeline: TimelineRecord): void {
     const job = this.jobs.get(id)
     if (job === undefined) return
@@ -179,7 +199,7 @@ export class RenderRegistry {
     }).then(async (result: RenderResult) => {
       this.patch(id, {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(),
-        summary: buildRenderSummary(timeline, result),
+        summary: await this.summarise(timeline, result),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
       this.deps.log?.({

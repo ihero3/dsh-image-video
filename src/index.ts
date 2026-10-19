@@ -45,6 +45,8 @@ import { withTaskLedger } from './workbench/ledger.ts'
 import { GenerationRegistry } from './workbench/cancel.ts'
 import { WorkflowRunner, type GenerationTool } from './workbench/runner.ts'
 import { RenderRegistry } from './media/render-registry.ts'
+import { planRetention } from './media/retention.ts'
+import { listOutputs } from './workbench/outputs.ts'
 import { RenderService } from './media/render.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
@@ -275,8 +277,30 @@ export function apply(ctx: Context, config: Config): void {
     // 用插件已经解析好的绝对目录，不要回落到可能是相对路径的 config 字段
     outputsDir,
   })
+  // `A38`：导出完成后给"保留建议"——只在配置了上限时计算，**只报告不删除**
+  const retentionHint = async (): Promise<{ files: number; bytes: number; removeCount: number; freedBytes: number; overQuota: boolean } | undefined> => {
+    const maxFiles = Number(process.env.DSH_OUTPUT_MAX_FILES ?? '') || undefined
+    const maxGb = Number(process.env.DSH_OUTPUT_MAX_GB ?? '') || undefined
+    if (maxFiles === undefined && maxGb === undefined) return undefined
+    const files = (await listOutputs(outputsDir)).map(file => ({
+      name: file.name, bytes: file.bytes, mtimeMs: Date.parse(file.modifiedAt ?? '') || 0,
+    }))
+    const plan = planRetention(files, {
+      ...maxFiles === undefined ? {} : { maxFiles },
+      ...maxGb === undefined ? {} : { maxBytes: Math.round(maxGb * 1024 ** 3) },
+      protect: new Set(await workbenchStore.referencedAssetPaths()),
+    })
+    return {
+      files: files.length,
+      bytes: files.reduce((sum, file) => sum + file.bytes, 0),
+      removeCount: plan.removed.length,
+      freedBytes: plan.freedBytes,
+      overQuota: plan.overQuota,
+    }
+  }
   const renderRegistry = new RenderRegistry({
     render: renderService,
+    retention: retentionHint,
     registerAsset: async job => {
       if (job.outputPath === undefined) return
       await workbenchStore.attachAsset({

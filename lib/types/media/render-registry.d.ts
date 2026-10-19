@@ -49,6 +49,14 @@ export declare class RenderRegistry {
         readonly onError?: (message: string) => void;
         /** 结构化日志钩子（`T7-3`）。 */
         readonly log?: (entry: Record<string, unknown>) => void;
+        /** 导出后的保留建议钩子（`A38`）：返回 `undefined` 表示没配上限、不用提示。 */
+        readonly retention?: () => Promise<{
+            files: number;
+            bytes: number;
+            removeCount: number;
+            freedBytes: number;
+            overQuota: boolean;
+        } | undefined>;
         /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
         readonly maxConcurrent?: number;
     });
@@ -88,6 +96,10 @@ export declare class RenderRegistry {
      */
     start(timeline: TimelineRecord): RenderJob;
     /** 真正开跑一个任务（内部：start 或出队时调用）。 */
+    /**
+     * 构建摘要并在需要时附上保留建议（`A38`）：钩子失败只记日志，绝不让渲染结果失败。
+     */
+    private summarise;
     private launch;
     /** 进程重启时把遗留的"运行中"任务按失败收尾。 */
     failStale(reason: string): number;
