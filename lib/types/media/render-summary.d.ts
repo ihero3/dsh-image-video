@@ -46,6 +46,8 @@ export interface RenderSummary {
     readonly burnedSubtitles: boolean;
     /** 同时导出的 SRT 文件（`A120`）。 */
     readonly subtitleFile?: string;
+    /** 成片缩略图（`A124`）。 */
+    readonly thumbnailFile?: string;
     readonly renderedAt: string;
     /** 导出后的保留建议（`A38`）：仅当配置了上限时才出现，且只建议不删除。 */
     readonly retention?: RetentionSuggestion;
@@ -69,6 +71,7 @@ export declare function buildRenderSummary(timeline: TimelineRecord, result: {
     readonly bytes: number;
     readonly durationMs: number;
     readonly subtitlePath?: string;
+    readonly thumbnailPath?: string;
 }, now?: () => Date): RenderSummary;
 /** 时间轴概览（供摘要之外的快速读取；不依赖渲染结果）。 */
 export declare function describeTimeline(timeline: TimelineRecord): {

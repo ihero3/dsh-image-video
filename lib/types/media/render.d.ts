@@ -52,6 +52,8 @@ export interface RenderResult {
     readonly durationMs: number;
     /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
     readonly subtitlePath?: string;
+    /** 成片缩略图（`A124`；抽第 1 秒的一帧）。 */
+    readonly thumbnailPath?: string;
 }
 /** 渲染失败的机器码。 */
 export type RenderErrorCode = 'MEDIA_FFMPEG_UNAVAILABLE' | 'MEDIA_FFMPEG_ENCODER_MISSING' | 'MEDIA_ASSET_MISSING' | 'MEDIA_TIMELINE_OVERLAP' | 'MEDIA_TIMELINE_EMPTY' | 'MEDIA_DISK_FULL' | 'MEDIA_ENCODER_UNSUPPORTED' | 'MEDIA_RENDER_FAILED' | 'MEDIA_RENDER_CANCELLED' | 'MEDIA_OUTPUT_INVALID';
@@ -156,6 +158,12 @@ export declare class RenderService {
         onProgress?: (progress: RenderProgress) => void;
         fileName?: string;
     }): Promise<RenderResult>;
+    /**
+     * 抽一帧做缩略图（`A124`）：取第 1 秒（短片取中点），缩到 480 宽，输出 jpg。
+     * @param videoPath - 成片路径。
+     * @returns 缩略图路径；失败返回 undefined（不影响成片）。
+     */
+    private extractThumbnail;
 }
 /**
  * 用 `ffmpeg -i` 的输出探测产物规格（不依赖 ffprobe 单独安装）。

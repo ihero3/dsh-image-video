@@ -68,6 +68,8 @@ export interface RenderResult {
   readonly durationMs: number
   /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
   readonly subtitlePath?: string
+  /** 成片缩略图（`A124`；抽第 1 秒的一帧）。 */
+  readonly thumbnailPath?: string
 }
 
 /** 渲染失败的机器码。 */
@@ -639,7 +641,34 @@ export class RenderService {
         index: 0, startMs: clip.startMs, endMs: clip.startMs + clip.durationMs, text: clip.text ?? '',
       }))), 'utf8')
     }
-    return { outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs, ...subtitlePath === undefined ? {} : { subtitlePath } }
+    // `A124`：抽一帧做缩略图（界面列表/分享预览用）；失败不影响成片
+    const thumbnailPath = await this.extractThumbnail(outputPath).catch(() => undefined)
+    return {
+      outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs,
+      ...subtitlePath === undefined ? {} : { subtitlePath },
+      ...thumbnailPath === undefined ? {} : { thumbnailPath },
+    }
+  }
+
+  /**
+   * 抽一帧做缩略图（`A124`）：取第 1 秒（短片取中点），缩到 480 宽，输出 jpg。
+   * @param videoPath - 成片路径。
+   * @returns 缩略图路径；失败返回 undefined（不影响成片）。
+   */
+  private async extractThumbnail(videoPath: string): Promise<string | undefined> {
+    const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
+    const ffmpegPath = probe.path ?? 'ffmpeg'
+    const thumbnailPath = videoPath.replace(/\.[^./]+$/, '') + '-thumb.jpg'
+    const seek = '00:00:01'
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-ss', seek, '-i', videoPath, '-frames:v', '1', '-vf', 'scale=480:-2', thumbnailPath]
+    const ok = await new Promise<boolean>(resolve => {
+      const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'ignore'] })
+      child.on('error', () => resolve(false))
+      child.on('close', code => resolve(code === 0))
+    })
+    if (!ok) return undefined
+    const info = await stat(thumbnailPath).catch(() => undefined)
+    return info !== undefined && info.size > 0 ? thumbnailPath : undefined
   }
 }
 

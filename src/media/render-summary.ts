@@ -39,6 +39,8 @@ export interface RenderSummary {
   readonly burnedSubtitles: boolean
   /** 同时导出的 SRT 文件（`A120`）。 */
   readonly subtitleFile?: string
+  /** 成片缩略图（`A124`）。 */
+  readonly thumbnailFile?: string
   readonly renderedAt: string
   /** 导出后的保留建议（`A38`）：仅当配置了上限时才出现，且只建议不删除。 */
   readonly retention?: RetentionSuggestion
@@ -57,7 +59,7 @@ export interface RenderSummary {
  */
 export function buildRenderSummary(
   timeline: TimelineRecord,
-  result: { readonly outputPath: string; readonly bytes: number; readonly durationMs: number; readonly subtitlePath?: string },
+  result: { readonly outputPath: string; readonly bytes: number; readonly durationMs: number; readonly subtitlePath?: string; readonly thumbnailPath?: string },
   now: () => Date = () => new Date(),
 ): RenderSummary {
   const count = (kind: 'video' | 'audio' | 'subtitle'): number =>
@@ -82,6 +84,7 @@ export function buildRenderSummary(
     hasSubtitles: count('subtitle') > 0,
     burnedSubtitles: timeline.burnSubtitles,
     ...result.subtitlePath === undefined ? {} : { subtitleFile: result.subtitlePath },
+    ...result.thumbnailPath === undefined ? {} : { thumbnailFile: result.thumbnailPath },
     renderedAt: now().toISOString(),
   }
 }
