@@ -52,7 +52,7 @@
 
 - [x] **A33 音频侧链压缩（旁白压低背景音乐）** ✅ 2026-10-19：音轨 `duckUnderTrackId`（触发轨 id）+ `duckingDb`(-30..0，缺省 -12)；导出链 `sidechaincompress`（ratio 由分贝数换算）；**修掉标签复用 bug**——触发轨信号要被侧链与混音各用一次，必须先 `asplit` 否则 ffmpeg 报「标签已消费」；真机验证有音轨；测试 3 例
 - [x] **A34 时间轴一致性校验器** ✅ 2026-10-19：`src/workbench/validate.ts`（空视频轨/同轨重叠/悬空侧链触发轨/侧链用在非音频轨/转场有空档/转场时长被夹/空字幕/交叉淡化有空档，共 7 类码）；端点 `timelines/validate`（**支持传未保存的 document 做保存前预检**）；工具动作 `timeline validate`；与渲染器共用域规则；测试 7 例（含端点 1 例）
-- [ ] **A35 发布 `v0.3.10-workbench-10`**
+- [x] **A35 发布 `v0.3.10-workbench-10`** ✅ 2026-10-19：版本 0.3.10 / CHANGELOG 定稿（A33 侧链压缩 / A34 一致性校验）/ lib 重建 / tag / Harness 指针同步
 
 ## P1（能力补齐与规模化）
 

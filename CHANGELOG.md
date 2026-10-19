@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.10-workbench-10] - 2026-10-19
 
 ### 批次七
 - **A34 时间轴一致性校验**：7 类问题码（空视频轨 / 同轨重叠 / 悬空侧链触发轨 / 侧链用在非音频轨 / 转场有空档 / 转场时长被夹 / 空字幕 / 交叉淡化有空档）；`timelines/validate` 端点支持**未保存文档预检**；`timeline validate` 工具动作；与渲染器共用同一套域规则，避免"界面说没事、导出却失败"
@@ -16,6 +16,10 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.9-workbench-9] - 2026-10-19
 
