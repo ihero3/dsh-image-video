@@ -174,6 +174,11 @@
 - [x] **A80 导出预估** ✅ 2026-10-20：`src/workbench/estimate.ts`（纯函数：时长/规格/**人话比例**/预估体积/是否用估算码率，含 `describeAspect` 与 `formatBytes`）；端点 `timelines/estimate`（可传 `width/height/frameRate/bitrateKbps` **预览换规格**——覆盖画面时**码率自动重估**，避免"4K 用 1080p 码率"的严重低估）；测试 4 例
 - [ ] **A81 发布 `v0.3.29-workbench-29`**
 
+## 批次三十二（A82 起，2026-10-20）
+
+- [x] **A82 素材利用率报告** ✅ 2026-10-20：`src/workbench/usage.ts` 纯函数汇总每个素材被哪些时间轴引用（片段数/时间轴名），**从未使用的排最前** + 汇总（总数/未用数/未用字节/总字节）；端点 `assets/usage`（**只报告不删除**——删不删由用户决定）；与 `maintenance/retention`（清输出文件）互补：这是**素材库本身**的清理依据；测试 2 例
+- [ ] **A83 发布 `v0.3.30-workbench-30`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

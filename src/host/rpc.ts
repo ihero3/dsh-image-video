@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { reportAssetUsage } from '../workbench/usage.ts'
 import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
@@ -346,6 +347,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         // 探测失败不影响校验结果（只是少了这一项检查）
       }
       return { ok: issues.length === 0, issues }
+    }
+    // `A82`：素材利用率报告（哪些素材从未被时间轴用过；只报告不删除）
+    case 'assets/usage': {
+      const projectId = optionalText(payload, 'projectId')
+      const projects = projectId === undefined || projectId === ''
+        ? await deps.store.listProjects()
+        : (await deps.store.listProjects()).filter(project => project.id === projectId)
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      const report = reportAssetUsage(assets, timelines)
+      return {
+        summary: report.summary,
+        assets: report.assets.map(row => ({
+          path: row.assetPath, projectId: row.projectId, kind: row.kind,
+          ...row.bytes === undefined ? {} : { bytes: row.bytes },
+          timesUsed: row.timesUsed, unused: row.unused,
+          timelines: row.timelines.map(entry => ({ id: entry.timelineId, name: entry.timelineName, clips: entry.clips })),
+        })),
+      }
     }
     // 素材探测（`A44`）：真实时长/分辨率/帧率/有无音轨，供界面拖拽与 Agent 预估
     case 'assets/probe': {
