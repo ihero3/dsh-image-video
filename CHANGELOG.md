@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.20-workbench-20] - 2026-10-19
 
 ### 持续交付轮次
 - **对抗性扫荡 R7**：补"重试失败任务"主用例（此前只测了成功任务）；抽出纯函数 `retryError` 覆盖运行中/排队中/可重试三分支；补 `groupRenderSets` 边界
@@ -46,6 +46,10 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.19-workbench-19] - 2026-10-19
 

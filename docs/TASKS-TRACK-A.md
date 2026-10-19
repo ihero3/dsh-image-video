@@ -130,6 +130,10 @@
 
 - [x] **对抗性质量扫荡 R7** ✅ 2026-10-19：补 A59 的**主用例缺口**——此前只测"重试成功任务"，实际主用例是"**重试失败任务**"（已补端点用例：缺失素材 → 必然失败 → 重试 → 新任务 + `retriedFrom` 正确）；把"能否重试"抽成纯函数 `retryError`，三个分支（运行中/排队中/可重试）全部有断言；补 `groupRenderSets` 边界（缺 `finishedAt` 回退 `startedAt`、时间戳相同）
 
+## 批次十八（A62 起，2026-10-19）
+
+- [x] **A62 发布 `v0.3.20-workbench-20`** ✅ 2026-10-19：版本 0.3.20 / CHANGELOG 定稿（R7：失败任务重试主用例 + `retryError` 三分支 + 归组边界）/ lib 重建 / tag / Harness 指针同步
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
