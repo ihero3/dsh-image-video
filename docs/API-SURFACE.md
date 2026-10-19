@@ -9,6 +9,7 @@
 | --- | --- | --- | --- |
 | `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?}` | `defaults` 为 7 字段生效默认值 |
 | `projects/list` / `create` / `remove` / `rename` | 见 TASKS | project 记录 | 删除会级联资源/时间轴/运行记录 |
+| `assets/probe` | `{path}` | `{path,spec{width?,height?,fps?,durationMs?,hasAudio}}` | `A44` 素材探测：**只允许 outputs 目录内或已登记素材**（防任意路径读取） |
 | `assets/list` / `attach` / `remove` / `quick-add` | — | asset / `{removed}` / `{projectId,asset,timelineId?}` | `remove` 未带 `force` 时对被引用素材报错并列出引用位置；`quick-add` 供对话卡片使用 |
 | `resources/list` / `create` / `remove` / `usage` | — | resource / `{removed}` / `{usage[]}` | 资源含 `scope`（V1 恒为 `project`）与轨迹关键帧 |
 | `tasks/list` / `assign` / `cancel` | — | task 记录 | 取消会真的中止在飞生成 |

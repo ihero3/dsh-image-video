@@ -197,6 +197,15 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('probes a registered asset through the channel and rejects paths outside outputs (A44)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '探测' })
+    await ok('assets/attach', { projectId: created.project.id, path: 'outputs/probe.png', kind: 'image' })
+    // 登记过的素材允许探测（这里文件不存在 → 探测失败，但**不是**越界错误）
+    const rejected = await ok('assets/probe', { path: '/etc/passwd' }).catch(error => error as Error)
+    expect(String(rejected)).toMatch(/只能探测 outputs 目录内或已登记的素材/)
+  })
+
   it('lists export presets through the channel (A31)', async () => {
     const { ok } = await makeHandler()
     const result = await ok<{ presets: Array<{ id: string; width: number; height: number }> }>('presets/list', {})

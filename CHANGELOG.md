@@ -28,7 +28,8 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次十一
+- **A44 素材探测端点**：`probeMediaSpec` 增加真实时长；`assets/probe` 端点（安全边界：只允许 outputs 内或已登记素材）；真机验证 video/audio/坏文件三态
 
 ## [0.3.11-workbench-11] - 2026-10-19
 

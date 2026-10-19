@@ -645,7 +645,7 @@ async function firstExisting(paths: readonly string[]): Promise<string | undefin
 export async function probeMediaSpec(
   ffmpegPath: string,
   file: string,
-): Promise<{ width?: number; height?: number; fps?: number; hasAudio: boolean } | undefined> {
+): Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> {
   const stream = await new Promise<{ stderr: string; ok: boolean }>(resolve => {
     const child = spawn(ffmpegPath, ['-hide_banner', '-i', file], { stdio: ['ignore', 'ignore', 'pipe'] })
     let stderr = ''
@@ -655,12 +655,21 @@ export async function probeMediaSpec(
   })
   if (!stream.ok) return undefined
   const hasAudio = /Stream #\d+:\d+.*: Audio: /.test(stream.stderr)
+  const duration = /Duration: (\d+):(\d+):(\d+\.\d+)/.exec(stream.stderr)
+  const durationMs = duration === null
+    ? undefined
+    : Math.round((Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3])) * 1000)
   const video = /Stream #\d+:\d+.*: Video: .*?(\d{2,5})x(\d{2,5})/.exec(stream.stderr)
-  if (video === null) return hasAudio ? { hasAudio } : undefined
+  if (video === null) {
+    return hasAudio || durationMs !== undefined
+      ? { hasAudio, ...durationMs === undefined ? {} : { durationMs } }
+      : undefined
+  }
   const fpsMatch = /(\d+(?:\.\d+)?) fps/.exec(stream.stderr)
   return {
     width: Number(video[1]), height: Number(video[2]), hasAudio,
     ...fpsMatch === null ? {} : { fps: Number(fpsMatch[1]) },
+    ...durationMs === undefined ? {} : { durationMs },
   }
 }
 

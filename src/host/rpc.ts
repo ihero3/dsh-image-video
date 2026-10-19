@@ -24,6 +24,7 @@ import { resolve } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
+import { probeMediaSpec } from '../media/render.ts'
 import { planRetention } from '../media/retention.ts'
 import { EXPORT_PRESETS } from '../workbench/presets.ts'
 import { checkInlineTimelineBounds, validateTimeline } from '../workbench/validate.ts'
@@ -320,6 +321,21 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const known = new Set(await deps.store.referencedAssetPaths())
       const issues = validateTimeline(document, { knownAssetPaths: known })
       return { ok: issues.length === 0, issues }
+    }
+    // 素材探测（`A44`）：真实时长/分辨率/帧率/有无音轨，供界面拖拽与 Agent 预估
+    case 'assets/probe': {
+      const relative = text(payload, 'path')
+      const absolute = resolve(deps.outputsDir, relative)
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const inside = absolute === deps.outputsDir || absolute.startsWith(`${deps.outputsDir}${sep}`)
+      if (!inside && !known.has(relative)) {
+        throw new Error(`只能探测 outputs 目录内或已登记的素材（收到 ${relative}）`)
+      }
+      const probe = await probeFfmpeg()
+      if (!probe.available) throw new Error(probe.message ?? 'ffmpeg 不可用，无法探测素材')
+      const spec = await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+      if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件`)
+      return { path: relative, spec }
     }
     // 导出预设（`A31`）：界面/Agent 共用同一套平台尺寸口径
     case 'presets/list':

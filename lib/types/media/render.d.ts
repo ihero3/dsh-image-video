@@ -165,6 +165,7 @@ export declare function probeMediaSpec(ffmpegPath: string, file: string): Promis
     width?: number;
     height?: number;
     fps?: number;
+    durationMs?: number;
     hasAudio: boolean;
 } | undefined>;
 /** 用 `ffmpeg -i` 的输出量一下真实时长（不依赖 ffprobe 是否单独安装）。 */

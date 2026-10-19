@@ -83,6 +83,12 @@
 - [x] **A42 多语言字幕轨** ✅ 2026-10-19：字幕轨 `language`(1–16 字符) + 时间轴 `burnLanguage`（只烧选定语言；**不设则沿用老行为烧全部**，向后兼容）；`timelines/save` 透传；校验器新增 3 个码（`dangling-burn-language` / `duplicate-subtitle-language` / `subtitle-burn-overlap` 多轨叠烧提醒）；测试 3 例
 - [x] **A43 发布 `v0.3.12-workbench-12`** ✅ 2026-10-19：版本 0.3.12 / CHANGELOG 定稿（A41 进度细分 / A42 多语言字幕 / R1–R5 扫荡修复）/ lib 重建 / tag / Harness 指针同步
 
+## 批次十一（A44 起，2026-10-19）
+
+- [x] **A44 素材探测端点** ✅ 2026-10-19：`probeMediaSpec` 增加 `durationMs`（复用 Duration 解析，音轨/视频都支持）；端点 `assets/probe`（**安全边界**：只允许 outputs 目录内或已登记素材，越界明确拒绝）；用于界面拿真实时长、Agent 决定片段长度；测试 4 例（真机 video/audio/坏文件 + 越界拒绝）
+- [ ] **A45 校验器接入真实时长**（片段比素材还长时提醒）
+- [ ] **A46 发布 `v0.3.13-workbench-13`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
