@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### 批次十二
+- **A48 自定义导出预设 + schema v4**：用户预设存进工作台文档（全局库），`presets/save`/`remove`，`presets/list` 内置与自定义合并（`custom` 标记）；`set-format presetId` 支持自定义；schema 3→4 真实迁移，旧数据不受影响
 - **A47 门禁脚本修假红与误导**：测试日志完整落盘不再截断；失败时区分"真失败 vs 全过但退出码非 0（worker 抖动）"；"五道门全过"移到第 5 道之后；编号统一 N/5；构建 grep 不再假失败
 
 ## [0.3.12-workbench-12] - 2026-10-19

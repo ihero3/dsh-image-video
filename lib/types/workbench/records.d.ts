@@ -6,7 +6,7 @@
  * directory). Nothing in this file touches the filesystem or the framework.
  */
 /** Schema version stamped into every stored record, so later migrations have a hook. */
-export declare const WORKBENCH_SCHEMA_VERSION = 3;
+export declare const WORKBENCH_SCHEMA_VERSION = 4;
 /** One project: the container every asset, task and workflow belongs to. */
 export interface ProjectRecord {
     readonly schemaVersion: number;
@@ -52,6 +52,21 @@ export interface ResourceUsageRecord {
     readonly runId: string;
     readonly nodeId: string;
     readonly at: string;
+}
+/**
+ * 用户自定义导出预设（`A48`，全局库，不属于某个项目）。
+ *
+ * 与内置预设（`src/workbench/presets.ts` 的只读常量）分开：内置的随代码发版，
+ * 用户的随工作台数据走 `schemaVersion` 迁移。
+ */
+export interface ExportPresetRecord {
+    readonly id: string;
+    readonly name: string;
+    readonly width: number;
+    readonly height: number;
+    readonly frameRate: number;
+    readonly bitrateKbps?: number;
+    readonly createdAt: string;
 }
 /** One generation attempt, recorded by the host when a tool call finishes. */
 export interface TaskRecord {

@@ -410,7 +410,9 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           frameRate: current.frameRate, burnSubtitles: current.burnSubtitles,
           exportFormat: {
             // `A31`：给了 presetId 就整份按预设，否则按字段微调
-            ...typeof input.presetId === 'string' && input.presetId !== '' ? presetToFormat(input.presetId) : current.exportFormat ?? {},
+            ...typeof input.presetId === 'string' && input.presetId !== ''
+              ? await resolvePresetFormat(store, input.presetId)
+              : current.exportFormat ?? {},
             ...typeof input.width === 'number' ? { width: input.width } : {},
             ...typeof input.height === 'number' ? { height: input.height } : {},
             ...typeof input.frameRate === 'number' ? { frameRate: input.frameRate } : {},
@@ -624,4 +626,24 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   // 五个工具的参数 schema 各不相同，这里用一次显式断言收敛成共同形状（注册处只看共同形状）
   const tools = [projects, assets, timeline, workflow, tasks]
   return tools as unknown as Array<ReturnType<typeof defineTool>>
+}
+
+/**
+ * 解析导出预设 id → 导出规格（`A31` 内置优先，其次 `A48` 用户自定义）。
+ * @param store - 工作台存储（查自定义预设）。
+ * @param presetId - 预设 id。
+ * @returns 导出规格。
+ * @throws {Error} 两边都找不到时（提示用 presets/list 看可选值）。
+ */
+async function resolvePresetFormat(store: WorkbenchStore, presetId: string): Promise<{ width: number; height: number; frameRate: number; bitrateKbps?: number }> {
+  try {
+    return presetToFormat(presetId)
+  } catch {
+    const custom = (await store.listExportPresets()).find(preset => preset.id === presetId)
+    if (custom === undefined) throw new Error(`没有导出预设 ${presetId}：用 presets/list 看可选值`)
+    return {
+      width: custom.width, height: custom.height, frameRate: custom.frameRate,
+      ...custom.bitrateKbps === undefined ? {} : { bitrateKbps: custom.bitrateKbps },
+    }
+  }
 }

@@ -18,7 +18,7 @@ import {
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
-import type { ResourceUsageRecord } from './records.ts'
+import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
 import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
 import { DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
@@ -42,6 +42,8 @@ interface WorkbenchDocument {
   nodeCache: CachedNodeResult[]
   /** 资源使用记录（`R-QCK-3`）。 */
   resourceUsage: ResourceUsageRecord[]
+  /** 用户自定义导出预设（`A48`）。 */
+  exportPresets: ExportPresetRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -565,6 +567,67 @@ export class WorkbenchStore {
   }
 
   /**
+   * 列出用户自定义导出预设（`A48`，新的在前）。
+   * @returns 预设数组。
+   */
+  async listExportPresets(): Promise<ExportPresetRecord[]> {
+    const document = await this.load()
+    return [...document.exportPresets].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  }
+
+  /**
+   * 新建/覆盖一个自定义导出预设（`A48`）。
+   * @param input - 名称与规格（规格走 `normalizeExportFormat` 校验）。
+   * @returns 保存后的预设。
+   * @throws {Error} 名称非法/重名、规格非法时。
+   */
+  async saveExportPreset(input: {
+    id?: string
+    name: unknown
+    width: number
+    height: number
+    frameRate: number
+    bitrateKbps?: number
+  }): Promise<ExportPresetRecord> {
+    const name = typeof input.name === 'string' ? input.name.trim() : ''
+    if (name === '' || name.length > 40) throw new Error('预设名称必须是 1–40 个字符')
+    const format = normalizeExportFormat({
+      width: input.width, height: input.height, frameRate: input.frameRate,
+      ...input.bitrateKbps === undefined ? {} : { bitrateKbps: input.bitrateKbps },
+    })
+    const document = await this.load()
+    const duplicated = document.exportPresets.some(preset => preset.name === name && preset.id !== input.id)
+    if (duplicated) throw new Error(`已有同名导出预设「${name}」：换个名字`)
+    const existing = input.id === undefined ? undefined : document.exportPresets.find(preset => preset.id === input.id)
+    const record: ExportPresetRecord = {
+      id: existing?.id ?? newWorkbenchId('preset'),
+      name,
+      width: format.width, height: format.height, frameRate: format.frameRate,
+      ...format.bitrateKbps === undefined ? {} : { bitrateKbps: format.bitrateKbps },
+      createdAt: existing?.createdAt ?? this.now().toISOString(),
+    }
+    document.exportPresets = existing === undefined
+      ? [...document.exportPresets, record]
+      : document.exportPresets.map(preset => preset.id === existing.id ? record : preset)
+    await this.save(document)
+    return record
+  }
+
+  /**
+   * 删除一个自定义导出预设（`A48`）。
+   * @param id - 预设 id。
+   * @returns 是否删掉了。
+   */
+  async removeExportPreset(id: string): Promise<boolean> {
+    const document = await this.load()
+    const next = document.exportPresets.filter(preset => preset.id !== id)
+    if (next.length === document.exportPresets.length) return false
+    document.exportPresets = next
+    await this.save(document)
+    return true
+  }
+
+  /**
    * 记一批资源使用记录（`R-QCK-3`）：同 (resourceId, assetPath) 只留最新一条。
    * @param entries - 使用记录。
    */
@@ -790,6 +853,7 @@ export class WorkbenchStore {
       timelines: raw.timelines ?? [],
       nodeCache: raw.nodeCache ?? [],
       resourceUsage: raw.resourceUsage ?? [],
+      exportPresets: raw.exportPresets ?? [],
     }
   }
 
@@ -835,7 +899,7 @@ export class WorkbenchStore {
       }
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [], timelines: [], nodeCache: [], resourceUsage: [],
+        runs: [], timelines: [], nodeCache: [], resourceUsage: [], exportPresets: [],
       }
     }
     return this.cache

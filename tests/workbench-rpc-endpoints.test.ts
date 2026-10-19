@@ -164,6 +164,19 @@ describe('workbench channel endpoints', () => {
     expect(planned.plan.overQuota).toBe(false)
   })
 
+  it('saves custom presets and lists them alongside the built-in ones (A48)', async () => {
+    const { ok } = await makeHandler()
+    const saved = await ok<{ preset: { id: string; name: string } }>('presets/save', {
+      name: '自定义 9:16', width: 1080, height: 1920, frameRate: 30,
+    })
+    expect(saved.preset.name).toBe('自定义 9:16')
+    const listed = await ok<{ presets: Array<{ id: string; custom: boolean }> }>('presets/list', {})
+    expect(listed.presets.some(preset => preset.id === saved.preset.id && preset.custom)).toBe(true)
+    expect(listed.presets.some(preset => preset.id === 'douyin-vertical' && preset.custom === false)).toBe(true)
+    const removed = await ok<{ removed: boolean }>('presets/remove', { id: saved.preset.id })
+    expect(removed.removed).toBe(true)
+  })
+
   it('validates a timeline through the channel and also accepts an inline document (A34)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '校验项目' })

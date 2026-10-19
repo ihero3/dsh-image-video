@@ -44,6 +44,12 @@ export const WORKBENCH_MIGRATIONS: readonly WorkbenchMigration[] = [
     describe: 'v3：片段支持特效（speed/fade/crop）与跨段转场（transition）——字段均可选，无需改写旧数据',
     migrate: document => ({ ...document, schemaVersion: 3 }),
   },
+  {
+    from: 3,
+    to: 4,
+    describe: 'v4：新增用户自定义导出预设库（初始为空，不影响既有数据）',
+    migrate: document => ({ ...document, schemaVersion: 4, exportPresets: [] }),
+  },
 ]
 
 /** 迁移结果。 */

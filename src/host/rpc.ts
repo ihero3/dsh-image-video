@@ -355,9 +355,29 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件`)
       return { path: relative, spec }
     }
-    // 导出预设（`A31`）：界面/Agent 共用同一套平台尺寸口径
-    case 'presets/list':
-      return { presets: EXPORT_PRESETS }
+    // 导出预设（`A31` 内置 + `A48` 用户自定义）：界面/Agent 共用同一套平台尺寸口径
+    case 'presets/list': {
+      const custom = await deps.store.listExportPresets()
+      return {
+        presets: [
+          ...EXPORT_PRESETS.map(preset => ({ ...preset, custom: false })),
+          ...custom.map(preset => ({ ...preset, custom: true })),
+        ],
+      }
+    }
+    case 'presets/save': {
+      const preset = await deps.store.saveExportPreset({
+        ...optionalText(payload, 'id') === undefined ? {} : { id: optionalText(payload, 'id') as string },
+        name: field(payload, 'name'),
+        width: Number(field(payload, 'width') ?? 0),
+        height: Number(field(payload, 'height') ?? 0),
+        frameRate: Number(field(payload, 'frameRate') ?? 0),
+        ...optionalNumber(payload, 'bitrateKbps') === undefined ? {} : { bitrateKbps: optionalNumber(payload, 'bitrateKbps') as number },
+      })
+      return { preset }
+    }
+    case 'presets/remove':
+      return { removed: await deps.store.removeExportPreset(text(payload, 'id')) }
     // 诊断快照（`A9`）：版本、数据规模、渲染队列、近错；出问题不用翻日志
     case 'diagnostics': {
       const data = await deps.store.stats()

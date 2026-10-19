@@ -16,7 +16,9 @@
 | `workflows/list` / `save` / `remove` / `run` / `runs` / `run-cancel` / `run-retry` | — | — | `run` 默认复用成功结果缓存；`run-retry` 只重跑失败节点及下游 |
 | `timelines/list` / `save` / `remove` / `render` / `renders` / `render-cancel` | — | — | `render` 起导出任务；`renders` 轮询；`render-cancel` 杀 ffmpeg 并清理半成品；渲染任务带 `progressStep{current,total}`（`A41` 进度细分，加法字段）；任务成功后带 `summary`（`A37` 产物/规格/轨道概览，加法字段）；配置 `DSH_OUTPUT_MAX_FILES`/`DSH_OUTPUT_MAX_GB` 时摘要还会带 `retention` **建议**（`A38`，只报告不删除）；**轨道支持 `volume`(0–2) 与 `muted`**（A1，导出真实混音）；**`exportFormat`** `{width,height,frameRate(24/25/30/60),bitrateKbps?}` 可存可改，导出按此出片并**实测复核**（A2） |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline 上限：≤2MB / 片段 ≤400（与存储同源）/ 轨道 ≤50） | `{ok,issues[{code,message,trackId?,clipId?}]}` | `A34`+`A45` 一致性预检（含真实时长越界检测）：**未保存文档也能查**（界面拖拽/保存前用） |
-| `presets/list` | — | `{presets[]}` | `A31` 导出预设（抖音竖屏/小红书/方形/YouTube 1080p·4K/默认 720p），与 `timeline set-format presetId` 共用 |
+| `presets/list` | — | `{presets[]}`（内置 `custom:false` + 自定义 `custom:true`） | `A31`+`A48` 导出预设 |
+| `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` | `A48` 自定义预设：名称 1–40 字且不重名，规格过校验 |
+| `presets/remove` | `{id}` | `{removed}` | `A48` 删除自定义预设 |
 | `diagnostics` | — | `{plugin{name,version}, provider, outputsDir, data{各实体条数,writeCount,fileBytes,runningRuns}, renders{running,queued,recent[]}, runs{running}, cache{nodeResults}, errors{errors[],errorCount}}` | `A9` 诊断快照：出问题不用翻日志；**不含**提示词/路径等敏感内容 |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界） |
@@ -34,7 +36,7 @@
 
 > 时间轴片段支持 `speed`(0.25–4) / `fade`(0–2000ms) / `crop{x,y,width,height}` / `transition`(`fade|wipeleft|circleopen`) + `transitionDurationMs`(0–2000，缺省 400)（`A13`/`A13b`，可选字段，不改变 schemaVersion）。
 >
-> 数据文件带 `schemaVersion`（当前 **3**）：读入时按迁移链自动升级，**只升不降**（更高版本会拒绝打开并提示升级插件），迁移前自动备份 `workbench.json.pre-migrate-v<N>`。
+> 数据文件带 `schemaVersion`（当前 **4**）：读入时按迁移链自动升级，**只升不降**（更高版本会拒绝打开并提示升级插件），迁移前自动备份 `workbench.json.pre-migrate-v<N>`。
 
 ## Agent 工具面（`src/tools/workbench.ts`）
 
