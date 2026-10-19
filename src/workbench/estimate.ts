@@ -40,7 +40,9 @@ const COMMON_ASPECTS: ReadonlyArray<{ label: string; ratio: number }> = [
 /** 从宽高推断"人话比例"；非常规比例返回 `宽:高` 化简结果。 */
 export function describeAspect(width: number, height: number): string {
   const ratio = width / height
-  const common = COMMON_ASPECTS.find(candidate => Math.abs(candidate.ratio - ratio) < 0.01)
+  // 容差 0.05：真实素材常见 2560×1080（比例 2.37）这类"超宽屏"，应按 21:9 归类；
+  // 而常见比例之间的间距都 ≥0.1，不会互相误判。
+  const common = COMMON_ASPECTS.find(candidate => Math.abs(candidate.ratio - ratio) < 0.05)
   if (common !== undefined) return common.label
   const divisor = greatestCommonDivisor(width, height)
   return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`
