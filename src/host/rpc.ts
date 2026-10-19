@@ -9,6 +9,8 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { findDuplicateAssets } from '../workbench/duplicates.ts'
+import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
 import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
@@ -351,6 +353,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         // 探测失败不影响校验结果（只是少了这一项检查）
       }
       return { ok: issues.length === 0, issues }
+    }
+    // `A112`：素材内容去重检测（按大小分组 + 仅同大小算 sha256；只报告不删除）
+    case 'assets/duplicates': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const report = await findDuplicateAssets(
+        assets.map(asset => ({ path: asset.path, ...asset.bytes === undefined ? {} : { bytes: asset.bytes } })),
+        async path => sha256File(resolve(deps.outputsDir, path)).catch(() => undefined),
+        { ...optionalNumber(payload, 'maxHashFiles') === undefined ? {} : { maxHashFiles: optionalNumber(payload, 'maxHashFiles') as number } },
+      )
+      return { duplicates: report }
     }
     // `A82`：素材利用率报告（哪些素材从未被时间轴用过；只报告不删除）
     case 'assets/usage': {

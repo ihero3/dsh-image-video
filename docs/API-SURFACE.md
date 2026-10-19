@@ -83,6 +83,7 @@
 | `assets/attach` | `{projectId,path,kind?,prompt?}` | `{asset,created}` |
 | `assets/quick-add` | `{projectId,path?}` | `{asset,created}`（自动推断种类） |
 | `assets/remove` | `{projectId,assetId}` | `{removed}` |
+| `assets/duplicates` | `{maxHashFiles?}` | `{duplicates}`（`A112` 内容去重：按大小分组、仅同大小算 sha256；给出建议保留项与可回收字节，只报告不删除）|
 | `assets/usage` | `{projectId?}` | `{summary,assets}`（素材利用率：从未被时间轴使用的排前面，`A82` 只报告不删除）|
 
 ### 资源与用法记录
