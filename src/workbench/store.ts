@@ -20,7 +20,7 @@ import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type W
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
 import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
-import { DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
@@ -629,6 +629,36 @@ export class WorkbenchStore {
     document.exportPresets = next
     await this.save(document)
     return true
+  }
+
+  /**
+   * 复制一条时间轴为副本（`A86`）：名字默认「原名 副本」，重名自动加序号。
+   * @param id - 原时间轴 id。
+   * @param options - 可选新名字。
+   * @returns 新时间轴。
+   * @throws {Error} 原时间轴不存在时。
+   */
+  async duplicateTimeline(id: string, options: { name?: string } = {}): Promise<TimelineRecord> {
+    const document = await this.load()
+    const source = document.timelines.find(candidate => candidate.id === id)
+    if (source === undefined) throw new Error(`找不到时间轴 ${id}`)
+    const baseName = options.name?.trim() !== undefined && options.name!.trim() !== '' ? options.name!.trim() : `${source.name} 副本`
+    const taken = new Set(document.timelines.filter(candidate => candidate.projectId === source.projectId).map(candidate => candidate.name))
+    let uniqueName = baseName
+    for (let index = 2; taken.has(uniqueName); index += 1) uniqueName = `${baseName} ${index}`
+    const copy = duplicateTimeline(source, {
+      newId: newWorkbenchId('tml'),
+      newName: uniqueName,
+      newClipId: (prefix, index) => `${prefix}-${newWorkbenchId('c')}-${index}`,
+    })
+    const saved = await this.saveTimeline({
+      id: copy.id, projectId: copy.projectId, name: copy.name, tracks: copy.tracks,
+      frameRate: copy.frameRate, burnSubtitles: copy.burnSubtitles,
+      ...copy.exportFormat === undefined ? {} : { exportFormat: copy.exportFormat },
+      ...copy.normalizeLoudness === undefined ? {} : { normalizeLoudness: copy.normalizeLoudness },
+      ...copy.burnLanguage === undefined ? {} : { burnLanguage: copy.burnLanguage },
+    })
+    return saved
   }
 
   /**

@@ -184,6 +184,11 @@
 - [x] **A84 导出前体检** ✅ 2026-10-20：端点 `timelines/preflight` 把三件事合成一次调用——`validateTimeline`（含"片段比素材长"探测）+ `estimateExport`（体积）+ `reportAssetUsage`（素材浪费）；返回 `{ok,issues,estimate,usage,summaryLine}`，`summaryLine` 直接是"可以导出 / 暂不建议导出（N 个问题）/ 约 XX MB / 预计 N 秒 / 项目有 N 个素材从未使用"；**只报告不动作**（不删素材、不改时间轴）；测试 2 例
 - [ ] **A85 发布 `v0.3.31-workbench-31`**
 
+## 批次三十四（A86 起，2026-10-20）
+
+- [x] **A86 时间轴整条复制为副本** ✅ 2026-10-20：`duplicateTimeline` 纯函数（轨道/片段/效果/速度/转场/规格/字幕语言全部保留，**片段 id 与时间轴 id 重新生成**，素材路径**共享不复制文件**）+ `store.duplicateTimeline`（名字默认「原名 副本」，重名自动加序号）+ 端点 `timelines/duplicate`；原时间轴不被改动（有断言）；测试 2 例
+- [ ] **A87 发布 `v0.3.32-workbench-32`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

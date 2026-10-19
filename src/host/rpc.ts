@@ -526,6 +526,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'timelines/remove':
       return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
     // ---- 导出（阶段 5，T5-5）----------------------------------------------------
+    // `A86`：整条时间轴复制为副本（素材引用共享，不复制文件）
+    case 'timelines/duplicate': {
+      const timelineId = text(payload, 'timelineId')
+      const name = optionalText(payload, 'name')
+      const timeline = await deps.store.duplicateTimeline(timelineId, name === undefined ? {} : { name })
+      return { timeline }
+    }
     // `A84`：导出前体检 —— 一次拿到"能不能导 / 会有多大 / 有没有素材浪费"
     case 'timelines/preflight': {
       const timelineId = text(payload, 'timelineId')

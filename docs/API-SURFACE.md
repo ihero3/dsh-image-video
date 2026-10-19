@@ -110,6 +110,7 @@
 | --- | --- | --- |
 | `timelines/list` | `{projectId}` | `{timelines}` |
 | `timelines/save` | `{projectId,id?,tracks,frameRate?,burnSubtitles?,exportFormat?,normalizeLoudness?,burnLanguage?}` | `{timeline}` |
+| `timelines/duplicate` | `{timelineId,name?}` | `{timeline}`（`A86` 整条复制为副本：片段 id 重新生成、素材共享、名字自动去重）|
 | `timelines/remove` | `{timelineId}` | `{removed}` |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline ≤2MB / 片段 ≤400 / 轨道 ≤50） | `{ok,issues}` |
 | `timelines/render` | `{timelineId,priority?}` | `{render}` |

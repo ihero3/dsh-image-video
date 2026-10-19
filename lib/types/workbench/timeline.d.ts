@@ -227,3 +227,17 @@ export declare function transitionOverlapMs(clip: TimelineClip, previous: Timeli
  * @returns 毫秒。
  */
 export declare function transitionDurationMs(clip: TimelineClip): number;
+/**
+ * 复制一条时间轴为副本（`A86`）：轨道/片段/效果/规格/字幕语言全部保留，
+ * **片段 id 与时间轴 id 重新生成**（同一条时间轴内 id 必须唯一），素材路径**共享**
+ * （不复制文件，副本与原版引用同一批素材）。
+ *
+ * @param timeline - 原时间轴。
+ * @param options - 新 id 与新名字。
+ * @returns 副本（未保存）。
+ */
+export declare function duplicateTimeline(timeline: TimelineRecord, options: {
+    newId: string;
+    newName: string;
+    newClipId: (prefix: string, index: number) => string;
+}): TimelineRecord;
