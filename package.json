@@ -1,6 +1,6 @@
 {
   "name": "dsh-image-video",
-  "version": "0.3.41",
+  "version": "0.3.42",
   "description": "DeepSeek Harness 插件：文生图/图生图与文生/图生视频工具，支持 Threerouter / 万象 wanx / MiniMax / Seedance2.5 服务商、凭证缝引用、媒体模式注入、异步轮询与 UI-only 图片预览",
   "type": "module",
   "main": "lib/index.js",
