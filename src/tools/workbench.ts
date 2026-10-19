@@ -18,6 +18,7 @@ import type { WorkflowRunner } from '../workbench/runner.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import { DRAMA_TEMPLATES, instantiateTemplate } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
+import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { timelineDurationMs } from '../workbench/timeline.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
@@ -107,6 +108,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       bitrateKbps: { type: 'integer', description: 'set-format 时视频码率（kbps，可选）' },
       track: { type: 'string', description: 'set-track 时的轨道：video / audio / subtitle（默认 audio）' },
       maxChars: { type: 'integer', description: 'add-subtitles 时单条字幕最多字数（默认 28）' },
+      clipId: { type: 'string', description: 'split-clip / copy-clip 的片段 id' },
+      atMs: { type: 'integer', description: 'split-clip 的拆分点（时间轴绝对毫秒，必须在片段内部）' },
       startMs: { type: 'integer', description: '起始时间（毫秒）；add-subtitles 缺省接在字幕轨末尾' },
       endMs: { type: 'integer', description: '结束时间（毫秒）；add-subtitles 缺省到时间轴末尾' },
       volume: { type: 'number', description: 'set-track 时的轨道音量（0–2）' },
@@ -304,6 +307,32 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           subtitles: clips.map(clip => ({ id: clip.id, text: clip.text, startMs: clip.startMs, durationMs: clip.durationMs })),
         })
       }
+      if (action === 'split-clip' || action === 'copy-clip') {
+        // `A24`：片段拆分 / 复制（域层算好源内偏移与变速折算，工具只负责落库）
+        const timelineId = requireString(input, 'timelineId', `workbench_timeline ${action}`)
+        const clipId = requireString(input, 'clipId', `workbench_timeline ${action}`)
+        const current = await store.findTimeline(timelineId)
+        if (current === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const newId = (): string => newWorkbenchId('clip')
+        const outcome = action === 'split-clip'
+          ? (() => {
+            const result = splitClipAt(current.tracks, clipId, Math.round(Number(input.atMs ?? 0)), newId)
+            return { tracks: result.tracks, extra: { split: { leftId: result.leftId, rightId: result.rightId } } }
+          })()
+          : (() => {
+            const result = duplicateClip(current.tracks, clipId, newId, {
+              ...typeof input.startMs === 'number' ? { startMs: input.startMs } : {},
+              ...input.track === 'video' || input.track === 'audio' || input.track === 'subtitle' ? { trackKind: input.track } : {},
+            })
+            return { tracks: result.tracks, extra: { copy: { newClipId: result.newClipId } } }
+          })()
+        const saved = await store.saveTimeline({
+          id: current.id, projectId: current.projectId, name: current.name, tracks: outcome.tracks,
+          frameRate: current.frameRate, burnSubtitles: current.burnSubtitles, exportFormat: current.exportFormat,
+          normalizeLoudness: current.normalizeLoudness,
+        })
+        return json({ timeline: { id: saved.id }, ...outcome.extra })
+      }
       if (action === 'trim') {
         const timelineId = requireString(input, 'timelineId', 'workbench_timeline trim')
         const current = await store.findTimeline(timelineId)
@@ -401,7 +430,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const job = renders.start(doc)
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
-      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
+      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
     },
   })
 

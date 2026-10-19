@@ -1,6 +1,7 @@
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次五
+- **A24 片段拆分/复制**：`splitClipAt`（拆点必须在片段内部；两半时长守恒；右半 `inMs` 按**变速折算**推进）+ `duplicateClip`（默认紧跟原片段，可指定落点或换轨）；工具面 `timeline split-clip` / `copy-clip`；测试 6 例
 
 # Changelog
 
