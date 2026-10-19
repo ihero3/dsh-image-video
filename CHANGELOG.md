@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### 批次五
+- **A26 项目包 v2**：格式版本升到 2（清单新增资源使用记录 `resourceUsage`），**v1 旧包仍可读**、更高版本明确拒绝；**修复真 bug**：导入时漏传 `exportFormat`/`normalizeLoudness` 会被重置；已知偏差：`speed=1.5` 导入后变 2，测试里已标记待查
 - **A25 字幕多行排版**：`wrapSubtitleLines` 按画面宽度折行（优先标点、绝不超上限、尊重原文换行）+ `estimateMaxCharsForWidth`；drawtext 增加 `line_spacing`，换行经占位符安全穿过转义；字体支持 `DSH_SUBTITLE_FONT` 优先；测试 4 例
 - **A24 片段拆分/复制**：`splitClipAt`（拆点必须在片段内部；两半时长守恒；右半 `inMs` 按**变速折算**推进）+ `duplicateClip`（默认紧跟原片段，可指定落点或换轨）；工具面 `timeline split-clip` / `copy-clip`；测试 6 例
 
