@@ -22,6 +22,7 @@
 | `diagnostics` | — | `{plugin{name,version}, provider, outputsDir, data{各实体条数,writeCount,fileBytes,runningRuns}, renders{running,queued,recent[]}, runs{running}, cache{nodeResults}, errors{errors[],errorCount}}` | `A9` 诊断快照：出问题不用翻日志；**不含**提示词/路径等敏感内容 |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界）；`A53` 起包格式 **v3**（含自定义预设，导入按名称去重），v1/v2 仍可导入 |
+| `maintenance/archive` | `{olderThanDays?,dryRun?}` | `{archivedTasks,archivedRuns,estimatedBytes,dryRun,olderThanDays}`（`A94` 归档已结束的旧任务/运行记录到旁路文件，默认 dryRun）|
 | `maintenance/retention` | `{maxBytes?,maxFiles?,keepNewest?,dryRun?}` | `{dryRun,deleted,plan{remove[],keptFiles,keptBytes,freedBytes,overQuota},hint}` | `A15` 输出配额清理：**默认 dryRun 只算不删**；被素材库引用的文件永不删 |
 | `outputs/list` / `maintenance/compact` | — | — | 清理重复素材记录 |
 

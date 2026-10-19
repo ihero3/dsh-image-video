@@ -19,6 +19,7 @@ import {
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
+import { planArchive } from './archive.ts'
 import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
 import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
@@ -629,6 +630,42 @@ export class WorkbenchStore {
     document.exportPresets = next
     await this.save(document)
     return true
+  }
+
+  /**
+   * 归档历史记录（`A94`）：把"已结束且够旧"的任务/运行记录搬到旁路文件（追加，不丢历史）。
+   * @param options - 天数与 dryRun（默认 dryRun=true，只算不删）。
+   * @returns 归档计划（含实际归档条数与估算字节）。
+   */
+  async archiveOlderThan(options: { olderThanDays?: number; dryRun?: boolean } = {}): Promise<{ archivedTasks: number; archivedRuns: number; estimatedBytes: number; dryRun: boolean; olderThanDays: number }> {
+    const document = await this.load()
+    const plan = planArchive(document, {
+      nowMs: this.now().getTime(),
+      ...options.olderThanDays === undefined ? {} : { olderThanDays: options.olderThanDays },
+      ...options.dryRun === undefined ? {} : { dryRun: options.dryRun },
+    })
+    const result = {
+      archivedTasks: plan.tasks.length,
+      archivedRuns: plan.runs.length,
+      estimatedBytes: plan.estimatedBytes,
+      dryRun: plan.dryRun,
+      olderThanDays: plan.olderThanDays,
+    }
+    if (plan.dryRun || (plan.tasks.length === 0 && plan.runs.length === 0)) return result
+    // 追加写旁路文件：保留历史，主文档瘦身
+    const archivePath = join(this.directory, 'workbench.archive.json')
+    const previous = await readFile(archivePath, 'utf8').then(text => JSON.parse(text) as { tasks?: unknown[]; runs?: unknown[] }).catch(() => ({ tasks: [], runs: [] }))
+    const next = {
+      tasks: [...(previous.tasks ?? []), ...plan.tasks],
+      runs: [...(previous.runs ?? []), ...plan.runs],
+    }
+    await writeFile(archivePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+    const taskIds = new Set(plan.tasks.map(task => task.id))
+    const runIds = new Set(plan.runs.map(run => String((run as { id?: unknown }).id)))
+    document.tasks = document.tasks.filter(task => !taskIds.has(task.id))
+    document.runs = document.runs.filter(run => !runIds.has(String((run as { id?: unknown }).id)))
+    await this.save(document)
+    return result
   }
 
   /**

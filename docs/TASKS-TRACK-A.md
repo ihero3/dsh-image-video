@@ -204,6 +204,11 @@
 - [x] **A92 渲染 ETA 平滑（EMA）** ✅ 2026-10-20：`EtaTracker` 用指数滑动平均估计"每 1% 要多久"（α=0.3），抖动采样下 ETA 不再来回跳、稳态时收敛到真实剩余；仍坚持"过早不给"（<5%）；registry 按任务维护平滑器并在收尾清理；测试 3 例（过早/重复采样、抖动下极差显著变小、稳态收敛）
 - [ ] **A93 发布 `v0.3.35-workbench-35`**
 
+## 批次三十八（A94 起，2026-10-20）
+
+- [x] **A94 工作台文档归档（瘦身）** ✅ 2026-10-20：`planArchive` 纯函数（只选**已结束**且超过 N 天（默认 30）的任务/运行记录，进行中/导入未跑的一律不动）+ `store.archiveOlderThan`（**默认 dryRun 只算不删**；真归档时**追加**写 `workbench.archive.json` 保留历史，再从主文档移除；幂等不重复归档）+ 端点 `maintenance/archive`；测试 3 例（选档规则/窗口下限、dryRun 不动数据、真归档后主文档变瘦且旁路有内容）
+- [ ] **A95 发布 `v0.3.36-workbench-36`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

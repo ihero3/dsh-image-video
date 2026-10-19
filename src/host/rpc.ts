@@ -636,6 +636,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
+    // `A94`：工作台文档归档（默认 dryRun 只算不删；归档追加到旁路文件，不丢历史）
+    case 'maintenance/archive':
+      return await deps.store.archiveOlderThan({
+        ...optionalNumber(payload, 'olderThanDays') === undefined ? {} : { olderThanDays: optionalNumber(payload, 'olderThanDays') as number },
+        ...typeof field(payload, 'dryRun') === 'boolean' ? { dryRun: field(payload, 'dryRun') as boolean } : {},
+      })
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
     case 'maintenance/retention': {
       // `A15`：输出目录配额清理。默认 dryRun，只算不删；被素材库引用的文件永不动
