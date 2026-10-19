@@ -639,7 +639,7 @@ declare const seedanceAdapter: ProviderAdapter;
 /** Threerouter 适配器实例：统一入口同时支持文生图与文生视频。 */
 declare const threerouterAdapter: ProviderAdapter;
 //#endregion
-//#region ../../packages/attachment/attachment/lib/types/error.d.ts
+//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-rc.2_@deepseek-ai+cordis@vendor+cordis_@deepseek-ai+d_7cf7b2cfbbc14c30a42bbc631ae84d87/node_modules/@deepseek-ai/dsh-attachment/lib/types/error.d.ts
 declare const ATTACHMENT_ERROR_CODES: readonly ["TOO_MANY_IMAGES", "IMAGES_TOO_LARGE", "UNSUPPORTED_IMAGE_TYPE", "INVALID_IMAGE_BASE64", "INVALID_IMAGE", "IMAGE_TYPE_MISMATCH", "IMAGE_TOO_LARGE", "IMAGE_TOO_MANY_PIXELS", "IMAGE_DIMENSION_TOO_LARGE", "INVALID_FILE_BASE64", "INVALID_ATTACHMENT_REF", "ATTACHMENT_CORRUPT", "ATTACHMENT_WRITE_FAILED", "ATTACHMENT_NOT_FOUND", "ATTACHMENT_READ_FAILED", "ATTACHMENT_PROJECTION_UNSUPPORTED", "ATTACHMENT_FILES_UNSUPPORTED"];
 /** Stable attachment failure codes used for protocol error routing. */
 type AttachmentErrorCode = typeof ATTACHMENT_ERROR_CODES[number];
@@ -663,7 +663,7 @@ declare class AttachmentError extends Error {
   constructor(message: string, code: AttachmentErrorCode, options?: ErrorOptions);
 }
 //#endregion
-//#region ../../packages/util/brand/lib/types/index.d.ts
+//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-brand@0.2.1-rc.2_@deepseek-ai+cordis@vendor+cordis/node_modules/@deepseek-ai/dsh-brand/lib/types/index.d.ts
 /**
  * Duplicate-install-safe nominal primitive helpers.
  *
@@ -683,7 +683,7 @@ type Branded<B extends string> = string & {
   readonly [BRAND]: B;
 };
 //#endregion
-//#region ../../packages/attachment/attachment/lib/types/brand.d.ts
+//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-rc.2_@deepseek-ai+cordis@vendor+cordis_@deepseek-ai+d_7cf7b2cfbbc14c30a42bbc631ae84d87/node_modules/@deepseek-ai/dsh-attachment/lib/types/brand.d.ts
 /** Opaque content-addressed identifier for one immutable attachment object. */
 type AttachmentId = Branded<'AttachmentId'>;
 /**
@@ -701,7 +701,7 @@ type ImageVariantId = Branded<'ImageVariantId'>;
  */
 declare function ImageVariantId(value: string): ImageVariantId;
 //#endregion
-//#region ../../packages/attachment/attachment/lib/types/types.d.ts
+//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-rc.2_@deepseek-ai+cordis@vendor+cordis_@deepseek-ai+d_7cf7b2cfbbc14c30a42bbc631ae84d87/node_modules/@deepseek-ai/dsh-attachment/lib/types/types.d.ts
 /** Raster image formats accepted by the version-one attachment path. */
 type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 /** Durable, serializable reference to one immutable normalized image. */
@@ -845,7 +845,7 @@ interface RequestImageAttachment {
   hasAlpha: boolean;
 }
 //#endregion
-//#region ../../packages/attachment/attachment/lib/types/index.d.ts
+//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-attachment@0.2.1-rc.2_@deepseek-ai+cordis@vendor+cordis_@deepseek-ai+d_7cf7b2cfbbc14c30a42bbc631ae84d87/node_modules/@deepseek-ai/dsh-attachment/lib/types/index.d.ts
 declare module '@deepseek-ai/cordis' {
   interface Context {
     attachments: AttachmentStore;

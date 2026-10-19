@@ -54,6 +54,13 @@
 - [x] **A34 时间轴一致性校验器** ✅ 2026-10-19：`src/workbench/validate.ts`（空视频轨/同轨重叠/悬空侧链触发轨/侧链用在非音频轨/转场有空档/转场时长被夹/空字幕/交叉淡化有空档，共 7 类码）；端点 `timelines/validate`（**支持传未保存的 document 做保存前预检**）；工具动作 `timeline validate`；与渲染器共用域规则；测试 7 例（含端点 1 例）
 - [x] **A35 发布 `v0.3.10-workbench-10`** ✅ 2026-10-19：版本 0.3.10 / CHANGELOG 定稿（A33 侧链压缩 / A34 一致性校验）/ lib 重建 / tag / Harness 指针同步
 
+## 批次八（A36–A39，2026-10-19 起）
+
+- [x] **A36 覆盖率门禁落地（方案 A：对齐 4.x）** ✅ 2026-10-19：插件 `vitest ^3.1.0 → ^4.1.11`（与根一致，复用根 `@vitest/coverage-v8@4.1.11`）；vitest 4 下 workspace 深层源码导入需**顶层 `resolve.alias` + `server.deps.inline`**；**实测** statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36% → 阈值取 −2pp（81/70/80/83）；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**；全量 584 passed 保持绿。**回滚**：还原 `package.json`/`pnpm-lock.yaml`/`vitest.config.ts` 后在根跑 `pnpm install`（详见提交说明）
+- [ ] **A37 导出完成摘要**
+- [ ] **A38 保留策略触发点**
+- [ ] **A39 发布 `v0.3.11-workbench-11`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

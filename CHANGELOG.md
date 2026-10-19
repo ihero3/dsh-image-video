@@ -19,7 +19,9 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次八
+- **A36 覆盖率门禁落地**：插件 vitest 对齐到根的 **4.x**（复用根已装的 `@vitest/coverage-v8@4.1.11`）；实测 **statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36%**，阈值取实测 −2pp；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**（低于阈值即失败）
+- 踩坑与修复（写进提交说明）：vitest 4 对 workspace 深层源码导入更严格（需顶层 `resolve.alias` + `server.deps.inline`）；安装后必须在**根**跑完整 `pnpm install`，否则 workspace 包会被链接成两份导致 typecheck 红
 
 ## [0.3.9-workbench-9] - 2026-10-19
 
