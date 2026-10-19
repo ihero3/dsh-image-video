@@ -21,6 +21,7 @@ import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
 import { reportAssetUsage } from '../workbench/usage.ts'
 import { sizeReport } from '../workbench/size-report.ts'
+import { projectStats } from '../workbench/project-stats.ts'
 import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
@@ -358,6 +359,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         // 探测失败不影响校验结果（只是少了这一项检查）
       }
       return { ok: issues.length === 0, issues }
+    }
+    // `A132`：素材库按项目统计（谁最占地方；只报告）
+    case 'assets/project-stats': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      return { stats: projectStats(projects.map(project => ({ id: project.id, name: project.name })), assets, timelines) }
     }
     // `A116`：素材体积排行（Top N + 总量/中位数/占比；只报告）
     case 'assets/size-report': {

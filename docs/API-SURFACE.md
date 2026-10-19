@@ -83,6 +83,7 @@
 | `assets/attach` | `{projectId,path,kind?,prompt?}` | `{asset,created}` |
 | `assets/quick-add` | `{projectId,path?}` | `{asset,created}`（自动推断种类） |
 | `assets/remove` | `{projectId,assetId}` | `{removed}` |
+| `assets/project-stats` | — | `{stats}`（`A132` 按项目统计占用：素材数/总字节/被引用字节/时间轴数，按占用降序）|
 | `assets/size-report` | `{topN?}` | `{size}`（`A116` 体积排行：Top N/总量/中位数/占比，标注是否未使用）|
 | `assets/duplicates` | `{maxHashFiles?}` | `{duplicates}`（`A112` 内容去重：按大小分组、仅同大小算 sha256；给出建议保留项与可回收字节，只报告不删除）|
 | `assets/usage` | `{projectId?}` | `{summary,assets}`（素材利用率：从未被时间轴使用的排前面，`A82` 只报告不删除）|

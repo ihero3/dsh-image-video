@@ -2,7 +2,7 @@
  * 导出耗时预测（Track A / A98）。
  */
 import { describe, expect, it } from 'vitest'
-import { bucketKey, formatDuration, normalizedCost, predictRenderMs } from '../src/media/render-predict.ts'
+import { bucketKey, formatDuration, normalizedCost, pixelsPerSecond, predictRenderMs, targetFromFormat } from '../src/media/render-predict.ts'
 
 const sample = (renderMs: number, durationMs: number, width: number, height: number, frameRate: number) =>
   ({ renderMs, durationMs, width, height, frameRate })
@@ -61,5 +61,19 @@ describe('render sample bucketing (A102)', () => {
     expect(small).toBeLessThan(60_000)
     // 4K 预测应反映它自己的慢样本
     expect(big).toBeGreaterThan(150_000)
+  })
+})
+
+describe('targetFromFormat (A98 helper)', () => {
+  it('fills defaults and normalizes a partial format', () => {
+    expect(targetFromFormat(5000, undefined)).toEqual({ durationMs: 5000, width: 1280, height: 720, frameRate: 30 })
+    expect(targetFromFormat(5000, { width: 1080, height: 1920 })).toMatchObject({ width: 1080, height: 1920, frameRate: 30 })
+  })
+})
+
+describe('pixelsPerSecond (A98 helper)', () => {
+  it('never returns zero (guards divide-by-zero in cost maths)', () => {
+    expect(pixelsPerSecond(1920, 1080, 30)).toBe(1920 * 1080 * 30)
+    expect(pixelsPerSecond(0, 0, 0)).toBe(1)
   })
 })

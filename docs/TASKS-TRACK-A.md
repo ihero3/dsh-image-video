@@ -299,6 +299,11 @@
 - [x] **A130 VTT 随片交付** ✅ 2026-10-20：`render(timeline,{subtitleFormat:'srt'|'vtt'})` + `timelines/render` 端点透传 → 随片字幕可出 SRT 或 VTT（默认 srt 不变）；测试 1 例（vtt → `.vtt` 且以 `WEBVTT` 开头、时间码点毫秒）
 - [ ] **A131 发布 `v0.3.54-workbench-54`**
 
+## 批次五十七（A132 起，2026-10-20）
+
+- [x] **A132 素材库按项目统计** ✅ 2026-10-20：`projectStats` 纯函数（每项目：素材数/总字节/**被引用字节**/时间轴数；按占用降序 + 最大项目占比）+ 端点 `assets/project-stats`（只报告）；清理决策从 3 维变 4 维（用量/重复/单个大小/**项目占用**）；测试 2 例
+- [ ] **A133 发布 `v0.3.55-workbench-55`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
