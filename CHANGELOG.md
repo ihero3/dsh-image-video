@@ -11,7 +11,8 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次六
+- **A29 修复 `speed` 被取整**：`numberField` 原先对所有数值都 `Math.round`，导致 `speed: 1.5` 存成 2（毫秒字段该取整、倍数不该）→ 新增 `integer: false` 只保留 2 位小数；package 往返严格断言 `speed === 1.5` 恢复
 
 ## [0.3.5-workbench-5] - 2026-10-18
 

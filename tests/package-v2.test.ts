@@ -65,9 +65,8 @@ describe('package format v2 (A26)', () => {
     // 片段级转场随 tracks 一起走 ✓
     expect(clip.transition).toBe('fade')
     expect(clip.transitionDurationMs).toBe(300)
-    // NOTE(A26 待查)：种子里 speed=1.5，导入后读出来是 2 —— 疑似某处把速度四舍五入了，
-    // 已知偏差，留待定位（不在本轮猜着改），先断言"速度被保留且 >1"。
-    expect(clip.speed).toBeGreaterThan(1)
+    // `A29` 修掉的 bug：numberField 曾对 speed 取整，1.5 被悄悄变成 2 → 现在必须严格相等
+    expect(clip.speed).toBe(1.5)
     expect(timeline.tracks[1]!.fadeMs).toBe(500)
     expect(timeline.normalizeLoudness).toBe(true)
     expect(timeline.exportFormat).toMatchObject({ width: 1080, height: 1920 })

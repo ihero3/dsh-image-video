@@ -199,11 +199,17 @@ export function looksInlinedBytes(value: string): boolean {
   return /[A-Za-z0-9+/]{512,}={0,2}/.test(value)
 }
 
-function numberField(value: unknown, what: string, options: { min: number; max: number }): number {
+function numberField(
+  value: unknown,
+  what: string,
+  options: { min: number; max: number; integer?: boolean },
+): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${what} must be a finite number`)
   if (value < options.min || value > options.max) {
     throw new Error(`${what} must be between ${options.min} and ${options.max}`)
   }
+  // 毫秒类字段取整；倍数类（如 speed）必须保留小数，否则 1.5 会被悄悄变成 2（`A29` 修的 bug）
+  if (options.integer === false) return Math.round(value * 100) / 100
   return Math.round(value)
 }
 
@@ -245,7 +251,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       // 变速 / 淡入淡出 / 裁剪（`A13`）：越界一律拒，不做静默截断
       const speed = clip.speed === undefined
         ? undefined
-        : numberField(clip.speed, `clip ${id} speed`, { min: CLIP_SPEED_RANGE.min, max: CLIP_SPEED_RANGE.max })
+        : numberField(clip.speed, `clip ${id} speed`, { min: CLIP_SPEED_RANGE.min, max: CLIP_SPEED_RANGE.max, integer: false })
       const fade = clip.fade === undefined
         ? undefined
         : numberField(clip.fade, `clip ${id} fade`, { min: 0, max: MAX_CLIP_FADE_MS })

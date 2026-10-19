@@ -40,6 +40,13 @@
 - [x] **A27 发布 `v0.3.8-workbench-8`** ✅ 2026-10-19：版本 0.3.8 / CHANGELOG 定稿（A24 拆分复制 / A25 字幕多行 / A26 项目包 v2）/ lib 重建 / tag / Harness 指针同步
 - [ ] **A22 覆盖率门禁（仍阻塞）**：需 root 级 vitest 对齐决策（见该条证据）
 
+## 批次六（A29–A32，2026-10-19 起）
+
+- [x] **A29 修复 `speed` 被悄悄取整** ✅ 2026-10-19：根因是 `numberField` 一律 `Math.round`（毫秒字段该如此，但 `speed` 是倍数）→ 新增 `integer: false` 选项（保留 2 位小数）并给 `speed` 使用；恢复 package 往返的严格断言 `speed === 1.5`；4 个相关测试文件 17 例全绿
+- [ ] **A30 音轨交叉淡化（acrossfade）**
+- [ ] **A31 导出预设**
+- [ ] **A32 发布 `v0.3.9-workbench-9`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
