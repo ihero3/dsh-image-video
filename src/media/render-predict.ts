@@ -18,6 +18,19 @@ export interface RenderSample {
   readonly frameRate: number
 }
 
+/**
+ * 规格分桶键（`A102`）：分辨率档 × 帧率档。
+ *
+ * 为什么分桶：4K 与 1080p 的"归一化成本"并不相同（编码器效率随分辨率变化），
+ * 混在一个池里会互相污染预测。预测时优先用同桶样本，桶内不足再退回全局中位数。
+ */
+export function bucketKey(width: number, height: number, frameRate: number): string {
+  const pixels = Math.min(width, height) // 以**短边**判档：竖屏 1080×1920 与横屏 1920×1080 都算 1080
+  const resolution = pixels <= 480 ? '480' : pixels <= 720 ? '720' : pixels <= 1080 ? '1080' : pixels <= 1440 ? '1440' : '2160+'
+  const fps = frameRate <= 25 ? '24' : frameRate <= 30 ? '30' : frameRate <= 50 ? '48' : '60'
+  return `${resolution}@${fps}`
+}
+
 /** 一次导出的规格（预测目标）。 */
 export interface RenderTarget {
   readonly durationMs: number
@@ -61,7 +74,11 @@ export function predictRenderMs(
     const scale = pixelsPerSecond(target.width, target.height, target.frameRate) / baseline
     return Math.round(outputMs * fallbackFactor * Math.max(1, scale))
   }
-  const costs = usable.map(normalizedCost).sort((left, right) => left - right)
+  // `A102`：优先用同桶样本（>=2 条才算够），否则退回全部样本
+  const targetBucket = bucketKey(target.width, target.height, target.frameRate)
+  const sameBucket = usable.filter(sample => bucketKey(sample.width, sample.height, sample.frameRate) === targetBucket)
+  const pool = sameBucket.length >= 2 ? sameBucket : usable
+  const costs = pool.map(normalizedCost).sort((left, right) => left - right)
   const median = costs[Math.floor(costs.length / 2)] ?? costs[0] ?? 0
   return Math.round(outputMs * pixelsPerSecond(target.width, target.height, target.frameRate) * median * 1.1)
 }

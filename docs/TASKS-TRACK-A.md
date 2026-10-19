@@ -224,6 +224,11 @@
 - [x] **A100 诊断日志落盘轮转** ✅ 2026-10-20：`src/host/diagnostics-log.ts`（`shouldRotate` 纯函数 + `appendDiagnosticLog` 按 1MB × 3 份轮转 + `listDiagnosticLogs`/`tailDiagnosticLog` 回读）+ 宿主 `logEntry` 全部诊断事件同时落盘（沿用脱敏口径：只写事件名/摘要/时间，不写提示词与绝对路径）+ 诊断端点新增 `logFiles`；测试 3 例（轮转判定/追加与轮转上限/脱敏契约）
 - [ ] **A101 发布 `v0.3.39-workbench-39`**
 
+## 批次四十二（A102 起，2026-10-20）
+
+- [x] **A102 渲染样本按规格分桶** ✅ 2026-10-20：`bucketKey`（**短边**分辨率档 × 帧率档，竖屏/横屏同档）→ 预测**优先用同桶样本**（≥2 条），不足退回全局中位数；避免 4K 慢样本把 1080p 的预测拉高；测试 2 例
+- [ ] **A103 发布 `v0.3.40-workbench-40`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

@@ -2,7 +2,7 @@
  * 导出耗时预测（Track A / A98）。
  */
 import { describe, expect, it } from 'vitest'
-import { formatDuration, normalizedCost, predictRenderMs } from '../src/media/render-predict.ts'
+import { bucketKey, formatDuration, normalizedCost, predictRenderMs } from '../src/media/render-predict.ts'
 
 const sample = (renderMs: number, durationMs: number, width: number, height: number, frameRate: number) =>
   ({ renderMs, durationMs, width, height, frameRate })
@@ -35,5 +35,31 @@ describe('render time prediction (A98)', () => {
     expect(cost).toBeCloseTo(1 / (1920 * 1080 * 30), 12)
     expect(formatDuration(135_000)).toBe('2 分 15 秒')
     expect(formatDuration(48_000)).toBe('48 秒')
+  })
+})
+
+describe('render sample bucketing (A102)', () => {
+  it('keys buckets by resolution and frame-rate tiers', () => {
+    expect(bucketKey(1920, 1080, 30)).toBe('1080@30')
+    expect(bucketKey(1080, 1920, 30)).toBe('1080@30') // 竖屏同档
+    expect(bucketKey(3840, 2160, 60)).toBe('2160+@60')
+    expect(bucketKey(1280, 720, 24)).toBe('720@24')
+    expect(bucketKey(1080, 1080, 25)).toBe('1080@24')
+  })
+
+  it('prefers same-bucket samples so 4K slowness does not inflate 1080p predictions', () => {
+    // 1080p 样本：实时（0.5×）；4K 样本：慢 4 倍
+    const samples = [
+      sample(30_000, 60_000, 1920, 1080, 30),
+      sample(20_000, 60_000, 1920, 1080, 30),
+      sample(240_000, 60_000, 3840, 2160, 30),
+      sample(200_000, 60_000, 3840, 2160, 30),
+    ]
+    const small = predictRenderMs({ durationMs: 60_000, width: 1920, height: 1080, frameRate: 30 }, samples)
+    const big = predictRenderMs({ durationMs: 60_000, width: 3840, height: 2160, frameRate: 30 }, samples)
+    // 1080p 预测应接近它自己的样本（约 20-30s），不被 4K 的 200s+ 拉高
+    expect(small).toBeLessThan(60_000)
+    // 4K 预测应反映它自己的慢样本
+    expect(big).toBeGreaterThan(150_000)
   })
 })
