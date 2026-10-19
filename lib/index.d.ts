@@ -151,7 +151,7 @@ declare function fitFontSize(text: string, width: number, marginX: number, fontS
  * @module dsh-image-video/http-client
  */
 /** 异常种类，区分可重试与不可重试。 */
-type ErrorKind = 'auth' | 'quota' | 'task' | 'timeout' | 'network';
+type ErrorKind = 'auth' | 'quota' | 'task' | 'timeout' | 'network' | 'cancelled';
 /** 所有生成相关错误的基类，携带友好中文提示与分类标记。 */
 declare class GenerationError extends Error {
   readonly kind: ErrorKind;

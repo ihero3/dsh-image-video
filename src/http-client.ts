@@ -5,7 +5,7 @@
  */
 
 /** 异常种类，区分可重试与不可重试。 */
-export type ErrorKind = 'auth' | 'quota' | 'task' | 'timeout' | 'network'
+export type ErrorKind = 'auth' | 'quota' | 'task' | 'timeout' | 'network' | 'cancelled'
 
 /** 所有生成相关错误的基类，携带友好中文提示与分类标记。 */
 export class GenerationError extends Error {
