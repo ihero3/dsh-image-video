@@ -4,6 +4,7 @@
  * 渲染是长任务，宿主没有推送通道，所以这里只维护**可轮询的任务快照**：
  * 客户端每隔一会儿来 `timelines/renders` 看进度，取消走 `timelines/render-cancel`。
  */
+import { MAX_AUTO_RETRIES, isTransientRenderFailure } from './retry-policy.ts'
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { normalizeExportFormat } from '../workbench/timeline.ts'
@@ -295,6 +296,8 @@ export interface RenderJob {
   readonly priority?: number
   /** 失败诊断（`A88`：错误码 → 人话 + 可执行动作）。 */
   readonly diagnosis?: Diagnosis
+  /** 第几次尝试（`A114`；自动重试会递增）。 */
+  readonly attempt?: number
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -314,6 +317,8 @@ export class RenderRegistry {
   private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number; seq: number }> = []
   /** 入队序号（`A108` 公平调度的稳定排序依据）。 */
   private pendingSeq = 0
+  /** 每个任务是否允许瞬时失败自动重试（`A114`，opt-in）。 */
+  private readonly retryFlags = new Map<string, boolean>()
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -498,7 +503,7 @@ export class RenderRegistry {
     }
   }
 
-  start(timeline: TimelineRecord, options: { priority?: number } = {}): RenderJob {
+  start(timeline: TimelineRecord, options: { priority?: number; retryTransient?: boolean } = {}): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
     const job: RenderJob = {
@@ -507,6 +512,7 @@ export class RenderRegistry {
     }
     const priority = Number.isFinite(options.priority) ? Math.round(options.priority as number) : 0
     this.jobs.set(id, job)
+    if (options.retryTransient === true) this.retryFlags.set(id, true)
     // 优先级无条件记录（重试要复用它；早先只写在入队分支里 → 直接开跑的任务没有该字段）
     this.patch(id, { priority })
     if (this.controllers.size >= maxConcurrent) {
@@ -595,6 +601,18 @@ export class RenderRegistry {
     }).catch((error: unknown) => {
       const cancelled = error instanceof RenderError && error.code === 'MEDIA_RENDER_CANCELLED'
       const message = error instanceof Error ? error.message : String(error)
+      // `A114`：opt-in + 瞬时失败 + 还没重试过 → 自动重试一次（本地渲染不计费）
+      const current = this.jobs.get(id)
+      const attempt = current?.attempt ?? 1
+      if (!cancelled
+        && this.retryFlags.get(id) === true
+        && isTransientRenderFailure(error instanceof RenderError ? error.code : undefined)
+        && attempt <= MAX_AUTO_RETRIES) {
+        this.patch(id, { attempt: attempt + 1, percent: 0, status: 'running' })
+        this.deps.log?.({ event: 'render-retry-transient', renderId: id, attempt: attempt + 1 })
+        this.launch(id, timeline)
+        return
+      }
       this.patch(id, {
         status: cancelled ? 'cancelled' : 'failed',
         finishedAt: this.stamp(),

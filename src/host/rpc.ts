@@ -641,7 +641,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (projectId !== undefined && projectId !== '' && projectId !== timeline.projectId) {
         throw new Error(`timeline ${timelineId} does not belong to project ${projectId}`)
       }
-      return { render: deps.renders.start(timeline, { ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number } }) }
+      return {
+        render: deps.renders.start(timeline, {
+          ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number },
+          ...field(payload, 'retryTransient') === true ? { retryTransient: true } : {},
+        }),
+      }
     }
     case 'timelines/renders':
       // `A56`：成片集归组（按项目+时间轴；只读聚合、纯加法字段，老客户端不受影响）

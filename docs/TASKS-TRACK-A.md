@@ -254,6 +254,11 @@
 - [x] **A112 素材内容去重检测** ✅ 2026-10-20：`findDuplicateAssets`（**先按字节分组**，只对同大小的组算 sha256 → 避免全库哈希；`maxHashFiles` 默认 200 防大库扫描）+ 端点 `assets/duplicates`（重复组/建议保留项/可回收字节/实际算了几次哈希/跳过了多少）；**只报告不删除**；测试 2 例（同内容命中且唯一大小文件不参与哈希、哈希预算生效）
 - [ ] **A113 发布 `v0.3.45-workbench-45`**
 
+## 批次四十八（A114 起，2026-10-20）
+
+- [x] **A114 渲染失败自动重试（opt-in）** ✅ 2026-10-20：`isTransientRenderFailure` 白名单（输出损坏/被杀/超时 可重试；素材缺失/时间轴非法/ffmpeg 不可用/用户取消 **绝不重试**）+ `start(timeline,{retryTransient:true})` → 瞬时失败自动重试**一次**（任务带 `attempt`，日志 `render-retry-transient`）；**生成类调用仍绝不自动重试**（计费）；端点透传 `retryTransient`；测试 3 例
+- [ ] **A115 发布 `v0.3.46-workbench-46`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
