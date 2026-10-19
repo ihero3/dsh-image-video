@@ -28,6 +28,8 @@ export interface TimelineSnapshot {
   readonly exportFormat: TimelineExportFormat
   /** 是否做响度归一化（`A20`）。 */
   readonly normalizeLoudness: boolean
+  /** 只烧哪种语言的字幕（`A42`；缺省烧全部字幕轨）。 */
+  readonly burnLanguage?: string
   readonly durationMs: number
   readonly tracks: readonly TimelineTrack[]
 }
@@ -111,7 +113,8 @@ export function freezeTimeline(timeline: TimelineRecord): TimelineSnapshot {
   const durationMs = timelineDurationMs(tracks)
   return {
     id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
-    exportFormat: normalizeExportFormat(timeline.exportFormat), normalizeLoudness: timeline.normalizeLoudness === true, durationMs, tracks,
+    exportFormat: normalizeExportFormat(timeline.exportFormat), normalizeLoudness: timeline.normalizeLoudness === true,
+    ...timeline.burnLanguage === undefined ? {} : { burnLanguage: timeline.burnLanguage }, durationMs, tracks,
   }
 }
 
@@ -280,7 +283,10 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   // 字幕：只烧 subtitle 轨，按各自起止时间 show/hide；关掉烧录就整段不生成
   const drawFilters: string[] = []
   if (snapshot.burnSubtitles) {
-    for (const clip of snapshot.tracks.find(track => track.kind === 'subtitle')?.clips ?? []) {
+    // `A42`：设了 burnLanguage 就只烧该语言的字幕轨；没设就沿用老行为（所有字幕轨）
+    const subtitleTracks = snapshot.tracks.filter(track => track.kind === 'subtitle'
+      && (snapshot.burnLanguage === undefined || track.language === snapshot.burnLanguage))
+    for (const clip of subtitleTracks.flatMap(track => track.clips)) {
       const fontSize = clip.style?.fontSize ?? 32
       const color = (clip.style?.color ?? '#ffffff').replace('#', '0x')
       const y = clip.style?.position === 'top'

@@ -447,6 +447,7 @@ export class WorkbenchStore {
     burnSubtitles?: boolean
     exportFormat?: unknown
     normalizeLoudness?: boolean
+    burnLanguage?: string
   }): Promise<TimelineRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -464,6 +465,7 @@ export class WorkbenchStore {
       burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
       exportFormat: normalizeExportFormat(input.exportFormat ?? existing?.exportFormat),
       normalizeLoudness: input.normalizeLoudness ?? existing?.normalizeLoudness ?? false,
+      ...input.burnLanguage === undefined && existing?.burnLanguage === undefined ? {} : { burnLanguage: input.burnLanguage ?? existing?.burnLanguage },
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }

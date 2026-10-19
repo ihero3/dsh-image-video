@@ -10,6 +10,8 @@ export interface TimelineSnapshot {
     readonly exportFormat: TimelineExportFormat;
     /** 是否做响度归一化（`A20`）。 */
     readonly normalizeLoudness: boolean;
+    /** 只烧哪种语言的字幕（`A42`；缺省烧全部字幕轨）。 */
+    readonly burnLanguage?: string;
     readonly durationMs: number;
     readonly tracks: readonly TimelineTrack[];
 }

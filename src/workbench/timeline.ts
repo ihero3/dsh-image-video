@@ -41,6 +41,8 @@ export const MAX_CLIP_FADE_MS = 2000
 export const MAX_TRACK_FADE_MS = 5000
 /** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
 export const MAX_TRACK_CROSSFADE_MS = 3000
+/** 语言标记的合法长度范围（`A42`）。 */
+export const TRACK_LANGUAGE_RANGE = { min: 1, max: 16 } as const
 /** 侧链压低范围（分贝，`A33`）。 */
 export const DUCKING_DB_RANGE = { min: -30, max: 0 } as const
 /** 侧链压低缺省值（分贝，`A33`）。 */
@@ -87,6 +89,11 @@ export interface TimelineTrack {
   readonly muted?: boolean
   /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
   readonly volume?: number
+  /**
+   * 语言标记（`A42`，主要给字幕轨用，如 `zh` / `en`）：配合 `timeline.burnLanguage`
+   * 决定烧哪一条字幕轨，避免多语言字幕叠在一起。
+   */
+  readonly language?: string
   /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
   readonly fadeMs?: number
   /**
@@ -191,6 +198,11 @@ export interface TimelineRecord {
   readonly burnSubtitles: boolean
   /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
   readonly exportFormat?: TimelineExportFormat
+  /**
+   * 只烧哪一条语言的字幕轨（`A42`）：缺省时沿用老行为（烧所有字幕轨）。
+   * 设了但没有任何轨道匹配 → 校验器会报 `dangling-burn-language`。
+   */
+  readonly burnLanguage?: string
   /** 导出时做响度归一化（`loudnorm`，目标 -16 LUFS；`A20`）。缺省关。 */
   readonly normalizeLoudness?: boolean
   readonly createdAt: string
@@ -349,6 +361,16 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
     if (track.crossfadeMs !== undefined) {
       crossfadeMs = Math.round(numberField(track.crossfadeMs, `track ${trackIndex} crossfadeMs`, { min: 0, max: MAX_TRACK_CROSSFADE_MS }))
     }
+    let language: string | undefined
+    if (track.language !== undefined) {
+      if (typeof track.language !== 'string' || track.language.trim() === '') {
+        throw new Error(`track ${trackIndex} language must be a non-empty string`)
+      }
+      const trimmed = track.language.trim()
+      if (trimmed.length > TRACK_LANGUAGE_RANGE.max) throw new Error(`track ${trackIndex} language is too long`)
+      language = trimmed
+    }
+
     let duckUnderTrackId: string | undefined
     if (track.duckUnderTrackId !== undefined) {
       if (typeof track.duckUnderTrackId !== 'string' || track.duckUnderTrackId === '') {
@@ -368,6 +390,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       ...volume === undefined ? {} : { volume },
       ...fadeMs === undefined ? {} : { fadeMs },
       ...crossfadeMs === undefined ? {} : { crossfadeMs },
+      ...language === undefined ? {} : { language },
       ...duckUnderTrackId === undefined ? {} : { duckUnderTrackId },
       ...duckingDb === undefined ? {} : { duckingDb },
     }

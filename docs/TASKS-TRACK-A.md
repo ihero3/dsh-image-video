@@ -80,7 +80,7 @@
 ## 批次十（A41 起，2026-10-19）
 
 - [x] **A41 渲染进度按镜头细分** ✅ 2026-10-19：`segmentStepAt(bounds, percent)` 纯函数把全局百分比换成"第 N/共 M 段"（按视频段+补边段的累计时长，含变速折算）；任务字段 `progressStep`（加法）；进度回调与成功收尾都刷新，长成片能显示"第 3/12 段"；测试 2 例（纯函数边界 + 集成收尾）
-- [ ] **A42 多语言字幕轨**
+- [x] **A42 多语言字幕轨** ✅ 2026-10-19：字幕轨 `language`(1–16 字符) + 时间轴 `burnLanguage`（只烧选定语言；**不设则沿用老行为烧全部**，向后兼容）；`timelines/save` 透传；校验器新增 3 个码（`dangling-burn-language` / `duplicate-subtitle-language` / `subtitle-burn-overlap` 多轨叠烧提醒）；测试 3 例
 - [ ] **A43 发布 `v0.3.12-workbench-12`**
 
 ## P1（能力补齐与规模化）

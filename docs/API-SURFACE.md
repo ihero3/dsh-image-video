@@ -39,6 +39,7 @@
 
 - `workbench_projects` / `workbench_assets` / `workbench_workflow` / `workbench_tasks` / `workbench_timeline`
 - 工作流动作：`list | save | templates | from-template | run | runs | run-cancel | run-retry`（`A10` 新增 `templates`/`from-template`，模板含 `drama-series` 漫剧单集）
+- 字幕轨支持 `language`，时间轴支持 `burnLanguage`（`A42`，只烧选定语言；缺省烧全部）；
 - 音轨支持 `fadeMs`(0–5000) 淡入淡出、`crossfadeMs`(0–3000) 相邻片段交叉淡化（`A30`）、`duckUnderTrackId` + `duckingDb`(-30..0) 侧链压缩（`A33`）；时间轴文档支持 `normalizeLoudness`（`A20`，缺省关）。
 - 时间轴动作：`list | add-clip | add-subtitles | split-clip | copy-clip | trim | drop-clip | set-format | set-track | export`（`A24` 新增 `split-clip`(clipId,atMs) / `copy-clip`(clipId,startMs?,track?)）（`A14` 新增 `add-subtitles`：一段台词按句切分并按字数分配时间，入参 `text`/`startMs?`/`endMs?`/`maxChars?`）
 - 任务动作：`list | renders | cancel | render-cancel`

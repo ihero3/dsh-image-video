@@ -68,6 +68,9 @@ export type TimelineIssueCode =
   | 'missing-asset'
   | 'self-ducking'
   | 'gapped-crossfade'
+  | 'dangling-burn-language'
+  | 'duplicate-subtitle-language'
+  | 'subtitle-burn-overlap'
 
 /** 一条问题。 */
 export interface TimelineIssue {
@@ -189,5 +192,35 @@ export function validateTimeline(
       }
     }
   }
+  // 字幕语言（`A42`）：悬空的 burnLanguage / 同语言重复 / 多条字幕叠在一起烧
+  const subtitleTracks = tracks.filter(track => track.kind === 'subtitle' && track.clips.length > 0)
+  if (timeline.burnLanguage !== undefined) {
+    if (!subtitleTracks.some(track => track.language === timeline.burnLanguage)) {
+      issues.push({
+        code: 'dangling-burn-language',
+        message: `导出指定只烧语言「${timeline.burnLanguage}」的字幕，但没有任何字幕轨带这个语言：改 burnLanguage 或给字幕轨加 language。`,
+      })
+    }
+  }
+  const seenLanguages = new Map<string, number>()
+  for (const track of subtitleTracks) {
+    if (track.language === undefined) continue
+    const count = (seenLanguages.get(track.language) ?? 0) + 1
+    seenLanguages.set(track.language, count)
+    if (count === 2) {
+      issues.push({
+        code: 'duplicate-subtitle-language', trackId: track.id,
+        message: `有多条字幕轨都标了语言「${track.language}」：烧录时会叠在一起，删掉多余的或改语言。`,
+      })
+    }
+  }
+  const burnedTracks = subtitleTracks.filter(track => timeline.burnLanguage === undefined || track.language === timeline.burnLanguage)
+  if (burnedTracks.length > 1) {
+    issues.push({
+      code: 'subtitle-burn-overlap',
+      message: `会有 ${burnedTracks.length} 条字幕轨同时烧进画面（会叠在一起看不清）：设置 burnLanguage 只烧其中一种语言。`,
+    })
+  }
+
   return issues
 }
