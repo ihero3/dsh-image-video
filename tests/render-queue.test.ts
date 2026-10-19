@@ -17,9 +17,9 @@ function controllableService() {
   return { service, gates }
 }
 
-function timeline(id: string): TimelineRecord {
+function timeline(id: string, projectId = 'prj-1'): TimelineRecord {
   return {
-    schemaVersion: 1, id, projectId: 'prj-1', name: id, frameRate: 30, burnSubtitles: false,
+    schemaVersion: 1, id, projectId, name: id, frameRate: 30, burnSubtitles: false,
     tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: '/tmp/a.mp4', startMs: 0, durationMs: 1000 }] }],
     createdAt: '', updatedAt: '',
   }
@@ -27,6 +27,24 @@ function timeline(id: string): TimelineRecord {
 
 const done = (name: string): RenderResult => ({ outputPath: `/tmp/${name}.mp4`, bytes: 10, durationMs: 1000 })
 const flush = async (): Promise<void> => { await new Promise(resolve => { setTimeout(resolve, 0) }) }
+
+describe('render queue fairness (A108)', () => {
+  it('round-robins between projects at the same priority instead of starving one', async () => {
+    const { service, gates } = controllableService()
+    const registry = new RenderRegistry({ render: service, maxConcurrent: 1 })
+    const a1 = registry.start(timeline('a1', 'prj-a')) // 占住唯一槽位
+    const a2 = registry.start(timeline('a2', 'prj-a'))
+    const a3 = registry.start(timeline('a3', 'prj-a'))
+    const b1 = registry.start(timeline('b1', 'prj-b'))
+    // A 连提 3 个、B 提 1 个。a2 早已在队（rank 0 且更早），b1 紧随其后 → 顺序 [a2, b1, a3]
+    // 关键：B 的任务排在 A 的第 3 个之前，不会被 A 的三连发饿死。
+    expect(registry.get(a2.id)?.queuePosition).toBe(1)
+    expect(registry.get(b1.id)?.queuePosition).toBe(2)
+    expect(registry.get(a3.id)?.queuePosition).toBe(3)
+    void a1
+    void gates
+  })
+})
 
 describe('render queue (A4)', () => {
   it('queues beyond the concurrency limit and promotes FIFO when a slot frees', async () => {

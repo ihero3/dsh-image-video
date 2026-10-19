@@ -311,7 +311,9 @@ export class RenderRegistry {
   private readonly renderSamples: Array<{ renderMs: number; durationMs: number; width: number; height: number; frameRate: number }> = []
 
   /** 等待槽位的任务（FIFO，`A4`）。 */
-  private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number }> = []
+  private readonly pending: Array<{ job: RenderJob; timeline: TimelineRecord; priority: number; seq: number }> = []
+  /** 入队序号（`A108` 公平调度的稳定排序依据）。 */
+  private pendingSeq = 0
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -333,6 +335,31 @@ export class RenderRegistry {
   private stepAt(timeline: TimelineRecord, percent: number): { progressStep?: { current: number; total: number } } {
     const step = segmentStepAt(this.segmentBounds(timeline), percent)
     return step === undefined ? {} : { progressStep: step }
+  }
+
+  /**
+   * 重排等待队列（`A108`）：优先级降序 → **项目内轮次**升序 → 入队序号。
+   *
+   * 为什么按项目内轮次：项目 A 连提 3 个、项目 B 提 1 个时，希望执行顺序是 A1、B1、A2、A3
+   * —— 而不是 A1、A2、A3、B1（B 被饿死）。同项目内部仍严格 FIFO。
+   */
+  private reorderPending(): void {
+    const depth = new Map<string, number>()
+    // 先按入队顺序给每个项目内的条目编号（0 = 该项目最早的那个）
+    const ranked = this.pending
+      .slice()
+      .sort((left, right) => left.seq - right.seq)
+      .map(entry => {
+        const rank = depth.get(entry.job.projectId) ?? 0
+        depth.set(entry.job.projectId, rank + 1)
+        return { entry, rank }
+      })
+    ranked.sort((left, right) =>
+      right.entry.priority - left.entry.priority
+      || left.rank - right.rank
+      || left.entry.seq - right.entry.seq)
+    this.pending.splice(0, this.pending.length, ...ranked.map(item => item.entry))
+    this.pending.forEach((queued, index) => { this.patch(queued.job.id, { queued: true, queuePosition: index + 1 }) })
   }
 
   /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
@@ -484,11 +511,9 @@ export class RenderRegistry {
     this.patch(id, { priority })
     if (this.controllers.size >= maxConcurrent) {
       // 槽位满了：按**优先级**有序插入（数值大的先跑；同优先级保持 FIFO，不插队到同伴前面）
-      const insertAt = this.pending.findIndex(entry => entry.priority < priority)
-      const entry = { job, timeline, priority }
-      if (insertAt < 0) this.pending.push(entry)
-      else this.pending.splice(insertAt, 0, entry)
-      this.pending.forEach((queued, index) => { this.patch(queued.job.id, { queued: true, queuePosition: index + 1 }) })
+      // `A108` 公平调度：先按优先级降序，同优先级内按「各项目自己的第几个」轮流
+      this.pending.push({ job, timeline, priority, seq: this.pendingSeq++ })
+      this.reorderPending()
       this.deps.log?.({ event: 'render-queued', renderId: id, timelineId: timeline.id, position: this.pending.length })
       return this.jobs.get(id) ?? job
     }

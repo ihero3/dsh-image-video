@@ -239,6 +239,11 @@
 - [x] **A106 项目包自描述** ✅ 2026-10-20：导出时在 `manifest.json` 写入 `summary`（项目名/素材数/时间轴数/工作流数/总时长/导出时间/**插件版本**）；`packages/inspect` 返回 `exportedSummary` 并**对照实测交付数** —— 声称与实际不一致时明确警告「包可能不完整」；旧包无 summary 自动回退现扫描逻辑；测试 1 例
 - [ ] **A107 发布 `v0.3.42-workbench-42`**
 
+## 批次四十五（A108 起，2026-10-20）
+
+- [x] **A108 渲染队列按项目公平调度** ✅ 2026-10-20：`reorderPending` 按「优先级降序 → **项目内轮次**（rank）升序 → 入队序号」重排 —— 项目 A 连提 3 个、B 提 1 个时顺序为 `a2、b1、a3`（B 排到 A 第 3 个之前，不被饿死）；显式 `priority` 仍优先于公平性；同项目内部严格 FIFO；测试 1 例（并用排队位次断言）
+- [ ] **A109 发布 `v0.3.43-workbench-43`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

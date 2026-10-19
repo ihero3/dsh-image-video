@@ -208,6 +208,8 @@ export declare class RenderRegistry {
     private readonly renderSamples;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
+    /** 入队序号（`A108` 公平调度的稳定排序依据）。 */
+    private pendingSeq;
     constructor(deps: {
         readonly render: RenderService;
         /** 成功后把产物登记成素材（可选）。 */
@@ -231,6 +233,13 @@ export declare class RenderRegistry {
     });
     /** 百分比 → 第 N 段（`A41`；边界为空时不带该字段）。 */
     private stepAt;
+    /**
+     * 重排等待队列（`A108`）：优先级降序 → **项目内轮次**升序 → 入队序号。
+     *
+     * 为什么按项目内轮次：项目 A 连提 3 个、项目 B 提 1 个时，希望执行顺序是 A1、B1、A2、A3
+     * —— 而不是 A1、A2、A3、B1（B 被饿死）。同项目内部仍严格 FIFO。
+     */
+    private reorderPending;
     /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
     private etaAt;
     /** 记一条预测样本（`A98`；最多保留 50 条，超出丢最旧的）。 */
