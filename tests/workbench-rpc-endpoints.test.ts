@@ -183,6 +183,18 @@ describe('workbench channel endpoints', () => {
       },
     })
     expect(typeof inline.ok).toBe('boolean')
+
+    // `A40`：inline 文档超限要在端点层就拒掉（别让它白跑）
+    const oversize = await ok<{ ok: boolean }>('timelines/validate', {
+      document: {
+        schemaVersion: 3, id: 'x', projectId: created.project.id, name: 'big', frameRate: 30, burnSubtitles: false,
+        tracks: [{ id: 'v1', kind: 'video', clips: Array.from({ length: 401 }, (_, i) => ({
+          id: `c${i}`, assetPath: 'outputs/a.mp4', startMs: i * 1000, durationMs: 1000,
+        })) }],
+        createdAt: '', updatedAt: '',
+      },
+    }).catch(error => error as Error)
+    expect(String(oversize)).toMatch(/片段太多/)
   })
 
   it('lists export presets through the channel (A31)', async () => {

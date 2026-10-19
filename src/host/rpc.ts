@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { planRetention } from '../media/retention.ts'
 import { EXPORT_PRESETS } from '../workbench/presets.ts'
-import { validateTimeline } from '../workbench/validate.ts'
+import { checkInlineTimelineBounds, validateTimeline } from '../workbench/validate.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
@@ -307,6 +307,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const timelineId = optionalText(payload, 'timelineId')
       let document: TimelineRecord | undefined
       if (inline !== undefined && typeof inline === 'object') {
+        // 未保存文档不受存储层规模校验保护 → 这里补边界，超限直接给出可操作错误
+        const problem = checkInlineTimelineBounds(inline)
+        if (problem !== undefined) throw new Error(problem)
         document = inline as TimelineRecord
       } else if (timelineId !== undefined) {
         document = await deps.store.findTimeline(timelineId)

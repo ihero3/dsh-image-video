@@ -5,7 +5,57 @@
  * 这个校验器让界面（拖拽/保存前）与 Agent 能**提前**拿到同一份问题清单。
  * 与渲染器共用域规则，避免"界面说没问题、导出却失败"。
  */
-import { effectiveDurationMs, transitionOverlapMs, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import {
+  MAX_TIMELINE_CLIPS, effectiveDurationMs, transitionOverlapMs, type TimelineRecord, type TimelineTrack,
+} from './timeline.ts'
+
+/**
+ * 未保存时间轴（inline document）的输入上限（`A40`）。
+ *
+ * 端点接受"未保存的文档"是为了让界面在拖拽/保存前预检——但也意味着输入不受存储层
+ * 那些规模校验保护。这里补上与存储一致的边界，避免误传超大文档白跑、撑内存。
+ */
+export const INLINE_TIMELINE_LIMITS = {
+  /** JSON 序列化后的体积上限（字节）。 */
+  maxBytes: 2_000_000,
+  /** 片段总数上限（**与存储层同一个常量**，避免两处数字漂移）。 */
+  maxClips: MAX_TIMELINE_CLIPS,
+  /** 轨道数上限。 */
+  maxTracks: 50,
+} as const
+
+/**
+ * 检查 inline 时间轴文档是否在边界内。
+ * @param document - 待检查的原始输入。
+ * @returns 超限时返回面向人的错误说明；正常返回 `undefined`。
+ */
+export function checkInlineTimelineBounds(document: unknown): string | undefined {
+  if (typeof document !== 'object' || document === null) return 'document 必须是一个对象'
+  let serialized: string
+  try {
+    serialized = JSON.stringify(document)
+  } catch {
+    return 'document 无法序列化（可能包含循环引用）'
+  }
+  if (serialized.length > INLINE_TIMELINE_LIMITS.maxBytes) {
+    return `inline document 太大（${serialized.length} 字节 > 上限 ${INLINE_TIMELINE_LIMITS.maxBytes}）：先保存时间轴再校验，或拆小后再试`
+  }
+  const tracks = (document as { tracks?: unknown }).tracks
+  if (!Array.isArray(tracks)) return 'document.tracks 必须是数组'
+  if (tracks.length > INLINE_TIMELINE_LIMITS.maxTracks) {
+    return `inline document 轨道太多（${tracks.length} > ${INLINE_TIMELINE_LIMITS.maxTracks}）`
+  }
+  let clips = 0
+  for (const track of tracks) {
+    const list = (track as { clips?: unknown }).clips
+    if (!Array.isArray(list)) return '每个轨道都必须有 clips 数组'
+    clips += list.length
+    if (clips > INLINE_TIMELINE_LIMITS.maxClips) {
+      return `inline document 片段太多（已超过 ${INLINE_TIMELINE_LIMITS.maxClips}）：先保存时间轴再校验`
+    }
+  }
+  return undefined
+}
 
 /** 问题码。 */
 export type TimelineIssueCode =
