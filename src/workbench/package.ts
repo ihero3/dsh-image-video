@@ -181,7 +181,12 @@ export async function importProjectPackage(input: {
   }
   if (raw.project === undefined) throw new Error('包清单缺少 project 段')
 
-  const project = await store.createProject(`${raw.project.name}${input.nameSuffix ?? '（导入）'}`)
+  // 同一包重复导入不应产生**同名**项目（用户会分不清）：重名时依次加序号
+  const baseName = `${raw.project.name}${input.nameSuffix ?? '（导入）'}`
+  const taken = new Set((await store.listProjects()).map(candidate => candidate.name))
+  let uniqueName = baseName
+  for (let index = 2; taken.has(uniqueName); index += 1) uniqueName = `${baseName} ${index}`
+  const project = await store.createProject(uniqueName)
   await mkdir(outputsDir, { recursive: true })
 
   const missing: string[] = []

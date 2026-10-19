@@ -63,10 +63,9 @@ describe('validator at scale (R2)', () => {
 })
 
 describe('package import is repeatable (R2)', () => {
-  // NOTE(开放问题)：实测"同一包导入两次"后项目数为 2 而不是 3——第二次导入没有新建项目。
-  // 可能原因：createProject 对同名做了处理，或导入内部有幂等逻辑。本轮**未定位**，先跳过不猜着改；
-  // 已记入 docs/TASKS-TRACK-A.md 的开放问题，后续轮次专项排查。
-  it.skip('importing the same package twice creates two independent projects', async () => {
+  // R3 定位结论：导入**每次都建新项目**（行为正确）；此前"只多 1 个"是我上一轮测试自身的问题。
+  // 真问题是**同名**（两个「重复导入（导入）」），已修为自动去重命名（`（导入） 2`…）。
+  it('importing the same package twice creates unique-named independent projects', async () => {
     const directory = await temp('dsh-r2-store-')
     const store = new WorkbenchStore({ directory })
     const project = await store.createProject('重复导入')
@@ -79,6 +78,6 @@ describe('package import is repeatable (R2)', () => {
     await importProjectPackage({ store, packageDir, outputsDir: outputs })
     const names = (await store.listProjects()).map(candidate => candidate.name)
     expect(names.length).toBe(3) // 原始 + 两次导入
-    expect(new Set(names).size).toBe(3) // 名字不撞
+    expect(new Set(names).size).toBe(3) // 名字不撞（第二次自动加序号）
   })
 })
