@@ -9,6 +9,9 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { newWorkbenchId } from '../workbench/records.ts'
+import { makeSubtitleIds } from '../workbench/subtitles.ts'
+import { parseSrt, serializeSrt } from '../workbench/srt.ts'
 import { findDuplicateAssets } from '../workbench/duplicates.ts'
 import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
@@ -498,6 +501,45 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
       const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
+    }
+    // `A118`：字幕导出为 SRT
+    case 'subtitles/export': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const trackId = optionalText(payload, 'trackId')
+      const tracks = timeline.tracks.filter(track => track.kind === 'subtitle' && (trackId === undefined || trackId === '' || track.id === trackId))
+      if (tracks.length === 0) throw new Error('这条时间轴没有字幕轨（或指定的轨不是字幕轨）')
+      const cues = tracks.flatMap(track => track.clips.map(clip => ({
+        index: 0,
+        startMs: clip.startMs,
+        endMs: clip.startMs + clip.durationMs,
+        text: clip.text ?? '',
+      }))).filter(cue => cue.text.trim() !== '')
+      return { srt: serializeSrt(cues), cues: cues.length }
+    }
+    // `A118`：SRT 导入为字幕片段（replace 默认 true：替换该字幕轨的片段）
+    case 'subtitles/import': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const parsed = parseSrt(text(payload, 'srt'))
+      if (parsed.cues.length === 0) throw new Error('SRT 里没有解析出任何字幕：检查时间码格式（如 00:00:01,000 --> 00:00:02,500）')
+      const offsetMs = optionalNumber(payload, 'offsetMs') ?? 0
+      const newId = makeSubtitleIds('srt')
+      const clips = parsed.cues.map(cue => ({
+        id: newId(), text: cue.text, startMs: Math.max(0, Math.round(cue.startMs + offsetMs)), durationMs: Math.max(1, Math.round(cue.endMs - cue.startMs)),
+      }))
+      const trackId = optionalText(payload, 'trackId')
+      const existingTrack = timeline.tracks.find(track => track.kind === 'subtitle' && (trackId === undefined || trackId === '' || track.id === trackId))
+      const replace = field(payload, 'replace') !== false
+      const tracks = existingTrack === undefined
+        ? [...timeline.tracks, { id: newWorkbenchId('trk'), kind: 'subtitle' as const, clips }]
+        : timeline.tracks.map(track => track.id === existingTrack.id
+            ? { ...track, clips: replace ? clips : [...track.clips, ...clips] }
+            : track)
+      const saved = await deps.store.saveTimeline({ id: timeline.id, projectId: timeline.projectId, name: timeline.name, tracks, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles, ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat } })
+      return { timeline: saved, imported: clips.length, skipped: parsed.skipped.length }
     }
     // `A96`：项目包预检（只读，不落地任何数据）
     case 'packages/inspect':
