@@ -25,6 +25,10 @@
  * @module dsh-image-video
  */
 
+import { probeMediaSpec } from './media/render.ts'
+import { probeFfmpeg } from './media/ffmpeg.ts'
+import { sep } from 'node:path'
+import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -338,6 +342,17 @@ export function apply(ctx: Context, config: Config): void {
   // 卸载时随 fiber 注销（回滚=摘掉这段注册）。
   for (const tool of createWorkbenchTools({
     store: workbenchStore, renders: renderRegistry, runner: workflowRunner, registry: generationRegistry,
+    outputsDir,
+    // `A63`：与 `assets/probe` 端点同一套边界（只允许 outputs 内或已登记素材）
+    probeAsset: async relative => {
+      const absolute = resolve(outputsDir, relative)
+      const known = new Set(await workbenchStore.referencedAssetPaths())
+      const inside = absolute === outputsDir || absolute.startsWith(`${outputsDir}${sep}`)
+      if (!inside && !known.has(relative)) return undefined
+      const probe = await probeFfmpeg()
+      if (!probe.available) return undefined
+      return probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+    },
   })) {
     ctx.tools.register(tool)
   }

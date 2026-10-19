@@ -49,7 +49,9 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次十九
+- **A63 Agent 也能探测素材**：`workbench_assets action=probe`（与端点同一套边界）
+- **修字幕 id 撞车（真 bug #11）**：`planSubtitleClips` 默认 id 加随机段，避免同毫秒两批字幕生成相同 id
 
 ## [0.3.19-workbench-19] - 2026-10-19
 

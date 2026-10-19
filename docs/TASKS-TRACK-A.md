@@ -134,6 +134,11 @@
 
 - [x] **A62 发布 `v0.3.20-workbench-20`** ✅ 2026-10-19：版本 0.3.20 / CHANGELOG 定稿（R7：失败任务重试主用例 + `retryError` 三分支 + 归组边界）/ lib 重建 / tag / Harness 指针同步
 
+## 批次十九（A63 起，2026-10-19）
+
+- [x] **A63 Agent 也能探测素材** ✅ 2026-10-19：工具依赖注入 `outputsDir` + `probeAsset`（与 `assets/probe` 端点同一套安全边界：只允许 outputs 内或已登记素材），`workbench_assets action=probe` 可用 → Agent 能自己判断素材真实时长、片段该给多长。**已知缺口**：该工具动作暂无专属单测（边界逻辑与已测端点共用；测试脚手架定位反复失配，本轮止损，记入 backlog）
+- [x] **R7 附带修掉真 bug #11** ✅ 2026-10-19：`planSubtitleClips` 默认 id 生成只用时间戳+计数器 → **同毫秒两批字幕会撞 id**（实测 `duplicate timeline clip id: sub-xxx-0`）→ 加随机段保证唯一
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

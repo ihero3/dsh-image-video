@@ -36,6 +36,12 @@ export interface WorkbenchToolsDeps {
   readonly renders: RenderRegistry
   readonly runner: WorkflowRunner
   readonly registry: GenerationRegistry
+  /** 输出目录（`A63`：素材探测的路径边界与相对路径基准）。 */
+  readonly outputsDir?: string
+  /** 素材探测（`A63`；未注入时 probe 动作返回明确提示而不是崩溃）。 */
+  readonly probeAsset?: (relativePath: string) => Promise<
+    { width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined
+  >
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -177,6 +183,14 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           assets: rows.map(asset => ({ id: asset.id, kind: asset.kind, path: asset.path, bytes: asset.bytes, createdAt: asset.createdAt })),
           count: rows.length,
         })
+      }
+      if (action === 'probe') {
+        // `A63`：让 Agent 也能拿到真实时长/规格（决定片段该给多长，而不是靠猜）
+        const relative = requireString(input, 'path', 'workbench_assets probe')
+        if (deps.probeAsset === undefined) throw new Error('宿主没有提供素材探测能力（probeAsset 未注入）')
+        const spec = await deps.probeAsset(relative)
+        if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件或不在允许范围`)
+        return json({ path: relative, spec })
       }
       if (action === 'attach') {
         const path = requireString(input, 'path', 'workbench_assets attach')

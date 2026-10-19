@@ -98,7 +98,10 @@ export function planSubtitleClips(text: string, options: PlanOptions): TimelineC
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
 
   let newIdCounter = 0
-  const newId = options.newId ?? (() => `sub-${Date.now().toString(36)}-${newIdCounter++}`)
+    // `R7` 修真 bug：只靠时间戳+计数器时，两个同毫秒的独立批处理会生成**相同 id**
+  // （实测报 `duplicate timeline clip id: sub-xxx-0`）→ 加随机段保证唯一。
+  const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+  const newId = options.newId ?? (() => `sub-${stamp}-${newIdCounter++}`)
   const clips: TimelineClip[] = []
   let cursor = Math.round(startMs)
   let remainingMs = totalMs

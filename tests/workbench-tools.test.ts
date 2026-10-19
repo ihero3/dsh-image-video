@@ -34,7 +34,14 @@ async function harness() {
     // 渲染器只用来起任务：run 是空实现，测试只断言"任务起来了"
     render: new RenderService({ outputsDir: outputs, probe: async () => ({ available: true, path: '/usr/bin/true' }), run: async () => undefined }),
   })
-  const tools = createWorkbenchTools({ store, renders, runner, registry: new GenerationRegistry() })
+  const tools = createWorkbenchTools({
+    store, renders, runner, registry: new GenerationRegistry(),
+    outputsDir: '/tmp/outputs',
+    // `A63`：探测桩——只认一个"好"路径，其余视为越界/无效
+    probeAsset: async relative => relative === 'outputs/good.mp4'
+      ? { width: 320, height: 240, fps: 30, durationMs: 2000, hasAudio: false }
+      : undefined,
+  })
   const byName = new Map(tools.map(tool => [tool.name, tool]))
   const call = async (name: string, args: Record<string, unknown>): Promise<{ text: string; value: unknown }> => {
     const tool = byName.get(name)
@@ -54,6 +61,7 @@ async function touch(dir: string, name: string): Promise<string> {
 }
 
 describe('agent tool surface (T6-3)', () => {
+
   it('registers the five tools and documents every allowed action', async () => {
     const { byName } = await harness()
     expect([...byName.keys()].sort()).toEqual(['workbench_assets', 'workbench_projects', 'workbench_tasks', 'workbench_timeline', 'workbench_workflow'])
@@ -335,3 +343,4 @@ describe('agent tool surface (T6-3)', () => {
     await expect(call('workbench_tasks', { action: 'cancel' })).rejects.toThrow(/taskId 或 renderId/)
   })
 })
+
