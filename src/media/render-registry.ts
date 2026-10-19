@@ -6,6 +6,7 @@
  */
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
+import { buildRenderSummary, type RenderSummary } from './render-summary.ts'
 
 /** 一次导出任务的状态。 */
 export interface RenderJob {
@@ -29,6 +30,8 @@ export interface RenderJob {
   readonly queued?: boolean
   /** 排队位置（1 = 下一个开跑）；不在排队时为 `undefined`。 */
   readonly queuePosition?: number
+  /** 导出完成摘要（`A37`，加法字段：产物/时长/规格/轨道概览）。 */
+  readonly summary?: RenderSummary
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -176,6 +179,7 @@ export class RenderRegistry {
     }).then(async (result: RenderResult) => {
       this.patch(id, {
         status: 'succeeded', percent: 100, finishedAt: this.stamp(),
+        summary: buildRenderSummary(timeline, result),
         outputPath: result.outputPath, bytes: result.bytes, durationMs: result.durationMs,
       })
       this.deps.log?.({

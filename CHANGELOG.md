@@ -20,6 +20,7 @@
 ## [Unreleased]
 
 ### 批次八
+- **A37 导出完成摘要**：渲染结束后任务上带 `summary`（产物/字节/实测时长/规格/各轨片段数/有无音轨/有无字幕/是否烧录）+ `describeTimeline` 概览；加法字段，老客户端不受影响；测试 4 例
 - **A36 覆盖率门禁落地**：插件 vitest 对齐到根的 **4.x**（复用根已装的 `@vitest/coverage-v8@4.1.11`）；实测 **statements 82.98% / branches 72.52% / functions 81.81% / lines 85.36%**，阈值取实测 −2pp；`scripts/gate.sh` 新增**第 5 步覆盖率门禁**（低于阈值即失败）
 - 踩坑与修复（写进提交说明）：vitest 4 对 workspace 深层源码导入更严格（需顶层 `resolve.alias` + `server.deps.inline`）；安装后必须在**根**跑完整 `pnpm install`，否则 workspace 包会被链接成两份导致 typecheck 红
 
