@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { PACKAGE_FORMAT_VERSION, exportProjectPackage, importProjectPackage } from '../src/workbench/package.ts'
+import { PACKAGE_FORMAT_VERSION, exportProjectPackage, importProjectPackage, inspectProjectPackage } from '../src/workbench/package.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 
 const dirs: string[] = []
@@ -140,5 +140,33 @@ describe('package format v2 (A26)', () => {
       assets: [], resources: [], timelines: [], workflows: [], tasks: [], missing: [],
     }), 'utf8')
     await expect(importProjectPackage({ store, packageDir: targetDir, outputsDir: targetDir })).rejects.toThrow(/不认识/)
+  })
+})
+
+describe('inspectProjectPackage (A96)', () => {
+  it('reports a real package without touching any data', async () => {
+    const { store, projectId } = await seed()
+    const before = (await store.listProjects()).length
+    const targetDir = await temp('dsh-pkg-inspect-')
+    await exportProjectPackage({ store, projectId, targetDir })
+    const inspection = await inspectProjectPackage({ packageDir: targetDir, store })
+    expect(inspection.compatible).toBe(true)
+    expect(inspection.formatVersion).toBe(PACKAGE_FORMAT_VERSION)
+    expect(inspection.project.name.length).toBeGreaterThan(0)
+    expect(inspection.assets.total).toBeGreaterThanOrEqual(0)
+    // 只读：项目数没变
+    expect((await store.listProjects()).length).toBe(before)
+  })
+
+  it('flags packages from a newer plugin as incompatible', async () => {
+    const directory = await temp('dsh-pkg-inspect-v9-')
+    await writeFile(join(directory, 'manifest.json'), JSON.stringify({
+      formatVersion: PACKAGE_FORMAT_VERSION + 1, project: { name: '未来包' }, assets: [], timelines: [], missing: [],
+    }), 'utf8')
+    const store = new WorkbenchStore({ directory: await temp('dsh-pkg-inspect-store-') })
+    const inspection = await inspectProjectPackage({ packageDir: directory, store })
+    expect(inspection.compatible).toBe(false)
+    expect(inspection.reason).toContain('高于当前支持')
+    expect(inspection.warnings.length).toBeGreaterThanOrEqual(0)
   })
 })

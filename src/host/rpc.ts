@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
 import { reportAssetUsage } from '../workbench/usage.ts'
 import { estimateExport, formatBytes } from '../workbench/estimate.ts'
@@ -467,6 +468,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
     }
+    // `A96`：项目包预检（只读，不落地任何数据）
+    case 'packages/inspect':
+      return { inspection: await inspectProjectPackage({ packageDir: text(payload, 'packageDir'), store: deps.store }) }
     case 'packages/import': {
       const result = await importProjectPackage({
         store: deps.store,

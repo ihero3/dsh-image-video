@@ -384,3 +384,66 @@ export async function importResourcePackage(input: {
   }
   return { imported, skipped, renamed, replaced }
 }
+
+/** 项目包预检结果（`A96`）：只读，不落地任何数据。 */
+export interface PackageInspection {
+  readonly formatVersion: number
+  readonly compatible: boolean
+  /** 不兼容时的原因。 */
+  readonly reason?: string
+  readonly project: { readonly name: string; readonly timelines: number; readonly assets: number }
+  /** 包里缺失的素材（导出时就已记录 + 交付时文件不在包里）。 */
+  readonly assets: { readonly total: number; readonly missing: readonly string[] }
+  /** 已经存在的同名项目（导入会自动加后缀，但先告知用户）。 */
+  readonly conflicts: readonly string[]
+  readonly warnings: readonly string[]
+}
+
+/**
+ * 预检一个项目包（`A96`）：不写任何数据，只回答"能不能导 / 会有什么问题"。
+ * @param input - 包目录与工作台存储（查同名冲突）。
+ * @returns 预检结果。
+ * @throws {Error} 包目录没有 manifest.json 或 JSON 无法解析时。
+ */
+export async function inspectProjectPackage(input: {
+  packageDir: string
+  store: { listProjects(): Promise<Array<{ name: string }>> }
+}): Promise<PackageInspection> {
+  const manifestPath = join(input.packageDir, 'manifest.json')
+  const raw = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    formatVersion?: number
+    project?: { name?: string }
+    assets?: Array<{ file?: string; originPath?: string }>
+    timelines?: unknown[]
+    missing?: string[]
+  }
+  const formatVersion = typeof raw.formatVersion === 'number' ? raw.formatVersion : 1
+  const warnings: string[] = []
+  const missing = [...(raw.missing ?? [])]
+  let delivered = 0
+  for (const entry of raw.assets ?? []) {
+    if (entry.file === undefined) {
+      if (entry.originPath !== undefined) missing.push(entry.originPath)
+      continue
+    }
+    const exists = await stat(join(input.packageDir, entry.file)).then(() => true).catch(() => false)
+    if (exists) delivered += 1
+    else if (entry.originPath !== undefined) missing.push(entry.originPath)
+  }
+  const compatible = formatVersion >= 1 && formatVersion <= PACKAGE_FORMAT_VERSION
+  const projectName = raw.project?.name ?? '未命名项目'
+  const conflicts = (await input.store.listProjects())
+    .map(project => project.name)
+    .filter(name => name === projectName || name.startsWith(`${projectName}（导入）`))
+  if (missing.length > 0) warnings.push(`有 ${missing.length} 个素材缺失：导入后这些片段会显示为缺失，需要重新生成或替换`)
+  if (conflicts.length > 0) warnings.push(`已有 ${conflicts.length} 个同名项目：导入会自动加「（导入）」后缀`)
+  return {
+    formatVersion,
+    compatible,
+    ...compatible ? {} : { reason: `包格式 v${formatVersion} 高于当前支持的 v${PACKAGE_FORMAT_VERSION}：请升级插件后再导入` },
+    project: { name: projectName, timelines: (raw.timelines ?? []).length, assets: delivered },
+    assets: { total: (raw.assets ?? []).length, missing },
+    conflicts,
+    warnings,
+  }
+}
