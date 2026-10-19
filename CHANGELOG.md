@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.3.18-workbench-18] - 2026-10-19
 
 （下一轮的改动写这里）
 
@@ -41,6 +41,10 @@
 # Changelog
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+（下一轮的改动写这里）
 
 ## [0.3.17-workbench-17] - 2026-10-19
 

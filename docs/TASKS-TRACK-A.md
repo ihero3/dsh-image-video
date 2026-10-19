@@ -116,6 +116,12 @@
 - [x] **A56 成片集归组** ✅ 2026-10-19：`groupRenderSets` 纯函数按**项目 + 时间轴**归组（次数/成功/失败/总字节/总时长/最近导出时间/jobIds，按最近导出倒序）；`timelines/renders` 端点新增 `sets`（**只读聚合、纯加法字段**，不改 schema）；测试 2 例
 - [x] **A57 渲染耗时按段统计** ✅ 2026-10-19：`computeSegmentTimings` 纯函数把进度采样归因成各段耗时（**边界归起点所在段**，文档写明近似语义）；摘要新增 `segmentTimingsMs` / `slowestSegment`（加法字段）；采样上限 200 条防长任务吃内存；测试 3 例（含重复/回退采样安全）
 
+## 批次十六（A58 起，2026-10-19）
+
+- [x] **A58 发布 `v0.3.18-workbench-18`** ✅ 2026-10-19：版本 0.3.18 / CHANGELOG 定稿（A56 成片集 / A57 段耗时）/ lib 重建 / tag / Harness 指针同步
+- [ ] **A59 导出一键重试**
+- [ ] **A60 `gate.sh --fast`（日常跳过覆盖率，推送前全量）**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
