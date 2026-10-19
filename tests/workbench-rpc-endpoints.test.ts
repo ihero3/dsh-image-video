@@ -210,6 +210,30 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('summarises export readiness in one call (A84)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '体检' })
+    const dirty = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/missing.mp4', startMs: 0, durationMs: 3000 }] }],
+    })
+    const blocked = await ok<{
+      ok: boolean; issues: Array<{ code: string }>; estimate: { estimatedBytes: number; humanBytes: string }; summaryLine: string
+    }>('timelines/preflight', { timelineId: dirty.timeline.id })
+    expect(blocked.ok).toBe(false)
+    expect(blocked.issues.map(issue => issue.code)).toContain('missing-asset')
+    expect(blocked.estimate.humanBytes).toMatch(/KB|MB|GB/)
+    expect(blocked.summaryLine).toContain('暂不建议导出')
+
+    // 干净的时间轴（无片段 → 报空轨，属"阻断"类）→ 也能拿到体积与汇总
+    const clean = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }],
+    })
+    const report = await ok<{ issues: Array<{ code: string }>; summaryLine: string; usage: { total: number } }>('timelines/preflight', { timelineId: clean.timeline.id })
+    expect(report.summaryLine).toContain('约')
+    expect(report.usage.total).toBeGreaterThanOrEqual(0)
+  })
+
   it('retries a FAILED render (the main use case, R7)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试失败' })

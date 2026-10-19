@@ -526,6 +526,53 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'timelines/remove':
       return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
     // ---- 导出（阶段 5，T5-5）----------------------------------------------------
+    // `A84`：导出前体检 —— 一次拿到"能不能导 / 会有多大 / 有没有素材浪费"
+    case 'timelines/preflight': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const issues = [...validateTimeline(timeline, { knownAssetPaths: known })]
+      // 与 timelines/validate 相同的"片段比素材长"检查（有上限、可失败）
+      try {
+        const probe = await probeFfmpeg()
+        if (probe.available) {
+          const paths = [...new Set(timeline.tracks.flatMap(track => track.clips)
+            .map(clip => clip.assetPath)
+            .filter((path): path is string => typeof path === 'string'))].slice(0, 20)
+          const durations = new Map<string, number>()
+          for (const relative of paths) {
+            const absolute = resolve(deps.outputsDir, relative)
+            const spec = deps.probeCache === undefined
+              ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+              : await deps.probeCache.get(absolute)
+            if (spec?.durationMs !== undefined) durations.set(relative, spec.durationMs)
+          }
+          issues.push(...findClipOverruns(timeline, durations))
+        }
+      } catch {
+        // 探测失败只影响这一项检查，不影响体检结果
+      }
+      const estimate = estimateExport(timeline)
+      const usage = reportAssetUsage(
+        await deps.store.listAssets(timeline.projectId),
+        await deps.store.listTimelines(timeline.projectId),
+      )
+      const blocking = issues.filter(issue => issue.code !== 'overlap' && issue.code !== 'subtitle-burn-overlap')
+      const summaryLine = [
+        blocking.length === 0 ? '可以导出' : `暂不建议导出（${blocking.length} 个问题要先处理）`,
+        `约 ${formatBytes(estimate.estimatedBytes)}`,
+        `预计 ${Math.round(estimate.durationMs / 1000)} 秒 / ${estimate.aspect}`,
+        usage.summary.unused > 0 ? `项目里有 ${usage.summary.unused} 个素材从未使用（可选清理 ${formatBytes(usage.summary.unusedBytes)}）` : '素材都在用',
+      ].join('；')
+      return {
+        ok: issues.length === 0,
+        issues,
+        estimate: { ...estimate, humanBytes: formatBytes(estimate.estimatedBytes) },
+        usage: usage.summary,
+        summaryLine,
+      }
+    }
     // `A80`：导出预估（时长/规格/预估体积），可传 overrides 预览"换成 4K 会有多大"
     case 'timelines/estimate': {
       const timelineId = text(payload, 'timelineId')

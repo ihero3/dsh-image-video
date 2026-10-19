@@ -113,6 +113,7 @@
 | `timelines/remove` | `{timelineId}` | `{removed}` |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline ≤2MB / 片段 ≤400 / 轨道 ≤50） | `{ok,issues}` |
 | `timelines/render` | `{timelineId,priority?}` | `{render}` |
+| `timelines/preflight` | `{timelineId}` | `{ok,issues,estimate,usage,summaryLine}`（`A84` 导出前体检：问题+体积+素材浪费一次给全）|
 | `timelines/estimate` | `{timelineId,width?,height?,frameRate?,bitrateKbps?}` | `{estimate}`（时长/规格/比例/预估体积；覆盖分辨率时码率自动重估，`A80`）|
 | `timelines/render-retry` | `{renderId}` | `{render,retriedFrom}`（复用原时间轴与优先级） |
 | `timelines/renders` | `{projectId?}` | `{renders,sets}`（`sets` 为成片集聚合） |

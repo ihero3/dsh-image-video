@@ -179,6 +179,11 @@
 - [x] **A82 素材利用率报告** ✅ 2026-10-20：`src/workbench/usage.ts` 纯函数汇总每个素材被哪些时间轴引用（片段数/时间轴名），**从未使用的排最前** + 汇总（总数/未用数/未用字节/总字节）；端点 `assets/usage`（**只报告不删除**——删不删由用户决定）；与 `maintenance/retention`（清输出文件）互补：这是**素材库本身**的清理依据；测试 2 例
 - [ ] **A83 发布 `v0.3.30-workbench-30`**
 
+## 批次三十三（A84 起，2026-10-20）
+
+- [x] **A84 导出前体检** ✅ 2026-10-20：端点 `timelines/preflight` 把三件事合成一次调用——`validateTimeline`（含"片段比素材长"探测）+ `estimateExport`（体积）+ `reportAssetUsage`（素材浪费）；返回 `{ok,issues,estimate,usage,summaryLine}`，`summaryLine` 直接是"可以导出 / 暂不建议导出（N 个问题）/ 约 XX MB / 预计 N 秒 / 项目有 N 个素材从未使用"；**只报告不动作**（不删素材、不改时间轴）；测试 2 例
+- [ ] **A85 发布 `v0.3.31-workbench-31`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
