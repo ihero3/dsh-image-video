@@ -52,6 +52,8 @@ export class RenderRegistry {
     readonly onError?: (message: string) => void
     /** 结构化日志钩子（`T7-3`）。 */
     readonly log?: (entry: Record<string, unknown>) => void
+    /** 保留建议钩子的超时（毫秒，默认 2000）：钩子慢不能拖住"渲染成功"的状态流转。 */
+    readonly retentionTimeoutMs?: number
     /** 导出后的保留建议钩子（`A38`）：返回 `undefined` 表示没配上限、不用提示。 */
     readonly retention?: () => Promise<{ files: number; bytes: number; removeCount: number; freedBytes: number; overQuota: boolean } | undefined>
     /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
@@ -177,8 +179,21 @@ export class RenderRegistry {
   ): Promise<RenderSummary> {
     const summary = buildRenderSummary(timeline, result)
     if (this.deps.retention === undefined) return summary
+    const timeoutMs = Math.max(200, this.deps.retentionTimeoutMs ?? 2000)
+    let timedOut = false
     try {
-      const retention = await this.deps.retention()
+      // 钩子（扫输出目录算建议）**不允许拖慢渲染完成**：超时就放弃建议，只记日志
+      const retention = await Promise.race([
+        this.deps.retention(),
+        new Promise<undefined>(resolve => {
+          const timer = setTimeout(() => { timedOut = true; resolve(undefined) }, timeoutMs)
+          timer.unref?.()
+        }),
+      ])
+      if (timedOut) {
+        this.deps.log?.({ event: 'render-retention-timeout', timeoutMs })
+        return summary
+      }
       return retention === undefined ? summary : { ...summary, retention }
     } catch (error) {
       this.deps.log?.({ event: 'render-retention-failed', message: error instanceof Error ? error.message : String(error) })

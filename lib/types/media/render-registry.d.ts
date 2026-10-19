@@ -49,6 +49,8 @@ export declare class RenderRegistry {
         readonly onError?: (message: string) => void;
         /** 结构化日志钩子（`T7-3`）。 */
         readonly log?: (entry: Record<string, unknown>) => void;
+        /** 保留建议钩子的超时（毫秒，默认 2000）：钩子慢不能拖住"渲染成功"的状态流转。 */
+        readonly retentionTimeoutMs?: number;
         /** 导出后的保留建议钩子（`A38`）：返回 `undefined` 表示没配上限、不用提示。 */
         readonly retention?: () => Promise<{
             files: number;
