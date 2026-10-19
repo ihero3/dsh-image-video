@@ -1,6 +1,7 @@
 ## [Unreleased]
 
 ### 批次五
+- **A25 字幕多行排版**：`wrapSubtitleLines` 按画面宽度折行（优先标点、绝不超上限、尊重原文换行）+ `estimateMaxCharsForWidth`；drawtext 增加 `line_spacing`，换行经占位符安全穿过转义；字体支持 `DSH_SUBTITLE_FONT` 优先；测试 4 例
 - **A24 片段拆分/复制**：`splitClipAt`（拆点必须在片段内部；两半时长守恒；右半 `inMs` 按**变速折算**推进）+ `duplicateClip`（默认紧跟原片段，可指定落点或换轨）；工具面 `timeline split-clip` / `copy-clip`；测试 6 例
 
 # Changelog

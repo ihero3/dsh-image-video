@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
+import { estimateMaxCharsForWidth, wrapSubtitleLines } from '../workbench/subtitles.ts'
 import type { TimelineRecord, TimelineTrack } from '../workbench/timeline.ts'
 import {
   DEFAULT_EXPORT_FORMAT, MAX_TRACK_VOLUME, effectiveDurationMs, normalizeExportFormat, timelineDurationMs,
@@ -286,8 +287,12 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
         ? 'h*0.08'
         : clip.style?.position === 'middle' ? '(h-text_h)/2' : 'h*0.85'
       const fontPart = options.fontFile === undefined ? '' : `fontfile='${escapeDrawtext(options.fontFile)}':`
+      // 多行排版（`A25`）：按画面宽度折行；`\n` 用占位符穿过转义，最后还原成 drawtext 的换行
+      const maxChars = estimateMaxCharsForWidth(width, fontSize)
+      const wrapped = wrapSubtitleLines(clip.text ?? '', maxChars).replace(/\n/g, '\u0001')
+      const escaped = escapeDrawtext(wrapped).split('\u0001').join('\\n')
       drawFilters.push(
-        `drawtext=${fontPart}text='${escapeDrawtext(clip.text ?? '')}':fontsize=${fontSize}:fontcolor=${color}:`
+        `drawtext=${fontPart}text='${escaped}':fontsize=${fontSize}:fontcolor=${color}:line_spacing=${Math.round(fontSize * 0.28)}:`
         + `x=(w-text_w)/2:y=${y}:enable='between(t,${(clip.startMs / 1000).toFixed(3)},${((clip.startMs + clip.durationMs) / 1000).toFixed(3)})'`,
       )
     }
@@ -514,7 +519,7 @@ export class RenderService {
     const outputPath = join(this.outputsDir, fileName)
     await mkdir(dirname(outputPath), { recursive: true })
     const fontFile = snapshot.burnSubtitles && (snapshot.tracks.find(track => track.kind === 'subtitle')?.clips.length ?? 0) > 0
-      ? await firstExisting(SUBTITLE_FONT_CANDIDATES)
+      ? await firstExisting([...(process.env.DSH_SUBTITLE_FONT === undefined ? [] : [process.env.DSH_SUBTITLE_FONT]), ...SUBTITLE_FONT_CANDIDATES])
       : undefined
     const format = snapshot.exportFormat ?? DEFAULT_EXPORT_FORMAT
     const args = buildRenderArgs(snapshot, { outputPath, format, ...fontFile === undefined ? {} : { fontFile } })

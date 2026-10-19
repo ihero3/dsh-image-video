@@ -133,3 +133,51 @@ export function makeSubtitleIds(prefix: string): () => string {
   let counter = 0
   return () => `${prefix}-${counter++}`
 }
+
+/**
+ * 把字幕文本按**显示宽度**折成多行（`A25`）。
+ *
+ * 规则：尊重原文里的换行；每行不超过 `maxChars`；优先在标点处断行
+ * （中文逗号顿号、英文空格），实在没有标点就硬断。
+ *
+ * @param text - 原始文本（可含换行）。
+ * @param maxChars - 每行最多字符数（按等宽 CJK 估算，见 {@link estimateMaxCharsForWidth}）。
+ * @returns 折好行的文本（行间用 `\n` 连接）。
+ */
+export function wrapSubtitleLines(text: string, maxChars: number): string {
+  const limit = Math.max(4, Math.round(maxChars))
+  const result: string[] = []
+  for (const paragraph of text.split(/\r?\n/)) {
+    const line = paragraph.trim()
+    if (line === '') continue
+    if (line.length <= limit) { result.push(line); continue }
+    let rest = line
+    while (rest.length > limit) {
+      // 在 limit 附近找最后一个标点/空格断行
+      const window = rest.slice(0, limit + 1)
+      const breakAt = Math.max(
+        window.lastIndexOf('，'), window.lastIndexOf('。'), window.lastIndexOf('、'),
+        window.lastIndexOf('；'), window.lastIndexOf('：'), window.lastIndexOf(' '),
+        window.lastIndexOf(','), window.lastIndexOf(' '),
+      )
+      // 断点后含标点本身，但不能超过本行上限
+      const cut = breakAt > Math.floor(limit * 0.4) ? Math.min(breakAt + 1, limit) : limit
+      result.push(rest.slice(0, cut).trim())
+      rest = rest.slice(cut).trim()
+    }
+    if (rest !== '') result.push(rest)
+  }
+  return result.join('\n')
+}
+
+/**
+ * 按画面宽度与字号估算每行能放多少个 CJK 字符（`A25`）。
+ * @param width - 画面宽（像素）。
+ * @param fontSize - 字号（像素）。
+ * @returns 每行建议字符数（至少 6）。
+ */
+export function estimateMaxCharsForWidth(width: number, fontSize: number): number {
+  // 中文近似等宽；两侧各留 6% 边距，避免贴边
+  const usable = Math.max(1, width * 0.88)
+  return Math.max(6, Math.floor(usable / (fontSize * 1.05)))
+}
