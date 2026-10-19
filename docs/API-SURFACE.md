@@ -64,3 +64,83 @@
 `timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
 
+## 完整端点表（A71 补齐）
+
+> 由 `tests/rpc-contract-drift.test.ts` 守护：`src/host/rpc.ts` 里的每个端点都必须出现在本文档，
+> 否则测试直接红。下面按资源分组，参数为必填项，返回为成功时的 `value` 结构。
+
+### 项目与素材
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `projects/list` | — | `{projects}` |
+| `projects/create` | `{name}` | `{project}` |
+| `projects/rename` | `{projectId,name}` | `{project}` |
+| `projects/remove` | `{projectId}` | `{removed}` |
+| `assets/list` | `{projectId,kind?}` | `{assets}` |
+| `assets/attach` | `{projectId,path,kind?,prompt?}` | `{asset,created}` |
+| `assets/quick-add` | `{projectId,path?}` | `{asset,created}`（自动推断种类） |
+| `assets/remove` | `{projectId,assetId}` | `{removed}` |
+
+### 资源与用法记录
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `resources/list` | `{projectId?}` | `{resources}` |
+| `resources/create` | `{projectId,kind,name?}` | `{resource}` |
+| `resources/remove` | `{resourceId}` | `{removed}` |
+| `resources/usage` | `{resourceId?}` | `{usage}` |
+
+### 工作流
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `workflows/list` | `{projectId}` | `{workflows}` |
+| `workflows/save` | `{projectId,id?,name,nodes,edges}` | `{workflow}` |
+| `workflows/remove` | `{workflowId}` | `{removed}` |
+| `workflows/run` | `{workflowId,refresh?}` | `{run}` |
+| `workflows/runs` | `{projectId,workflowId?}` | `{runs}` |
+| `workflows/run-cancel` | `{runId}` | `{cancelled}` |
+| `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
+
+### 时间轴与导出
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `timelines/list` | `{projectId}` | `{timelines}` |
+| `timelines/save` | `{projectId,id?,tracks,frameRate?,burnSubtitles?,exportFormat?,normalizeLoudness?,burnLanguage?}` | `{timeline}` |
+| `timelines/remove` | `{timelineId}` | `{removed}` |
+| `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline ≤2MB / 片段 ≤400 / 轨道 ≤50） | `{ok,issues}` |
+| `timelines/render` | `{timelineId,priority?}` | `{render}` |
+| `timelines/render-retry` | `{renderId}` | `{render,retriedFrom}`（复用原时间轴与优先级） |
+| `timelines/renders` | `{projectId?}` | `{renders,sets}`（`sets` 为成片集聚合） |
+| `timelines/render-cancel` | `{renderId}` | `{cancelled}` |
+
+### 任务（生成任务）
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `tasks/list` | `{projectId?}` | `{tasks}` |
+| `tasks/running` | — | `{tasks}`（进行中的生成任务） |
+| `tasks/assign` | `{taskId,resourceId}` | `{task}` |
+| `tasks/cancel` | `{taskId}` | `{cancelled}` |
+
+### 项目包
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `packages/export` | `{projectId,targetDir,nameSuffix?}` | `{manifestPath}`（目标必须在 `packages/` 之下） |
+| `packages/import` | `{packageDir,nameSuffix?,structureOnly?}` | 导入结果（项目/素材/缺失清单） |
+| `packages/export-resources` | `{targetDir}` | `{manifestPath}`（全量资源包） |
+| `packages/import-resources` | `{packageDir}` | 导入结果（跳过统计） |
+
+### 维护与诊断
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `media/ffmpeg` | — | `{available,path?,message?}` |
+| `diagnostics` | — | `{logs,outputs,renders}` |
+| `maintenance/retention` | `{dryRun?}` | 保留计划（默认 `dryRun:true`，只算不删） |
+| `presets/list` | — | `{presets}`（内置 `custom:false` + 自定义 `custom:true`） |
+| `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` |
+| `presets/remove` | `{id}` | `{removed}` |
