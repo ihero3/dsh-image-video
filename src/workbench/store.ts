@@ -20,6 +20,7 @@ import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type W
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
 import { planArchive } from './archive.ts'
+import { inspectIntegrity } from './integrity.ts'
 import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
 import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
@@ -630,6 +631,15 @@ export class WorkbenchStore {
     document.exportPresets = next
     await this.save(document)
     return true
+  }
+
+  /**
+   * 工作台数据完整性巡检（`A104`，只报告不修复）。
+   * @returns 完整性报告。
+   */
+  async integrityReport(): Promise<import('./integrity.ts').IntegrityReport> {
+    const document = await this.load()
+    return inspectIntegrity(document as unknown as Parameters<typeof inspectIntegrity>[0])
   }
 
   /**

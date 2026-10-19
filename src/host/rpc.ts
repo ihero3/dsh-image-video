@@ -656,6 +656,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
+    // `A104`：数据完整性巡检（只报告不修复）
+    case 'maintenance/integrity':
+      return { integrity: await deps.store.integrityReport() }
     // `A94`：工作台文档归档（默认 dryRun 只算不删；归档追加到旁路文件，不丢历史）
     case 'maintenance/archive':
       return await deps.store.archiveOlderThan({
