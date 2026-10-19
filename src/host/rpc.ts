@@ -16,6 +16,7 @@ import { parseVtt, serializeVtt } from '../workbench/vtt.ts'
 import { findDuplicateAssets } from '../workbench/duplicates.ts'
 import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
+import { summarizePreflight } from './assembly.ts'
 import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
@@ -667,13 +668,14 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         await deps.store.listTimelines(timeline.projectId),
       )
       const blocking = issues.filter(issue => issue.code !== 'overlap' && issue.code !== 'subtitle-burn-overlap')
-      const summaryLine = [
-        blocking.length === 0 ? '可以导出' : `暂不建议导出（${blocking.length} 个问题要先处理）`,
-        `约 ${formatBytes(estimate.estimatedBytes)}`,
-        `导出预计 ${formatDuration(predictRenderMs({ durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate }, deps.renders.exportSamples()))}`,
-        `预计 ${Math.round(estimate.durationMs / 1000)} 秒 / ${estimate.aspect}`,
-        usage.summary.unused > 0 ? `项目里有 ${usage.summary.unused} 个素材从未使用（可选清理 ${formatBytes(usage.summary.unusedBytes)}）` : '素材都在用',
-      ].join('；')
+      const summaryLine = summarizePreflight({
+        blockingIssues: blocking.length,
+        humanBytes: formatBytes(estimate.estimatedBytes),
+        humanPredicted: formatDuration(predictRenderMs({ durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate }, deps.renders.exportSamples())),
+        durationAndAspect: `${Math.round(estimate.durationMs / 1000)} 秒 / ${estimate.aspect}`,
+        unusedAssets: usage.summary.unused,
+        ...usage.summary.unused > 0 ? { unusedBytes: formatBytes(usage.summary.unusedBytes) } : {},
+      })
       return {
         ok: issues.length === 0,
         issues,

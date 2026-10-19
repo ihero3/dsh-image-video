@@ -319,6 +319,11 @@
 - [x] **A138 覆盖率洼地处置** ✅ 2026-10-20：先诊断（`TaskManager` **仍在用** ✓ 不是死代码）→ 补关键路径测试（完成轮询 / 失败 / **已 abort 的外部信号** / 插件卸载清理）→ **抓到一个真缺陷**：已经 abort 的外部信号不被立刻识别 ✗（实测白跑 **8027ms** 到轮询超时 ✗）→ 加前置检查 ✓ + 语义上新增 `'cancelled'` ErrorKind（不再混用 `timeout` ✓）；测试 4 例
 - [ ] **A139 发布 `v0.3.58-workbench-58`**
 
+## 批次六十一（A140 起，2026-10-20）
+
+- [x] **A140 抽装配函数 + 补测** ✅ 2026-10-20：新增 `src/host/assembly.ts`（`parseRetentionPolicy` 环境变量→策略、`normalizePresetId`、`summarizePreflight` 生成体检总结句）+ 5 条测试；`index.ts` 的保留策略解析与 RPC 的 preflight 总结句改为调用它们（**输出格式保持不变**，端点测试验证 ✓），消除两处内联重复实现
+- [ ] **A141 发布 `v0.3.59-workbench-59`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
