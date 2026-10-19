@@ -515,6 +515,19 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         const renders = deps.renders.list(projectId)
         return { renders, sets: groupRenderSets(renders) }
       }
+    // `A59` 一键重试：用原时间轴与原优先级重跑（适合瞬时失败：机器忙/超时；必然失败会再报同样的错）
+    case 'timelines/render-retry': {
+      const renderId = text(payload, 'renderId')
+      const previous = deps.renders.list().find(job => job.id === renderId)
+      if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}：先用 timelines/renders 看现有任务`)
+      if (previous.status === 'running' || previous.queued === true) {
+        throw new Error('这个导出还在跑或排队中：等它结束，或先 render-cancel 再重试')
+      }
+      const timeline = await deps.store.findTimeline(previous.timelineId)
+      if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除，无法重试：请重新选择时间轴导出`)
+      const render = deps.renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } })
+      return { render, retriedFrom: previous.id }
+    }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------

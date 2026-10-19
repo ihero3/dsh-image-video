@@ -602,6 +602,16 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const rows = renders.list(projectId).slice(0, optionalLimit(input))
         return json({ renders: rows.map(job => ({ id: job.id, timelineId: job.timelineId, status: job.status, percent: job.percent, ...job.outputPath === undefined ? {} : { outputPath: job.outputPath } })), count: rows.length })
       }
+      if (action === 'render-retry') {
+        // `A59`：按渲染任务 id 重跑（复用原时间轴与原优先级）
+        const renderId = requireString(input, 'renderId', 'workbench_tasks render-retry')
+        const previous = renders.list().find(job => job.id === renderId)
+        if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}`)
+        if (previous.status === 'running' || previous.queued === true) throw new Error('这个导出还在跑或排队中')
+        const timeline = await store.findTimeline(previous.timelineId)
+        if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除`)
+        return json(renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } }))
+      }
       if (action === 'render-cancel') {
         const renderId = requireString(input, 'renderId', 'workbench_tasks render-cancel')
         const cancelled = renders.cancel(renderId)

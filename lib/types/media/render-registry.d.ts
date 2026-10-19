@@ -105,6 +105,8 @@ export interface RenderJob {
     };
     /** 预计剩余秒数（`A52`；过早/过短时不给，成功时为 0）。 */
     readonly progressEtaSec?: number;
+    /** 入队优先级（`A50`；重试时复用，`A59`）。 */
+    readonly priority?: number;
 }
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export declare class RenderRegistry {

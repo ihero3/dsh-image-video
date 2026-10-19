@@ -162,6 +162,8 @@ export interface RenderJob {
   readonly progressStep?: { readonly current: number; readonly total: number }
   /** 预计剩余秒数（`A52`；过早/过短时不给，成功时为 0）。 */
   readonly progressEtaSec?: number
+  /** 入队优先级（`A50`；重试时复用，`A59`）。 */
+  readonly priority?: number
 }
 
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
@@ -322,10 +324,12 @@ export class RenderRegistry {
       id, timelineId: timeline.id, projectId: timeline.projectId,
       status: 'running', percent: 0, startedAt: this.stamp(),
     }
+    const priority = Number.isFinite(options.priority) ? Math.round(options.priority as number) : 0
     this.jobs.set(id, job)
+    // 优先级无条件记录（重试要复用它；早先只写在入队分支里 → 直接开跑的任务没有该字段）
+    this.patch(id, { priority })
     if (this.controllers.size >= maxConcurrent) {
       // 槽位满了：按**优先级**有序插入（数值大的先跑；同优先级保持 FIFO，不插队到同伴前面）
-      const priority = Number.isFinite(options.priority) ? Math.round(options.priority as number) : 0
       const insertAt = this.pending.findIndex(entry => entry.priority < priority)
       const entry = { job, timeline, priority }
       if (insertAt < 0) this.pending.push(entry)

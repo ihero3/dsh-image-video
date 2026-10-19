@@ -210,6 +210,28 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('retries a finished render with the same timeline (A59)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/a.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    const first = await ok<{ render: { id: string } }>('timelines/render', { timelineId: saved.timeline.id, priority: 3 })
+    await vi.waitFor(async () => {
+      const listed = await ok<{ renders: Array<{ id: string; status: string }> }>('timelines/renders', {})
+      expect(listed.renders.find(job => job.id === first.render.id)?.status).not.toBe('running')
+    }, { timeout: 15_000 })
+
+    const retried = await ok<{ render: { id: string; priority?: number }; retriedFrom: string }>('timelines/render-retry', { renderId: first.render.id })
+    expect(retried.retriedFrom).toBe(first.render.id)
+    expect(retried.render.id).not.toBe(first.render.id)
+    expect(retried.render.priority).toBe(3) // 复用原优先级
+
+    const missing = await ok('timelines/render-retry', { renderId: 'render-nope' }).catch(error => error as Error)
+    expect(String(missing)).toMatch(/找不到渲染任务/)
+  })
+
   it('caps asset probing at 20 paths without crashing (R6)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '多素材' })
