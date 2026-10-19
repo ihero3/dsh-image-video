@@ -15,12 +15,12 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { WorkbenchStore } from './store.ts'
-import type { AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
+import type { ResourceUsageRecord, AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
 import type { TimelineRecord } from './timeline.ts'
 import type { WorkflowRecord } from './workflow.ts'
 
 /** 当前包格式版本。 */
-export const PACKAGE_FORMAT_VERSION = 1
+export const PACKAGE_FORMAT_VERSION = 2
 
 /** 清单里的一条资产（文件已复制进 `files/` 时带校验和）。 */
 export interface PackageAssetEntry {
@@ -47,6 +47,11 @@ export interface ProjectPackageManifest {
   readonly workflows: readonly WorkflowRecord[]
   /** 任务账本一并带上，但导入侧一律转 `imported-idle`、不自动续跑（`T8-2`）。 */
   readonly tasks: readonly TaskRecord[]
+  /**
+   * 资源使用记录（`A26` / v2 新增）：哪些产物用过哪些创作资源。
+   * v1 包没有这个字段（导入时按空数组处理）。
+   */
+  readonly resourceUsage?: readonly ResourceUsageRecord[]
   /** 导出时找不到的源文件（导入时会进"缺失清单"）。 */
   readonly missing: readonly string[]
 }
@@ -113,6 +118,7 @@ export async function exportProjectPackage(input: {
     assets,
     resources: await store.listResources(projectId) as readonly ResourceRecord[],
     timelines: await store.listTimelines(projectId),
+    resourceUsage: (await store.listResourceUsage({ projectId })).map(entry => ({ ...entry })),
     workflows: await store.listWorkflows(projectId),
     tasks: await store.listTasks(100, projectId),
     missing,
@@ -222,10 +228,16 @@ export async function importProjectPackage(input: {
     })
   }
 
+  const usageEntries = (raw.resourceUsage ?? []).map(entry => ({ ...entry, projectId: project.id }))
+  if (usageEntries.length > 0) await store.recordResourceUsage(usageEntries)
+
   for (const timeline of raw.timelines ?? []) {
     await store.saveTimeline({
       projectId: project.id, name: timeline.name, frameRate: timeline.frameRate,
       burnSubtitles: timeline.burnSubtitles,
+      // `A26`：导出规格与响度开关必须随包一起恢复（早先漏传 → 导入后被重置成 720p30/关）
+      ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat },
+      ...timeline.normalizeLoudness === undefined ? {} : { normalizeLoudness: timeline.normalizeLoudness },
       tracks: rewritePaths(timeline.tracks, mapping),
     })
   }
