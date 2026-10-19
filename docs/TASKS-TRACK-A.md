@@ -61,6 +61,14 @@
 - [x] **A38 保留策略触发点** ✅ 2026-10-19：渲染成功后摘要可带 `retention`（输出目录文件数/字节、建议清理条数、可释放字节、是否仍超限）；阈值由 **`DSH_OUTPUT_MAX_FILES` / `DSH_OUTPUT_MAX_GB`** 环境变量控制，**未配置则完全不提示**；钩子异常只记 `render-retention-failed` 日志、**绝不让渲染失败**；**只报告不删除**（真删仍只走 `maintenance/retention` 的显式 `dryRun:false`）；测试 2 例
 - [x] **A39 发布 `v0.3.11-workbench-11`** ✅ 2026-10-19：版本 0.3.11 / CHANGELOG 定稿（A36 覆盖率门禁 / A37 导出摘要 / A38 保留建议）/ lib 重建 / tag / Harness 指针同步
 
+## 持续交付轮次（2026-10-19 起，目标常驻）
+
+- [x] **对抗性质量扫荡 R1** ✅ 2026-10-19：对新代码注入边界/异常，抓出并修掉 **3 个真 bug**——
+  ① **自指侧链**（`duckUnderTrackId` 指向自己）会让同一滤镜标签被用两次 → ffmpeg 直接报错（渲染侧跳过 + 校验器新增 `self-ducking` 码）；
+  ② **`crossfadeMs` 大于片段时长** 时 `acrossfade=d` 超限 → ffmpeg 报错（改为**逐对夹到较短片段的一半**，必要时该对回落 concat）；
+  ③ 缺素材复用了 `empty-subtitle` 问题码 → 调用方无法区分（新增 `missing-asset` 码）。
+  回归断言 4 例钉住上述行为。
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

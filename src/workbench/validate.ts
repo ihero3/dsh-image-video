@@ -15,6 +15,8 @@ export type TimelineIssueCode =
   | 'ducking-on-non-audio'
   | 'transition-not-adjacent'
   | 'empty-subtitle'
+  | 'missing-asset'
+  | 'self-ducking'
   | 'gapped-crossfade'
 
 /** 一条问题。 */
@@ -77,7 +79,7 @@ export function validateTimeline(
       }
       if (options.knownAssetPaths !== undefined && clip.assetPath !== undefined && !options.knownAssetPaths.has(clip.assetPath)) {
         issues.push({
-          code: 'empty-subtitle', trackId: track.id, clipId: clip.id,
+          code: 'missing-asset', trackId: track.id, clipId: clip.id,
           message: `片段 ${clip.id} 引用的素材 ${clip.assetPath} 不在素材库里：先登记素材或换成已有素材。`,
         })
       }
@@ -88,6 +90,12 @@ export function validateTimeline(
     if (track.duckUnderTrackId !== undefined) {
       if (track.kind !== 'audio') {
         issues.push({ code: 'ducking-on-non-audio', trackId: track.id, message: `${track.kind} 轨 ${track.id} 设了侧链压缩：只有音频轨支持。` })
+      }
+      if (track.duckUnderTrackId === track.id) {
+        issues.push({
+          code: 'self-ducking', trackId: track.id,
+          message: `音轨 ${track.id} 的侧链指向了自己：自身压自身在导出时会造出非法滤镜链，指向另一条音轨（通常是旁白轨）。`,
+        })
       }
       const trigger = tracks.find(candidate => candidate.id === track.duckUnderTrackId)
       if (trigger === undefined) {

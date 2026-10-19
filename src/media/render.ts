@@ -320,11 +320,20 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
     // `A30`：全部首尾相接且设了 crossfadeMs → 用 acrossfade 交叉淡化；否则普通拼接
     const allClips = track.segments.every(segment => segment.kind === 'clip')
     if (track.crossfadeMs > 0 && allClips && labels.length > 1) {
-      const fade = (track.crossfadeMs / 1000).toFixed(3)
+      const segmentMs = (index: number): number => {
+        const segment = track.segments[index]!
+        return segment.kind === 'filler' ? segment.durationMs : segment.durationMs
+      }
       let accumulator = labels[0]!
       for (let index = 1; index < labels.length; index += 1) {
         const next = `ac${trackIndex}_${index}`
-        chains.push(`${accumulator}${labels[index]}acrossfade=d=${fade}:c1=tri:c2=tri[${next}]`)
+        // `acrossfade` 要求时长不超过任一侧片段的一半，否则 ffmpeg 报错 → 逐对夹取
+        const pairFade = Math.min(track.crossfadeMs, Math.floor(Math.min(segmentMs(index - 1), segmentMs(index)) / 2))
+        if (pairFade <= 0) {
+          chains.push(`${accumulator}${labels[index]}concat=n=2:v=0:a=1[${next}]`)
+        } else {
+          chains.push(`${accumulator}${labels[index]}acrossfade=d=${(pairFade / 1000).toFixed(3)}:c1=tri:c2=tri[${next}]`)
+        }
         accumulator = `[${next}]`
       }
       chains.push(`${accumulator}anull[${out}]`)
@@ -343,7 +352,8 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   })
   // 侧链压缩（`A33`）：被压轨 × 触发轨 → sidechaincompress（ratio 由压低分贝数换算）
   audioTracks.forEach((track, trackIndex) => {
-    if (track.duckUnderTrackId === undefined) return
+    // 自指（music 压 music）会让同一个标签被用两次 → ffmpeg 直接报错，这里必须跳过
+    if (track.duckUnderTrackId === undefined || track.duckUnderTrackId === track.trackId) return
     const trigger = audioTracks.findIndex(candidate => candidate.trackId === track.duckUnderTrackId)
     if (trigger < 0) return
     const label = audioLabels[trackIndex]

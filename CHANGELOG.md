@@ -1,6 +1,7 @@
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 持续交付轮次
+- **对抗性质量扫荡 R1（修 3 个真 bug）**：① 自指侧链 → 同一标签用两次（渲染跳过 + `self-ducking` 校验码）；② `crossfadeMs` 超长 → `acrossfade` d 超限（逐对夹到较短片段一半）；③ 缺素材误用 `empty-subtitle` 码 → 新增 `missing-asset`；回归断言 4 例
 
 ## [0.3.10-workbench-10] - 2026-10-19
 
