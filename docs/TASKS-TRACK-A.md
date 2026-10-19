@@ -169,6 +169,11 @@
 - [x] **A73 版本一致性漂移测试** ✅ 2026-10-19：`tests/version-consistency.test.ts` 断言 `package.json` / `src/version.ts` / CHANGELOG 最新条目 / 最新 git tag **四处一致**；**首跑抓到两个真问题** —— ① `[0.3.25]` 条目缺失且被插到第 64 行（顺序错乱 → 测试按文件顺序取到 0.3.24）已修复并重排；② **CHANGELOG 历史缺口**：奇数版本（0.3.13/15/17/19/21/23）条目缺失 ✗（发版脚本替换链覆盖所致）→ **已知问题**，新测试保证"最新版本必须一致"；历史缺口待后续专项回填
 - [ ] **A74 发布 `v0.3.26-workbench-26`**
 
+## 批次三十一（A80 起，2026-10-20）
+
+- [x] **A80 导出预估** ✅ 2026-10-20：`src/workbench/estimate.ts`（纯函数：时长/规格/**人话比例**/预估体积/是否用估算码率，含 `describeAspect` 与 `formatBytes`）；端点 `timelines/estimate`（可传 `width/height/frameRate/bitrateKbps` **预览换规格**——覆盖画面时**码率自动重估**，避免"4K 用 1080p 码率"的严重低估）；测试 4 例
+- [ ] **A81 发布 `v0.3.29-workbench-29`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

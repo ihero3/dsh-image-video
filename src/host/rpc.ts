@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
@@ -505,6 +506,19 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'timelines/remove':
       return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
     // ---- 导出（阶段 5，T5-5）----------------------------------------------------
+    // `A80`：导出预估（时长/规格/预估体积），可传 overrides 预览"换成 4K 会有多大"
+    case 'timelines/estimate': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const estimate = estimateExport(timeline, {
+        ...optionalNumber(payload, 'width') === undefined ? {} : { width: optionalNumber(payload, 'width') as number },
+        ...optionalNumber(payload, 'height') === undefined ? {} : { height: optionalNumber(payload, 'height') as number },
+        ...optionalNumber(payload, 'frameRate') === undefined ? {} : { frameRate: optionalNumber(payload, 'frameRate') as number },
+        ...optionalNumber(payload, 'bitrateKbps') === undefined ? {} : { bitrateKbps: optionalNumber(payload, 'bitrateKbps') as number },
+      })
+      return { estimate: { ...estimate, humanBytes: formatBytes(estimate.estimatedBytes) } }
+    }
     case 'timelines/render': {
       const timelineId = text(payload, 'timelineId')
       const timeline = await deps.store.findTimeline(timelineId)
