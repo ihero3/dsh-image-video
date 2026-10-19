@@ -2,6 +2,9 @@
 
 （下一轮的改动写这里）
 
+### 批次五十六
+- **A130 VTT 随片交付**：`subtitleFormat: vtt` 时随片生成 `.vtt`（Web 平台直接用），默认仍 SRT
+
 ### 批次五十五
 - **A128 成片列表带缩略图**：`renders/overview` 带 `recentItems`（视频/封面/字幕三件套路径），界面列表可直接显示封面
 

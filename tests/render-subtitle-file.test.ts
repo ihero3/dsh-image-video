@@ -60,3 +60,29 @@ describe('render writes an SRT next to the video (A120)', () => {
     expect(result.subtitlePath).toBeUndefined()
   }, 60_000)
 })
+
+describe('VTT sidecar (A130)', () => {
+  it('writes .vtt when subtitleFormat is vtt', async () => {
+    const work = await temp('dsh-vtt-side-')
+    const outputs = await temp('dsh-vtt-side-out-')
+    const video = join(work, 'v.mp4')
+    await new Promise<void>((resolve, reject) => {
+      execFile(FFMPEG, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+        '-i', 'testsrc=size=320x240:rate=30:duration=1', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', video],
+        error => { error === null ? resolve() : reject(error) })
+    })
+    const service = new RenderService({ outputsDir: outputs })
+    const result = await service.render({
+      schemaVersion: 4, id: 'tml-vtt', projectId: 'prj-1', name: 'vtt', frameRate: 30, burnSubtitles: false,
+      tracks: [
+        { id: 'v1', kind: 'video', clips: [{ id: 'v', assetPath: video, startMs: 0, durationMs: 1000 }] },
+        { id: 's1', kind: 'subtitle', clips: [{ id: 's', text: '第一句', startMs: 0, durationMs: 500 }] },
+      ],
+      createdAt: '', updatedAt: '',
+    }, { subtitleFormat: 'vtt' })
+    expect(result.subtitlePath).toMatch(/\.vtt$/)
+    const text = await readFile(result.subtitlePath!, 'utf8')
+    expect(text.startsWith('WEBVTT')).toBe(true)
+    expect(text).toContain('00:00:00.000 --> 00:00:00.500')
+  }, 60_000)
+})

@@ -159,6 +159,8 @@ export declare class RenderService {
         fileName?: string;
         /** 封面帧位置（`A126`，毫秒；默认第 1 秒）。 */
         thumbnailAtMs?: number;
+        /** 随片字幕格式（`A130`；默认 srt）。 */
+        subtitleFormat?: 'srt' | 'vtt';
     }): Promise<RenderResult>;
     /**
      * 抽一帧做缩略图（`A124`）：取第 1 秒（短片取中点），缩到 480 宽，输出 jpg。

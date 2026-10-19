@@ -221,6 +221,8 @@ export declare class RenderRegistry {
     private readonly retryFlags;
     /** 每个任务的封面帧位置（`A126`）。 */
     private readonly thumbnailAt;
+    /** 每个任务的随片字幕格式（`A130`）。 */
+    private readonly subtitleFormats;
     constructor(deps: {
         readonly render: RenderService;
         /** 成功后把产物登记成素材（可选）。 */
@@ -303,6 +305,7 @@ export declare class RenderRegistry {
         priority?: number;
         retryTransient?: boolean;
         thumbnailAtMs?: number;
+        subtitleFormat?: 'srt' | 'vtt';
     }): RenderJob;
     /** 真正开跑一个任务（内部：start 或出队时调用）。 */
     /**

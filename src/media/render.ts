@@ -9,6 +9,7 @@
  *   一句话下一步（`R-TML-5`/`R-TML-6`）。
  */
 import { serializeSrt, formatTimecode } from '../workbench/srt.ts'
+import { serializeVtt } from '../workbench/vtt.ts'
 import { spawn } from 'node:child_process'
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -564,6 +565,8 @@ export class RenderService {
     fileName?: string
     /** 封面帧位置（`A126`，毫秒；默认第 1 秒）。 */
     thumbnailAtMs?: number
+    /** 随片字幕格式（`A130`；默认 srt）。 */
+    subtitleFormat?: 'srt' | 'vtt'
   } = {}): Promise<RenderResult> {
     const snapshot = freezeTimeline(timeline)
     const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
@@ -638,10 +641,12 @@ export class RenderService {
       .flatMap(track => track.clips)
       .filter(clip => (clip.text ?? '').trim() !== '')
     if (subtitleClips.length > 0) {
-      subtitlePath = outputPath.replace(/\.[^.]+$/, '') + '.srt'
-      await writeFile(subtitlePath, serializeSrt(subtitleClips.map(clip => ({
+      const cues = subtitleClips.map(clip => ({
         index: 0, startMs: clip.startMs, endMs: clip.startMs + clip.durationMs, text: clip.text ?? '',
-      }))), 'utf8')
+      }))
+      const format = options.subtitleFormat === 'vtt' ? 'vtt' : 'srt'
+      subtitlePath = outputPath.replace(/\.[^.]+$/, '') + `.${format}`
+      await writeFile(subtitlePath, format === 'vtt' ? serializeVtt(cues) : serializeSrt(cues), 'utf8')
     }
     // `A124`：抽一帧做缩略图（界面列表/分享预览用）；失败不影响成片
     const thumbnailPath = await this.extractThumbnail(outputPath, options.thumbnailAtMs ?? 1000).catch(() => undefined)

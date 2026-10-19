@@ -294,6 +294,11 @@
 - [x] **A128 成片列表带缩略图** ✅ 2026-10-20：`renders/overview` 新增 `recentItems`（最近成功成片最新在前，最多 10 条，带 `outputPath`/`thumbnailFile`/`subtitleFile`/字节/时长/完成时间）——界面列表可直接出"封面 + 视频 + 字幕"三件套；测试 1 例
 - [ ] **A129 发布 `v0.3.53-workbench-53`**
 
+## 批次五十六（A130 起，2026-10-20）
+
+- [x] **A130 VTT 随片交付** ✅ 2026-10-20：`render(timeline,{subtitleFormat:'srt'|'vtt'})` + `timelines/render` 端点透传 → 随片字幕可出 SRT 或 VTT（默认 srt 不变）；测试 1 例（vtt → `.vtt` 且以 `WEBVTT` 开头、时间码点毫秒）
+- [ ] **A131 发布 `v0.3.54-workbench-54`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
