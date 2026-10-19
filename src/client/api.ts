@@ -71,15 +71,6 @@ export interface WorkbenchApi {
   saveDefaults: (patch: Record<string, string | number | null>) => Promise<void>
   /** 资源使用记录（`R-QCK-3`）：资源库据此显示「被哪些素材用过」。 */
   listResourceUsage: (options?: { resourceId?: string; projectId?: string }) => Promise<ResourceUsageRecord[]>
-  /** Export parameters the export panel lets the user pick (B6). */
-  export interface TimelineExportOptions {
-    /** Resolution preset id: `default` | `480` | `768` | `2k`. */
-    resolution?: string
-    /** Target frames per second. */
-    fps?: number
-    /** Aspect-ratio preset id: `landscape` | `portrait` | `square` | `vertical`. */
-    aspect?: string
-  }
   /** Start rendering a timeline into an mp4 (returns the job to poll). */
   renderTimeline: (timelineId: string, projectId?: string, options?: TimelineExportOptions) => Promise<RenderJob>
   /** Export jobs, newest first. */
