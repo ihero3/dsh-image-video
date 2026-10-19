@@ -25,6 +25,32 @@ import { type RenderSummary } from './render-summary.ts';
  * @returns 预计剩余秒数（四舍五入）；不该给估计时返回 `undefined`。
  */
 export declare function estimateEtaSec(percent: number, elapsedMs: number): number | undefined;
+/**
+ * 把渲染任务归组成"成片集"（`A56`）：同一项目 + 同一时间轴的多次导出算一集。
+ *
+ * 只读聚合，不改任何数据：界面可以用它显示"这个时间轴导出过 5 个成片、共 120MB"，
+ * Agent 也能据此回答"上次导出的那个呢"。
+ *
+ * @param jobs - 渲染任务（任意顺序）。
+ * @returns 按最近导出时间倒序的成片集。
+ */
+export declare function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[];
+/** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
+export interface RenderSet {
+    readonly projectId: string;
+    readonly timelineId: string;
+    /** 该时间轴的导出次数（含失败/取消）。 */
+    readonly count: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    /** 成功成片的总字节数。 */
+    readonly totalBytes: number;
+    /** 成功成片的时长总和（毫秒）。 */
+    readonly totalDurationMs: number;
+    /** 最近一次导出的时间。 */
+    readonly latestAt?: string;
+    readonly jobIds: readonly string[];
+}
 export declare function segmentStepAt(bounds: readonly number[], percent: number): {
     readonly current: number;
     readonly total: number;

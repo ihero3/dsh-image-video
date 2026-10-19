@@ -32,6 +32,59 @@ export function estimateEtaSec(percent: number, elapsedMs: number): number | und
   return Math.max(0, Math.round((elapsedMs * (100 - percent)) / percent / 1000))
 }
 
+/**
+ * 把渲染任务归组成"成片集"（`A56`）：同一项目 + 同一时间轴的多次导出算一集。
+ *
+ * 只读聚合，不改任何数据：界面可以用它显示"这个时间轴导出过 5 个成片、共 120MB"，
+ * Agent 也能据此回答"上次导出的那个呢"。
+ *
+ * @param jobs - 渲染任务（任意顺序）。
+ * @returns 按最近导出时间倒序的成片集。
+ */
+export function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[] {
+  const groups = new Map<string, RenderJob[]>()
+  for (const job of jobs) {
+    const key = `${job.projectId}\u0000${job.timelineId}`
+    const list = groups.get(key)
+    if (list === undefined) groups.set(key, [job])
+    else list.push(job)
+  }
+  const sets: RenderSet[] = []
+  for (const list of groups.values()) {
+    const succeeded = list.filter(job => job.status === 'succeeded')
+    const timestamps = list.map(job => job.finishedAt ?? job.startedAt).filter((stamp): stamp is string => typeof stamp === 'string')
+    sets.push({
+      projectId: list[0]!.projectId,
+      timelineId: list[0]!.timelineId,
+      count: list.length,
+      succeeded: succeeded.length,
+      failed: list.filter(job => job.status === 'failed').length,
+      totalBytes: succeeded.reduce((sum, job) => sum + (job.bytes ?? 0), 0),
+      totalDurationMs: succeeded.reduce((sum, job) => sum + (job.summary?.durationMs ?? 0), 0),
+      latestAt: timestamps.sort((left, right) => right.localeCompare(left))[0],
+      jobIds: list.map(job => job.id),
+    })
+  }
+  return sets.sort((left, right) => (right.latestAt ?? '').localeCompare(left.latestAt ?? ''))
+}
+
+/** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
+export interface RenderSet {
+  readonly projectId: string
+  readonly timelineId: string
+  /** 该时间轴的导出次数（含失败/取消）。 */
+  readonly count: number
+  readonly succeeded: number
+  readonly failed: number
+  /** 成功成片的总字节数。 */
+  readonly totalBytes: number
+  /** 成功成片的时长总和（毫秒）。 */
+  readonly totalDurationMs: number
+  /** 最近一次导出的时间。 */
+  readonly latestAt?: string
+  readonly jobIds: readonly string[]
+}
+
 export function segmentStepAt(
   bounds: readonly number[],
   percent: number,

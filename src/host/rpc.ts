@@ -12,6 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import { groupRenderSets } from '../media/render-registry.ts'
 import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import {
@@ -508,7 +509,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { render: deps.renders.start(timeline, { ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number } }) }
     }
     case 'timelines/renders':
-      return { renders: deps.renders.list(optionalText(payload, 'projectId')) }
+      // `A56`：成片集归组（按项目+时间轴；只读聚合、纯加法字段，老客户端不受影响）
+      {
+        const projectId = optionalText(payload, 'projectId')
+        const renders = deps.renders.list(projectId)
+        return { renders, sets: groupRenderSets(renders) }
+      }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
