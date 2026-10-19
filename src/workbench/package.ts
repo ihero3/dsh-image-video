@@ -15,12 +15,12 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { WorkbenchStore } from './store.ts'
-import type { ResourceUsageRecord, AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
+import type { ExportPresetRecord, ResourceUsageRecord, AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
 import type { TimelineRecord } from './timeline.ts'
 import type { WorkflowRecord } from './workflow.ts'
 
 /** 当前包格式版本。 */
-export const PACKAGE_FORMAT_VERSION = 2
+export const PACKAGE_FORMAT_VERSION = 3
 
 /** 清单里的一条资产（文件已复制进 `files/` 时带校验和）。 */
 export interface PackageAssetEntry {
@@ -52,6 +52,8 @@ export interface ProjectPackageManifest {
    * v1 包没有这个字段（导入时按空数组处理）。
    */
   readonly resourceUsage?: readonly ResourceUsageRecord[]
+  /** 用户自定义导出预设（`A53` / v3 新增）：导入时按名称去重后并入全局预设库。 */
+  readonly exportPresets?: readonly ExportPresetRecord[]
   /** 导出时找不到的源文件（导入时会进"缺失清单"）。 */
   readonly missing: readonly string[]
 }
@@ -119,6 +121,8 @@ export async function exportProjectPackage(input: {
     resources: await store.listResources(projectId) as readonly ResourceRecord[],
     timelines: await store.listTimelines(projectId),
     resourceUsage: (await store.listResourceUsage({ projectId })).map(entry => ({ ...entry })),
+    // `A53`：自定义导出预设随包走（全局库，导入侧按名称去重合并）
+    exportPresets: await store.listExportPresets(),
     workflows: await store.listWorkflows(projectId),
     tasks: await store.listTasks(100, projectId),
     missing,
@@ -233,6 +237,18 @@ export async function importProjectPackage(input: {
     })
   }
 
+  // `A53`：把包里的自定义预设并入全局库（同名/非法跳过，不覆盖用户已有预设）
+  for (const preset of raw.exportPresets ?? []) {
+    try {
+      await store.saveExportPreset({
+        name: preset.name, width: preset.width, height: preset.height, frameRate: preset.frameRate,
+        ...preset.bitrateKbps === undefined ? {} : { bitrateKbps: preset.bitrateKbps },
+      })
+    } catch {
+      // 同名或规格非法：跳过这一条，不影响整包导入
+    }
+  }
+
   const usageEntries = (raw.resourceUsage ?? []).map(entry => ({ ...entry, projectId: project.id }))
   if (usageEntries.length > 0) await store.recordResourceUsage(usageEntries)
 
@@ -243,6 +259,8 @@ export async function importProjectPackage(input: {
       // `A26`：导出规格与响度开关必须随包一起恢复（早先漏传 → 导入后被重置成 720p30/关）
       ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat },
       ...timeline.normalizeLoudness === undefined ? {} : { normalizeLoudness: timeline.normalizeLoudness },
+      // `A53` 修：`A42` 的 burnLanguage 之前没随包恢复（导入后语言设置会丢）
+      ...timeline.burnLanguage === undefined ? {} : { burnLanguage: timeline.burnLanguage },
       tracks: rewritePaths(timeline.tracks, mapping),
     })
   }
