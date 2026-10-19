@@ -25,6 +25,8 @@
  * @module dsh-image-video
  */
 
+import { join } from 'node:path'
+import { appendDiagnosticLog } from './host/diagnostics-log.ts'
 import { ProbeCache } from './media/probe-cache.ts'
 import { probeMediaSpec } from './media/render.ts'
 import { probeFfmpeg } from './media/ffmpeg.ts'
@@ -148,6 +150,12 @@ export function apply(ctx: Context, config: Config): void {
   const diagnostics = new DiagnosticsCollector()
   const workbenchStore = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
 
+  // `A100`：诊断事件同时落盘（脱敏口径沿用 Collector；按 1MB × 3 份轮转）
+  const diagnosticLogPath = join(workbenchStore.directory, 'diagnostics.log')
+  const recordDiagnostic = (entry: { level: 'info' | 'warn' | 'error'; event: string; message?: string }): void => {
+    void appendDiagnosticLog({ path: diagnosticLogPath, entry: { at: new Date().toISOString(), ...entry } }).catch(() => undefined)
+  }
+
   // 在飞的生成任务：账本包装器按 taskId 注册可取消句柄，RPC 的 tasks/cancel 掐它。
   const generationRegistry = new GenerationRegistry()
 
@@ -198,6 +206,12 @@ export function apply(ctx: Context, config: Config): void {
   // 结构化日志（`T7-3`）：一行一个 JSON 事件，字段（taskId/runId/renderId/服务商/耗时）可串联
   const logEntry = (entry: Record<string, unknown>): void => {
     ctx.logger?.info?.(`image-video ${JSON.stringify(entry)}`)
+    // `A100`：同时落盘，便于事后排查（只写事件名与摘要，不写提示词/绝对路径）
+    recordDiagnostic({
+      level: entry.level === 'warn' || entry.level === 'error' ? entry.level : 'info',
+      event: typeof entry.event === 'string' ? entry.event : 'workbench',
+      ...typeof entry.message === 'string' ? { message: entry.message } : {},
+    })
   }
   const persistedDefaults = extractPersistedDefaults(config)
 

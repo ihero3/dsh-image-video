@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { listDiagnosticLogs } from './diagnostics-log.ts'
 import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
 import { renderOverview } from '../media/render-registry.ts'
@@ -424,7 +425,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         .filter(value => Number.isFinite(value))
         .sort((left, right) => left - right)
       const referencedFiles = (await deps.store.referencedAssetPaths()).length
+      const logFiles = await listDiagnosticLogs(join(deps.store.directory, 'diagnostics.log')).catch(() => [])
       return {
+        logFiles,
         plugin: { name: 'dsh-image-video', version: PLUGIN_VERSION },
         provider: deps.provider,
         outputsDir: deps.outputsDir,

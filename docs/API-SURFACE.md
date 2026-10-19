@@ -146,7 +146,7 @@
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
 | `media/ffmpeg` | — | `{available,path?,message?}` |
-| `diagnostics` | — | `{logs,outputs,renders}` |
+| `diagnostics` | — | `{logs,outputs,renders,logFiles}`（`A100` 落盘日志文件与体积）|
 | `maintenance/retention` | `{dryRun?}` | 保留计划（默认 `dryRun:true`，只算不删） |
 | `presets/list` | — | `{presets}`（内置 `custom:false` + 自定义 `custom:true`） |
 | `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` |
