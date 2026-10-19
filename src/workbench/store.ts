@@ -599,6 +599,10 @@ export class WorkbenchStore {
     const duplicated = document.exportPresets.some(preset => preset.name === name && preset.id !== input.id)
     if (duplicated) throw new Error(`已有同名导出预设「${name}」：换个名字`)
     const existing = input.id === undefined ? undefined : document.exportPresets.find(preset => preset.id === input.id)
+    // R6：给了 id 却找不到 → 明确报错。早先会**静默新建**，调用方以为在更新、实际在造数据
+    if (input.id !== undefined && existing === undefined) {
+      throw new Error(`找不到要更新的导出预设 ${input.id}：先用 presets/list 确认，或去掉 id 表示新建`)
+    }
     const record: ExportPresetRecord = {
       id: existing?.id ?? newWorkbenchId('preset'),
       name,

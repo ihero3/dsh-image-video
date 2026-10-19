@@ -106,6 +106,10 @@
 - [x] **A53 项目包 v3** ✅ 2026-10-19：`PACKAGE_FORMAT_VERSION` 2→3，清单新增**自定义导出预设**（导入按名称去重合并、不覆盖用户已有预设）；**修掉一个真遗漏**——`A42` 的 `burnLanguage` 导入时没传回去（会丢语言设置）；**v1/v2/v3 包都能导入**（版本区间 1..3）；测试 7 例（含 v2 老包兼容）
 - [x] **A54 发布 `v0.3.16-workbench-16`** ✅ 2026-10-19：版本 0.3.16 / CHANGELOG 定稿（A52 ETA / A53 包 v3 + burnLanguage 修复）/ lib 重建 / tag / Harness 指针同步
 
+### 持续交付轮次（续）
+
+- [x] **对抗性质量扫荡 R6** ✅ 2026-10-19：扫 A44–A53 新代码 —— ① **`saveExportPreset` 给了不存在的 id 会静默新建**（调用方以为在更新、实际在造数据）→ 改为明确报错；② ETA 极端边界（恰好 5%、99.9%、极大耗时）不出 NaN/负值；③ `timelines/validate` 在 **21 个缺失素材**时只探测前 20 个、不崩不误报。回归断言 3 例（+端点）
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

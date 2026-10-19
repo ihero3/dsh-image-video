@@ -210,6 +210,21 @@ describe('workbench channel endpoints', () => {
     expect(String(oversize)).toMatch(/片段太多/)
   })
 
+  it('caps asset probing at 20 paths without crashing (R6)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '多素材' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: Array.from({ length: 21 }, (_, index) => ({
+        id: `c${index}`, assetPath: `outputs/ghost-${index}.mp4`, startMs: index * 1000, durationMs: 1000,
+      })) }],
+    })
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    // 21 个素材全部缺失 → 探测失败不影响校验；不应误报越界，也不应崩
+    expect(Array.isArray(checked.issues)).toBe(true)
+    expect(checked.issues.map(issue => issue.code)).not.toContain('clip-longer-than-asset')
+  })
+
   it('survives asset probing when files are missing (A45)', async () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '越界' })
