@@ -1,3 +1,7 @@
+## [Unreleased]
+
+（下一轮的改动写这里）
+
 ## [0.3.24-workbench-24] - 2026-10-19
 
 ### 批次二十四
@@ -57,7 +61,7 @@
 
 本文件记录 dsh-image-video 的版本演进。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.25-workbench-25] - 2026-10-19
 
 ### 批次二十六
 - **A71 RPC 契约漂移测试 + 文档补齐**：漂移测试首跑抓出 **23 个端点没写进 API-SURFACE.md**（同事无法对接）→ 补齐「完整端点表」；以后新增端点忘写文档测试直接红
