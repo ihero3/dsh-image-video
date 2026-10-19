@@ -227,7 +227,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     },
     parameters: {
       action: { type: 'string', required: true, description: 'list / add-clip / export' },
-      projectId: { type: 'string', required: true, description: '项目 id' },
+      projectId: { type: 'string', description: '项目 id（仅 list 必填）' },
       timelineId: { type: 'string', description: 'add-clip / export 时的时间轴 id（list 里拿）' },
       track: { type: 'string', description: "add-clip 时的轨道：video / audio / subtitle（默认 video）" },
       clips: {
@@ -249,8 +249,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_timeline')
-      const projectId = requireString(input, 'projectId', 'workbench_timeline')
+      // `A67`：projectId 只有 list 用得上；此前全局 required 会逼 Agent 传一个无意义的项目 id
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_timeline list 需要 projectId')
         const rows = (await store.listTimelines(projectId)).slice(0, optionalLimit(input))
         return json({
           timelines: rows.map(item => ({
@@ -269,7 +271,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         if (rawClips.length === 0) throw new Error('add-clip 需要 clips 数组，且至少一个片段')
         if (rawClips.length > MAX_TOOL_CLIPS) throw new Error(`一次最多加 ${MAX_TOOL_CLIPS} 个片段，收到 ${rawClips.length} 个`)
         const trackKind = input.track === 'audio' || input.track === 'subtitle' ? input.track : 'video'
-        const knownAssets = new Set((await store.listAssets(projectId)).map(asset => asset.path))
+        // `A67`：项目上下文从时间轴自己取（timeline 知道 projectId），不必逼 Agent 再传一次
+        const knownAssets = new Set((await store.listAssets(current.projectId)).map(asset => asset.path))
         const tracks = current.tracks.map(track => ({ ...track, clips: [...track.clips] }))
         const target = tracks.find(track => track.kind === trackKind)
         if (target === undefined) throw new Error(`时间轴 ${timelineId} 没有 ${trackKind} 轨`)
@@ -484,7 +487,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     },
     parameters: {
       action: { type: 'string', required: true, description: 'list / save / run / runs' },
-      projectId: { type: 'string', required: true, description: '项目 id' },
+      projectId: { type: 'string', description: '项目 id（list / save 必填）' },
       workflowId: { type: 'string', description: 'save 覆盖时 / run 时的流程 id' },
       name: { type: 'string', description: 'save 时的流程名' },
       nodes: {
@@ -512,8 +515,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_workflow')
-      const projectId = requireString(input, 'projectId', 'workbench_workflow')
+      // `A67`：templates 是全局动作、run/runs 只看 workflowId → projectId 只对 list/save 有意义
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_workflow list 需要 projectId')
         const rows = (await store.listWorkflows(projectId)).slice(0, optionalLimit(input))
         return json({ workflows: rows.map(item => ({ id: item.id, name: item.name, nodes: item.nodes.length, edges: item.edges.length, updatedAt: item.updatedAt })), count: rows.length })
       }
@@ -538,6 +543,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         return json({ workflow: { id: saved.id, name: saved.name, nodes: saved.nodes.length, edges: saved.edges.length } })
       }
       if (action === 'save') {
+        const saveProjectId = requireString(input, 'projectId', 'workbench_workflow save')
         // 画布坐标是"界面细节"，模型不该为此编数字：缺 position 时按加入顺序自动排布
         const rawNodes = Array.isArray(input.nodes) ? input.nodes : []
         const nodes = rawNodes.map((raw, index) => {
@@ -552,7 +558,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         const saved = await store.saveWorkflow({
           ...typeof input.workflowId === 'string' && input.workflowId !== '' ? { id: input.workflowId } : {},
-          projectId,
+          projectId: saveProjectId,
           name: typeof input.name === 'string' && input.name !== '' ? input.name : '对话创建的流程',
           nodes,
           edges: Array.isArray(input.edges) ? input.edges : [],
@@ -567,7 +573,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         return json({ run: { id: run.id, status: run.status, ...run.error === undefined ? {} : { error: run.error } } })
       }
       if (action === 'runs') {
-        const rows = (await store.listRuns(projectId, typeof input.workflowId === 'string' && input.workflowId !== '' ? input.workflowId : undefined))
+        const runsProjectId = requireString(input, 'projectId', 'workbench_workflow runs')
+        const rows = (await store.listRuns(runsProjectId, typeof input.workflowId === 'string' && input.workflowId !== '' ? input.workflowId : undefined))
           .slice(0, optionalLimit(input))
         return json({
           runs: rows.map(run => ({

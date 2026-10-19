@@ -61,6 +61,23 @@ async function touch(dir: string, name: string): Promise<string> {
 }
 
 describe('agent tool surface (T6-3)', () => {
+  it('lists workflow templates without needing a project (A67)', async () => {
+    const { call } = await harness()
+    const result = await call('workbench_workflow', { action: 'templates' })
+    expect((result.value as { templates: unknown[] }).templates.length).toBeGreaterThan(0)
+  })
+
+  it('adds a clip using only the timeline id (A67)', async () => {
+    const { store, call, outputs } = await harness()
+    const project = await store.createProject('A67')
+    const file = await touch(outputs, 'clip.mp4')
+    await store.attachAsset({ projectId: project.id, path: file, kind: 'video' })
+    const timeline = await store.saveTimeline({ projectId: project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }] })
+    await call('workbench_timeline', { action: 'add-clip', timelineId: timeline.id, clips: [{ assetPath: file, durationMs: 1000 }] })
+    const saved = await store.findTimeline(timeline.id)
+    expect(saved?.tracks[0]?.clips).toHaveLength(1)
+  })
+
   it('probes real media through the tool surface (A63/A65)', async () => {
     const { call } = await harness()
     const result = await call('workbench_assets', { action: 'probe', path: 'outputs/good.mp4' })

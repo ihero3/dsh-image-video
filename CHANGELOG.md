@@ -53,7 +53,8 @@
 
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### 批次二十二
+- **A67 Agent 工具 schema 审计**：`timeline`/`workflow` 工具的 `projectId` 从**全局必填**改为按需校验，解锁 `templates`/`add-clip`/`export`/`run` 等不需要项目上下文的动作；`add-clip` 的项目上下文改从时间轴自身取
 
 ## [0.3.21-workbench-21] - 2026-10-19
 

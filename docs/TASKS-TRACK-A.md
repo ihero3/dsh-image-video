@@ -148,6 +148,11 @@
 
 - [x] **A66 发布 `v0.3.22-workbench-22`** ✅ 2026-10-19：版本 0.3.22 / CHANGELOG 定稿（A63 可用性修复 / A65 单测）/ lib 重建 / tag / Harness 指针同步
 
+## 批次二十二（A67 起，2026-10-19）
+
+- [x] **A67 Agent 工具 schema 审计** ✅ 2026-10-19：延续 A65 的教训系统检查 `parameters.required` —— 发现 `workbench_timeline` 与 `workbench_workflow` 都把 `projectId` 设成**全局必填** ✗，于是 `templates`（全局动作）、`add-clip`/`export`/`run` 等**不需要项目上下文**的动作被框架逼着传一个无意义的项目 id ✗ → 改为**按需校验**（`list`/`save`/`runs` 各自 require；`add-clip` 的项目上下文直接从**时间轴自己**取）；工具描述同步标注"仅 list 必填"；测试 2 例（`templates` 无项目可用、`add-clip` 只传时间轴 id 即可）
+- [ ] **A68 发布 `v0.3.23-workbench-23`**
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*
