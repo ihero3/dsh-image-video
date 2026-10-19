@@ -274,6 +274,11 @@
 - [x] **A120 导出时同时输出 SRT** ✅ 2026-10-20：渲染成功后若时间轴有字幕片段 → 在成片旁写 `<成片名>.srt`（复用 A118 序列化，时间轴与成片严格对齐）+ `RenderResult.subtitlePath` + 摘要 `subtitleFile`；无字幕片段则不产生文件；测试 2 例（真机渲染生成 SRT 且时间码/多行文本正确、无字幕不生成）
 - [ ] **A121 发布 `v0.3.49-workbench-49`**
 
+## 批次五十二（A122 起，2026-10-20）
+
+- [x] **A122 WebVTT 支持** ✅ 2026-10-20：`src/workbench/vtt.ts` 纯编解码（`WEBVTT` 头、点毫秒、允许 `MM:SS.mmm`、忽略时间码后的渲染设置、跳过 NOTE/STYLE/REGION 块、缺头容错）；`subtitles/export|import` 增加 `format: srt|vtt`（默认 srt 不变，`srt` 字段保留兼容）；测试 3 例（往返、脏 VTT、时间码）
+- [ ] **A123 发布 `v0.3.50-workbench-50`**（第 50 个版本）
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

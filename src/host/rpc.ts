@@ -12,6 +12,7 @@
 import { newWorkbenchId } from '../workbench/records.ts'
 import { makeSubtitleIds } from '../workbench/subtitles.ts'
 import { parseSrt, serializeSrt } from '../workbench/srt.ts'
+import { parseVtt, serializeVtt } from '../workbench/vtt.ts'
 import { findDuplicateAssets } from '../workbench/duplicates.ts'
 import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
@@ -516,14 +517,22 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         endMs: clip.startMs + clip.durationMs,
         text: clip.text ?? '',
       }))).filter(cue => cue.text.trim() !== '')
-      return { srt: serializeSrt(cues), cues: cues.length }
+      const format = optionalText(payload, 'format') === 'vtt' ? 'vtt' : 'srt'
+      return {
+        text: format === 'vtt' ? serializeVtt(cues) : serializeSrt(cues),
+        format,
+        cues: cues.length,
+        srt: serializeSrt(cues), // 兼容旧调用方
+      }
     }
     // `A118`：SRT 导入为字幕片段（replace 默认 true：替换该字幕轨的片段）
     case 'subtitles/import': {
       const timelineId = text(payload, 'timelineId')
       const timeline = await deps.store.findTimeline(timelineId)
       if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
-      const parsed = parseSrt(text(payload, 'srt'))
+      const format = optionalText(payload, 'format') === 'vtt' ? 'vtt' : 'srt'
+      const payloadText = typeof field(payload, 'text') === 'string' ? field(payload, 'text') as string : text(payload, 'srt')
+      const parsed = format === 'vtt' ? parseVtt(payloadText) : parseSrt(payloadText)
       if (parsed.cues.length === 0) throw new Error('SRT 里没有解析出任何字幕：检查时间码格式（如 00:00:01,000 --> 00:00:02,500）')
       const offsetMs = optionalNumber(payload, 'offsetMs') ?? 0
       const newId = makeSubtitleIds('srt')
