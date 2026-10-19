@@ -6,4 +6,4 @@
  * it, so the value lives here — and `tests/version.test.ts` fails loudly when it
  * drifts from `package.json`.
  */
-export const PLUGIN_VERSION = '0.3.33'
+export const PLUGIN_VERSION = '0.3.34'
