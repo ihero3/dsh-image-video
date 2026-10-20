@@ -2,6 +2,9 @@
 
 （下一轮的改动写这里）
 
+### 批次六十八（续二）
+- **排障口径**：确认运行态版本只看 `GET /image-video/status`（宿主侧）；界面头部版本可能来自旧客户端实例
+
 ### 批次六十八（续）
 - **开发刷新流程**：`scripts/refresh-plugin-dev.sh` 一条命令重建私有插件产物并重启桌面开发版；根因是 `dev --skip-build` 跳过 `build:plugins`
 

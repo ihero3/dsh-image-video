@@ -323,3 +323,18 @@ pnpm -C apps/desktop run start       # 重新准备开发工程并启动
 | 只改测试/文档 | 不用重启 |
 
 > 另：`pnpm` 版本保持 **11.28.5**（= 仓库 `packageManager`），不要升到 12。
+
+### 判断"运行态到底是哪个版本"：只用 `GET /image-video/status`
+
+界面头部显示的版本号**可能来自旧客户端/旧实例**，不可信。唯一可信的是宿主侧状态路由
+（仅回环，桌面同源可直取）：
+
+```js
+// 在应用页面里执行（自带宿主 cookie）
+await (await fetch('/image-video/status')).json()
+// → {"version":"0.3.64","rpc":{"registered":true,"awaiting":false},"provider":"threerouter",…}
+```
+
+2026-10-20 实测：`status` 报 **0.3.64**（宿主已新），但页面头部仍显示 **0.3.61** 且旧文案仍在
+→ 说明**客户端那份插件产物是旧的**（另一份实例/缓存）。遇到"版本对不上"先查这一条，
+不要去猜 `lib/` 或符号链接。
