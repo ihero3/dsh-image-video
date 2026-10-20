@@ -1,0 +1,53 @@
+# Track A → Track B 交接清单（`A142`）
+
+> 目的：把这 60 个后端版本攒下的能力**变成界面能用上的东西**。本文只列"界面可以做什么"，
+> 契约细节见 `docs/API-SURFACE.md`（端点表由漂移测试守护，永远是最新的）。
+
+## 一、可以立刻接的三个"信息面板"（都是加法字段，老代码不受影响）
+
+| 界面位置 | 用哪个端点 | 能显示什么 |
+| --- | --- | --- |
+| 导出按钮旁 / 进度条 | `timelines/render` 返回的任务 | `progressStep{current,total}`（第 N 段）· `progressEtaSec`（还要几秒）· `percent` |
+| 导出前确认框 | `timelines/preflight` | `summaryLine`（一句人话：能不能导 / 多大 / 多久 / 有没有素材浪费）+ `issues[]` + `estimate` + `usage` |
+| 成片列表 / 项目页 | `renders/overview` | `recentItems[]`（**视频 + 封面 + 字幕三件套路径**）+ `running/queued` + `throughput` |
+
+## 二、值得做的交互（按价值排序）
+
+1. **导出前体检弹窗**：`timelines/preflight` → 有阻断问题时禁用"导出"按钮并列出 `issues`；
+   没有时显示 `summaryLine` 作为确认文案（用户点之前就知道"多大、要等多久"）。
+2. **成片卡片**：`renders/overview` 的 `recentItems[].thumbnailFile` 直接当封面图；
+   `outputPath` 做"播放/打开位置"；`subtitleFile` 做"下载字幕"。
+3. **失败自助修复**：渲染任务失败时读 `diagnosis`（`{title, hint, actions[]}`）→
+   把 `actions` 逐条渲染成建议（不必自己写错误文案）。
+4. **字幕互通**：`subtitles/export`（`format: srt | vtt`）导出、
+   `subtitles/import`（支持 `offsetMs` 平移）导入现成字幕；导出成片时用
+   `timelines/render` 的 `subtitleFormat: 'vtt'` 让随片字幕直接是 Web 平台格式。
+5. **清理向导**（三件套，全部"只报告不删除"）：
+   `assets/usage`（哪些素材没用）· `assets/duplicates`（同一份存了几遍）·
+   `assets/size-report`（哪些最大）· `assets/project-stats`（哪个项目最占地方）
+   → 界面做勾选 + 二次确认后调 `assets/remove` / `maintenance/retention`。
+6. **自定义导出预设**：`presets/list`（内置 `custom:false` + 自定义 `custom:true`）→
+   `presets/save` / `presets/remove`；`timeline set-format presetId` 两种都能用。
+
+## 三、必须知道的坑（踩过）
+
+| 事项 | 说明 |
+| --- | --- |
+| **数据 schema v4** | 自定义预设是 v4 新增；旧版本宿主**读不了** v4 文件 → 升级后必须重启到 0.3.44+ |
+| **lib 先构建再提交** | `lib/` 是入库产物；改动源码后必须 `pnpm run build` 再提交，否则 tag 里是旧代码（`EXECUTION.md` 有完整事故链） |
+| **端点/动作必须写文档** | 加端点忘了写 `API-SURFACE.md`、加动作忘了写工具描述 → **漂移测试直接红**（`rpc-contract-drift` / `tool-actions-drift`） |
+| **推送前五道门** | `bash scripts/gate.sh`（typecheck / 测试 / 构建 / 体积 / 覆盖率）；日常可用 `--fast`（15s），**但不能作为推送依据** |
+| **`projectId` 不再全局必填** | `timeline`/`workflow` 工具只对 `list`/`save`/`runs` 必填（`A67`），别按老文档硬传 |
+| **渲染取消即时生效** | 传 `signal` 时若**已 abort**，会立刻返回 `cancelled`（`A138` 修的，别再等 8 秒） |
+
+## 四、质检与证据
+
+- 全量 **724 passed / 5 skipped**（函数覆盖 **83.66%**）
+- 一致性测试：工具描述 / RPC 文档 / 版本一致 / 版本连续 / tag 内版本 —— **五条都守着**
+- 发布流程：`scripts/release.mjs` → `build` → `gate` → commit → tag → push → Harness 指针
+
+## 五、如果你（B）要改契约
+
+先发消息给 A（或直接改 `API-SURFACE.md` 的"B 申请区"），A 负责：
+端点实现、契约文档、漂移测试、`lib/` 构建、子模块指针。
+**B 只改 `src/client/**` 与客户端测试**，验收标准相同：`gate.sh` 五道门全绿。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-image-video",
-  "version": "0.3.8",
+  "version": "0.3.61",
   "description": "DeepSeek Harness 插件：文生图/图生图与文生/图生视频工具，支持 Threerouter / 万象 wanx / MiniMax / Seedance2.5 服务商、凭证缝引用、媒体模式注入、异步轮询与 UI-only 图片预览",
   "type": "module",
   "main": "lib/index.js",
@@ -33,7 +33,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
     "lint": "pnpm run typecheck && echo OK",
-    "check:bundle": "node scripts/check-bundle-size.mjs"
+    "check:bundle": "node scripts/check-bundle-size.mjs",
+    "test:coverage": "vitest run --coverage"
   },
   "dsh": {
     "bundle": {
@@ -137,6 +138,6 @@
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
-    "vitest": "^3.1.0"
+    "vitest": "^4.1.11"
   }
 }

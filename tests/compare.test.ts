@@ -69,7 +69,7 @@ describe.skipIf(!hasFfmpeg)('renderComparison：真实合成', () => {
       expect(`${out.width}x${out.height}`).toBe('320x480')
       expect(out.data.byteLength).toBeGreaterThan(0)
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -84,7 +84,7 @@ describe.skipIf(!hasFfmpeg)('renderComparison：真实合成', () => {
       expect(out.layout).toBe('side-by-side')
       expect(`${out.width}x${out.height}`).toBe('480x320')
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -100,7 +100,7 @@ describe.skipIf(!hasFfmpeg)('renderComparison：真实合成', () => {
       expect(`${out.width}x${out.height}`).toBe('320x480')
       expect(await frameSize(source)).toBe('320,240')
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })

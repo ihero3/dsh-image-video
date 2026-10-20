@@ -15,7 +15,7 @@ import type { RenderService } from '../src/media/render.ts'
 import type { TimelineRecord } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 async function store(): Promise<WorkbenchStore> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-logs-'))

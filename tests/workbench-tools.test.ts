@@ -18,7 +18,7 @@ import { RenderService } from '../src/media/render.ts'
 import { timelineDurationMs } from '../src/workbench/timeline.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 /** 一套真实依赖 + 假生成工具（不花任何生成额度）。 */
 async function harness() {
@@ -34,7 +34,14 @@ async function harness() {
     // 渲染器只用来起任务：run 是空实现，测试只断言"任务起来了"
     render: new RenderService({ outputsDir: outputs, probe: async () => ({ available: true, path: '/usr/bin/true' }), run: async () => undefined }),
   })
-  const tools = createWorkbenchTools({ store, renders, runner, registry: new GenerationRegistry() })
+  const tools = createWorkbenchTools({
+    store, renders, runner, registry: new GenerationRegistry(),
+    outputsDir: '/tmp/outputs',
+    // `A63`：探测桩——只认一个"好"路径，其余视为越界/无效
+    probeAsset: async relative => relative === 'outputs/good.mp4'
+      ? { width: 320, height: 240, fps: 30, durationMs: 2000, hasAudio: false }
+      : undefined,
+  })
   const byName = new Map(tools.map(tool => [tool.name, tool]))
   const call = async (name: string, args: Record<string, unknown>): Promise<{ text: string; value: unknown }> => {
     const tool = byName.get(name)
@@ -54,12 +61,42 @@ async function touch(dir: string, name: string): Promise<string> {
 }
 
 describe('agent tool surface (T6-3)', () => {
+  it('lists workflow templates without needing a project (A67)', async () => {
+    const { call } = await harness()
+    const result = await call('workbench_workflow', { action: 'templates' })
+    expect((result.value as { templates: unknown[] }).templates.length).toBeGreaterThan(0)
+  })
+
+  it('adds a clip using only the timeline id (A67)', async () => {
+    const { store, call, outputs } = await harness()
+    const project = await store.createProject('A67')
+    const file = await touch(outputs, 'clip.mp4')
+    await store.attachAsset({ projectId: project.id, path: file, kind: 'video' })
+    const timeline = await store.saveTimeline({ projectId: project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }] })
+    await call('workbench_timeline', { action: 'add-clip', timelineId: timeline.id, clips: [{ assetPath: file, durationMs: 1000 }] })
+    const saved = await store.findTimeline(timeline.id)
+    expect(saved?.tracks[0]?.clips).toHaveLength(1)
+  })
+
+  it('probes real media through the tool surface (A63/A65)', async () => {
+    const { call } = await harness()
+    const result = await call('workbench_assets', { action: 'probe', path: 'outputs/good.mp4' })
+    // 结构化断言（`json()` 输出是格式化的，别用字符串匹配）
+    expect(result.value).toMatchObject({ path: 'outputs/good.mp4', spec: { width: 320, height: 240, durationMs: 2000 } })
+  })
+
+  it('rejects probe paths outside the allowed boundary (A63/A65)', async () => {
+    const { call } = await harness()
+    await expect(call('workbench_assets', { action: 'probe', path: '/etc/passwd' })).rejects.toThrow(/探测失败/)
+  })
+
+
   it('registers the five tools and documents every allowed action', async () => {
     const { byName } = await harness()
     expect([...byName.keys()].sort()).toEqual(['workbench_assets', 'workbench_projects', 'workbench_tasks', 'workbench_timeline', 'workbench_workflow'])
     const expected: Record<string, string[]> = {
       workbench_projects: ['list', 'create', 'rename'],
-      workbench_assets: ['list', 'attach'],
+      workbench_assets: ['list', 'attach', 'probe'],
       workbench_timeline: ['list', 'add-clip', 'export'],
       workbench_workflow: ['list', 'save', 'run', 'runs'],
       workbench_tasks: ['list', 'renders', 'cancel'],
@@ -282,6 +319,19 @@ describe('agent tool surface (T6-3)', () => {
     expect((await store.findTimeline(timeline.id))!.tracks[0]!.clips).toHaveLength(0)
   })
 
+  it('applies an export preset through set-format (A31)', async () => {
+    const { call, store } = await harness()
+    const project = await store.createProject('预设项目')
+    const timeline = await store.saveTimeline({ projectId: project.id, tracks: [] })
+    await call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id, presetId: 'douyin-vertical',
+    })
+    expect((await store.findTimeline(timeline.id))?.exportFormat).toMatchObject({ width: 1080, height: 1920, frameRate: 30 })
+    await expect(call('workbench_timeline', {
+      action: 'set-format', projectId: project.id, timelineId: timeline.id, presetId: 'nope',
+    })).rejects.toThrow(/没有导出预设/)
+  })
+
   it('reports render-cancel honestly for unknown ids (A6)', async () => {
     const { call } = await harness()
     const result = await call('workbench_tasks', { action: 'render-cancel', renderId: 'render-nope' })
@@ -309,8 +359,7 @@ describe('agent tool surface (T6-3)', () => {
 
     const listed = await call('workbench_workflow', { action: 'list', projectId: project.id })
     expect((listed.value as { count: number }).count).toBe(1)
-    await expect(call('workbench_workflow', { action: 'explode', projectId: project.id }))
-      .rejects.toThrow(/合法取值：list \/ save \/ run \/ runs/)
+    await expect(call('workbench_workflow', { action: 'explode' })).rejects.toThrow(/不认识 action=explode.*templates/)
   })
 
   it('lists tasks and reports a no-op cancel honestly', async () => {
@@ -322,3 +371,4 @@ describe('agent tool surface (T6-3)', () => {
     await expect(call('workbench_tasks', { action: 'cancel' })).rejects.toThrow(/taskId 或 renderId/)
   })
 })
+

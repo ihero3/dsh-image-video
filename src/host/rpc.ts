@@ -9,9 +9,25 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { newWorkbenchId } from '../workbench/records.ts'
+import { makeSubtitleIds } from '../workbench/subtitles.ts'
+import { parseSrt, serializeSrt } from '../workbench/srt.ts'
+import { parseVtt, serializeVtt } from '../workbench/vtt.ts'
+import { findDuplicateAssets } from '../workbench/duplicates.ts'
+import { sha256File } from '../workbench/package.ts'
+import { listDiagnosticLogs } from './diagnostics-log.ts'
+import { summarizePreflight } from './assembly.ts'
+import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
+import { inspectProjectPackage } from '../workbench/package.ts'
+import { renderOverview } from '../media/render-registry.ts'
+import { reportAssetUsage } from '../workbench/usage.ts'
+import { sizeReport } from '../workbench/size-report.ts'
+import { projectStats } from '../workbench/project-stats.ts'
+import { estimateExport, formatBytes } from '../workbench/estimate.ts'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the host connection merge (`ctx.connection`) and the handler signature.
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import { groupRenderSets, retryError } from '../media/render-registry.ts'
 import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import {
@@ -24,7 +40,11 @@ import { resolve } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
+import { probeMediaSpec } from '../media/render.ts'
 import { planRetention } from '../media/retention.ts'
+import { EXPORT_PRESETS } from '../workbench/presets.ts'
+import { checkInlineTimelineBounds, findClipOverruns, validateTimeline } from '../workbench/validate.ts'
+import type { TimelineRecord } from '../workbench/timeline.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
@@ -77,6 +97,8 @@ export interface WorkbenchRpcDeps {
   runner: WorkflowRunner
   /** 导出任务表（`T5-5`）。 */
   renders: RenderRegistry
+  /** 素材探测缓存（`A77`；未注入时退回每次直连探测）。 */
+  probeCache?: { get: (file: string) => Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> }
   /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
   readonly diagnostics?: { snapshot: () => { errors: readonly unknown[]; errorCount: number } }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
@@ -298,6 +320,137 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
     }
+    // 时间轴一致性校验（`A34`）：可传 timelineId，也可直接传一份未保存的 document 做保存前预检
+    case 'timelines/validate': {
+      const inline = field(payload, 'document')
+      const timelineId = optionalText(payload, 'timelineId')
+      let document: TimelineRecord | undefined
+      if (inline !== undefined && typeof inline === 'object') {
+        // 未保存文档不受存储层规模校验保护 → 这里补边界，超限直接给出可操作错误
+        const problem = checkInlineTimelineBounds(inline)
+        if (problem !== undefined) throw new Error(problem)
+        document = inline as TimelineRecord
+      } else if (timelineId !== undefined) {
+        document = await deps.store.findTimeline(timelineId)
+        if (document === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 timelines/list`)
+      } else {
+        throw new Error('timelines/validate 需要 timelineId 或 document')
+      }
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const issues = [...validateTimeline(document, { knownAssetPaths: known })]
+      // `A45`：探测真实素材时长，找出"片段比素材还长"（导出后半段没画面，用户很难自查）
+      try {
+        const probe = await probeFfmpeg()
+        if (probe.available) {
+          const paths = [...new Set(document.tracks
+            .flatMap(track => track.clips)
+            .map(clip => clip.assetPath)
+            .filter((path): path is string => typeof path === 'string'))].slice(0, 20)
+          const durations = new Map<string, number>()
+          for (const relative of paths) {
+            const absolute = resolve(deps.outputsDir, relative)
+            const spec = deps.probeCache === undefined
+              ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+              : await deps.probeCache.get(absolute)
+            if (spec?.durationMs !== undefined) durations.set(relative, spec.durationMs)
+          }
+          issues.push(...findClipOverruns(document, durations))
+        }
+      } catch {
+        // 探测失败不影响校验结果（只是少了这一项检查）
+      }
+      return { ok: issues.length === 0, issues }
+    }
+    // `A132`：素材库按项目统计（谁最占地方；只报告）
+    case 'assets/project-stats': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      return { stats: projectStats(projects.map(project => ({ id: project.id, name: project.name })), assets, timelines) }
+    }
+    // `A116`：素材体积排行（Top N + 总量/中位数/占比；只报告）
+    case 'assets/size-report': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      const usage = reportAssetUsage(assets, timelines)
+      const unusedPaths = new Set(usage.assets.filter(row => row.unused).map(row => row.assetPath))
+      const report = sizeReport(
+        assets.map(asset => ({ path: asset.path, ...asset.bytes === undefined ? {} : { bytes: asset.bytes }, unused: unusedPaths.has(asset.path) })),
+        { ...optionalNumber(payload, 'topN') === undefined ? {} : { topN: optionalNumber(payload, 'topN') as number } },
+      )
+      return { size: report }
+    }
+    // `A112`：素材内容去重检测（按大小分组 + 仅同大小算 sha256；只报告不删除）
+    case 'assets/duplicates': {
+      const projects = await deps.store.listProjects()
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const report = await findDuplicateAssets(
+        assets.map(asset => ({ path: asset.path, ...asset.bytes === undefined ? {} : { bytes: asset.bytes } })),
+        async path => sha256File(resolve(deps.outputsDir, path)).catch(() => undefined),
+        { ...optionalNumber(payload, 'maxHashFiles') === undefined ? {} : { maxHashFiles: optionalNumber(payload, 'maxHashFiles') as number } },
+      )
+      return { duplicates: report }
+    }
+    // `A82`：素材利用率报告（哪些素材从未被时间轴用过；只报告不删除）
+    case 'assets/usage': {
+      const projectId = optionalText(payload, 'projectId')
+      const projects = projectId === undefined || projectId === ''
+        ? await deps.store.listProjects()
+        : (await deps.store.listProjects()).filter(project => project.id === projectId)
+      const assets = (await Promise.all(projects.map(project => deps.store.listAssets(project.id)))).flat()
+      const timelines = (await Promise.all(projects.map(project => deps.store.listTimelines(project.id)))).flat()
+      const report = reportAssetUsage(assets, timelines)
+      return {
+        summary: report.summary,
+        assets: report.assets.map(row => ({
+          path: row.assetPath, projectId: row.projectId, kind: row.kind,
+          ...row.bytes === undefined ? {} : { bytes: row.bytes },
+          timesUsed: row.timesUsed, unused: row.unused,
+          timelines: row.timelines.map(entry => ({ id: entry.timelineId, name: entry.timelineName, clips: entry.clips })),
+        })),
+      }
+    }
+    // 素材探测（`A44`）：真实时长/分辨率/帧率/有无音轨，供界面拖拽与 Agent 预估
+    case 'assets/probe': {
+      const relative = text(payload, 'path')
+      const absolute = resolve(deps.outputsDir, relative)
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const inside = absolute === deps.outputsDir || absolute.startsWith(`${deps.outputsDir}${sep}`)
+      if (!inside && !known.has(relative)) {
+        throw new Error(`只能探测 outputs 目录内或已登记的素材（收到 ${relative}）`)
+      }
+      const probe = await probeFfmpeg()
+      if (!probe.available) throw new Error(probe.message ?? 'ffmpeg 不可用，无法探测素材')
+      const spec = deps.probeCache === undefined
+        ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+        : await deps.probeCache.get(absolute)
+      if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件`)
+      return { path: relative, spec }
+    }
+    // 导出预设（`A31` 内置 + `A48` 用户自定义）：界面/Agent 共用同一套平台尺寸口径
+    case 'presets/list': {
+      const custom = await deps.store.listExportPresets()
+      return {
+        presets: [
+          ...EXPORT_PRESETS.map(preset => ({ ...preset, custom: false })),
+          ...custom.map(preset => ({ ...preset, custom: true })),
+        ],
+      }
+    }
+    case 'presets/save': {
+      const preset = await deps.store.saveExportPreset({
+        ...optionalText(payload, 'id') === undefined ? {} : { id: optionalText(payload, 'id') as string },
+        name: field(payload, 'name'),
+        width: Number(field(payload, 'width') ?? 0),
+        height: Number(field(payload, 'height') ?? 0),
+        frameRate: Number(field(payload, 'frameRate') ?? 0),
+        ...optionalNumber(payload, 'bitrateKbps') === undefined ? {} : { bitrateKbps: optionalNumber(payload, 'bitrateKbps') as number },
+      })
+      return { preset }
+    }
+    case 'presets/remove':
+      return { removed: await deps.store.removeExportPreset(text(payload, 'id')) }
     // 诊断快照（`A9`）：版本、数据规模、渲染队列、近错；出问题不用翻日志
     case 'diagnostics': {
       const data = await deps.store.stats()
@@ -312,7 +465,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         .filter(value => Number.isFinite(value))
         .sort((left, right) => left - right)
       const referencedFiles = (await deps.store.referencedAssetPaths()).length
+      const logFiles = await listDiagnosticLogs(join(deps.store.directory, 'diagnostics.log')).catch(() => [])
       return {
+        logFiles,
         plugin: { name: 'dsh-image-video', version: PLUGIN_VERSION },
         provider: deps.provider,
         outputsDir: deps.outputsDir,
@@ -357,6 +512,62 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
     }
+    // `A118`：字幕导出为 SRT
+    case 'subtitles/export': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const trackId = optionalText(payload, 'trackId')
+      const tracks = timeline.tracks.filter(track => track.kind === 'subtitle' && (trackId === undefined || trackId === '' || track.id === trackId))
+      if (tracks.length === 0) throw new Error('这条时间轴没有字幕轨（或指定的轨不是字幕轨）')
+      const cues = tracks.flatMap(track => track.clips.map(clip => ({
+        index: 0,
+        startMs: clip.startMs,
+        endMs: clip.startMs + clip.durationMs,
+        text: clip.text ?? '',
+      }))).filter(cue => cue.text.trim() !== '')
+      const format = optionalText(payload, 'format') === 'vtt' ? 'vtt' : 'srt'
+      return {
+        text: format === 'vtt' ? serializeVtt(cues) : serializeSrt(cues),
+        format,
+        cues: cues.length,
+        srt: serializeSrt(cues), // 兼容旧调用方
+      }
+    }
+    // `A118`：SRT 导入为字幕片段（replace 默认 true：替换该字幕轨的片段）
+    case 'subtitles/import': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const format = optionalText(payload, 'format') === 'vtt' ? 'vtt' : 'srt'
+      const payloadText = typeof field(payload, 'text') === 'string' ? field(payload, 'text') as string : text(payload, 'srt')
+      const parsed = format === 'vtt' ? parseVtt(payloadText) : parseSrt(payloadText)
+      if (parsed.cues.length === 0) throw new Error('SRT 里没有解析出任何字幕：检查时间码格式（如 00:00:01,000 --> 00:00:02,500）')
+      const offsetMs = optionalNumber(payload, 'offsetMs') ?? 0
+      const newId = makeSubtitleIds('srt')
+      const clips = parsed.cues.map(cue => ({
+        id: newId(), text: cue.text, startMs: Math.max(0, Math.round(cue.startMs + offsetMs)), durationMs: Math.max(1, Math.round(cue.endMs - cue.startMs)),
+      }))
+      const trackId = optionalText(payload, 'trackId')
+      const existingTrack = timeline.tracks.find(track => track.kind === 'subtitle' && (trackId === undefined || trackId === '' || track.id === trackId))
+      const replace = field(payload, 'replace') !== false
+      const tracks = existingTrack === undefined
+        ? [...timeline.tracks, { id: newWorkbenchId('trk'), kind: 'subtitle' as const, clips }]
+        : timeline.tracks.map(track => track.id === existingTrack.id
+            ? { ...track, clips: replace ? clips : [...track.clips, ...clips] }
+            : track)
+      const saved = await deps.store.saveTimeline({ id: timeline.id, projectId: timeline.projectId, name: timeline.name, tracks, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles, ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat } })
+      return { timeline: saved, imported: clips.length, skipped: parsed.skipped.length }
+    }
+    // `A96`：项目包预检（只读，不落地任何数据）
+    case 'packages/inspect':
+      return {
+        inspection: await inspectProjectPackage({
+          packageDir: text(payload, 'packageDir'),
+          store: deps.store,
+          ...field(payload, 'verifyFiles') === true ? { verifyFiles: true } : {},
+        }),
+      }
     case 'packages/import': {
       const result = await importProjectPackage({
         store: deps.store,
@@ -411,11 +622,92 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           ...typeof field(payload, 'burnSubtitles') === 'boolean' ? { burnSubtitles: field(payload, 'burnSubtitles') as boolean } : {},
           ...field(payload, 'exportFormat') === undefined ? {} : { exportFormat: field(payload, 'exportFormat') },
           ...typeof field(payload, 'normalizeLoudness') === 'boolean' ? { normalizeLoudness: field(payload, 'normalizeLoudness') as boolean } : {},
+          ...optionalText(payload, 'burnLanguage') === undefined ? {} : { burnLanguage: optionalText(payload, 'burnLanguage') },
         }),
       }
     case 'timelines/remove':
       return { removed: await deps.store.removeTimeline(text(payload, 'id')) }
     // ---- 导出（阶段 5，T5-5）----------------------------------------------------
+    // `A86`：整条时间轴复制为副本（素材引用共享，不复制文件）
+    case 'timelines/duplicate': {
+      const timelineId = text(payload, 'timelineId')
+      const name = optionalText(payload, 'name')
+      const timeline = await deps.store.duplicateTimeline(timelineId, name === undefined ? {} : { name })
+      return { timeline }
+    }
+    // `A84`：导出前体检 —— 一次拿到"能不能导 / 会有多大 / 有没有素材浪费"
+    case 'timelines/preflight': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const known = new Set(await deps.store.referencedAssetPaths())
+      const issues = [...validateTimeline(timeline, { knownAssetPaths: known })]
+      // 与 timelines/validate 相同的"片段比素材长"检查（有上限、可失败）
+      try {
+        const probe = await probeFfmpeg()
+        if (probe.available) {
+          const paths = [...new Set(timeline.tracks.flatMap(track => track.clips)
+            .map(clip => clip.assetPath)
+            .filter((path): path is string => typeof path === 'string'))].slice(0, 20)
+          const durations = new Map<string, number>()
+          for (const relative of paths) {
+            const absolute = resolve(deps.outputsDir, relative)
+            const spec = deps.probeCache === undefined
+              ? await probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+              : await deps.probeCache.get(absolute)
+            if (spec?.durationMs !== undefined) durations.set(relative, spec.durationMs)
+          }
+          issues.push(...findClipOverruns(timeline, durations))
+        }
+      } catch {
+        // 探测失败只影响这一项检查，不影响体检结果
+      }
+      const estimate = estimateExport(timeline)
+      const usage = reportAssetUsage(
+        await deps.store.listAssets(timeline.projectId),
+        await deps.store.listTimelines(timeline.projectId),
+      )
+      const blocking = issues.filter(issue => issue.code !== 'overlap' && issue.code !== 'subtitle-burn-overlap')
+      const summaryLine = summarizePreflight({
+        blockingIssues: blocking.length,
+        humanBytes: formatBytes(estimate.estimatedBytes),
+        humanPredicted: formatDuration(predictRenderMs({ durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate }, deps.renders.exportSamples())),
+        durationAndAspect: `${Math.round(estimate.durationMs / 1000)} 秒 / ${estimate.aspect}`,
+        unusedAssets: usage.summary.unused,
+        ...usage.summary.unused > 0 ? { unusedBytes: formatBytes(usage.summary.unusedBytes) } : {},
+      })
+      return {
+        ok: issues.length === 0,
+        issues,
+        estimate: { ...estimate, humanBytes: formatBytes(estimate.estimatedBytes) },
+        usage: usage.summary,
+        summaryLine,
+      }
+    }
+    // `A80`：导出预估（时长/规格/预估体积），可传 overrides 预览"换成 4K 会有多大"
+    case 'timelines/estimate': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const estimate = estimateExport(timeline, {
+        ...optionalNumber(payload, 'width') === undefined ? {} : { width: optionalNumber(payload, 'width') as number },
+        ...optionalNumber(payload, 'height') === undefined ? {} : { height: optionalNumber(payload, 'height') as number },
+        ...optionalNumber(payload, 'frameRate') === undefined ? {} : { frameRate: optionalNumber(payload, 'frameRate') as number },
+        ...optionalNumber(payload, 'bitrateKbps') === undefined ? {} : { bitrateKbps: optionalNumber(payload, 'bitrateKbps') as number },
+      })
+      const predicted = predictRenderMs(
+        { durationMs: estimate.durationMs, width: estimate.width, height: estimate.height, frameRate: estimate.frameRate },
+        deps.renders.exportSamples(),
+      )
+      return {
+        estimate: {
+          ...estimate,
+          humanBytes: formatBytes(estimate.estimatedBytes),
+          predictedRenderMs: predicted,
+          humanPredicted: formatDuration(predicted),
+        },
+      }
+    }
     case 'timelines/render': {
       const timelineId = text(payload, 'timelineId')
       const timeline = await deps.store.findTimeline(timelineId)
@@ -424,12 +716,56 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (projectId !== undefined && projectId !== '' && projectId !== timeline.projectId) {
         throw new Error(`timeline ${timelineId} does not belong to project ${projectId}`)
       }
-      return { render: deps.renders.start(timeline) }
+      return {
+        render: deps.renders.start(timeline, {
+          ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number },
+          ...field(payload, 'retryTransient') === true ? { retryTransient: true } : {},
+          ...optionalNumber(payload, 'thumbnailAtMs') === undefined ? {} : { thumbnailAtMs: optionalNumber(payload, 'thumbnailAtMs') as number },
+          ...optionalText(payload, 'subtitleFormat') === 'vtt' ? { subtitleFormat: 'vtt' as const } : {},
+        }),
+      }
     }
     case 'timelines/renders':
-      return { renders: deps.renders.list(optionalText(payload, 'projectId')) }
+      // `A56`：成片集归组（按项目+时间轴；只读聚合、纯加法字段，老客户端不受影响）
+      {
+        const projectId = optionalText(payload, 'projectId')
+        const renders = deps.renders.list(projectId)
+        return { renders, sets: groupRenderSets(renders) }
+      }
+    // `A59` 一键重试：用原时间轴与原优先级重跑（适合瞬时失败：机器忙/超时；必然失败会再报同样的错）
+    case 'timelines/render-retry': {
+      const renderId = text(payload, 'renderId')
+      const previous = deps.renders.list().find(job => job.id === renderId)
+      if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}：先用 timelines/renders 看现有任务`)
+      const blocked = retryError(previous)
+      if (blocked !== undefined) throw new Error(blocked)
+      const timeline = await deps.store.findTimeline(previous.timelineId)
+      if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除，无法重试：请重新选择时间轴导出`)
+      const render = deps.renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } })
+      return { render, retriedFrom: previous.id }
+    }
+    // `A90`：导出队列全景（正在跑/排队/最近成败/吞吐与耗时分布）
+    case 'renders/overview':
+      {
+        const stats = deps.renders.stats()
+        return {
+          overview: renderOverview(deps.renders.list(), {
+            ...stats.durationMs === undefined ? {} : { p50Ms: stats.durationMs.p50, p90Ms: stats.durationMs.p90 },
+            samples: stats.finished,
+          }),
+        }
+      }
     case 'timelines/render-cancel':
       return { cancelled: deps.renders.cancel(text(payload, 'renderId')) }
+    // `A104`：数据完整性巡检（只报告不修复）
+    case 'maintenance/integrity':
+      return { integrity: await deps.store.integrityReport() }
+    // `A94`：工作台文档归档（默认 dryRun 只算不删；归档追加到旁路文件，不丢历史）
+    case 'maintenance/archive':
+      return await deps.store.archiveOlderThan({
+        ...optionalNumber(payload, 'olderThanDays') === undefined ? {} : { olderThanDays: optionalNumber(payload, 'olderThanDays') as number },
+        ...typeof field(payload, 'dryRun') === 'boolean' ? { dryRun: field(payload, 'dryRun') as boolean } : {},
+      })
     // ---- 维护：把幂等上线前留下的重复素材记录合并 -------------------------------
     case 'maintenance/retention': {
       // `A15`：输出目录配额清理。默认 dryRun，只算不删；被素材库引用的文件永不动

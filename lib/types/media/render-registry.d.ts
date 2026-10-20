@@ -1,12 +1,168 @@
-/**
- * 导出任务的登记与取消（`T5-5` 的宿主半边）。
- *
- * 渲染是长任务，宿主没有推送通道，所以这里只维护**可轮询的任务快照**：
- * 客户端每隔一会儿来 `timelines/renders` 看进度，取消走 `timelines/render-cancel`。
- */
 import { type RenderService } from './render.ts';
 import type { TimelineRecord } from '../workbench/timeline.ts';
+import { type RenderSummary } from './render-summary.ts';
+import { type Diagnosis } from './diagnose.ts';
 /** 一次导出任务的状态。 */
+/**
+ * 把全局百分比换算成"第 N 段 / 共 M 段"（`A41`）。
+ * @param bounds - 各段**累计结束**毫秒（升序）。
+ * @param percent - 全局进度（0–100）。
+ * @returns 段序号；边界为空时返回 `undefined`。
+ */
+/**
+ * 估算剩余时间（`A52`）：按"已耗时 / 已完成比例"线性外推。
+ *
+ * 刻意**很早不给估计**（进度 < 5% 或已耗时 < 1s 时返回 `undefined`）：这时外推误差极大，
+ * 给出一个乱跳的数字比不给更糟。
+ *
+ * @param percent - 当前进度（0–100）。
+ * @param elapsedMs - 已耗时（毫秒）。
+ * @returns 预计剩余秒数（四舍五入）；不该给估计时返回 `undefined`。
+ */
+/**
+ * ETA 平滑器（`A92`）：用**指数滑动平均**估计"每 1% 进度要多久"。
+ *
+ * 为什么不直接线性外推：ffmpeg 各段耗时差异大（转场/滤镜段明显更慢），
+ * 逐次外推的 ETA 会来回跳。丢几个抖动采样进 EMA 后就稳得多，且最终收敛到真实速率。
+ */
+export declare class EtaTracker {
+    /** 平滑系数：越大越跟手、越小越稳（0.3 是经验值）。 */
+    private readonly alpha;
+    private ratePerPercent?;
+    private lastPercent?;
+    private lastAtMs?;
+    constructor(options?: {
+        alpha?: number;
+    });
+    /**
+     * 喂一个进度采样。
+     * @param percent - 当前进度（0–100，应单调不减）。
+     * @param atMs - 采样时刻。
+     * @returns 平滑后的预计剩余秒数；过早（<5%）或首个采样时返回 `undefined`。
+     */
+    update(percent: number, atMs: number): number | undefined;
+    /** 用当前平滑速率算剩余秒数（过早不给）。 */
+    private currentEta;
+}
+export declare function estimateEtaSec(percent: number, elapsedMs: number): number | undefined;
+/**
+ * 把渲染任务归组成"成片集"（`A56`）：同一项目 + 同一时间轴的多次导出算一集。
+ *
+ * 只读聚合，不改任何数据：界面可以用它显示"这个时间轴导出过 5 个成片、共 120MB"，
+ * Agent 也能据此回答"上次导出的那个呢"。
+ *
+ * @param jobs - 渲染任务（任意顺序）。
+ * @returns 按最近导出时间倒序的成片集。
+ */
+/**
+ * 把进度采样归因成各段耗时（`A57`）。
+ *
+ * 归因是近似：每个采样间隔的耗时记到该间隔起点所在的那一段。不追求毫秒级精确，
+ * 目标是回答「哪一段慢得离谱」——足以指导优化（该段是否该预转码/降分辨率/剪短）。
+ *
+ * @param bounds - 各段累计结束毫秒（升序）。
+ * @param samples - 进度采样（percent 与 atMs 均单调不减）。
+ * @returns 各段耗时与最慢段；样本不足 2 条时返回空对象。
+ */
+export declare function computeSegmentTimings(bounds: readonly number[], samples: readonly {
+    readonly percent: number;
+    readonly atMs: number;
+}[]): {
+    segmentTimingsMs?: number[];
+    slowestSegment?: {
+        index: number;
+        ms: number;
+    };
+};
+/**
+ * 判断一个渲染任务能否"一键重试"（`A59`/`R7`）。
+ *
+ * 抽成纯函数是为了把三个分支都测到（运行中 / 排队中 / 可重试），
+ * 而不是靠在端点里构造时序巧合。
+ *
+ * @param job - 目标任务。
+ * @returns 不能重试时返回面向人的原因；可重试返回 `undefined`。
+ */
+/** 导出队列全景（`A90`）。 */
+export interface RenderOverview {
+    readonly running: {
+        readonly count: number;
+        readonly items: readonly {
+            id: string;
+            timelineId: string;
+            percent: number;
+            etaSec?: number;
+            step?: string;
+        }[];
+    };
+    readonly queued: {
+        readonly count: number;
+        readonly items: readonly {
+            id: string;
+            timelineId: string;
+            position: number;
+            priority?: number;
+        }[];
+    };
+    readonly recent: {
+        readonly succeeded: number;
+        readonly failed: number;
+        readonly cancelled: number;
+    };
+    readonly throughput: {
+        readonly lastHour: number;
+        readonly p50Ms?: number;
+        readonly p90Ms?: number;
+        readonly samples: number;
+    };
+    readonly failedWithDiagnosis: number;
+    /** 最近完成的成片（`A128`：带视频/封面/字幕路径，界面列表直接用）。 */
+    readonly recentItems: readonly {
+        readonly id: string;
+        readonly timelineId: string;
+        readonly outputPath: string;
+        readonly bytes?: number;
+        readonly durationMs?: number;
+        readonly thumbnailFile?: string;
+        readonly subtitleFile?: string;
+        readonly finishedAt?: string;
+    }[];
+}
+/**
+ * 汇总导出队列全景（`A90`）：给界面/Agent 一个"一眼看懂"的视图。
+ *
+ * @param jobs - 所有渲染任务。
+ * @param stats - `RenderRegistry.stats()` 的结果（耗时分位）。
+ * @param nowMs - 当前时间（测试可注入）。
+ * @returns 全景摘要。
+ */
+export declare function renderOverview(jobs: readonly RenderJob[], stats: {
+    readonly p50Ms?: number;
+    readonly p90Ms?: number;
+    readonly samples?: number;
+}, nowMs?: number): RenderOverview;
+export declare function retryError(job: RenderJob): string | undefined;
+export declare function groupRenderSets(jobs: readonly RenderJob[]): RenderSet[];
+/** 一个"成片集"（`A56`）：同一项目 + 同一时间轴的导出聚合。 */
+export interface RenderSet {
+    readonly projectId: string;
+    readonly timelineId: string;
+    /** 该时间轴的导出次数（含失败/取消）。 */
+    readonly count: number;
+    readonly succeeded: number;
+    readonly failed: number;
+    /** 成功成片的总字节数。 */
+    readonly totalBytes: number;
+    /** 成功成片的时长总和（毫秒）。 */
+    readonly totalDurationMs: number;
+    /** 最近一次导出的时间。 */
+    readonly latestAt?: string;
+    readonly jobIds: readonly string[];
+}
+export declare function segmentStepAt(bounds: readonly number[], percent: number): {
+    readonly current: number;
+    readonly total: number;
+} | undefined;
 export interface RenderJob {
     readonly id: string;
     readonly timelineId: string;
@@ -28,6 +184,21 @@ export interface RenderJob {
     readonly queued?: boolean;
     /** 排队位置（1 = 下一个开跑）；不在排队时为 `undefined`。 */
     readonly queuePosition?: number;
+    /** 导出完成摘要（`A37`，加法字段：产物/时长/规格/轨道概览）。 */
+    readonly summary?: RenderSummary;
+    /** 进度细分（`A41`）：当前在第几段（按视频段+补边段的累计时长换算）。 */
+    readonly progressStep?: {
+        readonly current: number;
+        readonly total: number;
+    };
+    /** 预计剩余秒数（`A52`；过早/过短时不给，成功时为 0）。 */
+    readonly progressEtaSec?: number;
+    /** 入队优先级（`A50`；重试时复用，`A59`）。 */
+    readonly priority?: number;
+    /** 失败诊断（`A88`：错误码 → 人话 + 可执行动作）。 */
+    readonly diagnosis?: Diagnosis;
+    /** 第几次尝试（`A114`；自动重试会递增）。 */
+    readonly attempt?: number;
 }
 /** 导出任务表（内存态即可：进程重启后"运行中"的渲染按失败收尾）。 */
 export declare class RenderRegistry {
@@ -36,8 +207,22 @@ export declare class RenderRegistry {
     private readonly controllers;
     /** 最近完成任务的实际耗时（毫秒，`A21`；最多留 50 条）。 */
     private readonly durations;
+    /** 每个任务的进度采样（`A57`；上限 200 条，防长任务吃内存）。 */
+    private readonly samples;
+    /** 每个任务的 ETA 平滑器（`A92`）。 */
+    private readonly etas;
+    /** 最近成功导出的样本（`A98`：带输出规格，用于预测新导出耗时）。 */
+    private readonly renderSamples;
     /** 等待槽位的任务（FIFO，`A4`）。 */
     private readonly pending;
+    /** 入队序号（`A108` 公平调度的稳定排序依据）。 */
+    private pendingSeq;
+    /** 每个任务是否允许瞬时失败自动重试（`A114`，opt-in）。 */
+    private readonly retryFlags;
+    /** 每个任务的封面帧位置（`A126`）。 */
+    private readonly thumbnailAt;
+    /** 每个任务的随片字幕格式（`A130`）。 */
+    private readonly subtitleFormats;
     constructor(deps: {
         readonly render: RenderService;
         /** 成功后把产物登记成素材（可选）。 */
@@ -46,9 +231,40 @@ export declare class RenderRegistry {
         readonly onError?: (message: string) => void;
         /** 结构化日志钩子（`T7-3`）。 */
         readonly log?: (entry: Record<string, unknown>) => void;
+        /** 保留建议钩子的超时（毫秒，默认 2000）：钩子慢不能拖住"渲染成功"的状态流转。 */
+        readonly retentionTimeoutMs?: number;
+        /** 导出后的保留建议钩子（`A38`）：返回 `undefined` 表示没配上限、不用提示。 */
+        readonly retention?: () => Promise<{
+            files: number;
+            bytes: number;
+            removeCount: number;
+            freedBytes: number;
+            overQuota: boolean;
+        } | undefined>;
         /** 同时最多跑几个渲染（`A4`，默认 1：ffmpeg 很吃 CPU，排队比挤爆好）。 */
         readonly maxConcurrent?: number;
     });
+    /** 百分比 → 第 N 段（`A41`；边界为空时不带该字段）。 */
+    private stepAt;
+    /**
+     * 重排等待队列（`A108`）：优先级降序 → **项目内轮次**升序 → 入队序号。
+     *
+     * 为什么按项目内轮次：项目 A 连提 3 个、项目 B 提 1 个时，希望执行顺序是 A1、B1、A2、A3
+     * —— 而不是 A1、A2、A3、B1（B 被饿死）。同项目内部仍严格 FIFO。
+     */
+    private reorderPending;
+    /** 当前任务的 ETA（`A52`；拿不到开始时间就不给）。 */
+    private etaAt;
+    /** 记一条预测样本（`A98`；最多保留 50 条，超出丢最旧的）。 */
+    private recordSample;
+    /** 最近成功导出的样本（`A98`，给耗时预测用）。 */
+    exportSamples(): readonly {
+        renderMs: number;
+        durationMs: number;
+        width: number;
+        height: number;
+        frameRate: number;
+    }[];
     private stamp;
     private patch;
     /** 列出任务（最新在前），可按项目过滤。 */
@@ -83,8 +299,19 @@ export declare class RenderRegistry {
      * @param timeline - 要渲染的时间轴（内部由 {@link RenderService} 冻结成快照）。
      * @returns 刚建立的任务。
      */
-    start(timeline: TimelineRecord): RenderJob;
+    /** 把"全局百分比"换算成"第 N 段"用的累计边界（`A41`；纯函数计划，失败就算了）。 */
+    private segmentBounds;
+    start(timeline: TimelineRecord, options?: {
+        priority?: number;
+        retryTransient?: boolean;
+        thumbnailAtMs?: number;
+        subtitleFormat?: 'srt' | 'vtt';
+    }): RenderJob;
     /** 真正开跑一个任务（内部：start 或出队时调用）。 */
+    /**
+     * 构建摘要并在需要时附上保留建议（`A38`）：钩子失败只记日志，绝不让渲染结果失败。
+     */
+    private summarise;
     private launch;
     /** 进程重启时把遗留的"运行中"任务按失败收尾。 */
     failStale(reason: string): number;

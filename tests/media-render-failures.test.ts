@@ -15,7 +15,7 @@ async function tempDir(prefix: string): Promise<string> {
   dirs.push(dir)
   return dir
 }
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 /** 一个"假 ffmpeg"：把给定信息打到 stderr 后按退出码结束。跨平台——
  * Windows 生成 `.cmd`（cmd.exe 可直接执行），Unix 生成 `.sh` 并 chmod。 */

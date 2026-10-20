@@ -18,9 +18,11 @@ import {
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
 import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
-import type { ResourceUsageRecord } from './records.ts'
+import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
+import { planArchive } from './archive.ts'
+import { inspectIntegrity } from './integrity.ts'
 import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
-import { DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
@@ -42,6 +44,8 @@ interface WorkbenchDocument {
   nodeCache: CachedNodeResult[]
   /** 资源使用记录（`R-QCK-3`）。 */
   resourceUsage: ResourceUsageRecord[]
+  /** 用户自定义导出预设（`A48`）。 */
+  exportPresets: ExportPresetRecord[]
 }
 
 /** Facts the store is constructed with. */
@@ -447,6 +451,7 @@ export class WorkbenchStore {
     burnSubtitles?: boolean
     exportFormat?: unknown
     normalizeLoudness?: boolean
+    burnLanguage?: string
   }): Promise<TimelineRecord> {
     const document = await this.load()
     const project = document.projects.find(candidate => candidate.id === input.projectId)
@@ -464,6 +469,7 @@ export class WorkbenchStore {
       burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
       exportFormat: normalizeExportFormat(input.exportFormat ?? existing?.exportFormat),
       normalizeLoudness: input.normalizeLoudness ?? existing?.normalizeLoudness ?? false,
+      ...input.burnLanguage === undefined && existing?.burnLanguage === undefined ? {} : { burnLanguage: input.burnLanguage ?? existing?.burnLanguage },
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
@@ -560,6 +566,146 @@ export class WorkbenchStore {
       resourceUsage: document.resourceUsage.length, writeCount: this.writeCount, fileBytes,
       runningRuns: document.runs.filter(run => run.status === 'running').length,
     }
+  }
+
+  /**
+   * 列出用户自定义导出预设（`A48`，新的在前）。
+   * @returns 预设数组。
+   */
+  async listExportPresets(): Promise<ExportPresetRecord[]> {
+    const document = await this.load()
+    return [...document.exportPresets].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  }
+
+  /**
+   * 新建/覆盖一个自定义导出预设（`A48`）。
+   * @param input - 名称与规格（规格走 `normalizeExportFormat` 校验）。
+   * @returns 保存后的预设。
+   * @throws {Error} 名称非法/重名、规格非法时。
+   */
+  async saveExportPreset(input: {
+    id?: string
+    name: unknown
+    width: number
+    height: number
+    frameRate: number
+    bitrateKbps?: number
+  }): Promise<ExportPresetRecord> {
+    const name = typeof input.name === 'string' ? input.name.trim() : ''
+    if (name === '' || name.length > 40) throw new Error('预设名称必须是 1–40 个字符')
+    const format = normalizeExportFormat({
+      width: input.width, height: input.height, frameRate: input.frameRate,
+      ...input.bitrateKbps === undefined ? {} : { bitrateKbps: input.bitrateKbps },
+    })
+    const document = await this.load()
+    const duplicated = document.exportPresets.some(preset => preset.name === name && preset.id !== input.id)
+    if (duplicated) throw new Error(`已有同名导出预设「${name}」：换个名字`)
+    const existing = input.id === undefined ? undefined : document.exportPresets.find(preset => preset.id === input.id)
+    // R6：给了 id 却找不到 → 明确报错。早先会**静默新建**，调用方以为在更新、实际在造数据
+    if (input.id !== undefined && existing === undefined) {
+      throw new Error(`找不到要更新的导出预设 ${input.id}：先用 presets/list 确认，或去掉 id 表示新建`)
+    }
+    const record: ExportPresetRecord = {
+      id: existing?.id ?? newWorkbenchId('preset'),
+      name,
+      width: format.width, height: format.height, frameRate: format.frameRate,
+      ...format.bitrateKbps === undefined ? {} : { bitrateKbps: format.bitrateKbps },
+      createdAt: existing?.createdAt ?? this.now().toISOString(),
+    }
+    document.exportPresets = existing === undefined
+      ? [...document.exportPresets, record]
+      : document.exportPresets.map(preset => preset.id === existing.id ? record : preset)
+    await this.save(document)
+    return record
+  }
+
+  /**
+   * 删除一个自定义导出预设（`A48`）。
+   * @param id - 预设 id。
+   * @returns 是否删掉了。
+   */
+  async removeExportPreset(id: string): Promise<boolean> {
+    const document = await this.load()
+    const next = document.exportPresets.filter(preset => preset.id !== id)
+    if (next.length === document.exportPresets.length) return false
+    document.exportPresets = next
+    await this.save(document)
+    return true
+  }
+
+  /**
+   * 工作台数据完整性巡检（`A104`，只报告不修复）。
+   * @returns 完整性报告。
+   */
+  async integrityReport(): Promise<import('./integrity.ts').IntegrityReport> {
+    const document = await this.load()
+    return inspectIntegrity(document as unknown as Parameters<typeof inspectIntegrity>[0])
+  }
+
+  /**
+   * 归档历史记录（`A94`）：把"已结束且够旧"的任务/运行记录搬到旁路文件（追加，不丢历史）。
+   * @param options - 天数与 dryRun（默认 dryRun=true，只算不删）。
+   * @returns 归档计划（含实际归档条数与估算字节）。
+   */
+  async archiveOlderThan(options: { olderThanDays?: number; dryRun?: boolean } = {}): Promise<{ archivedTasks: number; archivedRuns: number; estimatedBytes: number; dryRun: boolean; olderThanDays: number }> {
+    const document = await this.load()
+    const plan = planArchive(document, {
+      nowMs: this.now().getTime(),
+      ...options.olderThanDays === undefined ? {} : { olderThanDays: options.olderThanDays },
+      ...options.dryRun === undefined ? {} : { dryRun: options.dryRun },
+    })
+    const result = {
+      archivedTasks: plan.tasks.length,
+      archivedRuns: plan.runs.length,
+      estimatedBytes: plan.estimatedBytes,
+      dryRun: plan.dryRun,
+      olderThanDays: plan.olderThanDays,
+    }
+    if (plan.dryRun || (plan.tasks.length === 0 && plan.runs.length === 0)) return result
+    // 追加写旁路文件：保留历史，主文档瘦身
+    const archivePath = join(this.directory, 'workbench.archive.json')
+    const previous = await readFile(archivePath, 'utf8').then(text => JSON.parse(text) as { tasks?: unknown[]; runs?: unknown[] }).catch(() => ({ tasks: [], runs: [] }))
+    const next = {
+      tasks: [...(previous.tasks ?? []), ...plan.tasks],
+      runs: [...(previous.runs ?? []), ...plan.runs],
+    }
+    await writeFile(archivePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
+    const taskIds = new Set(plan.tasks.map(task => task.id))
+    const runIds = new Set(plan.runs.map(run => String((run as { id?: unknown }).id)))
+    document.tasks = document.tasks.filter(task => !taskIds.has(task.id))
+    document.runs = document.runs.filter(run => !runIds.has(String((run as { id?: unknown }).id)))
+    await this.save(document)
+    return result
+  }
+
+  /**
+   * 复制一条时间轴为副本（`A86`）：名字默认「原名 副本」，重名自动加序号。
+   * @param id - 原时间轴 id。
+   * @param options - 可选新名字。
+   * @returns 新时间轴。
+   * @throws {Error} 原时间轴不存在时。
+   */
+  async duplicateTimeline(id: string, options: { name?: string } = {}): Promise<TimelineRecord> {
+    const document = await this.load()
+    const source = document.timelines.find(candidate => candidate.id === id)
+    if (source === undefined) throw new Error(`找不到时间轴 ${id}`)
+    const baseName = options.name?.trim() !== undefined && options.name!.trim() !== '' ? options.name!.trim() : `${source.name} 副本`
+    const taken = new Set(document.timelines.filter(candidate => candidate.projectId === source.projectId).map(candidate => candidate.name))
+    let uniqueName = baseName
+    for (let index = 2; taken.has(uniqueName); index += 1) uniqueName = `${baseName} ${index}`
+    const copy = duplicateTimeline(source, {
+      newId: newWorkbenchId('tml'),
+      newName: uniqueName,
+      newClipId: (prefix, index) => `${prefix}-${newWorkbenchId('c')}-${index}`,
+    })
+    const saved = await this.saveTimeline({
+      id: copy.id, projectId: copy.projectId, name: copy.name, tracks: copy.tracks,
+      frameRate: copy.frameRate, burnSubtitles: copy.burnSubtitles,
+      ...copy.exportFormat === undefined ? {} : { exportFormat: copy.exportFormat },
+      ...copy.normalizeLoudness === undefined ? {} : { normalizeLoudness: copy.normalizeLoudness },
+      ...copy.burnLanguage === undefined ? {} : { burnLanguage: copy.burnLanguage },
+    })
+    return saved
   }
 
   /**
@@ -788,6 +934,7 @@ export class WorkbenchStore {
       timelines: raw.timelines ?? [],
       nodeCache: raw.nodeCache ?? [],
       resourceUsage: raw.resourceUsage ?? [],
+      exportPresets: raw.exportPresets ?? [],
     }
   }
 
@@ -833,7 +980,7 @@ export class WorkbenchStore {
       }
       this.cache = {
         schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [], timelines: [], nodeCache: [], resourceUsage: [],
+        runs: [], timelines: [], nodeCache: [], resourceUsage: [], exportPresets: [],
       }
     }
     return this.cache

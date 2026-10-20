@@ -10,7 +10,7 @@ import { MAX_MOTION_KEYFRAMES, describeMotionTrack, normalizeKeyframes } from '.
 import { nodeSpec } from '../src/workbench/workflow.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 async function store(): Promise<{ workbench: WorkbenchStore; directory: string }> {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-motion-'))

@@ -198,7 +198,7 @@ describe('media 扩展名与类型推断', () => {
   describe('图生视频 image 引用解析', () => {
     let tempDir = ''
     afterAll(async () => {
-      if (tempDir) await rm(tempDir, { recursive: true, force: true })
+      if (tempDir) await rm(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     })
 
     it('imageMimeFromPath：常见扩展名映射，未知回退 png', () => {

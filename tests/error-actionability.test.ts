@@ -11,7 +11,7 @@ import { WorkbenchStore } from '../src/workbench/store.ts'
 import { probeFfmpeg } from '../src/media/ffmpeg.ts'
 
 const dirs: string[] = []
-afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
+afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
 
 describe('error actionability (T7-2)', () => {
   it('turns provider/http failures into a next step', () => {

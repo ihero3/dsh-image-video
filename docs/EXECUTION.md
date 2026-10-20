@@ -231,3 +231,63 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 - 完成定义（DoD）：任务验收全过 + 单测/契约测试绿 + 真机走过一遍 + `CHANGELOG.md` 有记录 + `TASKS.md` 已勾选。
 
 ## 故障排查
+
+## 启动即续跑（自动化协议，2026-10-19 起）
+
+目标：**每次宿主启动后自动接着干**，不需要人喊"继续"。
+
+三层机制（缺一不可）：
+
+1. **常驻目标（goal）**：一个 open-ended 的目标（"持续交付 Track A，直到 owner 叫停"）。
+   目标处于 `armed` 时，每轮结束会自动开下一轮——这是续跑引擎。
+2. **重启安全网（recurring reminder）**：宿主重启会把目标置为 `disarmed`（引擎熄火）。
+   每 30 分钟一条提醒，脚本动作是：`get_goal` → 若 disarmed 就 `update_goal resume` → 继续；
+   若 armed 只需一句话确认（避免重复汇报）。
+3. **收工纪律**：每项完成必须 `bash scripts/gate.sh` **五道门**全绿（typecheck / 全量测试 /
+   构建 / 体积 / **覆盖率**）+ 真机证据 + 推送 + bump Harness 指针；批次结束发 tag。
+
+停止方式：`bash ~/dsh-agent-stop.sh`（只停自动化，不碰 App），或直接跟我说停。
+
+### 门禁两种模式（`A60`）
+
+| 命令 | 包含 | 用时 | 允许推送吗 |
+| --- | --- | --- | --- |
+| `bash scripts/gate.sh --fast` | typecheck + 全量测试 | ~15s | **不可以**（明确提示） |
+| `bash scripts/gate.sh` | 五道门：typecheck / 全量测试 / 构建 / 体积 / 覆盖率 | ~10min | 可以（必须退出码 0） |
+
+纪律：**日常迭代用 --fast 快速确认，推送前一律跑完整门**；不许用 --fast 的绿灯当推送依据。
+
+### 提交纪律：`lib/` 是入库产物，先构建再提交（`A78`）
+
+踩过两次的真问题 ✗：
+
+1. 我先 `git commit`，**然后**才跑门禁；
+2. 门禁的第 3 步会 `pnpm run build` → 把 `lib/` 重建成**新版本号** ✗；
+3. 于是已提交/已打 tag 的内容里 `lib/index.js` 还是**旧版本** ✗（实测 tag 里写着 0.3.25，源码是 0.3.26）；
+4. 子模块因此变脏 ✗ → Harness 的 pre-commit 钩子 stash 失败 ✗ → 指针 bump 直接报 `Failed to save unstaged changes`。
+
+**正确顺序**（发版脚本会打印这几步）：
+
+```
+1. pnpm run build          # 先把 lib/ 重建好
+2. bash scripts/gate.sh    # 五道门全绿
+3. git add -A && git commit
+4. git tag -a vX.Y.Z-workbench-N
+5. git push main + tag     # 然后才 bump Harness 子模块指针
+```
+
+门禁现在会在构建后检测 `lib/` 是否与已提交版本不一致，并打印醒目提示 ✓。
+
+## 维护状态（2026-10-20 起，Track A）
+
+**状态**：Track A 的功能与质量债已清空 —— 61 个版本、732 个测试、函数覆盖 83.77%、9 轮对抗性扫荡修掉 23 个真问题。
+
+**自动化节奏**（owner 决定：暂停，等需求）：
+- 定时安全网提醒**已删除**；
+- 目标仍 armed，但**每轮只做一行状态确认**（不再主动开发）；
+- **唤醒方式**：直接给 agent 一条消息，说明要做什么（bug / 需求 / 发布）；
+- **彻底暂停**：直接说"暂停"，agent 会用 `update_goal pause` 收口。
+
+**维护期原则**：只修 bug 与安全问题，不加新特性；任何改动仍需 `gate.sh` 五道门全绿 + bump 指针。
+
+**给 Track B**：对接清单见 `docs/HANDOFF.md`（三个信息面板、六个高价值交互、六条踩过的坑）。

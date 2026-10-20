@@ -71,8 +71,8 @@ afterAll(async () => {
     server.close(() => resolve())
     server.closeAllConnections()
   })
-  await rm(outputsDir, { recursive: true, force: true })
-  await rm(secretDir, { recursive: true, force: true })
+  await rm(outputsDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+  await rm(secretDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 })
 
 describe('outputs 媒体路由 handler', () => {

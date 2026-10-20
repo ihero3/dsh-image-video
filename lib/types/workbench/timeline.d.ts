@@ -37,6 +37,20 @@ export declare const CLIP_SPEED_RANGE: {
 export declare const MAX_CLIP_FADE_MS = 2000;
 /** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
 export declare const MAX_TRACK_FADE_MS = 5000;
+/** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
+export declare const MAX_TRACK_CROSSFADE_MS = 3000;
+/** 语言标记的合法长度范围（`A42`）。 */
+export declare const TRACK_LANGUAGE_RANGE: {
+    readonly min: 1;
+    readonly max: 16;
+};
+/** 侧链压低范围（分贝，`A33`）。 */
+export declare const DUCKING_DB_RANGE: {
+    readonly min: -30;
+    readonly max: 0;
+};
+/** 侧链压低缺省值（分贝，`A33`）。 */
+export declare const DEFAULT_DUCKING_DB = -12;
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
     readonly id: string;
@@ -77,8 +91,26 @@ export interface TimelineTrack {
     readonly muted?: boolean;
     /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
     readonly volume?: number;
+    /**
+     * 语言标记（`A42`，主要给字幕轨用，如 `zh` / `en`）：配合 `timeline.burnLanguage`
+     * 决定烧哪一条字幕轨，避免多语言字幕叠在一起。
+     */
+    readonly language?: string;
     /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
     readonly fadeMs?: number;
+    /**
+     * 相邻音频片段之间的**交叉淡化**时长（毫秒，0–3000；缺省 0 = 直接拼接）。
+     * 导出用 `acrossfade` 实现（`A30`）：两段重叠该时长，因此音轨总长会相应变短。
+     * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
+     */
+    readonly crossfadeMs?: number;
+    /**
+     * 侧链压缩（`A33`）：本轨是"被压"的背景音乐，`duckUnderTrackId` 指向触发它的音轨
+     * （通常是旁白轨），旁白一响就把本轨压低 `duckingDb` 分贝。缺省不启用。
+     */
+    readonly duckUnderTrackId?: string;
+    /** 侧链压低的分贝数（-30..0，缺省 -12；仅在 `duckUnderTrackId` 存在时生效）。 */
+    readonly duckingDb?: number;
 }
 /**
  * 片段在时间轴上**实际占用**的时长（变速折算后）。
@@ -129,6 +161,11 @@ export interface TimelineRecord {
     readonly burnSubtitles: boolean;
     /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
     readonly exportFormat?: TimelineExportFormat;
+    /**
+     * 只烧哪一条语言的字幕轨（`A42`）：缺省时沿用老行为（烧所有字幕轨）。
+     * 设了但没有任何轨道匹配 → 校验器会报 `dangling-burn-language`。
+     */
+    readonly burnLanguage?: string;
     /** 导出时做响度归一化（`loudnorm`，目标 -16 LUFS；`A20`）。缺省关。 */
     readonly normalizeLoudness?: boolean;
     readonly createdAt: string;
@@ -190,3 +227,17 @@ export declare function transitionOverlapMs(clip: TimelineClip, previous: Timeli
  * @returns 毫秒。
  */
 export declare function transitionDurationMs(clip: TimelineClip): number;
+/**
+ * 复制一条时间轴为副本（`A86`）：轨道/片段/效果/规格/字幕语言全部保留，
+ * **片段 id 与时间轴 id 重新生成**（同一条时间轴内 id 必须唯一），素材路径**共享**
+ * （不复制文件，副本与原版引用同一批素材）。
+ *
+ * @param timeline - 原时间轴。
+ * @param options - 新 id 与新名字。
+ * @returns 副本（未保存）。
+ */
+export declare function duplicateTimeline(timeline: TimelineRecord, options: {
+    newId: string;
+    newName: string;
+    newClipId: (prefix: string, index: number) => string;
+}): TimelineRecord;

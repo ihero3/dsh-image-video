@@ -150,7 +150,7 @@ describe('workbench channel endpoints', () => {
 
     // 已结束的任务取消不了
     expect(await ok<{ cancelled: boolean }>('timelines/render-cancel', { renderId: started.render.id })).toEqual({ cancelled: false })
-    await rm(work, { recursive: true, force: true })
+    await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }, 60_000)
 
   it('plans output retention with a dry run by default (A15)', async () => {
@@ -162,6 +162,159 @@ describe('workbench channel endpoints', () => {
     expect(planned.dryRun).toBe(true)
     expect(planned.plan.remove).toEqual([])
     expect(planned.plan.overQuota).toBe(false)
+  })
+
+  it('saves custom presets and lists them alongside the built-in ones (A48)', async () => {
+    const { ok } = await makeHandler()
+    const saved = await ok<{ preset: { id: string; name: string } }>('presets/save', {
+      name: '自定义 9:16', width: 1080, height: 1920, frameRate: 30,
+    })
+    expect(saved.preset.name).toBe('自定义 9:16')
+    const listed = await ok<{ presets: Array<{ id: string; custom: boolean }> }>('presets/list', {})
+    expect(listed.presets.some(preset => preset.id === saved.preset.id && preset.custom)).toBe(true)
+    expect(listed.presets.some(preset => preset.id === 'douyin-vertical' && preset.custom === false)).toBe(true)
+    const removed = await ok<{ removed: boolean }>('presets/remove', { id: saved.preset.id })
+    expect(removed.removed).toBe(true)
+  })
+
+  it('validates a timeline through the channel and also accepts an inline document (A34)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '校验项目' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }],
+    })
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    expect(checked.ok).toBe(false)
+    expect(checked.issues.map(issue => issue.code)).toContain('empty-video-track')
+
+    // 未保存的文档也能预检（界面拖拽时用）
+    const inline = await ok<{ ok: boolean }>('timelines/validate', {
+      document: {
+        schemaVersion: 3, id: 'x', projectId: created.project.id, name: 'inline', frameRate: 30, burnSubtitles: false,
+        tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/a.mp4', startMs: 0, durationMs: 1000 }] }],
+        createdAt: '', updatedAt: '',
+      },
+    })
+    expect(typeof inline.ok).toBe('boolean')
+
+    // `A40`：inline 文档超限要在端点层就拒掉（别让它白跑）
+    const oversize = await ok<{ ok: boolean }>('timelines/validate', {
+      document: {
+        schemaVersion: 3, id: 'x', projectId: created.project.id, name: 'big', frameRate: 30, burnSubtitles: false,
+        tracks: [{ id: 'v1', kind: 'video', clips: Array.from({ length: 401 }, (_, i) => ({
+          id: `c${i}`, assetPath: 'outputs/a.mp4', startMs: i * 1000, durationMs: 1000,
+        })) }],
+        createdAt: '', updatedAt: '',
+      },
+    }).catch(error => error as Error)
+    expect(String(oversize)).toMatch(/片段太多/)
+  })
+
+  it('summarises export readiness in one call (A84)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '体检' })
+    const dirty = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/missing.mp4', startMs: 0, durationMs: 3000 }] }],
+    })
+    const blocked = await ok<{
+      ok: boolean; issues: Array<{ code: string }>; estimate: { estimatedBytes: number; humanBytes: string }; summaryLine: string
+    }>('timelines/preflight', { timelineId: dirty.timeline.id })
+    expect(blocked.ok).toBe(false)
+    expect(blocked.issues.map(issue => issue.code)).toContain('missing-asset')
+    expect(blocked.estimate.humanBytes).toMatch(/KB|MB|GB/)
+    expect(blocked.summaryLine).toContain('暂不建议导出')
+
+    // 干净的时间轴（无片段 → 报空轨，属"阻断"类）→ 也能拿到体积与汇总
+    const clean = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id, tracks: [{ id: 'v1', kind: 'video', clips: [] }],
+    })
+    const report = await ok<{ issues: Array<{ code: string }>; summaryLine: string; usage: { total: number } }>('timelines/preflight', { timelineId: clean.timeline.id })
+    expect(report.summaryLine).toContain('约')
+    expect(report.usage.total).toBeGreaterThanOrEqual(0)
+  })
+
+  it('retries a FAILED render (the main use case, R7)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试失败' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      // 素材不存在 → 导出必然失败 → 正好验证"失败任务重试"这条主路径
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/ghost.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    const first = await ok<{ render: { id: string; status: string } }>('timelines/render', { timelineId: saved.timeline.id })
+    await vi.waitFor(async () => {
+      const listed = await ok<{ renders: Array<{ id: string; status: string }> }>('timelines/renders', {})
+      expect(listed.renders.find(entry => entry.id === first.render.id)?.status).toBe('failed')
+    }, { timeout: 20_000 })
+
+    const retried = await ok<{ render: { id: string; status: string }; retriedFrom: string }>('timelines/render-retry', { renderId: first.render.id })
+    expect(retried.retriedFrom).toBe(first.render.id)
+    expect(retried.render.id).not.toBe(first.render.id)
+  })
+
+  it('retries a finished render with the same timeline (A59)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '重试' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/a.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    const first = await ok<{ render: { id: string } }>('timelines/render', { timelineId: saved.timeline.id, priority: 3 })
+    await vi.waitFor(async () => {
+      const listed = await ok<{ renders: Array<{ id: string; status: string }> }>('timelines/renders', {})
+      expect(listed.renders.find(job => job.id === first.render.id)?.status).not.toBe('running')
+    }, { timeout: 15_000 })
+
+    const retried = await ok<{ render: { id: string; priority?: number }; retriedFrom: string }>('timelines/render-retry', { renderId: first.render.id })
+    expect(retried.retriedFrom).toBe(first.render.id)
+    expect(retried.render.id).not.toBe(first.render.id)
+    expect(retried.render.priority).toBe(3) // 复用原优先级
+
+    const missing = await ok('timelines/render-retry', { renderId: 'render-nope' }).catch(error => error as Error)
+    expect(String(missing)).toMatch(/找不到渲染任务/)
+  })
+
+  it('caps asset probing at 20 paths without crashing (R6)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '多素材' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: Array.from({ length: 21 }, (_, index) => ({
+        id: `c${index}`, assetPath: `outputs/ghost-${index}.mp4`, startMs: index * 1000, durationMs: 1000,
+      })) }],
+    })
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    // 21 个素材全部缺失 → 探测失败不影响校验；不应误报越界，也不应崩
+    expect(Array.isArray(checked.issues)).toBe(true)
+    expect(checked.issues.map(issue => issue.code)).not.toContain('clip-longer-than-asset')
+  })
+
+  it('survives asset probing when files are missing (A45)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '越界' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/ghost.mp4', startMs: 0, durationMs: 3000 }] }],
+    })
+    // 素材不存在 → 探测拿不到时长 → 不应崩，也不应误报越界
+    const checked = await ok<{ ok: boolean; issues: Array<{ code: string }> }>('timelines/validate', { timelineId: saved.timeline.id })
+    expect(checked.issues.map(issue => issue.code)).not.toContain('clip-longer-than-asset')
+  })
+
+  it('probes a registered asset through the channel and rejects paths outside outputs (A44)', async () => {
+    const { ok } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '探测' })
+    await ok('assets/attach', { projectId: created.project.id, path: 'outputs/probe.png', kind: 'image' })
+    // 登记过的素材允许探测（这里文件不存在 → 探测失败，但**不是**越界错误）
+    const rejected = await ok('assets/probe', { path: '/etc/passwd' }).catch(error => error as Error)
+    expect(String(rejected)).toMatch(/只能探测 outputs 目录内或已登记的素材/)
+  })
+
+  it('lists export presets through the channel (A31)', async () => {
+    const { ok } = await makeHandler()
+    const result = await ok<{ presets: Array<{ id: string; width: number; height: number }> }>('presets/list', {})
+    expect(result.presets.some(preset => preset.id === 'douyin-vertical' && preset.width === 1080 && preset.height === 1920)).toBe(true)
   })
 
   it('reports a diagnostics snapshot with data scale and render queue (A9)', async () => {

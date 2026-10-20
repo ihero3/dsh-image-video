@@ -8,8 +8,10 @@
  * - **失败要能照着修**：素材丢失 / 磁盘满 / 编码器不支持 / ffmpeg 缺失都给机器码 +
  *   一句话下一步（`R-TML-5`/`R-TML-6`）。
  */
+import { serializeSrt, formatTimecode } from '../workbench/srt.ts'
+import { serializeVtt } from '../workbench/vtt.ts'
 import { spawn } from 'node:child_process'
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { FFMPEG_PATH_ENV, probeFfmpeg, type FfmpegProbe } from './ffmpeg.ts'
 import { estimateMaxCharsForWidth, wrapSubtitleLines } from '../workbench/subtitles.ts'
@@ -28,6 +30,8 @@ export interface TimelineSnapshot {
   readonly exportFormat: TimelineExportFormat
   /** 是否做响度归一化（`A20`）。 */
   readonly normalizeLoudness: boolean
+  /** 只烧哪种语言的字幕（`A42`；缺省烧全部字幕轨）。 */
+  readonly burnLanguage?: string
   readonly durationMs: number
   readonly tracks: readonly TimelineTrack[]
 }
@@ -63,6 +67,10 @@ export interface RenderResult {
   readonly outputPath: string
   readonly bytes: number
   readonly durationMs: number
+  /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
+  readonly subtitlePath?: string
+  /** 成片缩略图（`A124`；抽第 1 秒的一帧）。 */
+  readonly thumbnailPath?: string
 }
 
 /** 渲染失败的机器码。 */
@@ -111,7 +119,8 @@ export function freezeTimeline(timeline: TimelineRecord): TimelineSnapshot {
   const durationMs = timelineDurationMs(tracks)
   return {
     id: timeline.id, frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
-    exportFormat: normalizeExportFormat(timeline.exportFormat), normalizeLoudness: timeline.normalizeLoudness === true, durationMs, tracks,
+    exportFormat: normalizeExportFormat(timeline.exportFormat), normalizeLoudness: timeline.normalizeLoudness === true,
+    ...timeline.burnLanguage === undefined ? {} : { burnLanguage: timeline.burnLanguage }, durationMs, tracks,
   }
 }
 
@@ -280,7 +289,10 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
   // 字幕：只烧 subtitle 轨，按各自起止时间 show/hide；关掉烧录就整段不生成
   const drawFilters: string[] = []
   if (snapshot.burnSubtitles) {
-    for (const clip of snapshot.tracks.find(track => track.kind === 'subtitle')?.clips ?? []) {
+    // `A42`：设了 burnLanguage 就只烧该语言的字幕轨；没设就沿用老行为（所有字幕轨）
+    const subtitleTracks = snapshot.tracks.filter(track => track.kind === 'subtitle'
+      && (snapshot.burnLanguage === undefined || track.language === snapshot.burnLanguage))
+    for (const clip of subtitleTracks.flatMap(track => track.clips)) {
       const fontSize = clip.style?.fontSize ?? 32
       const color = (clip.style?.color ?? '#ffffff').replace('#', '0x')
       const y = clip.style?.position === 'top'
@@ -317,7 +329,29 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
       audioInput += 1
     })
     const out = `at${trackIndex}`
-    chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
+    // `A30`：全部首尾相接且设了 crossfadeMs → 用 acrossfade 交叉淡化；否则普通拼接
+    const allClips = track.segments.every(segment => segment.kind === 'clip')
+    if (track.crossfadeMs > 0 && allClips && labels.length > 1) {
+      const segmentMs = (index: number): number => {
+        const segment = track.segments[index]!
+        return segment.kind === 'filler' ? segment.durationMs : segment.durationMs
+      }
+      let accumulator = labels[0]!
+      for (let index = 1; index < labels.length; index += 1) {
+        const next = `ac${trackIndex}_${index}`
+        // `acrossfade` 要求时长不超过任一侧片段的一半，否则 ffmpeg 报错 → 逐对夹取
+        const pairFade = Math.min(track.crossfadeMs, Math.floor(Math.min(segmentMs(index - 1), segmentMs(index)) / 2))
+        if (pairFade <= 0) {
+          chains.push(`${accumulator}${labels[index]}concat=n=2:v=0:a=1[${next}]`)
+        } else {
+          chains.push(`${accumulator}${labels[index]}acrossfade=d=${(pairFade / 1000).toFixed(3)}:c1=tri:c2=tri[${next}]`)
+        }
+        accumulator = `[${next}]`
+      }
+      chains.push(`${accumulator}anull[${out}]`)
+    } else {
+      chains.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${out}]`)
+    }
     // 淡入淡出（`A20`）：轨内总长 = 快照时长（间隙已补静音），所以淡出从末尾往前推
     if (track.fadeMs > 0) {
       const fadeSeconds = (track.fadeMs / 1000).toFixed(3)
@@ -328,6 +362,25 @@ export function buildRenderArgs(snapshot: TimelineSnapshot, options: {
       audioLabels.push(`[${out}]`)
     }
   })
+  // 侧链压缩（`A33`）：被压轨 × 触发轨 → sidechaincompress（ratio 由压低分贝数换算）
+  audioTracks.forEach((track, trackIndex) => {
+    // 自指（music 压 music）会让同一个标签被用两次 → ffmpeg 直接报错，这里必须跳过
+    if (track.duckUnderTrackId === undefined || track.duckUnderTrackId === track.trackId) return
+    const trigger = audioTracks.findIndex(candidate => candidate.trackId === track.duckUnderTrackId)
+    if (trigger < 0) return
+    const label = audioLabels[trackIndex]
+    const triggerLabel = audioLabels[trigger]
+    if (label === undefined || triggerLabel === undefined) return
+    const ratio = Math.max(2, Math.min(20, Math.abs(track.duckingDb ?? -12) / 1.5)).toFixed(1)
+    const ducked = `duck${trackIndex}`
+    // 触发轨的信号要被用两次（侧链输入 + 最终混音）→ 必须先 asplit，否则 ffmpeg 报标签已被消费
+    const triggerBranch = `sct${trackIndex}`
+    chains.push(`${triggerLabel}asplit=2[${triggerBranch}a][${triggerBranch}b]`)
+    chains.push(`${label}[${triggerBranch}a]sidechaincompress=threshold=0.02:ratio=${ratio}:attack=10:release=300:makeup=1[${ducked}]`)
+    audioLabels[trackIndex] = `[${ducked}]`
+    audioLabels[trigger] = `[${triggerBranch}b]`
+  })
+
   if (audioLabels.length === 1) {
     chains.push(`${audioLabels[0]}anull[aout]`)
   } else if (audioLabels.length > 1) {
@@ -358,6 +411,11 @@ export interface PlannedAudioTrack {
   readonly volume: number
   /** 淡入淡出时长（毫秒，`A20`）。 */
   readonly fadeMs: number
+  /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
+  readonly crossfadeMs: number
+  /** 侧链压缩（`A33`）：被哪条轨触发，以及压低多少分贝。 */
+  readonly duckUnderTrackId?: string
+  readonly duckingDb?: number
   readonly segments: readonly VideolessSegment[]
 }
 
@@ -394,7 +452,16 @@ export function planAudioTracks(snapshot: TimelineSnapshot): PlannedAudioTrack[]
       cursor = clip.startMs + clip.durationMs
     }
     if (snapshot.durationMs > cursor) segments.push({ kind: 'filler', durationMs: snapshot.durationMs - cursor })
-    tracks.push({ trackId: track.id, volume, fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))), segments })
+    tracks.push({
+      trackId: track.id, volume,
+      fadeMs: Math.max(0, Math.min(5000, Math.round(track.fadeMs ?? 0))),
+      crossfadeMs: Math.max(0, Math.min(3000, Math.round(track.crossfadeMs ?? 0))),
+      ...track.duckUnderTrackId === undefined ? {} : {
+        duckUnderTrackId: track.duckUnderTrackId,
+        duckingDb: Math.max(-30, Math.min(0, track.duckingDb ?? -12)),
+      },
+      segments,
+    })
   }
   return tracks
 }
@@ -496,6 +563,10 @@ export class RenderService {
     signal?: AbortSignal
     onProgress?: (progress: RenderProgress) => void
     fileName?: string
+    /** 封面帧位置（`A126`，毫秒；默认第 1 秒）。 */
+    thumbnailAtMs?: number
+    /** 随片字幕格式（`A130`；默认 srt）。 */
+    subtitleFormat?: 'srt' | 'vtt'
   } = {}): Promise<RenderResult> {
     const snapshot = freezeTimeline(timeline)
     const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
@@ -563,7 +634,52 @@ export class RenderService {
         )
       }
     }
-    return { outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs }
+    // `A120`：时间轴有字幕片段时，顺手把 SRT 写在成片旁边（成片 + 字幕一起交付）
+    let subtitlePath: string | undefined
+    const subtitleClips = snapshot.tracks
+      .filter(track => track.kind === 'subtitle')
+      .flatMap(track => track.clips)
+      .filter(clip => (clip.text ?? '').trim() !== '')
+    if (subtitleClips.length > 0) {
+      const cues = subtitleClips.map(clip => ({
+        index: 0, startMs: clip.startMs, endMs: clip.startMs + clip.durationMs, text: clip.text ?? '',
+      }))
+      const format = options.subtitleFormat === 'vtt' ? 'vtt' : 'srt'
+      subtitlePath = outputPath.replace(/\.[^.]+$/, '') + `.${format}`
+      await writeFile(subtitlePath, format === 'vtt' ? serializeVtt(cues) : serializeSrt(cues), 'utf8')
+    }
+    // `A124`：抽一帧做缩略图（界面列表/分享预览用）；失败不影响成片
+    // `R8`：封面帧位置超出片长时夹到片尾前 100ms —— 否则 ffmpeg 抽不到帧、用户"没有封面"却不知为何
+    const outputMs = measured ?? snapshot.durationMs
+    const thumbnailAt = Math.max(0, Math.min(options.thumbnailAtMs ?? 1000, Math.max(0, outputMs - 100)))
+    const thumbnailPath = await this.extractThumbnail(outputPath, thumbnailAt).catch(() => undefined)
+    return {
+      outputPath, bytes: info.size, durationMs: measured ?? snapshot.durationMs,
+      ...subtitlePath === undefined ? {} : { subtitlePath },
+      ...thumbnailPath === undefined ? {} : { thumbnailPath },
+    }
+  }
+
+  /**
+   * 抽一帧做缩略图（`A124`）：取第 1 秒（短片取中点），缩到 480 宽，输出 jpg。
+   * @param videoPath - 成片路径。
+   * @returns 缩略图路径；失败返回 undefined（不影响成片）。
+   */
+  private async extractThumbnail(videoPath: string, atMs = 1000): Promise<string | undefined> {
+    const probe = await (this.deps.probe ?? (() => probeFfmpeg()))()
+    const ffmpegPath = probe.path ?? 'ffmpeg'
+    const thumbnailPath = videoPath.replace(/\.[^./]+$/, '') + '-thumb.jpg'
+    // ffmpeg 的 -ss 用点分隔毫秒（SRT 的逗号写法会被拒）
+    const seek = formatTimecode(Math.max(0, Math.round(atMs))).replace(',', '.')
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-ss', seek, '-i', videoPath, '-frames:v', '1', '-vf', 'scale=480:-2', thumbnailPath]
+    const ok = await new Promise<boolean>(resolve => {
+      const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'ignore'] })
+      child.on('error', () => resolve(false))
+      child.on('close', code => resolve(code === 0))
+    })
+    if (!ok) return undefined
+    const info = await stat(thumbnailPath).catch(() => undefined)
+    return info !== undefined && info.size > 0 ? thumbnailPath : undefined
   }
 }
 
@@ -584,7 +700,7 @@ async function firstExisting(paths: readonly string[]): Promise<string | undefin
 export async function probeMediaSpec(
   ffmpegPath: string,
   file: string,
-): Promise<{ width?: number; height?: number; fps?: number; hasAudio: boolean } | undefined> {
+): Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> {
   const stream = await new Promise<{ stderr: string; ok: boolean }>(resolve => {
     const child = spawn(ffmpegPath, ['-hide_banner', '-i', file], { stdio: ['ignore', 'ignore', 'pipe'] })
     let stderr = ''
@@ -594,12 +710,21 @@ export async function probeMediaSpec(
   })
   if (!stream.ok) return undefined
   const hasAudio = /Stream #\d+:\d+.*: Audio: /.test(stream.stderr)
+  const duration = /Duration: (\d+):(\d+):(\d+\.\d+)/.exec(stream.stderr)
+  const durationMs = duration === null
+    ? undefined
+    : Math.round((Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3])) * 1000)
   const video = /Stream #\d+:\d+.*: Video: .*?(\d{2,5})x(\d{2,5})/.exec(stream.stderr)
-  if (video === null) return hasAudio ? { hasAudio } : undefined
+  if (video === null) {
+    return hasAudio || durationMs !== undefined
+      ? { hasAudio, ...durationMs === undefined ? {} : { durationMs } }
+      : undefined
+  }
   const fpsMatch = /(\d+(?:\.\d+)?) fps/.exec(stream.stderr)
   return {
     width: Number(video[1]), height: Number(video[2]), hasAudio,
     ...fpsMatch === null ? {} : { fps: Number(fpsMatch[1]) },
+    ...durationMs === undefined ? {} : { durationMs },
   }
 }
 

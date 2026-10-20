@@ -13,6 +13,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
+import { retryError } from '../media/render-registry.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import type { WorkflowRunner } from '../workbench/runner.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
@@ -20,6 +21,8 @@ import { DRAMA_TEMPLATES, instantiateTemplate } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { timelineDurationMs } from '../workbench/timeline.ts'
+import { presetToFormat } from '../workbench/presets.ts'
+import { validateTimeline } from '../workbench/validate.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 
 /** 一次返回给模型的最大行数。 */
@@ -33,6 +36,12 @@ export interface WorkbenchToolsDeps {
   readonly renders: RenderRegistry
   readonly runner: WorkflowRunner
   readonly registry: GenerationRegistry
+  /** 输出目录（`A63`：素材探测的路径边界与相对路径基准）。 */
+  readonly outputsDir?: string
+  /** 素材探测（`A63`；未注入时 probe 动作返回明确提示而不是崩溃）。 */
+  readonly probeAsset?: (relativePath: string) => Promise<
+    { width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined
+  >
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -109,6 +118,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       track: { type: 'string', description: 'set-track 时的轨道：video / audio / subtitle（默认 audio）' },
       maxChars: { type: 'integer', description: 'add-subtitles 时单条字幕最多字数（默认 28）' },
       clipId: { type: 'string', description: 'split-clip / copy-clip 的片段 id' },
+      presetId: { type: 'string', description: 'set-format 时用导出预设（先看 presets/list，如 douyin-vertical / youtube-1080p）' },
+      priority: { type: 'integer', description: 'export 时的队列优先级（数值大的先跑；同优先级 FIFO，默认 0）' },
       atMs: { type: 'integer', description: 'split-clip 的拆分点（时间轴绝对毫秒，必须在片段内部）' },
       startMs: { type: 'integer', description: '起始时间（毫秒）；add-subtitles 缺省接在字幕轨末尾' },
       endMs: { type: 'integer', description: '结束时间（毫秒）；add-subtitles 缺省到时间轴末尾' },
@@ -142,7 +153,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const assets = defineTool({
     name: 'workbench_assets',
     description:
-      '工作台的素材（生成出来的图/视频文件）：list（按项目列出，可按素材种类过滤）、attach（把一个已存在的文件路径登记成素材）。'
+      '工作台的素材（生成出来的图/视频文件）：list（按项目列出，可按素材种类过滤）、attach（把一个已存在的文件路径登记成素材）、probe（探测真实时长/分辨率/帧率/有无音轨，用于决定片段该给多长）。'
       + '素材不复制文件，只记录路径；重复登记同一路径会返回已有的那条（created=false）。',
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -152,8 +163,9 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / attach' },
-      projectId: { type: 'string', required: true, description: '项目 id（先 list workbench_projects）' },
+      action: { type: 'string', required: true, description: 'list / attach / probe' },
+      // `A65`：去掉 required —— `probe` 不需要项目上下文；list/attach 在 execute 里各自校验
+      projectId: { type: 'string', description: '项目 id（list / attach 必填；先 list workbench_projects）' },
       path: { type: 'string', description: 'attach 时的文件绝对路径' },
       kind: { type: 'string', description: "attach 时的素材种类：image / video（默认按扩展名推断）" },
       prompt: { type: 'string', description: 'attach 时记录产生它的提示词（可选）' },
@@ -162,8 +174,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_assets')
-      const projectId = requireString(input, 'projectId', 'workbench_assets')
+      // `A65`：`probe` 不需要项目上下文 → projectId 改为按需校验（此前全局 required 会把 probe 直接拒掉）
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_assets list 需要 projectId')
         const kind = typeof input.kind === 'string' && (input.kind === 'image' || input.kind === 'video') ? input.kind : undefined
         const rows = (await store.listAssets(projectId))
           .filter(asset => kind === undefined || asset.kind === kind)
@@ -173,7 +187,16 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           count: rows.length,
         })
       }
+      if (action === 'probe') {
+        // `A63`：让 Agent 也能拿到真实时长/规格（决定片段该给多长，而不是靠猜）
+        const relative = requireString(input, 'path', 'workbench_assets probe')
+        if (deps.probeAsset === undefined) throw new Error('宿主没有提供素材探测能力（probeAsset 未注入）')
+        const spec = await deps.probeAsset(relative)
+        if (spec === undefined) throw new Error(`探测失败：${relative} 可能不是有效媒体文件或不在允许范围`)
+        return json({ path: relative, spec })
+      }
       if (action === 'attach') {
+        if (projectId === undefined) throw new Error('workbench_assets attach 需要 projectId')
         const path = requireString(input, 'path', 'workbench_assets attach')
         const kind = input.kind === 'image' || input.kind === 'video'
           ? input.kind
@@ -184,16 +207,17 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         return json({ asset: { id: attached.asset.id, kind: attached.asset.kind, path: attached.asset.path }, created: attached.created })
       }
-      return unknownAction('workbench_assets', action, ['list', 'attach'])
+      return unknownAction('workbench_assets', action, ['list', 'attach', 'probe'])
     },
   })
 
   const timeline = defineTool({
     name: 'workbench_timeline',
     description:
-      '时间轴（成片）：list、add-clip（加素材/字幕）、trim（改片段起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
-      + 'set-format（导出分辨率/帧率/码率）、set-track（轨道音量/静音）、'
-      + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度）。'
+      '时间轴（成片）：list、add-clip（往某条轨加片段）、add-subtitles（把一段文案切成字幕片段）、validate（导出自查）、'
+      + 'split-clip（在指定时间点切开）、copy-clip（复制片段）、trim（改起止/时长/源偏移）、drop-clip（把片段移出时间轴）、'
+      + 'set-format（分辨率/帧率/码率/导出预设，可用 presets/list 的预设 id）、set-track（轨道音量/静音/淡入淡出/交叉淡化/侧链）、'
+      + 'export（起一次导出，返回 renderId，用 workbench_tasks 轮询进度；可传 priority 插队）。'
       + `一次最多加 ${MAX_TOOL_CLIPS} 个片段。视频轨片段带 startMs/durationMs（毫秒）；没有 startMs 时自动接在末尾。`,
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -203,8 +227,11 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / add-clip / export' },
-      projectId: { type: 'string', required: true, description: '项目 id' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / add-clip / add-subtitles / validate / split-clip / copy-clip / trim / drop-clip / set-format / set-track / export',
+      },
+      projectId: { type: 'string', description: '项目 id（仅 list 必填）' },
       timelineId: { type: 'string', description: 'add-clip / export 时的时间轴 id（list 里拿）' },
       track: { type: 'string', description: "add-clip 时的轨道：video / audio / subtitle（默认 video）" },
       clips: {
@@ -226,8 +253,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_timeline')
-      const projectId = requireString(input, 'projectId', 'workbench_timeline')
+      // `A67`：projectId 只有 list 用得上；此前全局 required 会逼 Agent 传一个无意义的项目 id
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_timeline list 需要 projectId')
         const rows = (await store.listTimelines(projectId)).slice(0, optionalLimit(input))
         return json({
           timelines: rows.map(item => ({
@@ -246,7 +275,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         if (rawClips.length === 0) throw new Error('add-clip 需要 clips 数组，且至少一个片段')
         if (rawClips.length > MAX_TOOL_CLIPS) throw new Error(`一次最多加 ${MAX_TOOL_CLIPS} 个片段，收到 ${rawClips.length} 个`)
         const trackKind = input.track === 'audio' || input.track === 'subtitle' ? input.track : 'video'
-        const knownAssets = new Set((await store.listAssets(projectId)).map(asset => asset.path))
+        // `A67`：项目上下文从时间轴自己取（timeline 知道 projectId），不必逼 Agent 再传一次
+        const knownAssets = new Set((await store.listAssets(current.projectId)).map(asset => asset.path))
         const tracks = current.tracks.map(track => ({ ...track, clips: [...track.clips] }))
         const target = tracks.find(track => track.kind === trackKind)
         if (target === undefined) throw new Error(`时间轴 ${timelineId} 没有 ${trackKind} 轨`)
@@ -306,6 +336,14 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           timeline: { id: saved.id, added: clips.length, window: { startMs: windowStart, endMs: windowEnd } },
           subtitles: clips.map(clip => ({ id: clip.id, text: clip.text, startMs: clip.startMs, durationMs: clip.durationMs })),
         })
+      }
+      if (action === 'validate') {
+        // `A34`：保存/导出前先拿问题清单（与渲染器同一套域规则）
+        const timelineId = requireString(input, 'timelineId', 'workbench_timeline validate')
+        const document = await store.findTimeline(timelineId)
+        if (document === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
+        const issues = validateTimeline(document, { knownAssetPaths: new Set(await store.referencedAssetPaths()) })
+        return json({ ok: issues.length === 0, count: issues.length, issues })
       }
       if (action === 'split-clip' || action === 'copy-clip') {
         // `A24`：片段拆分 / 复制（域层算好源内偏移与变速折算，工具只负责落库）
@@ -398,7 +436,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           id: current.id, projectId: current.projectId, name: current.name, tracks: current.tracks,
           frameRate: current.frameRate, burnSubtitles: current.burnSubtitles,
           exportFormat: {
-            ...current.exportFormat ?? {},
+            // `A31`：给了 presetId 就整份按预设，否则按字段微调
+            ...typeof input.presetId === 'string' && input.presetId !== ''
+              ? await resolvePresetFormat(store, input.presetId)
+              : current.exportFormat ?? {},
             ...typeof input.width === 'number' ? { width: input.width } : {},
             ...typeof input.height === 'number' ? { height: input.height } : {},
             ...typeof input.frameRate === 'number' ? { frameRate: input.frameRate } : {},
@@ -427,17 +468,18 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const timelineId = requireString(input, 'timelineId', 'workbench_timeline export')
         const doc = await store.findTimeline(timelineId)
         if (doc === undefined) throw new Error(`找不到时间轴 ${timelineId}；先用 action=list`)
-        const job = renders.start(doc)
+        const job = renders.start(doc, { ...typeof input.priority === 'number' ? { priority: input.priority } : {} })
         return json({ render: { id: job.id, status: job.status, hint: '用 workbench_tasks action=renders 轮询进度；status=succeeded 时 outputPath 是产物' } })
       }
-      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'export'])
+      return unknownAction('workbench_timeline', action, ['list', 'add-clip', 'add-subtitles', 'split-clip', 'copy-clip', 'trim', 'drop-clip', 'set-format', 'set-track', 'validate', 'export'])
     },
   })
 
   const workflow = defineTool({
     name: 'workbench_workflow',
     description:
-      '专业工作流（画布图）：list（列项目的流程）、save（创建/覆盖一张图；节点 kind 必须来自节点目录）、'
+      '专业工作流（画布图）：list（列项目的流程）、templates（看内置模板：如 drama-series）、'
+      + 'from-template（用模板新建一张图，需要 templateId）、save（创建/覆盖一张图；节点 kind 必须来自节点目录）、'
       + 'run（跑起来，返回 runId；默认**复用同参数上次的成功产物**，refresh=true 才强制重新生成）、'
       + 'runs（查运行记录与每个节点的状态/产物）。'
       + '跑之前宿主会用与画布同一份校验拒绝非法图（必填/端口/环），所以先 save 再 run。',
@@ -449,8 +491,11 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / save / run / runs' },
-      projectId: { type: 'string', required: true, description: '项目 id' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / templates / from-template / save / run / runs',
+      },
+      projectId: { type: 'string', description: '项目 id（list / save 必填）' },
       workflowId: { type: 'string', description: 'save 覆盖时 / run 时的流程 id' },
       name: { type: 'string', description: 'save 时的流程名' },
       nodes: {
@@ -478,8 +523,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
     async execute(args) {
       const input = asRecord(args)
       const action = requireString(input, 'action', 'workbench_workflow')
-      const projectId = requireString(input, 'projectId', 'workbench_workflow')
+      // `A67`：templates 是全局动作、run/runs 只看 workflowId → projectId 只对 list/save 有意义
+      const projectId = typeof input.projectId === 'string' && input.projectId !== '' ? input.projectId : undefined
       if (action === 'list') {
+        if (projectId === undefined) throw new Error('workbench_workflow list 需要 projectId')
         const rows = (await store.listWorkflows(projectId)).slice(0, optionalLimit(input))
         return json({ workflows: rows.map(item => ({ id: item.id, name: item.name, nodes: item.nodes.length, edges: item.edges.length, updatedAt: item.updatedAt })), count: rows.length })
       }
@@ -504,6 +551,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         return json({ workflow: { id: saved.id, name: saved.name, nodes: saved.nodes.length, edges: saved.edges.length } })
       }
       if (action === 'save') {
+        const saveProjectId = requireString(input, 'projectId', 'workbench_workflow save')
         // 画布坐标是"界面细节"，模型不该为此编数字：缺 position 时按加入顺序自动排布
         const rawNodes = Array.isArray(input.nodes) ? input.nodes : []
         const nodes = rawNodes.map((raw, index) => {
@@ -518,7 +566,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         })
         const saved = await store.saveWorkflow({
           ...typeof input.workflowId === 'string' && input.workflowId !== '' ? { id: input.workflowId } : {},
-          projectId,
+          projectId: saveProjectId,
           name: typeof input.name === 'string' && input.name !== '' ? input.name : '对话创建的流程',
           nodes,
           edges: Array.isArray(input.edges) ? input.edges : [],
@@ -533,7 +581,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         return json({ run: { id: run.id, status: run.status, ...run.error === undefined ? {} : { error: run.error } } })
       }
       if (action === 'runs') {
-        const rows = (await store.listRuns(projectId, typeof input.workflowId === 'string' && input.workflowId !== '' ? input.workflowId : undefined))
+        const runsProjectId = requireString(input, 'projectId', 'workbench_workflow runs')
+        const rows = (await store.listRuns(runsProjectId, typeof input.workflowId === 'string' && input.workflowId !== '' ? input.workflowId : undefined))
           .slice(0, optionalLimit(input))
         return json({
           runs: rows.map(run => ({
@@ -543,7 +592,7 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
           count: rows.length,
         })
       }
-      return unknownAction('workbench_workflow', action, ['list', 'save', 'run', 'runs'])
+      return unknownAction('workbench_workflow', action, ['list', 'templates', 'from-template', 'save', 'run', 'runs'])
     },
   })
 
@@ -552,7 +601,8 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
   const tasks = defineTool({
     name: 'workbench_tasks',
     description:
-      '任务与运行记录：list（生成任务账本：模型/提示词/状态/产物/耗时）、renders（导出任务与进度）、cancel（按 id 取消生成任务或导出）。'
+      '任务与运行记录：list（生成任务账本：模型/提示词/状态/产物/耗时）、renders（导出任务与进度）、'
+      + 'render-retry（用原时间轴与原优先级重跑失败的导出）、render-cancel（取消导出）、cancel（按 id 取消生成任务）。'
       + '取消是不可逆动作，只有在用户明确要求时才调用。',
     // 工具结果就是给模型看的 JSON 文本；声明成 string 才能让 defineTool
     // 正确推断出参类型（缺省会被推成 never）
@@ -562,7 +612,10 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
       render: (_args, value): ContentBlock[] => [{ type: 'text', text: value }],
     },
     parameters: {
-      action: { type: 'string', required: true, description: 'list / renders / cancel' },
+      action: {
+        type: 'string', required: true,
+        description: 'list / renders / render-retry / render-cancel / cancel',
+      },
       projectId: { type: 'string', description: 'list 时按项目过滤（可选）' },
       taskId: { type: 'string', description: 'cancel 时的生成任务 id' },
       renderId: { type: 'string', description: 'cancel 时的导出任务 id' },
@@ -587,6 +640,17 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const rows = renders.list(projectId).slice(0, optionalLimit(input))
         return json({ renders: rows.map(job => ({ id: job.id, timelineId: job.timelineId, status: job.status, percent: job.percent, ...job.outputPath === undefined ? {} : { outputPath: job.outputPath } })), count: rows.length })
       }
+      if (action === 'render-retry') {
+        // `A59`：按渲染任务 id 重跑（复用原时间轴与原优先级）
+        const renderId = requireString(input, 'renderId', 'workbench_tasks render-retry')
+        const previous = renders.list().find(job => job.id === renderId)
+        if (previous === undefined) throw new Error(`找不到渲染任务 ${renderId}`)
+        const blocked = retryError(previous)
+        if (blocked !== undefined) throw new Error(blocked)
+        const timeline = await store.findTimeline(previous.timelineId)
+        if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除`)
+        return json(renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } }))
+      }
       if (action === 'render-cancel') {
         const renderId = requireString(input, 'renderId', 'workbench_tasks render-cancel')
         const cancelled = renders.cancel(renderId)
@@ -605,11 +669,31 @@ export function createWorkbenchTools(deps: WorkbenchToolsDeps) {
         const cancelledRender = renderId === undefined ? false : renders.cancel(renderId)
         return json({ cancelledTask, cancelledRender, hint: cancelledTask || cancelledRender ? undefined : '没有找到在跑的任务（可能已经结束）' })
       }
-      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel', 'render-cancel'])
+      return unknownAction('workbench_tasks', action, ['list', 'renders', 'cancel', 'render-cancel', 'render-retry'])
     },
   })
 
   // 五个工具的参数 schema 各不相同，这里用一次显式断言收敛成共同形状（注册处只看共同形状）
   const tools = [projects, assets, timeline, workflow, tasks]
   return tools as unknown as Array<ReturnType<typeof defineTool>>
+}
+
+/**
+ * 解析导出预设 id → 导出规格（`A31` 内置优先，其次 `A48` 用户自定义）。
+ * @param store - 工作台存储（查自定义预设）。
+ * @param presetId - 预设 id。
+ * @returns 导出规格。
+ * @throws {Error} 两边都找不到时（提示用 presets/list 看可选值）。
+ */
+async function resolvePresetFormat(store: WorkbenchStore, presetId: string): Promise<{ width: number; height: number; frameRate: number; bitrateKbps?: number }> {
+  try {
+    return presetToFormat(presetId)
+  } catch {
+    const custom = (await store.listExportPresets()).find(preset => preset.id === presetId)
+    if (custom === undefined) throw new Error(`没有导出预设 ${presetId}：用 presets/list 看可选值`)
+    return {
+      width: custom.width, height: custom.height, frameRate: custom.frameRate,
+      ...custom.bitrateKbps === undefined ? {} : { bitrateKbps: custom.bitrateKbps },
+    }
+  }
 }

@@ -85,6 +85,11 @@ export class TaskManager {
   ): Promise<PollResult> {
     const controller = new AbortController()
     const startTime = Date.now()
+    // `A138` 修真缺陷：**已经 aborted** 的外部信号必须立刻取消，
+    // 否则会白跑到轮询超时才报错（实测浪费 8 秒）。
+    if (externalSignal?.aborted === true) {
+      throw new GenerationError('cancelled', '任务已取消（调用方信号已 abort）', false)
+    }
     const queryFn: TaskQueryFn = typeof query === 'function'
       ? query
       : (id, opts) => query.queryTask(id, opts)

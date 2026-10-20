@@ -25,6 +25,14 @@
  * @module dsh-image-video
  */
 
+import { parseRetentionPolicy } from './host/assembly.ts'
+import { join } from 'node:path'
+import { appendDiagnosticLog } from './host/diagnostics-log.ts'
+import { ProbeCache } from './media/probe-cache.ts'
+import { probeMediaSpec } from './media/render.ts'
+import { probeFfmpeg } from './media/ffmpeg.ts'
+import { sep } from 'node:path'
+import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -45,6 +53,8 @@ import { withTaskLedger } from './workbench/ledger.ts'
 import { GenerationRegistry } from './workbench/cancel.ts'
 import { WorkflowRunner, type GenerationTool } from './workbench/runner.ts'
 import { RenderRegistry } from './media/render-registry.ts'
+import { planRetention } from './media/retention.ts'
+import { listOutputs } from './workbench/outputs.ts'
 import { RenderService } from './media/render.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
@@ -141,6 +151,12 @@ export function apply(ctx: Context, config: Config): void {
   const diagnostics = new DiagnosticsCollector()
   const workbenchStore = new WorkbenchStore({ directory: resolveWorkbenchDirectory(outputsDir) })
 
+  // `A100`：诊断事件同时落盘（脱敏口径沿用 Collector；按 1MB × 3 份轮转）
+  const diagnosticLogPath = join(workbenchStore.directory, 'diagnostics.log')
+  const recordDiagnostic = (entry: { level: 'info' | 'warn' | 'error'; event: string; message?: string }): void => {
+    void appendDiagnosticLog({ path: diagnosticLogPath, entry: { at: new Date().toISOString(), ...entry } }).catch(() => undefined)
+  }
+
   // 在飞的生成任务：账本包装器按 taskId 注册可取消句柄，RPC 的 tasks/cancel 掐它。
   const generationRegistry = new GenerationRegistry()
 
@@ -191,6 +207,12 @@ export function apply(ctx: Context, config: Config): void {
   // 结构化日志（`T7-3`）：一行一个 JSON 事件，字段（taskId/runId/renderId/服务商/耗时）可串联
   const logEntry = (entry: Record<string, unknown>): void => {
     ctx.logger?.info?.(`image-video ${JSON.stringify(entry)}`)
+    // `A100`：同时落盘，便于事后排查（只写事件名与摘要，不写提示词/绝对路径）
+    recordDiagnostic({
+      level: entry.level === 'warn' || entry.level === 'error' ? entry.level : 'info',
+      event: typeof entry.event === 'string' ? entry.event : 'workbench',
+      ...typeof entry.message === 'string' ? { message: entry.message } : {},
+    })
   }
   const persistedDefaults = extractPersistedDefaults(config)
 
@@ -275,8 +297,38 @@ export function apply(ctx: Context, config: Config): void {
     // 用插件已经解析好的绝对目录，不要回落到可能是相对路径的 config 字段
     outputsDir,
   })
+  // `A38`：导出完成后给"保留建议"——只在配置了上限时计算，**只报告不删除**
+  const retentionHint = async (): Promise<{ files: number; bytes: number; removeCount: number; freedBytes: number; overQuota: boolean } | undefined> => {
+    const policy = parseRetentionPolicy(process.env)
+    if (policy === undefined) return undefined
+    const files = (await listOutputs(outputsDir)).map(file => ({
+      name: file.name, bytes: file.bytes, mtimeMs: Date.parse(file.modifiedAt ?? '') || 0,
+    }))
+    const plan = planRetention(files, {
+      ...policy.maxFiles === undefined ? {} : { maxFiles: policy.maxFiles },
+      ...policy.maxBytes === undefined ? {} : { maxBytes: policy.maxBytes },
+      protect: new Set(await workbenchStore.referencedAssetPaths()),
+    })
+    return {
+      files: files.length,
+      bytes: files.reduce((sum, file) => sum + file.bytes, 0),
+      removeCount: plan.removed.length,
+      freedBytes: plan.freedBytes,
+      overQuota: plan.overQuota,
+    }
+  }
+  // `A77`：素材探测缓存（同一素材重复探测不再起 ffmpeg 进程；素材变则自动失效）
+  const probeCache = new ProbeCache({
+    probe: async file => {
+      const available = await probeFfmpeg()
+      if (!available.available) return undefined
+      return probeMediaSpec(available.path ?? 'ffmpeg', file)
+    },
+  })
+
   const renderRegistry = new RenderRegistry({
     render: renderService,
+    retention: retentionHint,
     registerAsset: async job => {
       if (job.outputPath === undefined) return
       await workbenchStore.attachAsset({
@@ -304,6 +356,7 @@ export function apply(ctx: Context, config: Config): void {
     diagnostics,
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
       runner: workflowRunner, renders: renderRegistry,
+      probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
       // 下拉白名单由宿主下发：浏览器包不内置服务商名（`T2-11`）
@@ -314,6 +367,17 @@ export function apply(ctx: Context, config: Config): void {
   // 卸载时随 fiber 注销（回滚=摘掉这段注册）。
   for (const tool of createWorkbenchTools({
     store: workbenchStore, renders: renderRegistry, runner: workflowRunner, registry: generationRegistry,
+    outputsDir,
+    // `A63`：与 `assets/probe` 端点同一套边界（只允许 outputs 内或已登记素材）
+    probeAsset: async relative => {
+      const absolute = resolve(outputsDir, relative)
+      const known = new Set(await workbenchStore.referencedAssetPaths())
+      const inside = absolute === outputsDir || absolute.startsWith(`${outputsDir}${sep}`)
+      if (!inside && !known.has(relative)) return undefined
+      const probe = await probeFfmpeg()
+      if (!probe.available) return undefined
+      return probeMediaSpec(probe.path ?? 'ffmpeg', absolute)
+    },
   })) {
     ctx.tools.register(tool)
   }

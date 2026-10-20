@@ -11,16 +11,17 @@
  * **sha256 与字节数**，导入侧能校验；③ 源文件已经丢了就**如实记进 `missing`**，
  * 不假装导出成功。
  */
+import { PLUGIN_VERSION } from '../version.ts'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { WorkbenchStore } from './store.ts'
-import type { ResourceUsageRecord, AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
+import type { ExportPresetRecord, ResourceUsageRecord, AssetRecord, ResourceRecord, TaskRecord } from './records.ts'
 import type { TimelineRecord } from './timeline.ts'
 import type { WorkflowRecord } from './workflow.ts'
 
 /** 当前包格式版本。 */
-export const PACKAGE_FORMAT_VERSION = 2
+export const PACKAGE_FORMAT_VERSION = 3
 
 /** 清单里的一条资产（文件已复制进 `files/` 时带校验和）。 */
 export interface PackageAssetEntry {
@@ -52,6 +53,19 @@ export interface ProjectPackageManifest {
    * v1 包没有这个字段（导入时按空数组处理）。
    */
   readonly resourceUsage?: readonly ResourceUsageRecord[]
+  /** 用户自定义导出预设（`A53` / v3 新增）：导入时按名称去重后并入全局预设库。 */
+  readonly exportPresets?: readonly ExportPresetRecord[]
+  /** 自描述摘要（`A106`）：不导入包也能看出内容；与实测扫描结果对照可发现缺件。 */
+  readonly summary?: {
+    readonly projectName: string
+    readonly assets: number
+    readonly timelines: number
+    readonly workflows: number
+    readonly totalDurationMs: number
+    readonly missing: number
+    readonly exportedAt: string
+    readonly pluginVersion: string
+  }
   /** 导出时找不到的源文件（导入时会进"缺失清单"）。 */
   readonly missing: readonly string[]
 }
@@ -119,6 +133,19 @@ export async function exportProjectPackage(input: {
     resources: await store.listResources(projectId) as readonly ResourceRecord[],
     timelines: await store.listTimelines(projectId),
     resourceUsage: (await store.listResourceUsage({ projectId })).map(entry => ({ ...entry })),
+    // `A106`：自描述摘要（离线可读；与实测扫描结果对照能发现缺件）
+    summary: {
+      projectName: project.name,
+      assets: (await store.listAssets(projectId)).length,
+      timelines: (await store.listTimelines(projectId)).length,
+      workflows: (await store.listWorkflows(projectId)).length,
+      totalDurationMs: (await store.listTimelines(projectId)).reduce((longest, timeline) => Math.max(longest, timeline.tracks.reduce((end, track) => Math.max(end, track.clips.reduce((inner, clip) => Math.max(inner, clip.startMs + clip.durationMs), 0)), 0)), 0),
+      missing: 0,
+      exportedAt: new Date().toISOString(),
+      pluginVersion: PLUGIN_VERSION,
+    },
+    // `A53`：自定义导出预设随包走（全局库，导入侧按名称去重合并）
+    exportPresets: await store.listExportPresets(),
     workflows: await store.listWorkflows(projectId),
     tasks: await store.listTasks(100, projectId),
     missing,
@@ -181,7 +208,12 @@ export async function importProjectPackage(input: {
   }
   if (raw.project === undefined) throw new Error('包清单缺少 project 段')
 
-  const project = await store.createProject(`${raw.project.name}${input.nameSuffix ?? '（导入）'}`)
+  // 同一包重复导入不应产生**同名**项目（用户会分不清）：重名时依次加序号
+  const baseName = `${raw.project.name}${input.nameSuffix ?? '（导入）'}`
+  const taken = new Set((await store.listProjects()).map(candidate => candidate.name))
+  let uniqueName = baseName
+  for (let index = 2; taken.has(uniqueName); index += 1) uniqueName = `${baseName} ${index}`
+  const project = await store.createProject(uniqueName)
   await mkdir(outputsDir, { recursive: true })
 
   const missing: string[] = []
@@ -228,6 +260,18 @@ export async function importProjectPackage(input: {
     })
   }
 
+  // `A53`：把包里的自定义预设并入全局库（同名/非法跳过，不覆盖用户已有预设）
+  for (const preset of raw.exportPresets ?? []) {
+    try {
+      await store.saveExportPreset({
+        name: preset.name, width: preset.width, height: preset.height, frameRate: preset.frameRate,
+        ...preset.bitrateKbps === undefined ? {} : { bitrateKbps: preset.bitrateKbps },
+      })
+    } catch {
+      // 同名或规格非法：跳过这一条，不影响整包导入
+    }
+  }
+
   const usageEntries = (raw.resourceUsage ?? []).map(entry => ({ ...entry, projectId: project.id }))
   if (usageEntries.length > 0) await store.recordResourceUsage(usageEntries)
 
@@ -238,6 +282,8 @@ export async function importProjectPackage(input: {
       // `A26`：导出规格与响度开关必须随包一起恢复（早先漏传 → 导入后被重置成 720p30/关）
       ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat },
       ...timeline.normalizeLoudness === undefined ? {} : { normalizeLoudness: timeline.normalizeLoudness },
+      // `A53` 修：`A42` 的 burnLanguage 之前没随包恢复（导入后语言设置会丢）
+      ...timeline.burnLanguage === undefined ? {} : { burnLanguage: timeline.burnLanguage },
       tracks: rewritePaths(timeline.tracks, mapping),
     })
   }
@@ -360,4 +406,97 @@ export async function importResourcePackage(input: {
     imported += 1
   }
   return { imported, skipped, renamed, replaced }
+}
+
+/** 项目包预检结果（`A96`）：只读，不落地任何数据。 */
+export interface PackageInspection {
+  readonly formatVersion: number
+  readonly compatible: boolean
+  /** 不兼容时的原因。 */
+  readonly reason?: string
+  readonly project: { readonly name: string; readonly timelines: number; readonly assets: number }
+  /** 包里缺失的素材（导出时就已记录 + 交付时文件不在包里）。 */
+  readonly assets: { readonly total: number; readonly missing: readonly string[] }
+  /** 已经存在的同名项目（导入会自动加后缀，但先告知用户）。 */
+  readonly conflicts: readonly string[]
+  readonly warnings: readonly string[]
+  /** 包内自描述摘要（`A106`；旧包没有则为 undefined）。 */
+  readonly exportedSummary?: { readonly projectName: string; readonly assets: number; readonly timelines: number; readonly totalDurationMs: number; readonly pluginVersion: string }
+  /** 逐文件校验结果（`A110`；未要求校验时为 undefined）。 */
+  readonly verified?: boolean
+  /** 哈希对不上的文件（被改坏/篡改）。 */
+  readonly tampered?: readonly { readonly path: string; readonly expected: string; readonly actual: string }[]
+}
+
+/**
+ * 预检一个项目包（`A96`）：不写任何数据，只回答"能不能导 / 会有什么问题"。
+ * @param input - 包目录与工作台存储（查同名冲突）。
+ * @returns 预检结果。
+ * @throws {Error} 包目录没有 manifest.json 或 JSON 无法解析时。
+ */
+export async function inspectProjectPackage(input: {
+  packageDir: string
+  store: { listProjects(): Promise<Array<{ name: string }>> }
+  /** 逐文件重算 sha256（`A110`；默认关——包里可能有几百 MB）。 */
+  verifyFiles?: boolean
+}): Promise<PackageInspection> {
+  const manifestPath = join(input.packageDir, 'manifest.json')
+  const raw = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    formatVersion?: number
+    project?: { name?: string }
+    assets?: Array<{ file?: string; originPath?: string; sha256?: string }>
+    timelines?: unknown[]
+    missing?: string[]
+    summary?: { projectName: string; assets: number; timelines: number; totalDurationMs: number; pluginVersion: string }
+  }
+  const formatVersion = typeof raw.formatVersion === 'number' ? raw.formatVersion : 1
+  const warnings: string[] = []
+  const missing = [...(raw.missing ?? [])]
+  let delivered = 0
+  for (const entry of raw.assets ?? []) {
+    if (entry.file === undefined) {
+      if (entry.originPath !== undefined) missing.push(entry.originPath)
+      continue
+    }
+    const exists = await stat(join(input.packageDir, entry.file)).then(() => true).catch(() => false)
+    if (exists) delivered += 1
+    else if (entry.originPath !== undefined) missing.push(entry.originPath)
+  }
+  // `A110`：逐文件校验（仅当调用方要求）
+  let verified: boolean | undefined
+  let tampered: Array<{ path: string; expected: string; actual: string }> = []
+  if (input.verifyFiles === true) {
+    for (const entry of raw.assets ?? []) {
+      if (entry.file === undefined || entry.sha256 === undefined) continue
+      const expected = entry.sha256
+      const actual = await sha256File(join(input.packageDir, entry.file)).catch(() => undefined)
+      if (actual !== undefined && actual !== expected) {
+        tampered.push({ path: entry.originPath ?? entry.file, expected, actual })
+      }
+    }
+    verified = tampered.length === 0
+    if (tampered.length > 0) warnings.push(`有 ${tampered.length} 个素材与清单里的 sha256 不一致：包可能被改动或损坏`)
+  }
+  const compatible = formatVersion >= 1 && formatVersion <= PACKAGE_FORMAT_VERSION
+  const projectName = raw.project?.name ?? '未命名项目'
+  const conflicts = (await input.store.listProjects())
+    .map(project => project.name)
+    .filter(name => name === projectName || name.startsWith(`${projectName}（导入）`))
+  if (missing.length > 0) warnings.push(`有 ${missing.length} 个素材缺失：导入后这些片段会显示为缺失，需要重新生成或替换`)
+  // `A106`：包里声称的素材数与实测交付数不一致 → 包可能不完整/被改动过
+  if (raw.summary !== undefined && raw.summary.assets !== delivered) {
+    warnings.push(`包内摘要声称 ${raw.summary.assets} 个素材，实际交付 ${delivered} 个：包可能不完整`)
+  }
+  if (conflicts.length > 0) warnings.push(`已有 ${conflicts.length} 个同名项目：导入会自动加「（导入）」后缀`)
+  return {
+    formatVersion,
+    compatible,
+    ...compatible ? {} : { reason: `包格式 v${formatVersion} 高于当前支持的 v${PACKAGE_FORMAT_VERSION}：请升级插件后再导入` },
+    project: { name: projectName, timelines: (raw.timelines ?? []).length, assets: delivered },
+    assets: { total: (raw.assets ?? []).length, missing },
+    conflicts,
+    warnings,
+    ...raw.summary === undefined ? {} : { exportedSummary: raw.summary },
+    ...verified === undefined ? {} : { verified, tampered },
+  }
 }

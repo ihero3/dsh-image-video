@@ -10,6 +10,8 @@ export interface TimelineSnapshot {
     readonly exportFormat: TimelineExportFormat;
     /** 是否做响度归一化（`A20`）。 */
     readonly normalizeLoudness: boolean;
+    /** 只烧哪种语言的字幕（`A42`；缺省烧全部字幕轨）。 */
+    readonly burnLanguage?: string;
     readonly durationMs: number;
     readonly tracks: readonly TimelineTrack[];
 }
@@ -48,6 +50,10 @@ export interface RenderResult {
     readonly outputPath: string;
     readonly bytes: number;
     readonly durationMs: number;
+    /** 同时导出的字幕文件（`A120`；时间轴没有字幕片段时不存在）。 */
+    readonly subtitlePath?: string;
+    /** 成片缩略图（`A124`；抽第 1 秒的一帧）。 */
+    readonly thumbnailPath?: string;
 }
 /** 渲染失败的机器码。 */
 export type RenderErrorCode = 'MEDIA_FFMPEG_UNAVAILABLE' | 'MEDIA_FFMPEG_ENCODER_MISSING' | 'MEDIA_ASSET_MISSING' | 'MEDIA_TIMELINE_OVERLAP' | 'MEDIA_TIMELINE_EMPTY' | 'MEDIA_DISK_FULL' | 'MEDIA_ENCODER_UNSUPPORTED' | 'MEDIA_RENDER_FAILED' | 'MEDIA_RENDER_CANCELLED' | 'MEDIA_OUTPUT_INVALID';
@@ -91,6 +97,11 @@ export interface PlannedAudioTrack {
     readonly volume: number;
     /** 淡入淡出时长（毫秒，`A20`）。 */
     readonly fadeMs: number;
+    /** 相邻片段交叉淡化时长（毫秒，`A30`；0 = 普通拼接）。 */
+    readonly crossfadeMs: number;
+    /** 侧链压缩（`A33`）：被哪条轨触发，以及压低多少分贝。 */
+    readonly duckUnderTrackId?: string;
+    readonly duckingDb?: number;
     readonly segments: readonly VideolessSegment[];
 }
 /** 音轨片段（结构与画面片段一致，只是来源是音频文件）。 */
@@ -146,7 +157,17 @@ export declare class RenderService {
         signal?: AbortSignal;
         onProgress?: (progress: RenderProgress) => void;
         fileName?: string;
+        /** 封面帧位置（`A126`，毫秒；默认第 1 秒）。 */
+        thumbnailAtMs?: number;
+        /** 随片字幕格式（`A130`；默认 srt）。 */
+        subtitleFormat?: 'srt' | 'vtt';
     }): Promise<RenderResult>;
+    /**
+     * 抽一帧做缩略图（`A124`）：取第 1 秒（短片取中点），缩到 480 宽，输出 jpg。
+     * @param videoPath - 成片路径。
+     * @returns 缩略图路径；失败返回 undefined（不影响成片）。
+     */
+    private extractThumbnail;
 }
 /**
  * 用 `ffmpeg -i` 的输出探测产物规格（不依赖 ffprobe 单独安装）。
@@ -158,6 +179,7 @@ export declare function probeMediaSpec(ffmpegPath: string, file: string): Promis
     width?: number;
     height?: number;
     fps?: number;
+    durationMs?: number;
     hasAudio: boolean;
 } | undefined>;
 /** 用 `ffmpeg -i` 的输出量一下真实时长（不依赖 ffprobe 是否单独安装）。 */

@@ -39,6 +39,14 @@ export const CLIP_SPEED_RANGE = { min: 0.25, max: 4 } as const
 export const MAX_CLIP_FADE_MS = 2000
 /** 音频轨淡入淡出时长上限（毫秒，`A20`）。 */
 export const MAX_TRACK_FADE_MS = 5000
+/** 音频轨交叉淡化时长上限（毫秒，`A30`）。 */
+export const MAX_TRACK_CROSSFADE_MS = 3000
+/** 语言标记的合法长度范围（`A42`）。 */
+export const TRACK_LANGUAGE_RANGE = { min: 1, max: 16 } as const
+/** 侧链压低范围（分贝，`A33`）。 */
+export const DUCKING_DB_RANGE = { min: -30, max: 0 } as const
+/** 侧链压低缺省值（分贝，`A33`）。 */
+export const DEFAULT_DUCKING_DB = -12
 
 /** 时间轴上的一个片段。 */
 export interface TimelineClip {
@@ -81,8 +89,26 @@ export interface TimelineTrack {
   readonly muted?: boolean
   /** 轨道音量倍数（0–2；1 = 原音量，0 = 静音）。导出时按 `volume=` 应用。 */
   readonly volume?: number
+  /**
+   * 语言标记（`A42`，主要给字幕轨用，如 `zh` / `en`）：配合 `timeline.burnLanguage`
+   * 决定烧哪一条字幕轨，避免多语言字幕叠在一起。
+   */
+  readonly language?: string
   /** 音频轨淡入淡出时长（毫秒，0–5000；缺省无效果）。导出用 `afade` 实现（`A20`）。 */
   readonly fadeMs?: number
+  /**
+   * 相邻音频片段之间的**交叉淡化**时长（毫秒，0–3000；缺省 0 = 直接拼接）。
+   * 导出用 `acrossfade` 实现（`A30`）：两段重叠该时长，因此音轨总长会相应变短。
+   * 只对**首尾相接**的片段生效；中间有空档时回落到普通拼接。
+   */
+  readonly crossfadeMs?: number
+  /**
+   * 侧链压缩（`A33`）：本轨是"被压"的背景音乐，`duckUnderTrackId` 指向触发它的音轨
+   * （通常是旁白轨），旁白一响就把本轨压低 `duckingDb` 分贝。缺省不启用。
+   */
+  readonly duckUnderTrackId?: string
+  /** 侧链压低的分贝数（-30..0，缺省 -12；仅在 `duckUnderTrackId` 存在时生效）。 */
+  readonly duckingDb?: number
 }
 
 /**
@@ -172,6 +198,11 @@ export interface TimelineRecord {
   readonly burnSubtitles: boolean
   /** 导出规格（分辨率/帧率/码率）；缺省 720p30。 */
   readonly exportFormat?: TimelineExportFormat
+  /**
+   * 只烧哪一条语言的字幕轨（`A42`）：缺省时沿用老行为（烧所有字幕轨）。
+   * 设了但没有任何轨道匹配 → 校验器会报 `dangling-burn-language`。
+   */
+  readonly burnLanguage?: string
   /** 导出时做响度归一化（`loudnorm`，目标 -16 LUFS；`A20`）。缺省关。 */
   readonly normalizeLoudness?: boolean
   readonly createdAt: string
@@ -199,11 +230,17 @@ export function looksInlinedBytes(value: string): boolean {
   return /[A-Za-z0-9+/]{512,}={0,2}/.test(value)
 }
 
-function numberField(value: unknown, what: string, options: { min: number; max: number }): number {
+function numberField(
+  value: unknown,
+  what: string,
+  options: { min: number; max: number; integer?: boolean },
+): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${what} must be a finite number`)
   if (value < options.min || value > options.max) {
     throw new Error(`${what} must be between ${options.min} and ${options.max}`)
   }
+  // 毫秒类字段取整；倍数类（如 speed）必须保留小数，否则 1.5 会被悄悄变成 2（`A29` 修的 bug）
+  if (options.integer === false) return Math.round(value * 100) / 100
   return Math.round(value)
 }
 
@@ -245,7 +282,7 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       // 变速 / 淡入淡出 / 裁剪（`A13`）：越界一律拒，不做静默截断
       const speed = clip.speed === undefined
         ? undefined
-        : numberField(clip.speed, `clip ${id} speed`, { min: CLIP_SPEED_RANGE.min, max: CLIP_SPEED_RANGE.max })
+        : numberField(clip.speed, `clip ${id} speed`, { min: CLIP_SPEED_RANGE.min, max: CLIP_SPEED_RANGE.max, integer: false })
       const fade = clip.fade === undefined
         ? undefined
         : numberField(clip.fade, `clip ${id} fade`, { min: 0, max: MAX_CLIP_FADE_MS })
@@ -320,6 +357,31 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
     if (track.fadeMs !== undefined) {
       fadeMs = Math.round(numberField(track.fadeMs, `track ${trackIndex} fadeMs`, { min: 0, max: MAX_TRACK_FADE_MS }))
     }
+    let crossfadeMs: number | undefined
+    if (track.crossfadeMs !== undefined) {
+      crossfadeMs = Math.round(numberField(track.crossfadeMs, `track ${trackIndex} crossfadeMs`, { min: 0, max: MAX_TRACK_CROSSFADE_MS }))
+    }
+    let language: string | undefined
+    if (track.language !== undefined) {
+      if (typeof track.language !== 'string' || track.language.trim() === '') {
+        throw new Error(`track ${trackIndex} language must be a non-empty string`)
+      }
+      const trimmed = track.language.trim()
+      if (trimmed.length > TRACK_LANGUAGE_RANGE.max) throw new Error(`track ${trackIndex} language is too long`)
+      language = trimmed
+    }
+
+    let duckUnderTrackId: string | undefined
+    if (track.duckUnderTrackId !== undefined) {
+      if (typeof track.duckUnderTrackId !== 'string' || track.duckUnderTrackId === '') {
+        throw new Error(`track ${trackIndex} duckUnderTrackId must be a non-empty track id`)
+      }
+      duckUnderTrackId = track.duckUnderTrackId
+    }
+    let duckingDb: number | undefined
+    if (track.duckingDb !== undefined) {
+      duckingDb = numberField(track.duckingDb, `track ${trackIndex} duckingDb`, { min: DUCKING_DB_RANGE.min, max: DUCKING_DB_RANGE.max, integer: false })
+    }
     return {
       id: typeof track.id === 'string' && track.id !== '' ? track.id : `track-${trackIndex + 1}`,
       kind: kind as TrackKind,
@@ -327,6 +389,10 @@ export function normalizeTimelineTracks(raw: unknown): TimelineTrack[] {
       ...track.muted === true ? { muted: true } : {},
       ...volume === undefined ? {} : { volume },
       ...fadeMs === undefined ? {} : { fadeMs },
+      ...crossfadeMs === undefined ? {} : { crossfadeMs },
+      ...language === undefined ? {} : { language },
+      ...duckUnderTrackId === undefined ? {} : { duckUnderTrackId },
+      ...duckingDb === undefined ? {} : { duckingDb },
     }
   })
   return tracks
@@ -438,4 +504,31 @@ export function transitionOverlapMs(clip: TimelineClip, previous: TimelineClip |
 export function transitionDurationMs(clip: TimelineClip): number {
   const value = clip.transitionDurationMs ?? DEFAULT_CLIP_TRANSITION_MS
   return Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, Math.round(value)))
+}
+
+/**
+ * 复制一条时间轴为副本（`A86`）：轨道/片段/效果/规格/字幕语言全部保留，
+ * **片段 id 与时间轴 id 重新生成**（同一条时间轴内 id 必须唯一），素材路径**共享**
+ * （不复制文件，副本与原版引用同一批素材）。
+ *
+ * @param timeline - 原时间轴。
+ * @param options - 新 id 与新名字。
+ * @returns 副本（未保存）。
+ */
+export function duplicateTimeline(
+  timeline: TimelineRecord,
+  options: { newId: string; newName: string; newClipId: (prefix: string, index: number) => string },
+): TimelineRecord {
+  return {
+    ...timeline,
+    id: options.newId,
+    name: options.newName,
+    tracks: timeline.tracks.map((track, trackIndex) => ({
+      ...track,
+      clips: track.clips.map((clip, clipIndex) => ({
+        ...clip,
+        id: options.newClipId(`${track.kind[0] ?? 'c'}${trackIndex}`, clipIndex),
+      })),
+    })),
+  }
 }
