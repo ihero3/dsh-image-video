@@ -19,8 +19,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, ResourceUsageRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchOptions } from '../workbench-contract.ts'
-import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
-import { activeClipAt, timelineDurationMs, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind } from '../workbench/timeline.ts'
+import { defaultParams, WORKFLOW_TEMPLATES, type NodeParamValue, type WorkflowRunRecord, type WorkflowRecord } from '../workbench/workflow.ts'
+import {
+  activeClipAt, CLIP_SPEED_RANGE, MAX_CLIP_FADE_MS, MAX_CLIP_TRANSITION_MS, MAX_TRACK_FADE_MS,
+  timelineDurationMs, type ClipTransition, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind,
+} from '../workbench/timeline.ts'
+import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
+import { planSubtitleClips } from '../workbench/subtitles.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
@@ -30,7 +35,7 @@ import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { WorkbenchApi } from './api.ts'
+import type { WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -236,6 +241,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [timelineState, setTimelineState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [clipAssetPath, setClipAssetPath] = useState('')
   const [subtitleDraft, setSubtitleDraft] = useState('')
+  const [subtitleBatchDraft, setSubtitleBatchDraft] = useState('')
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<WorkbenchDiagnostics | undefined>(undefined)
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
   const [ffmpeg, setFfmpeg] = useState<FfmpegProbe | undefined>(undefined)
@@ -389,6 +397,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }, [])
 
+  /** 拉一次诊断快照（`B15` 诊断面板；不拦全局 busy，失败静默丢给面板显示）。 */
+  const loadDiagnostics = useCallback(async (): Promise<void> => {
+    try {
+      setDiagnostics(await apiRef.current.getDiagnostics())
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadDiagnostics()
+    // 宿主诊断随渲染/任务变化，但避免高频轮询；只挂载时拉一次，刷新走按钮
+  }, [loadDiagnostics])
+
   useEffect(() => {
     if (mode !== 'timeline') return
     let stale = false
@@ -432,6 +454,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           const stored = await apiRef.current.saveTimeline({
             id: pending.id, projectId: pending.projectId, name: pending.name,
             tracks: pending.tracks, frameRate: pending.frameRate, burnSubtitles: pending.burnSubtitles,
+            exportFormat: pending.exportFormat, normalizeLoudness: pending.normalizeLoudness,
           })
           setTimeline(stored)
           setTimelineState('saved')
@@ -487,6 +510,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setTimelineState('dirty')
   }
 
+  /** 时间轴通用改法：换掉某个片段（`B14` clip 控件共用）。 */
+  const patchClip = (trackId: string, clipId: string, update: (clip: TimelineClip) => TimelineClip): void => {
+    patchTrack(trackId, track => ({
+      ...track,
+      clips: track.clips.map(clip => (clip.id === clipId ? update(clip) : clip)),
+    }))
+  }
+
   /** 末尾追加一个 clip（起点接在该轨当前末尾）。 */
   const appendClip = (trackId: string, clip: { assetPath?: string; text?: string }): void => {
     const stamp = new Date().toISOString()
@@ -503,6 +534,53 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       }
     })
     void stamp
+  }
+
+  /**
+   * 批量字幕（`B15`）：一段台词按句切分、按字数分配时间，一键铺到字幕轨末尾。
+   * 复用域层 `planSubtitleClips`（与 Agent 的 `timeline add-subtitles` 同一套规则）。
+   */
+  const applyBatchSubtitles = (trackId: string, script: string): void => {
+    if (timeline === undefined) return
+    const subtitleTrack = timeline.tracks.find(track => track.kind === 'subtitle')
+    const trackEnd = subtitleTrack === undefined || subtitleTrack.clips.length === 0
+      ? 0
+      : Math.max(...subtitleTrack.clips.map(clip => clip.startMs + clip.durationMs))
+    const totalMs = Math.max(trackEnd + 1000, timelineDurationMs(timeline.tracks))
+    const clips = planSubtitleClips(script.trim(), { startMs: trackEnd, endMs: Math.max(trackEnd + 1000, totalMs) })
+    if (clips.length === 0) {
+      setNotice({ text: t('subtitlesApply'), tone: 'error' })
+      return
+    }
+    patchTrack(trackId, track => ({ ...track, clips: [...track.clips, ...clips] }))
+  }
+
+  /**
+   * 把内置模板实例化成工作流记录（`B15` 模板市场）。
+   * 两类模板（`WORKFLOW_TEMPLATES` 的 `WorkflowTemplate` 与 `DRAMA_TEMPLATES` 的 `DramaTemplate`）
+   * 结构一致：节点 `kind + params?`（缺省参数用 `defaultParams` 补）＋ 下标连线。
+   */
+  const instantiateAnyTemplate = (
+    template: { id: string; labelKey: string; describe?: string; nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]; edges: readonly (readonly [number, number])[] },
+  ): WorkflowRecord => {
+    const stamp = new Date().toISOString()
+    const title = template.describe?.split('：')[0] ?? template.id
+    const id = newWorkbenchId('wfl')
+    return {
+      schemaVersion: 1,
+      id,
+      projectId: activeProject?.id ?? '',
+      name: title,
+      nodes: template.nodes.map((node, index) => ({
+        id: `${id}-${index}`,
+        kind: node.kind,
+        position: { x: (index % 4) * 220, y: Math.floor(index / 4) * 160 },
+        params: node.params ?? defaultParams(node.kind),
+      })),
+      edges: template.edges.map(([from, to]) => ({ id: `${id}-${from}-${to}`, source: `${id}-${from}`, target: `${id}-${to}` })),
+      createdAt: stamp,
+      updatedAt: stamp,
+    }
   }
 
   // ============ B5 时间轴交互：拖拽入轨 / 片段移动 / 手柄 / 播放 ============
@@ -1304,12 +1382,50 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <span className="iv-pane-tile"><Icon name="flow" size={13} /></span>
                     <h3 className="iv-pane-title">{t('paneCanvas')}</h3>
                     <div className="iv-pane-actions">
+                      <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
+                        aria-label={t('templateMarket')} aria-expanded={templateOpen}
+                        data-workflow-template-toggle="true"
+                        onClick={() => { setTemplateOpen(open => !open) }}>
+                        <Icon name="sparkles" size={11} />{t('templateMarket')}
+                      </button>
                       <span className={saveChipClass(workflowState)} data-workflow-save={workflowState} role="status">
                         <i className="iv-dot" aria-hidden="true" />
                         {t(workflowState === 'dirty' ? 'saveDirty' : workflowState === 'saving' ? 'saveSaving' : workflowState === 'failed' ? 'saveFailed' : 'saveSaved')}
                       </span>
                     </div>
                   </div>
+                  {templateOpen
+                    ? (
+                      <div className="iv-tpl" data-workflow-template-market="true">
+                        {([...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES] as readonly {
+                          id: string; labelKey: string; describe?: string
+                          nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]
+                          edges: readonly (readonly [number, number])[]
+                        }[]).map(template => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className="iv-tpl-card"
+                            data-workflow-template={template.id}
+                            onClick={() => {
+                              if (activeProject === undefined) return
+                              setWorkflow(instantiateAnyTemplate(template))
+                              setWorkflowState('dirty')
+                              setTemplateOpen(false)
+                            }}>
+                            <Icon name="sparkles" size={12} />
+                            <span className="iv-tpl-name">
+                              {template.id === 'drama-series' ? t('templateDramaSeries') : t(template.labelKey as WorkbenchLocaleKey)}
+                            </span>
+                            <span className="iv-tpl-desc">{template.describe ?? ''}</span>
+                          </button>
+                        ))}
+                        {WORKFLOW_TEMPLATES.length + DRAMA_TEMPLATES.length === 0
+                          ? <p className="iv-meta">{t('templateMarketEmpty')}</p>
+                          : null}
+                      </div>
+                    )
+                    : null}
                   <WorkflowCanvas
                     record={workflow}
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
@@ -1410,6 +1526,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             setTimelineState('dirty')
                           }} />
                         {t('burnSubtitles')}
+                      </label>
+                      <label className="iv-check">
+                        <input type="checkbox" data-timeline-loudness="true" checked={timeline.normalizeLoudness === true}
+                          aria-label={t('normalizeLoudness')}
+                          onChange={event => {
+                            const normalizeLoudness = event.target.checked
+                            setTimeline(current => current === undefined ? current : { ...current, normalizeLoudness })
+                            setTimelineState('dirty')
+                          }} />
+                        {t('normalizeLoudness')}
                       </label>
                       <span className={saveChipClass(timelineState)} data-timeline-save={timelineState} role="status">
                         <i className="iv-dot" aria-hidden="true" />
@@ -1595,6 +1721,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <div className="iv-t-head">
                             <span className="micro">{t(trackIdKey(track.kind))}</span>
                             <span className="iv-t-kind">{t(trackKindKey(track.kind))}</span>
+                            {track.kind === 'audio'
+                              ? (
+                                <label className="iv-t-fade">
+                                  <span className="micro">{t('trackFade')}</span>
+                                  <input type="number" className="iv-input" min={0} max={MAX_TRACK_FADE_MS} step={50}
+                                    value={track.fadeMs ?? 0} aria-label={t('trackFade')} title={t('trackFade')} data-timeline-track-fade={track.fadeMs ?? 0}
+                                    onChange={event => {
+                                      const fadeMs = Number(event.target.value)
+                                      patchTrack(track.id, current => ({ ...current, fadeMs: Math.max(0, Math.min(MAX_TRACK_FADE_MS, fadeMs)) }))
+                                    }} />
+                                  <span className="micro">ms</span>
+                                </label>
+                              )
+                              : null}
                           </div>
                           <div
                             className={`iv-t-lane${dropTrackId === track.id ? ' iv-t-lane--drop' : ''}`}
@@ -1671,11 +1811,89 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                         <input type="number" className="iv-input" value={clip.durationMs} aria-label={`${t('clipDuration')} ${clip.id}`}
                                           onChange={event => {
                                             const durationMs = Number(event.target.value)
-                                            patchTrack(track.id, current => ({
-                                              ...current,
-                                              clips: current.clips.map(item => (item.id === clip.id ? { ...item, durationMs } : item)),
-                                            }))
+                                            patchClip(track.id, clip.id, item => ({ ...item, durationMs }))
                                           }} />
+                                        {track.kind === 'subtitle'
+                                          ? null
+                                          : (
+                                            <>
+                                              <input type="number" className="iv-input" min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
+                                                value={clip.speed ?? 1} aria-label={`${t('clipSpeed')} ${clip.id}`} title={t('clipSpeed')}
+                                                onChange={event => {
+                                                  const speed = Number(event.target.value)
+                                                  patchClip(track.id, clip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
+                                                }} />
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
+                                                value={clip.fade ?? 0} aria-label={`${t('clipFade')} ${clip.id}`} title={t('clipFade')}
+                                                onChange={event => {
+                                                  const fade = Number(event.target.value)
+                                                  patchClip(track.id, clip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
+                                                }} />
+                                              {track.kind === 'video'
+                                                ? (
+                                                  <>
+                                                    <select className="iv-select"
+                                                      value={clip.transition ?? ''} aria-label={`${t('clipTransition')} ${clip.id}`} title={t('clipTransition')}
+                                                      onChange={event => {
+                                                        const transition = event.target.value === '' ? undefined : event.target.value as ClipTransition
+                                                        patchClip(track.id, clip.id, item => ({ ...item, ...transition === undefined ? { transition: undefined } : { transition } }))
+                                                      }}>
+                                                      <option value="">{t('none')}</option>
+                                                      <option value="fade">{t('transitionFade')}</option>
+                                                      <option value="wipeleft">{t('transitionWipeleft')}</option>
+                                                      <option value="circleopen">{t('transitionCircleopen')}</option>
+                                                    </select>
+                                                    {clip.transition === undefined
+                                                      ? null
+                                                      : (
+                                                        <input type="number" className="iv-input" min={0} max={MAX_CLIP_TRANSITION_MS} step={50}
+                                                          value={clip.transitionDurationMs ?? 400}
+                                                          aria-label={`${t('clipTransitionDuration')} ${clip.id}`} title={t('clipTransitionDuration')}
+                                                          onChange={event => {
+                                                            const transitionDurationMs = Number(event.target.value)
+                                                            patchClip(track.id, clip.id, item => ({ ...item, transitionDurationMs: Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, transitionDurationMs)) }))
+                                                          }} />
+                                                      )}
+                                                    {clip.crop === undefined
+                                                      ? (
+                                                        <button type="button" className="iv-btn iv-btn--sm"
+                                                          aria-label={`${t('clipCrop')} ${clip.id}`} title={t('clipCrop')}
+                                                          onClick={event => {
+                                                            event.stopPropagation()
+                                                            patchClip(track.id, clip.id, item => ({ ...item, crop: { x: 0, y: 0, width: 1920, height: 1080 } }))
+                                                          }}>
+                                                          <Icon name="sliders" size={11} />
+                                                        </button>
+                                                      )
+                                                      : (
+                                                        <>
+                                                          <input type="number" className="iv-input" min={0} value={clip.crop.x}
+                                                            aria-label={`${t('clipCropX')} ${clip.id}`} title={t('clipCropX')}
+                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
+                                                          <input type="number" className="iv-input" min={0} value={clip.crop.y}
+                                                            aria-label={`${t('clipCropY')} ${clip.id}`} title={t('clipCropY')}
+                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
+                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.width}
+                                                            aria-label={`${t('clipCropW')} ${clip.id}`} title={t('clipCropW')}
+                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
+                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.height}
+                                                            aria-label={`${t('clipCropH')} ${clip.id}`} title={t('clipCropH')}
+                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
+                                                          <button type="button" className="iv-btn iv-btn--sm"
+                                                            aria-label={`${t('clipCropRemove')} ${clip.id}`} title={t('clipCropRemove')}
+                                                            onClick={event => {
+                                                              event.stopPropagation()
+                                                              patchClip(track.id, clip.id, item => ({ ...item, crop: undefined }))
+                                                            }}>
+                                                            <Icon name="x" size={11} />
+                                                          </button>
+                                                        </>
+                                                      )}
+                                                  </>
+                                                )
+                                                : null}
+                                            </>
+                                          )}
                                         {track.kind === 'subtitle'
                                           ? (
                                             <>
@@ -1740,17 +1958,31 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               )}
                             {track.kind === 'subtitle'
                               ? (
-                                <div className="iv-add-row">
-                                  <input className="iv-input" style={{ flex: 1, minWidth: '110px' }}
-                                    placeholder={t('subtitlePlaceholder')} aria-label={t('subtitlePlaceholder')}
-                                    value={subtitleDraft}
-                                    onChange={event => { setSubtitleDraft(event.target.value) }} />
-                                  <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleDraft.trim() === ''}
-                                    aria-label={t('addSubtitle')}
-                                    onClick={() => { appendClip(track.id, { text: subtitleDraft.trim() }); setSubtitleDraft('') }}>
-                                    <Icon name="plus" />{t('addSubtitle')}
-                                  </button>
-                                </div>
+                                <>
+                                  <div className="iv-add-row">
+                                    <input className="iv-input" style={{ flex: 1, minWidth: '110px' }}
+                                      placeholder={t('subtitlePlaceholder')} aria-label={t('subtitlePlaceholder')}
+                                      value={subtitleDraft}
+                                      onChange={event => { setSubtitleDraft(event.target.value) }} />
+                                    <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleDraft.trim() === ''}
+                                      aria-label={t('addSubtitle')}
+                                      onClick={() => { appendClip(track.id, { text: subtitleDraft.trim() }); setSubtitleDraft('') }}>
+                                      <Icon name="plus" />{t('addSubtitle')}
+                                    </button>
+                                  </div>
+                                  <div className="iv-add-row" data-timeline-subtitles-batch="true">
+                                    <textarea className="iv-input" rows={2} style={{ flex: 1, minWidth: '140px', resize: 'vertical' }}
+                                      placeholder={t('subtitlesBatchPlaceholder')} aria-label={t('subtitlesBatchPlaceholder')}
+                                      data-timeline-subtitles-batch-input="true"
+                                      value={subtitleBatchDraft}
+                                      onChange={event => { setSubtitleBatchDraft(event.target.value) }} />
+                                    <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleBatchDraft.trim() === ''}
+                                      aria-label={t('subtitlesBatch')} data-timeline-subtitles-batch-apply="true"
+                                      onClick={() => { applyBatchSubtitles(track.id, subtitleBatchDraft); setSubtitleBatchDraft('') }}>
+                                      <Icon name="subtitle" />{t('subtitlesBatch')}
+                                    </button>
+                                  </div>
+                                </>
                               )
                               : (
                                 <div className="iv-add-row">
@@ -2199,6 +2431,54 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </li>
                   )} />
                 )}
+              </div>
+              </PaneBoundary>
+            </section>
+
+            <section className="iv-pane" data-workbench-pane="paneDiagnostics" data-workbench-planned="false">
+              <PaneBoundary label={t('paneDiagnostics')} t={t}>
+              <div className="iv-pane-head">
+                <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
+                <h3 className="iv-pane-title">{t('paneDiagnostics')}</h3>
+                <div className="iv-pane-actions">
+                  <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
+                    aria-label={t('diagRefresh')} onClick={() => { void loadDiagnostics() }}>
+                    <Icon name="refresh" size={11} />{t('diagRefresh')}
+                  </button>
+                </div>
+              </div>
+              <div className="iv-diag" data-diagnostics-panel="true">
+                {diagnostics === undefined
+                  ? <p className="iv-meta">…</p>
+                  : (
+                    <>
+                      <div className="iv-diag-row">
+                        <span className="iv-diag-k">{t('diagOutputs')}</span>
+                        <span className="iv-diag-v">
+                          {diagnostics.outputs.files} files · {formatBytes(diagnostics.outputs.bytes)}
+                          · {diagnostics.outputs.referenced} {t('resourceUsedBy').toLowerCase()}
+                          {diagnostics.outputs.oldestAt === undefined ? '' : ` · ${clockTime(diagnostics.outputs.oldestAt)} ~ ${clockTime(diagnostics.outputs.newestAt ?? '')}`}
+                        </span>
+                      </div>
+                      <div className="iv-diag-row">
+                        <span className="iv-diag-k">{t('diagRenders')}</span>
+                        <span className="iv-diag-v">
+                          {diagnostics.renders.running} running · {diagnostics.renders.queued} queued
+                          {diagnostics.renders.stats === undefined
+                            ? ''
+                            : ` · ${t('diagRenderFinished')} ${diagnostics.renders.stats.finished} · ${t('diagRenderFailed')} ${diagnostics.renders.stats.failed}${diagnostics.renders.stats.durationMs === undefined ? '' : ` · ${t('diagRenderP50')} ${diagnostics.renders.stats.durationMs.p50}ms / ${t('diagRenderP90')} ${diagnostics.renders.stats.durationMs.p90}ms`}`}
+                        </span>
+                      </div>
+                      <div className="iv-diag-row">
+                        <span className="iv-diag-k">{t('diagErrors')}</span>
+                        <span className="iv-diag-v">
+                          {diagnostics.errors.errorCount === 0
+                            ? t('diagErrorsNone')
+                            : `${diagnostics.errors.errorCount}${diagnostics.errors.errors.length === 0 ? '' : ` · ${diagnostics.errors.errors[0]?.message ?? ''}`}`}
+                        </span>
+                      </div>
+                    </>
+                  )}
               </div>
               </PaneBoundary>
             </section>

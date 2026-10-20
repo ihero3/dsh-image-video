@@ -229,6 +229,7 @@ export function fakeApi(options: {
         burnSubtitles: input.burnSubtitles ?? existing?.burnSubtitles ?? true,
         tracks: input.tracks as TimelineTrack[], createdAt: existing?.createdAt ?? stamp, updatedAt: stamp,
         ...input.exportFormat === undefined ? {} : { exportFormat: input.exportFormat },
+        ...input.normalizeLoudness === undefined ? {} : { normalizeLoudness: input.normalizeLoudness },
       }
       const index = timelines.findIndex(row => row.id === record.id)
       if (index < 0) timelines.push(record)
@@ -297,6 +298,23 @@ export function fakeApi(options: {
       return updated
     },
     listOutputs: async () => { calls.push('outputs/list'); return [OUTPUT_IMAGE, OUTPUT_VIDEO] },
+    getDiagnostics: async () => {
+      calls.push('diagnostics')
+      return {
+        plugin: { name: 'dsh-image-video', version: '0.3.1' },
+        provider: 'threerouter', outputsDir: '/tmp/outputs',
+        data: { projects: 1, assets: 1, tasks: 0, resources: 0, runningRuns: 0, writeCount: 1, fileBytes: 2048 },
+        renders: {
+          running: 0, queued: 0,
+          recent: [],
+          stats: { finished: 3, failed: 0, cancelled: 1, durationMs: { p50: 1000, p90: 2000 } },
+        },
+        runs: { running: 0 },
+        cache: { nodeResults: 0 },
+        outputs: { files: 2, bytes: 4_098_048, referenced: 1, oldestAt: '2026-10-14T09:00:00.000Z', newestAt: '2026-10-14T10:00:00.000Z' },
+        errors: { errors: [], errorCount: 0 },
+      }
+    },
   }
   return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, exportOptions: () => lastExportOptions }
 }

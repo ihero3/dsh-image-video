@@ -26,6 +26,30 @@ export interface TimelineExportOptions {
   aspect?: string
 }
 
+/** 诊断快照（`A9`）：出问题不用翻日志。结构与宿主 `diagnostics` 端点对齐。 */
+export interface WorkbenchDiagnostics {
+  readonly plugin: { readonly name: string; readonly version: string }
+  readonly provider: string
+  readonly outputsDir: string
+  readonly data: Record<string, unknown>
+  readonly renders: {
+    readonly running: number
+    readonly queued: number
+    readonly recent: readonly { readonly id: string; readonly status: string; readonly percent: number; readonly queued: boolean }[]
+    readonly stats?: { readonly finished: number; readonly failed: number; readonly cancelled: number; readonly durationMs?: { readonly p50: number; readonly p90: number } }
+  }
+  readonly runs: { readonly running: number }
+  readonly cache: { readonly nodeResults?: number }
+  readonly outputs: {
+    readonly files: number
+    readonly bytes: number
+    readonly referenced: number
+    readonly oldestAt?: string
+    readonly newestAt?: string
+  }
+  readonly errors: { readonly errors: readonly { readonly source: string; readonly code?: string; readonly message: string; readonly at: string }[]; readonly errorCount: number }
+}
+
 /** What the workbench UI may ask the host (phase 2, first slice). */
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
@@ -87,6 +111,8 @@ export interface WorkbenchApi {
     tracks: unknown
     frameRate?: number
     burnSubtitles?: boolean
+    exportFormat?: TimelineRecord['exportFormat']
+    normalizeLoudness?: boolean
   }) => Promise<TimelineRecord>
   /** Remove one timeline document. */
   removeTimeline: (id: string) => Promise<boolean>
@@ -118,6 +144,8 @@ export interface WorkbenchApi {
   assignTask: (id: string, projectId: string) => Promise<TaskRecord>
   /** Newest media files under the output directory. */
   listOutputs: (limit?: number) => Promise<OutputFile[]>
+  /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
+  getDiagnostics: () => Promise<WorkbenchDiagnostics>
 }
 
 /**
@@ -191,5 +219,6 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
+    getDiagnostics: () => call<WorkbenchDiagnostics>('diagnostics'),
   }
 }

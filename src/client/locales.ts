@@ -88,7 +88,6 @@ export type WorkbenchLocaleKey =
   | 'playhead'
   | 'previewNote'
   | 'previewIdle'
-  | 'previewTitle'
   | 'burnSubtitles'
   | 'pickAsset'
   | 'timelineTitle'
@@ -107,7 +106,6 @@ export type WorkbenchLocaleKey =
   | 'templateCopyToVideo'
   | 'templateApply'
   | 'templateTitle'
-  | 'runHistory'
   | 'runArtifacts'
   | 'statusSkipped'
   | 'runNone'
@@ -123,7 +121,6 @@ export type WorkbenchLocaleKey =
   | 'issueRequired'
   | 'validationOk'
   | 'validationTitle'
-  | 'canvasSaved'
   | 'compacted'
   | 'compactAssets'
   | 'paneCanvas'
@@ -152,7 +149,6 @@ export type WorkbenchLocaleKey =
   | 'canvasPalette'
   | 'canvasAdd'
   | 'canvasParams'
-  | 'canvasDeleteNode'
   | 'canvasFit'
   | 'canvasEmpty'
   | 'canvasPlannedTag'
@@ -206,7 +202,6 @@ export type WorkbenchLocaleKey =
   | 'heroStepChat'
   | 'heroStepOutputs'
   | 'heroStepFile'
-  | 'palettePlanned'
   | 'railAssets'
   | 'railTasks'
   | 'railDefaults'
@@ -233,6 +228,37 @@ export type WorkbenchLocaleKey =
   | 'clipResizeStart'
   | 'clipResizeEnd'
   | 'fps'
+  | 'clipSpeed'
+  | 'clipFade'
+  | 'clipTransition'
+  | 'clipTransitionDuration'
+  | 'clipCrop'
+  | 'clipCropX'
+  | 'clipCropY'
+  | 'clipCropW'
+  | 'clipCropH'
+  | 'clipCropRemove'
+  | 'trackFade'
+  | 'normalizeLoudness'
+  | 'transitionFade'
+  | 'transitionWipeleft'
+  | 'transitionCircleopen'
+  | 'subtitlesBatch'
+  | 'subtitlesBatchPlaceholder'
+  | 'subtitlesApply'
+  | 'templateMarket'
+  | 'templateMarketEmpty'
+  | 'templateDramaSeries'
+  | 'paneDiagnostics'
+  | 'diagOutputs'
+  | 'diagRenders'
+  | 'diagRenderP50'
+  | 'diagRenderP90'
+  | 'diagRenderFinished'
+  | 'diagRenderFailed'
+  | 'diagErrors'
+  | 'diagErrorsNone'
+  | 'diagRefresh'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -325,7 +351,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   playhead: 'Playhead',
   previewNote: 'Sequence preview: picks the clip at the playhead, no transcoding. Export may differ by a frame or two.',
   previewIdle: 'No clip at this time',
-  previewTitle: 'Sequence preview',
   burnSubtitles: 'Burn subtitles into the video',
   pickAsset: 'Asset',
   timelineTitle: 'Timeline',
@@ -344,7 +369,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   templateCopyToVideo: 'Copy -> storyboard -> image -> video',
   templateApply: 'Apply template',
   templateTitle: 'Template',
-  runHistory: 'History',
   runArtifacts: 'artifacts',
   statusSkipped: 'Skipped',
   runNone: 'No run yet',
@@ -360,7 +384,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   issueRequired: 'required parameter is empty',
   validationOk: 'Graph is runnable',
   validationTitle: 'Graph check',
-  canvasSaved: 'Canvas saved',
   compacted: 'Merged duplicate records',
   compactAssets: 'Merge duplicate records',
   paneCanvas: 'Workflow canvas',
@@ -389,7 +412,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasPalette: 'Node library',
   canvasAdd: 'Add to canvas',
   canvasParams: 'Node parameters',
-  canvasDeleteNode: 'Delete node',
   canvasFit: 'Fit view',
   canvasEmpty: 'Add nodes from the library on the left',
   canvasPlannedTag: 'not available',
@@ -443,7 +465,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   heroStepChat: 'Generate in chat',
   heroStepOutputs: 'Lands in outputs',
   heroStepFile: 'File into project',
-  palettePlanned: 'Planned',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railDefaults: 'Effective defaults',
@@ -470,6 +491,37 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   clipResizeStart: 'Drag to change clip start',
   clipResizeEnd: 'Drag to change clip duration',
   fps: 'FPS',
+  clipSpeed: 'Speed',
+  clipFade: 'Fade (ms)',
+  clipTransition: 'Transition',
+  clipTransitionDuration: 'Transition duration (ms)',
+  clipCrop: 'Crop',
+  clipCropX: 'Crop X',
+  clipCropY: 'Crop Y',
+  clipCropW: 'Crop width',
+  clipCropH: 'Crop height',
+  clipCropRemove: 'Remove crop',
+  trackFade: 'Fade',
+  normalizeLoudness: 'Normalize loudness',
+  transitionFade: 'Fade',
+  transitionWipeleft: 'Wipe left',
+  transitionCircleopen: 'Circle open',
+  subtitlesBatch: 'Batch subtitles',
+  subtitlesBatchPlaceholder: 'Paste a script — auto-split into timed subtitles',
+  subtitlesApply: 'Lay subtitles',
+  templateMarket: 'Template market',
+  templateMarketEmpty: 'Pick a template to scaffold a workflow',
+  templateDramaSeries: 'Drama series (single episode)',
+  paneDiagnostics: 'Diagnostics',
+  diagOutputs: 'Outputs',
+  diagRenders: 'Renders',
+  diagRenderP50: 'p50',
+  diagRenderP90: 'p90',
+  diagRenderFinished: 'finished',
+  diagRenderFailed: 'failed',
+  diagErrors: 'Recent errors',
+  diagErrorsNone: 'No errors recorded',
+  diagRefresh: 'Refresh',
 }
 
 /** Simplified Chinese copy. */
@@ -560,7 +612,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   playhead: '播放头',
   previewNote: '顺序预览：按播放头取当前片段，不做转码；导出（T5-5）可能有一两帧差异。',
   previewIdle: '这个时间点没有画面',
-  previewTitle: '顺序预览',
   burnSubtitles: '导出时烧录字幕',
   pickAsset: '选择素材',
   timelineTitle: '时间轴',
@@ -579,7 +630,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   templateCopyToVideo: '文案→分镜→图→视频',
   templateApply: '套用模板',
   templateTitle: '模板',
-  runHistory: '历史运行',
   runArtifacts: '个产物',
   statusSkipped: '已跳过',
   runNone: '还没有运行记录',
@@ -595,7 +645,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   issueRequired: '必填参数为空',
   validationOk: '图可运行',
   validationTitle: '图校验',
-  canvasSaved: '画布已保存',
   compacted: '已整理重复记录',
   compactAssets: '整理重复记录',
   paneCanvas: '工作流画布',
@@ -624,7 +673,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasPalette: '节点库',
   canvasAdd: '加入画布',
   canvasParams: '节点参数',
-  canvasDeleteNode: '删除节点',
   canvasFit: '适配窗口',
   canvasEmpty: '从左侧节点库添加节点',
   canvasPlannedTag: '未提供',
@@ -678,7 +726,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   heroStepChat: '对话区生成',
   heroStepOutputs: '落入输出目录',
   heroStepFile: '登记进项目',
-  palettePlanned: '规划中',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railDefaults: '生效默认值',
@@ -705,4 +752,35 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   clipResizeStart: '拖动改变片段起点',
   clipResizeEnd: '拖动改变片段时长',
   fps: '帧率',
+  clipSpeed: '变速',
+  clipFade: '淡入淡出(ms)',
+  clipTransition: '转场',
+  clipTransitionDuration: '转场时长(ms)',
+  clipCrop: '裁剪',
+  clipCropX: '裁剪X',
+  clipCropY: '裁剪Y',
+  clipCropW: '裁剪宽',
+  clipCropH: '裁剪高',
+  clipCropRemove: '移除裁剪',
+  trackFade: '淡入淡出',
+  normalizeLoudness: '响度归一化',
+  transitionFade: '淡入',
+  transitionWipeleft: '左擦除',
+  transitionCircleopen: '圆形展开',
+  subtitlesBatch: '批量字幕',
+  subtitlesBatchPlaceholder: '粘贴一段台词——自动按句切分成字幕',
+  subtitlesApply: '铺字幕',
+  templateMarket: '模板市场',
+  templateMarketEmpty: '选一个模板来搭好工作流骨架',
+  templateDramaSeries: '漫剧/连续剧（单集）',
+  paneDiagnostics: '诊断',
+  diagOutputs: '输出占用',
+  diagRenders: '渲染',
+  diagRenderP50: 'p50',
+  diagRenderP90: 'p90',
+  diagRenderFinished: '完成',
+  diagRenderFailed: '失败',
+  diagErrors: '最近错误',
+  diagErrorsNone: '暂无错误记录',
+  diagRefresh: '刷新',
 }

@@ -23,9 +23,9 @@
 
 ## 第二批（B14–B16，A 已备好契约，直接接）
 
-- [ ] **B14 接新契约**：转场选择器（clip.transition + transitionDurationMs）、变速/淡入淡出/裁剪控件（speed/fade/crop）、音轨淡入淡出滑块（track.fadeMs）、导出响度开关（timeline.normalizeLoudness）
-- [ ] **B15 新面板**：字幕批量按钮（`timeline add-subtitles`，输入一段台词一键铺字幕）、模板市场（`workflow templates` / `from-template`，含 `drama-series`）、诊断面板（`diagnostics` 的 outputs 占用 + renders.stats 耗时）
-- [ ] **B16 体积回收**：当前占预算 83%（基线 682,374 raw / 151,212 gzip + 20%），目标**回收到 ≤ 80%**；做法：按需加载图标、拆样式表、去掉未用 locale
+- [x] **B14 接新契约**：转场选择器（clip.transition + transitionDurationMs）、变速/淡入淡出/裁剪控件（speed/fade/crop）、音轨淡入淡出滑块（track.fadeMs）、导出响度开关（timeline.normalizeLoudness）；已接线到 UI，值域钳制与 `saveTimeline` 持久化均已落地；测试：`tests/client-timeline-effects.test.tsx`（speed/fade/transition/loudness/audio-track-fade 共 4 项）。
+- [x] **B15 新面板**：字幕批量按钮（`timeline add-subtitles`，输入一段台词一键铺字幕）、模板市场（`workflow templates` / `from-template`，含 `drama-series`）、诊断面板（`diagnostics` 的 outputs 占用 + renders.stats 耗时）；已完成：字幕批量复用域层 `planSubtitleClips`、模板市场合并 `WORKFLOW_TEMPLATES`+`DRAMA_TEMPLATES` 并支持实例化、诊断面板新增客户端 `getDiagnostics` 调用（outputs 占用 / render 统计 / 近期错误）；测试：`tests/client-templates-diagnostics.test.tsx`（字幕批量 / 模板市场 / 诊断面板 共 3 项）。
+- [ ] **B16 体积回收**：当前占预算 83%（基线 682,374 raw / 151,212 gzip + 20%），目标**回收到 ≤ 80%**；做法：按需加载图标、拆样式表、去掉未用 locale。**审计结论（杠杆已全做，目标未达）**：①「去未用 locale」已删 7 个未引用键（-0.4KB）；②「图标按需」0 可删（39 个图标均被 `NODE_ICONS` 等使用）；③「拆样式表」0 安全收益（死选择器多为 React Flow 运行时类）。**根因同 B12**：体积被画布必需的 `@xyflow/react`+`d3-*` 主导；且本插件契约要求 `lib/client/plugin.js` 为自包含单文件——`tests/client-bundle.test.ts` 强制 factory 只能 `require` 宿主模块表，代码分割会被该契约测试拦截、在真实宿主亦加载失败（已实测并回退懒加载改造）。基线本身已占 83%（>80%），故 ≤80% 在 Track B 权限内**数学上不可达**（不可改构建/外置、不可破坏单文件契约）。达标须 Track A 外部化 React Flow/d3 并更新宿主模块表（即 B12 指出的 A 侧构建策略），随后同步抬高 `BUNDLE_BASELINE` 或在 CHANGELOG 说明（门禁自身允许的兜底路径）。B16 三杠杆的"纯代码"部分已交付，单文件产物回到 713,804 B（87%）。
 - [ ] **B17 拆分/复制/裁剪手柄**：接 A24 的 `split-clip`（域层实现后 B 再接线）
 
 ## P2
