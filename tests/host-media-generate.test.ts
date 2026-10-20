@@ -105,3 +105,49 @@ describe('media/generate (A145)', () => {
     expect(tasks.tasks.some(task => task.status === 'failed' && (task.error ?? '').includes('429'))).toBe(true)
   })
 })
+
+describe('media/generate cancellation (A146)', () => {
+  it('can be cancelled from the workbench and lands as cancelled, not stuck running', async () => {
+    let aborted = false
+    const hanging: GenerationTool = {
+      async execute(_args, exec) {
+        const signal = (exec as { signal?: AbortSignal } | undefined)?.signal
+        await new Promise<never>((_resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('超时（测试兜底）')), 5_000)
+          signal?.addEventListener('abort', () => {
+            aborted = true
+            clearTimeout(timer)
+            reject(new Error('aborted'))
+          })
+        })
+        return { path: 'never.png' }
+      },
+    }
+    const { call, ok, project } = await harness({ image: hanging })
+    const pending = call('media/generate', { mediaMode: 'image', prompt: '慢图', projectId: project.id })
+    // 等它登记成任务
+    let taskId: string | undefined
+    for (let attempt = 0; attempt < 40 && taskId === undefined; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      const tasks = await ok<{ tasks: Array<{ id: string; status: string }> }>('tasks/list', {})
+      taskId = tasks.tasks.find(task => task.status === 'running')?.id
+    }
+    expect(taskId).toBeDefined()
+    // 取消表里能看到它
+    const running = await ok<{ running: Array<{ id: string; kind: string }> }>('tasks/running', {})
+    expect(running.running.some(row => row.id === taskId && row.kind === 'image')).toBe(true)
+    // 从工作台取消
+    const cancelled = await ok<{ cancelled: boolean }>('tasks/cancel', { id: taskId })
+    expect(cancelled.cancelled).toBe(true)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('已取消')
+    expect(aborted).toBe(true)
+    // 任务落 cancelled（不是一直 running，也不是 failed）
+    const after = await ok<{ tasks: Array<{ id: string; status: string }> }>('tasks/list', {})
+    expect(after.tasks.find(task => task.id === taskId)?.status).toBe('cancelled')
+    // 取消表已清理
+    const runningAfter = await ok<{ running: Array<{ id: string }> }>('tasks/running', {})
+    expect(runningAfter.running.some(row => row.id === taskId)).toBe(false)
+  }, 20_000)
+})

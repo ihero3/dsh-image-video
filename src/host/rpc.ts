@@ -554,8 +554,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           projectId, startedAt,
         })
       }
+      // `A146`：把这次生成登记进取消表 —— 面板用 `tasks/cancel`（或 `tasks/running` 找到它）就能中断，
+      // 取消后任务落 `cancelled` 而不是一直转圈。未绑定项目时也能取消，只是不写账本。
+      const generationId = task?.id ?? newWorkbenchId('gen')
+      const controller = deps.registry.register(generationId, mediaMode, startedAt)
       try {
-        const value = await tool.execute(args, {})
+        const value = await tool.execute(args, { signal: controller.signal })
         const outcome = extractOutcome(value)
         if (outcome.outputPath === undefined) throw new Error('生成工具没有返回产物路径')
         let asset: unknown
@@ -579,11 +583,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           ...task === undefined ? {} : { taskId: task.id },
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const cancelled = controller.signal.aborted
         if (task !== undefined) {
-          const message = error instanceof Error ? error.message : String(error)
-          await deps.store.updateTask(task.id, { status: 'failed', error: message }).catch(() => undefined)
+          await deps.store.updateTask(task.id, {
+            status: cancelled ? 'cancelled' : 'failed',
+            ...cancelled ? {} : { error: message },
+          }).catch(() => undefined)
         }
-        throw error
+        throw new Error(cancelled ? '生成已取消' : message)
+      } finally {
+        deps.registry.release(generationId)
       }
     }
     // `A118`：字幕导出为 SRT

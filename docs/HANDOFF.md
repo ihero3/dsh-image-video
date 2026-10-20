@@ -76,5 +76,5 @@ await api.call('media/generate', {
 **注意**：
 - 这是**真实计费调用**，按钮要二次确认（"这次会用 threerouter 生成一张 1024*1024 图，约 xx 秒"）。
 - **不会自动重试**（生成类禁止自动重试）。
-- v1 **不支持中途取消**（`media/generate` 没有 cancel 通道）；要取消请让用户去对话里发起，工具侧有取消。
+- **支持中途取消**：`tasks/running` 里能看到进行中的生成（`id` + `kind`），对它调 `tasks/cancel` 即可；取消后工具会真的中止，任务状态落 `cancelled`（不是 failed，也不是一直转圈）。
 - 服务商/风格/时长取「生效默认值」即可，用户改了就随请求发 `size/duration/aspectRatio`。
