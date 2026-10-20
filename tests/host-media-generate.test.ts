@@ -1,0 +1,107 @@
+/**
+ * 工作台内直接生成 `media/generate`（Track A / A145）。
+ *
+ * 用假生成工具断言契约，**不调用真实生成**（不花钱）。
+ */
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { createWorkbenchHandler } from '../src/host/rpc.ts'
+import { WorkbenchStore } from '../src/workbench/store.ts'
+import { GenerationRegistry } from '../src/workbench/cancel.ts'
+import { WorkflowRunner } from '../src/workbench/runner.ts'
+import { RenderRegistry } from '../src/media/render-registry.ts'
+import { RenderService } from '../src/media/render.ts'
+import type { GenerationTool } from '../src/workbench/runner.ts'
+
+async function harness(options: { image?: GenerationTool; video?: GenerationTool } = {}) {
+  const dataDir = await mkdtemp(join(tmpdir(), 'dsh-gen-rpc-'))
+  const outputsDir = await mkdtemp(join(tmpdir(), 'dsh-gen-out-'))
+  const store = new WorkbenchStore({ directory: dataDir })
+  const registry = new GenerationRegistry()
+  const runner = new WorkflowRunner({
+    store,
+    newRunId: () => 'run-1',
+    generateImage: { async execute() { return { localPath: join(outputsDir, 'x.png'), bytes: 1 } } },
+    generateVideo: { async execute() { return { videoPath: join(outputsDir, 'x.mp4'), bytes: 1 } } },
+  })
+  const renders = new RenderRegistry({ render: new RenderService({ outputsDir }) })
+  const handler = createWorkbenchHandler({
+    provider: 'threerouter', outputsDir, store, registry, runner, renders,
+    defaults: () => ({ mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null, videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5 }),
+    ...options.image === undefined && options.video === undefined ? {} : {
+      generate: {
+        image: options.image ?? ({ async execute() { throw new Error('no image tool') } }),
+        video: options.video ?? ({ async execute() { throw new Error('no video tool') } }),
+      },
+    },
+  })
+  async function call(endpoint: string, payload?: unknown) {
+    return handler(endpoint, payload, new AbortController().signal, {} as never)
+  }
+  async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
+    const result = await call(endpoint, payload)
+    if (!result.ok) throw new Error(`refused: ${result.error.code} ${result.error.message}`)
+    return result.value as T
+  }
+  const project = await store.createProject('生成测试')
+  return { ok, call, store, outputsDir, project }
+}
+
+describe('media/generate (A145)', () => {
+  it('generates an image, files it as a project asset and records the task', async () => {
+    const calls: unknown[] = []
+    const { ok, store, outputsDir, project } = await harness({
+      image: { async execute(args) { calls.push(args); return { localPath: join(outputsDir, 'gen.png'), bytes: 4096 } } },
+    })
+    const result = await ok<{ mediaMode: string; path: string; bytes: number; asset: { id: string; path: string }; taskId?: string }>(
+      'media/generate', { mediaMode: 'image', prompt: '一只猫', size: '1024*1024', projectId: project.id },
+    )
+    expect(result.mediaMode).toBe('image')
+    expect(result.path).toContain('gen.png')
+    expect(result.bytes).toBe(4096)
+    expect(result.asset.path).toBe(result.path)
+    // 入参透传到工具（size 原样）
+    expect(calls[0]).toMatchObject({ prompt: '一只猫', size: '1024*1024' })
+    // 素材进了项目
+    const { ok: ok2 } = { ok }
+    const assets = await ok2<{ assets: Array<{ path: string }> }>('assets/list', { projectId: project.id })
+    expect(assets.assets.some(asset => asset.path === result.path)).toBe(true)
+    // 任务账本记录成功
+    const tasks = await ok2<{ tasks: Array<{ status: string; kind: string; outputPath?: string }> }>('tasks/list', {})
+    const done = tasks.tasks.find(task => task.status === 'succeeded' && task.outputPath === result.path)
+    expect(done?.kind).toBe('image')
+    void store
+  })
+
+  it('generates a video and passes video-specific params through', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const { ok, outputsDir } = await harness({
+      video: { async execute(args) { calls.push(args as Record<string, unknown>); return { videoPath: join(outputsDir, 'gen.mp4'), bytes: 9000 } } },
+    })
+    const result = await ok<{ mediaMode: string; path: string }>('media/generate', {
+      mediaMode: 'video', prompt: '海浪', duration: 6, aspectRatio: '9:16',
+    })
+    expect(result.mediaMode).toBe('video')
+    expect(result.path).toContain('gen.mp4')
+    expect(calls[0]).toMatchObject({ prompt: '海浪', duration: 6, aspectRatio: '9:16' })
+  })
+
+  it('refuses clearly when no generation adapter is wired', async () => {
+    const { call } = await harness()
+    const result = await call('media/generate', { prompt: '随便' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('生成能力未装配')
+  })
+
+  it('surfaces a failed generation and marks the task failed', async () => {
+    const { call, ok, project } = await harness({
+      image: { async execute() { throw new Error('服务商 429 限流') } },
+    })
+    const result = await call('media/generate', { prompt: 'x', projectId: project.id })
+    expect(result.ok).toBe(false)
+    const tasks = await ok<{ tasks: Array<{ status: string; error?: string }> }>('tasks/list', {})
+    expect(tasks.tasks.some(task => task.status === 'failed' && (task.error ?? '').includes('429'))).toBe(true)
+  })
+})

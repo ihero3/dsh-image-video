@@ -356,6 +356,8 @@ export function apply(ctx: Context, config: Config): void {
     diagnostics,
       provider: config.provider, outputsDir, store: workbenchStore, registry: generationRegistry,
       runner: workflowRunner, renders: renderRegistry,
+      // `A145`：工作台内直接生成复用同一对工具（参数语义/计费/账本一致）
+      generate: { image: proxyTool('image'), video: proxyTool('video') },
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,

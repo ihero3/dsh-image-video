@@ -51,3 +51,30 @@
 先发消息给 A（或直接改 `API-SURFACE.md` 的"B 申请区"），A 负责：
 端点实现、契约文档、漂移测试、`lib/` 构建、子模块指针。
 **B 只改 `src/client/**` 与客户端测试**，验收标准相同：`gate.sh` 五道门全绿。
+
+## 六、快速创作「生成」按钮接线（`A145`，B 可直接做）
+
+契约已就绪：`media/generate`。
+
+**请求**（字段与面板上那排「当前生效参数」一一对应）：
+```ts
+await api.call('media/generate', {
+  mediaMode: 'image' | 'video',
+  prompt: '……',
+  projectId: 当前项目 id,          // 传了就自动登记素材 + 写任务账本
+  // image：
+  size: '1024*1024', image: 参考图路径或 URL, images: [多参考图],
+  // video：
+  duration: 5, aspectRatio: '16:9', resolution: '768P', image: 首帧,
+  model: 可选覆盖,
+})
+```
+
+**返回**：`{ mediaMode, path, bytes?, asset?, taskId? }` —— `asset` 可直接插进素材列表，
+`taskId` 可用来在「生成任务」里定位那一条。
+
+**注意**：
+- 这是**真实计费调用**，按钮要二次确认（"这次会用 threerouter 生成一张 1024*1024 图，约 xx 秒"）。
+- **不会自动重试**（生成类禁止自动重试）。
+- v1 **不支持中途取消**（`media/generate` 没有 cancel 通道）；要取消请让用户去对话里发起，工具侧有取消。
+- 服务商/风格/时长取「生效默认值」即可，用户改了就随请求发 `size/duration/aspectRatio`。

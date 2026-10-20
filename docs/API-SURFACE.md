@@ -20,6 +20,7 @@
 | `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` | `A48` 自定义预设：名称 1–40 字且不重名，规格过校验 |
 | `presets/remove` | `{id}` | `{removed}` | `A48` 删除自定义预设 |
 | `diagnostics` | — | `{plugin{name,version}, provider, outputsDir, data{各实体条数,writeCount,fileBytes,runningRuns}, renders{running,queued,recent[]}, runs{running}, cache{nodeResults}, errors{errors[],errorCount}}` | `A9` 诊断快照：出问题不用翻日志；**不含**提示词/路径等敏感内容 |
+| `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**）|
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界）；`A53` 起包格式 **v3**（含自定义预设，导入按名称去重），v1/v2 仍可导入 |
 | `maintenance/integrity` | — | `{integrity}`（`A104` 完整性巡检：悬空素材引用/孤儿记录/悬空资源使用，只报告不修复）|

@@ -339,6 +339,11 @@
 - [x] **R9 端到端收尾** ✅ 2026-10-20：三条"单点都测过、串起来没测过"的路径 —— ① **一次导出四件套**（成片 + 随片字幕 + 缩略图 + 摘要，真机）✓；② **项目包全链路**（导出 → 预检 → sha256 校验 → 导入新库，`burnLanguage` 端到端再验）✓；③ **并发队列状态机**（1 跑 2 排队、取消排队项后位次前移、放行后下一项拉起）✓。**两处失败均是我测试假设错误**（默认 srt 而非 vtt、`queued` 为 false 而非 undefined），**未发现实现缺陷** → 按预设判断规则：**Track A 进入维护状态**
 - [ ] 维护状态：只做 bug 修复与安全问题，不再堆新特性（等你或 B 提需求）
 
+## 批次六十五（A145 起，2026-10-20）
+
+- [x] **A145 `media/generate`：工作台内直接生成** ✅ 2026-10-20：新增端点（复用 index 注入的 `proxyTool('image'|'video')` —— 与对话里 `generate_image`/`generate_video` **同一对工具**，参数语义/计费/账本一致）；给 `projectId` 时**产物自动登记为项目素材**并写任务账本（running→succeeded/failed，面板可见）；**生成类不自动重试**；测试 4 例（出图出片参数透传、素材登记、未装配报错、失败落账）
+- [ ] **A146 Track B 接「生成」按钮**（契约已就绪，见 `docs/HANDOFF.md` §六）
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

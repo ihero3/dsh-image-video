@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { extractOutcome } from '../workbench/ledger.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import { makeSubtitleIds } from '../workbench/subtitles.ts'
 import { parseSrt, serializeSrt } from '../workbench/srt.ts'
@@ -47,7 +48,7 @@ import { checkInlineTimelineBounds, findClipOverruns, validateTimeline } from '.
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import { exportProjectPackage, exportResourcePackage, importProjectPackage, importResourcePackage } from '../workbench/package.ts'
 import type { GenerationRegistry } from '../workbench/cancel.ts'
-import type { WorkflowRunner } from '../workbench/runner.ts'
+import type { GenerationTool, WorkflowRunner } from '../workbench/runner.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
@@ -97,6 +98,12 @@ export interface WorkbenchRpcDeps {
   runner: WorkflowRunner
   /** 导出任务表（`T5-5`）。 */
   renders: RenderRegistry
+  /**
+   * 生成适配器（`A145`）：与对话里的 `generate_image` / `generate_video` **是同一对工具**
+   * （由 index 用 `proxyTool` 注入），所以参数语义、计费口径、账本与取消完全一致。
+   * 缺省时不提供 `media/generate`（测试宿主可以不带生成能力）。
+   */
+  readonly generate?: { readonly image: GenerationTool; readonly video: GenerationTool }
   /** 素材探测缓存（`A77`；未注入时退回每次直连探测）。 */
   probeCache?: { get: (file: string) => Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> }
   /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
@@ -511,6 +518,73 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
       const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
+    }
+    // `A145`：工作台内直接生成（「快速创作」的生成入口）——复用对话里同一对工具，
+    // 成功的产物自动登记为项目素材，并写一条任务账本记录（面板能看到）。
+    case 'media/generate': {
+      const mediaMode = optionalText(payload, 'mediaMode') === 'video' ? 'video' : 'image'
+      const tool = mediaMode === 'video' ? deps.generate?.video : deps.generate?.image
+      if (tool === undefined) throw new Error(`生成能力未装配：此宿主没有注入 ${mediaMode} 生成适配器`)
+      const prompt = text(payload, 'prompt')
+      const model = optionalText(payload, 'model')
+      const image = optionalText(payload, 'image')
+      const args = mediaMode === 'video'
+        ? {
+            prompt,
+            ...optionalNumber(payload, 'duration') === undefined ? {} : { duration: optionalNumber(payload, 'duration') as number },
+            ...model === undefined ? {} : { model },
+            ...optionalText(payload, 'aspectRatio') === undefined ? {} : { aspectRatio: optionalText(payload, 'aspectRatio') as string },
+            ...image === undefined ? {} : { image },
+            ...optionalText(payload, 'resolution') === undefined ? {} : { resolution: optionalText(payload, 'resolution') as string },
+          }
+        : {
+            prompt,
+            ...optionalText(payload, 'size') === undefined ? {} : { size: optionalText(payload, 'size') as string },
+            ...model === undefined ? {} : { model },
+            ...image === undefined ? {} : { image },
+            ...Array.isArray(field(payload, 'images')) ? { images: field(payload, 'images') } : {},
+          }
+      const projectId = optionalText(payload, 'projectId')
+      const tracked = projectId !== undefined && projectId !== ''
+      const startedAt = new Date().toISOString()
+      let task: { id: string } | undefined
+      if (tracked) {
+        task = await deps.store.recordTask({
+          kind: mediaMode, status: 'running', provider: deps.provider, prompt,
+          projectId, startedAt,
+        })
+      }
+      try {
+        const value = await tool.execute(args, {})
+        const outcome = extractOutcome(value)
+        if (outcome.outputPath === undefined) throw new Error('生成工具没有返回产物路径')
+        let asset: unknown
+        if (tracked) {
+          asset = (await deps.store.attachAsset({
+            projectId: projectId as string, path: outcome.outputPath, kind: mediaMode,
+            ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
+            provider: deps.provider, prompt,
+          })).asset
+        }
+        if (task !== undefined) {
+          await deps.store.updateTask(task.id, {
+            status: 'succeeded', outputPath: outcome.outputPath,
+            ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
+          })
+        }
+        return {
+          mediaMode, path: outcome.outputPath,
+          ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
+          ...asset === undefined ? {} : { asset },
+          ...task === undefined ? {} : { taskId: task.id },
+        }
+      } catch (error) {
+        if (task !== undefined) {
+          const message = error instanceof Error ? error.message : String(error)
+          await deps.store.updateTask(task.id, { status: 'failed', error: message }).catch(() => undefined)
+        }
+        throw error
+      }
     }
     // `A118`：字幕导出为 SRT
     case 'subtitles/export': {
