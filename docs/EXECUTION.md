@@ -291,3 +291,35 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 **维护期原则**：只修 bug 与安全问题，不加新特性；任何改动仍需 `gate.sh` 五道门全绿 + bump 指针。
 
 **给 Track B**：对接清单见 `docs/HANDOFF.md`（三个信息面板、六个高价值交互、六条踩过的坑）。
+
+## 开发时如何让 `plugins/` 的改动真正生效（2026-10-20 排查结论）
+
+**症状**：改了插件源码、重启桌面应用，界面上的版本/行为还是旧的。
+
+**根因**：`apps/desktop` 的 `dev:start`（`tsx scripts/dev.ts --skip-build`）**跳过了 `build:plugins`**，
+而私有插件（`dsh-image-video` / `threerouter`）的产物**不在整仓 build 里**。所以运行态加载的是上一次
+`build:plugins` 的产物。`dev.ts` 源码里对此有注释（"a pull that only touches plugins/ would
+otherwise launch against stale lib/"）。
+
+**正确做法**（一条命令）：
+
+```sh
+sh scripts/refresh-plugin-dev.sh     # 仓库根目录
+```
+
+它等于：
+
+```sh
+pnpm build:plugins                   # pnpm --filter dsh-image-video --filter dsh-plugin-threerouter run bundle
+pnpm -C apps/desktop run start       # 重新准备开发工程并启动
+```
+
+**三档刷新对照**：
+
+| 改动范围 | 需要做什么 |
+| --- | --- |
+| `src/host` / `src/workbench` / `src/media` / `src/tools`（宿主半边）| `build:plugins` + 重启应用 |
+| `src/client/**`（界面半边，B 的地盘）| 同上（client bundle 也在 `build:plugins` 里）|
+| 只改测试/文档 | 不用重启 |
+
+> 另：`pnpm` 版本保持 **11.28.5**（= 仓库 `packageManager`），不要升到 12。
