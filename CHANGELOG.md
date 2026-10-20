@@ -2,6 +2,9 @@
 
 （下一轮的改动写这里）
 
+### 批次六十七
+- **A147 `media/generate` 非阻塞模式**：`wait:false` 立刻返回 taskId，前端轮询结果（长视频不再让 RPC 干等）
+
 ### 批次六十六
 - **A146 `media/generate` 可取消**：进行中的工作台生成进 `tasks/running`，`tasks/cancel` 真中断（任务落 `cancelled`，取消表清理）
 
@@ -112,6 +115,11 @@
 
 ### 批次二十九
 - **A75 CHANGELOG 历史缺口回填**：补齐 0.3.13/15/17/19/21/23 六个版本；版本条目现为 0.3.11 → 0.3.26 连续无缺口；A73 测试新增「版本连续」断言防复发
+
+## [0.3.64-workbench-64] - 2026-10-20
+
+### 批次六十七
+- **A147 `media/generate` 非阻塞模式**：`wait:false` 立刻返回 taskId，前端轮询 `tasks/running`/`tasks/list` 拿结果（长视频不再让 RPC 干等；必须带 projectId）
 
 ## [0.3.63-workbench-63] - 2026-10-20
 

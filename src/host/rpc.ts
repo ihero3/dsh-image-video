@@ -546,6 +546,10 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           }
       const projectId = optionalText(payload, 'projectId')
       const tracked = projectId !== undefined && projectId !== ''
+      // `A147`：`wait:false` 时立即返回 taskId，前端轮询 `tasks/running` / `tasks/list` 拿结果。
+      // 非阻塞模式必须绑定项目（否则结果没有地方可查，等于丢结果）。
+      const wait = field(payload, 'wait') !== false
+      if (!wait && !tracked) throw new Error('非阻塞模式（wait:false）必须传 projectId：否则生成结果无处可查')
       const startedAt = new Date().toISOString()
       let task: { id: string } | undefined
       if (tracked) {
@@ -558,6 +562,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       // 取消后任务落 `cancelled` 而不是一直转圈。未绑定项目时也能取消，只是不写账本。
       const generationId = task?.id ?? newWorkbenchId('gen')
       const controller = deps.registry.register(generationId, mediaMode, startedAt)
+      const run = async (): Promise<Record<string, unknown>> => {
       try {
         const value = await tool.execute(args, { signal: controller.signal })
         const outcome = extractOutcome(value)
@@ -595,6 +600,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       } finally {
         deps.registry.release(generationId)
       }
+      }
+      if (!wait) {
+        // 后台跑：失败只落账本，不冒泡到 RPC（因为调用方已经拿到 taskId 了）
+        void run().catch(() => undefined)
+        return { pending: true, taskId: generationId, mediaMode }
+      }
+      return await run()
     }
     // `A118`：字幕导出为 SRT
     case 'subtitles/export': {

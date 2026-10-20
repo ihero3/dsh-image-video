@@ -151,3 +151,46 @@ describe('media/generate cancellation (A146)', () => {
     expect(runningAfter.running.some(row => row.id === taskId)).toBe(false)
   }, 20_000)
 })
+
+describe('media/generate non-blocking mode (A147)', () => {
+  it('returns a taskId immediately and the result is pollable', async () => {
+    const { call, ok, project, outputsDir } = await harness({
+      image: {
+        async execute() {
+          await new Promise(resolve => setTimeout(resolve, 300))
+          return { path: join(outputsDir, 'slow.png'), bytes: 777 }
+        },
+      },
+    })
+    const started = Date.now()
+    const result = await call('media/generate', { mediaMode: 'image', prompt: '慢图', projectId: project.id, wait: false })
+    const elapsed = Date.now() - started
+    expect(result.ok).toBe(true)
+    // 关键：不该等生成完成才返回
+    expect(elapsed).toBeLessThan(250)
+    if (!result.ok) return
+    const value = result.value as { pending: boolean; taskId: string }
+    expect(value.pending).toBe(true)
+    expect(value.taskId.length).toBeGreaterThan(0)
+
+    // 轮询到成功，并且素材已登记
+    let status = ''
+    for (let attempt = 0; attempt < 60 && status !== 'succeeded'; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      const tasks = await ok<{ tasks: Array<{ id: string; status: string; outputPath?: string }> }>('tasks/list', {})
+      const row = tasks.tasks.find(task => task.id === value.taskId)
+      status = row?.status ?? ''
+      if (status === 'succeeded') expect(row?.outputPath).toContain('slow.png')
+    }
+    expect(status).toBe('succeeded')
+    const assets = await ok<{ assets: Array<{ path: string }> }>('assets/list', { projectId: project.id })
+    expect(assets.assets.some(asset => asset.path.includes('slow.png'))).toBe(true)
+  }, 20_000)
+
+  it('refuses non-blocking without a project (result would be unqueryable)', async () => {
+    const { call } = await harness({ image: { async execute() { return { path: '/tmp/x.png' } } } })
+    const result = await call('media/generate', { prompt: 'x', wait: false })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('必须传 projectId')
+  })
+})

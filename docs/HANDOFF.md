@@ -76,5 +76,6 @@ await api.call('media/generate', {
 **注意**：
 - 这是**真实计费调用**，按钮要二次确认（"这次会用 threerouter 生成一张 1024*1024 图，约 xx 秒"）。
 - **不会自动重试**（生成类禁止自动重试）。
+- **视频建议用非阻塞**：`wait: false` 会立刻返回 `{ pending: true, taskId }`，然后轮询 `tasks/running`（进度）与 `tasks/list`（结果：`status` + `outputPath`，素材也会自动登记）。图片很快，直接用默认（阻塞）就好。
 - **支持中途取消**：`tasks/running` 里能看到进行中的生成（`id` + `kind`），对它调 `tasks/cancel` 即可；取消后工具会真的中止，任务状态落 `cancelled`（不是 failed，也不是一直转圈）。
 - 服务商/风格/时长取「生效默认值」即可，用户改了就随请求发 `size/duration/aspectRatio`。
