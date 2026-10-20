@@ -158,3 +158,13 @@
 | `presets/list` | — | `{presets}`（内置 `custom:false` + 自定义 `custom:true`） |
 | `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` |
 | `presets/remove` | `{id}` | `{removed}` |
+
+## HTTP 路由（非 RPC，由 webServer 提供）
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/outputs/<文件名>` | GET / HEAD | **只读**返回 outputs 目录里的媒体文件。仅单段文件名、防目录遍历、扩展名白名单（mp4/mov/webm/png/jpg/jpeg/webp/gif）；**支持 `Range`**（206 + `content-range` + `accept-ranges`，视频拖动需要）；只在宿主绑定 `127.0.0.1` 时注册（0.0.0.0 不暴露到局域网）|
+
+> 真机证据（2026-10-20，`dsh-app://app`）：`HEAD /outputs/<png>` → 200 + `image/png`；
+> `GET` 带 `Range: bytes=0-99` → **206** + `content-range: bytes 0-99/1843275` + `accept-ranges: bytes`。
+> 结论：**同源相对路径在桌面端可直接用**，客户端不需要改写 host/端口。

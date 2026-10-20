@@ -79,3 +79,13 @@ await api.call('media/generate', {
 - **视频建议用非阻塞**：`wait: false` 会立刻返回 `{ pending: true, taskId }`，然后轮询 `tasks/running`（进度）与 `tasks/list`（结果：`status` + `outputPath`，素材也会自动登记）。图片很快，直接用默认（阻塞）就好。
 - **支持中途取消**：`tasks/running` 里能看到进行中的生成（`id` + `kind`），对它调 `tasks/cancel` 即可；取消后工具会真的中止，任务状态落 `cancelled`（不是 failed，也不是一直转圈）。
 - 服务商/风格/时长取「生效默认值」即可，用户改了就随请求发 `size/duration/aspectRatio`。
+
+## 七、B 的优先待办（`A145`–`A147` 之后，按价值排序）
+
+1. **快速创作的「生成」按钮**（最高价值）：按 `§六` 调 `media/generate`；视频建议 `wait:false` + 轮询；生成中可 `tasks/cancel`；成功后把返回的 `asset` 直接插进素材列表。
+2. **预览去掉过度保守的判断**：现在 `src/client/Workbench.tsx` 里 `isLoopback(location.host)` 在 `dsh-app://app` 下为 false，于是显示"预览需要本机访问宿主"并挡掉预览。
+   **A 侧真机实测**：`dsh-app://app` 下 `HEAD /outputs/<png>` → 200 + `image/png`；`Range: bytes=0-99` → **206** + `content-range`。**同源相对路径本来就能用**，把这道门去掉/放宽即可（视频拖动也有 Range 支持）。
+3. **过时文案**：`src/client/locales.ts` 的 `emptyHint`（zh 第 ~492 行 / en 对应项）里"（执行与项目存储随后端接入）"已经不成立 —— 后端早已接入，删掉括号部分。
+4. **可选**：`outputs/list` 返回的条目可直接拼 `/outputs/<文件名>`（A 已保证该路由可用），避免客户端自己拼 host/端口。
+
+> A 侧不会再改 `src/client/**`；以上都在 B 的地盘，契约与真机证据已备好。
