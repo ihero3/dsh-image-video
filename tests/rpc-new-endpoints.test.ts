@@ -157,4 +157,22 @@ describe('new endpoint coverage (A136)', () => {
     })
     expect(cleared.resource.assetPath).toBeUndefined()
   })
+
+  it('removes assets in bulk (A-2)', async () => {
+    const { ok, project, outputsDir } = await harness()
+    const attached = await ok<{ asset: { id: string } }>('assets/attach', { projectId: project.id, path: join(outputsDir, 'clip.mp4'), kind: 'video' })
+    const bulk = await ok<{ removed: number; skipped: Array<{ id: string }> }>('assets/remove-many', { ids: [attached.asset.id, 'ast-missing'], force: true })
+    expect(bulk.removed).toBe(1)
+    expect(bulk.skipped.length).toBe(1)
+  })
+
+  it('stores multiple reference images on a resource (A-3)', async () => {
+    const { ok, project } = await harness()
+    const created = await ok<{ resource: { id: string; assetPaths?: string[] } }>('resources/create', {
+      projectId: project.id, kind: 'role', name: '小雨', assetPaths: ['/o/a.png', '/o/b.png'],
+    })
+    expect(created.resource.assetPaths).toEqual(['/o/a.png', '/o/b.png'])
+    const cleared = await ok<{ resource: { assetPaths?: string[] } }>('resources/update', { id: created.resource.id, assetPaths: null })
+    expect(cleared.resource.assetPaths).toBeUndefined()
+  })
 })

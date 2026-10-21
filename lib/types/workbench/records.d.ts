@@ -131,6 +131,11 @@ export interface ResourceRecord {
      */
     readonly assetPath?: string;
     /**
+     * 多张参考图（`A-3`）：角色的多角度定妆照 / 场景的多张基准。首图视为底图。
+     * 保留 `assetPath` 兼容旧数据（读的时候合并：`assetPaths ?? [assetPath]`）。
+     */
+    readonly assetPaths?: readonly string[];
+    /**
      * 资源作用域（`R-COL-1`，后置能力）：保留 `project`/`team`/`public` 字段，
      * **V1 一律写 `project`**，UI 不提供团队/公共入口。
      */

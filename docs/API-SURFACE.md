@@ -20,6 +20,7 @@
 | `presets/save` | `{id?,name,width,height,frameRate,bitrateKbps?}` | `{preset}` | `A48` 自定义预设：名称 1–40 字且不重名，规格过校验 |
 | `presets/remove` | `{id}` | `{removed}` | `A48` 删除自定义预设 |
 | `diagnostics` | — | `{plugin{name,version}, provider, outputsDir, data{各实体条数,writeCount,fileBytes,runningRuns}, renders{running,queued,recent[]}, runs{running}, cache{nodeResults}, errors{errors[],errorCount}}` | `A9` 诊断快照：出问题不用翻日志；**不含**提示词/路径等敏感内容 |
+| `assets/remove-many` | `{ids[],force?}` | `{removed,skipped[{id,reason}]}` | **`A-2`** 批量删除素材（单次 ≤200；不存在的 id 进 skipped 而不报错）|
 | `assets/attach-many` | `{projectId,items[{path,kind?,bytes?}]}` | `{created,assets}` | **`A152`** 批量登记素材（单次 ≤200；kind 缺省按扩展名推断）|
 | `media/import` | `{projectId,paths[]}` | `{imported,assets,skipped[{path,reason}]}` | **`A152`** 从本地路径批量导入媒体：**复制进 outputs**（保证 `/outputs` 预览可用），跳过不支持的类型并说明原因 |
 | `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）|
@@ -96,7 +97,7 @@
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
 | `resources/list` | `{projectId?}` | `{resources}` |
-| `resources/update` | `{id,name?,note?,assetPath?}` | `{resource}` | **`A153`** 改资源：改名/备注/参考图；`assetPath: null` 清除，**不传则保留** |
+| `resources/update` | `{id,name?,note?,assetPath?,assetPaths?}` | `{resource}` | **`A153`** 改资源：改名/备注/参考图；`assetPath: null` 清除，**不传则保留** |
 | `resources/create` | `{projectId,kind,name?}` | `{resource}` |
 | `resources/remove` | `{resourceId}` | `{removed}` |
 | `resources/usage` | `{resourceId?}` | `{usage}` |

@@ -291,6 +291,25 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       })
       return { projectId: target.id, projectName: target.name, asset: attached.asset, created: attached.created, timelineId: saved.id, clipId }
     }
+    // `A-2`：批量删除素材（多选删除一次调用，避免 N 次往返）
+    case 'assets/remove-many': {
+      const raw = field(payload, 'ids')
+      if (!Array.isArray(raw)) throw new Error('ids 必须是字符串数组')
+      const ids = raw.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+      const force = field(payload, 'force') === true
+      let removed = 0
+      const skipped: Array<{ id: string; reason: string }> = []
+      for (const id of ids.slice(0, 200)) {
+        try {
+          const ok = await deps.store.removeAsset(id, force ? { force: true } : {})
+          if (ok) removed += 1
+          else skipped.push({ id, reason: '不存在' })
+        } catch (error) {
+          skipped.push({ id, reason: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      return { removed, skipped }
+    }
     case 'assets/remove':
       return {
         removed: await deps.store.removeAsset(text(payload, 'id'), field(payload, 'force') === true ? { force: true } : {}),
@@ -319,6 +338,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           note: optionalText(payload, 'note'),
           ...field(payload, 'keyframes') === undefined ? {} : { keyframes: field(payload, 'keyframes') },
           ...optionalText(payload, 'assetPath') === undefined ? {} : { assetPath: optionalText(payload, 'assetPath') as string },
+          ...Array.isArray(field(payload, 'assetPaths')) ? { assetPaths: (field(payload, 'assetPaths') as unknown[]).filter((entry): entry is string => typeof entry === 'string') } : {},
         }),
       }
     // `A153`：改资源（改名 / 备注 / 参考图；`assetPath: null` 表示清除参考图）
@@ -330,6 +350,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         ...field(payload, 'assetPath') === undefined
           ? {}
           : { assetPath: field(payload, 'assetPath') === null ? null : text(payload, 'assetPath') },
+        ...field(payload, 'assetPaths') === undefined
+          ? {}
+          : { assetPaths: field(payload, 'assetPaths') === null ? null : (field(payload, 'assetPaths') as unknown[]).filter((entry): entry is string => typeof entry === 'string') },
       })
       if (resource === undefined) throw new Error(`unknown resource: ${id}`)
       return { resource }

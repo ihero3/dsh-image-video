@@ -286,6 +286,8 @@ export class WorkbenchStore {
     note?: string
     /** 参考图（`A153`）：定妆照 / 参考素材路径。 */
     assetPath?: string
+    /** 多张参考图（`A-3`）：首图为底图。 */
+    assetPaths?: readonly string[]
     keyframes?: unknown
     scope?: unknown
   }): Promise<ResourceRecord> {
@@ -308,6 +310,7 @@ export class WorkbenchStore {
       updatedAt: stamp,
       ...input.note === undefined || input.note === '' ? {} : { note: input.note },
       ...input.assetPath === undefined || input.assetPath === '' ? {} : { assetPath: input.assetPath },
+      ...input.assetPaths === undefined || input.assetPaths.length === 0 ? {} : { assetPaths: [...input.assetPaths] },
     }
     document.resources.push(resource)
     document.projects = document.projects.map(candidate =>
@@ -326,6 +329,7 @@ export class WorkbenchStore {
     name?: unknown
     note?: string
     assetPath?: string | null
+    assetPaths?: readonly string[] | null
   }): Promise<ResourceRecord | undefined> {
     const document = await this.load()
     const index = document.resources.findIndex(resource => resource.id === id)
@@ -337,12 +341,14 @@ export class WorkbenchStore {
       ...patch.name === undefined ? {} : { name: normalizeResourceName(patch.name) },
       ...patch.note === undefined ? {} : patch.note === '' ? { note: undefined as never } : { note: patch.note },
       ...patch.assetPath === undefined ? {} : patch.assetPath === null ? { assetPath: undefined as never } : { assetPath: patch.assetPath },
+      ...patch.assetPaths === undefined ? {} : patch.assetPaths === null ? { assetPaths: undefined as never } : { assetPaths: [...patch.assetPaths] },
     }
     // 显式清除时把键删掉（而不是留 `undefined`，避免落库出现 `"note": null` 这类脏值）
     const cleaned: ResourceRecord = { ...next }
     const mutable = cleaned as unknown as Record<string, unknown>
     if (mutable.note === undefined) delete mutable.note
     if (mutable.assetPath === undefined) delete mutable.assetPath
+    if (mutable.assetPaths === undefined) delete mutable.assetPaths
     document.resources[index] = cleaned
     await this.save(document)
     return cleaned
