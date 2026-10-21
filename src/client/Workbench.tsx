@@ -284,6 +284,71 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
+  // `A149`：快速创作里直接生成（图片同步；视频 wait:false + 轮询任务；可取消）
+  const [generatePrompt, setGeneratePrompt] = useState('')
+  const [generating, setGenerating] = useState<'image' | 'video' | undefined>(undefined)
+  const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
+
+  /** 生成后刷新当前项目的素材列表。 */
+  const refreshAssetsAfterGenerate = async (): Promise<void> => {
+    if (activeId === undefined) return
+    try {
+      setAssets(await apiRef.current.listAssets(activeId))
+    } catch {
+      // 刷新失败不影响"已生成"的结论，下一次轮询会纠正
+    }
+  }
+
+  /** 发一次生成（图片同步等待；视频立刻拿 taskId 交给轮询）。 */
+  const runGenerate = async (mediaMode: 'image' | 'video'): Promise<void> => {
+    const prompt = generatePrompt.trim()
+    if (prompt === '') return
+    if (activeId === undefined) {
+      setNotice({ text: t('generateNeedsProject'), tone: 'error' })
+      return
+    }
+    setGenerating(mediaMode)
+    try {
+      const result = await apiRef.current.generateMedia({
+        mediaMode,
+        prompt,
+        projectId: activeId,
+        ...mediaMode === 'video' ? { wait: false } : {},
+      })
+      if (result.pending === true && result.taskId !== undefined) {
+        setGenerateTaskId(result.taskId)
+        return
+      }
+      await refreshAssetsAfterGenerate()
+      setGeneratePrompt('')
+      setNotice({ text: t('generateDone'), tone: 'info' })
+    } catch (error) {
+      setNotice({ text: `${t('generateFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    } finally {
+      if (mediaMode === 'image') setGenerating(undefined)
+    }
+  }
+
+  /** 追踪非阻塞视频生成：任务结束（成功/失败/取消）时收尾。 */
+  useEffect(() => {
+    if (generateTaskId === undefined) return
+    const row = tasks.find(task => task.id === generateTaskId)
+    if (row === undefined || row.status === 'running') return
+    setGenerateTaskId(undefined)
+    setGenerating(undefined)
+    if (row.status === 'succeeded') {
+      void refreshAssetsAfterGenerate()
+      setGeneratePrompt('')
+      setNotice({ text: t('generateDone'), tone: 'info' })
+      return
+    }
+    if (row.status === 'cancelled') {
+      setNotice({ text: t('generateCancel'), tone: 'info' })
+      return
+    }
+    setNotice({ text: `${t('generateFailed')}：${row.error ?? ''}`, tone: 'error' })
+  }, [generateTaskId, tasks, activeId])
+
   const activeProject = projects.find(project => project.id === activeId)
   // 进入工作流模式（或切项目）时读回该项目的流程文档；没有就准备一份空文档
   useEffect(() => {
@@ -997,6 +1062,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 非本机宿主：`/outputs` 只在回环注册，预览会打不开——先告诉用户怎么办（`T2-9`）
   const hostIsLoopback = (() => {
     if (typeof window === 'undefined') return true
+    // `A149`：桌面应用走 `dsh-app://` 自定义协议，请求由主进程转发到本机宿主，
+    // `/outputs/*` 同源可用（真机实测 200/206）——不能按 hostname 判定成"非本机"。
+    if (window.location?.protocol === 'dsh-app:') return true
     const host = window.location?.hostname ?? ''
     return host === '' || host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]'
   })()
@@ -1360,6 +1428,48 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-step"><span className="iv-step-n">2</span>{t('heroStepOutputs')}</span>
                       <Icon name="chevron" className="iv-step-arrow" size={12} />
                       <span className="iv-step"><span className="iv-step-n">3</span>{t('heroStepFile')}</span>
+                    </div>
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
+                      <textarea
+                        className="iv-input"
+                        rows={2}
+                        value={generatePrompt}
+                        placeholder={t('generatePromptPlaceholder')}
+                        disabled={generating !== undefined}
+                        onChange={event => setGeneratePrompt(event.target.value)}
+                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === ''}
+                          onClick={() => { void runGenerate('image') }}
+                        >
+                          {generating === 'image' ? t('generating') : t('generateImage')}
+                        </button>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--sm"
+                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === ''}
+                          onClick={() => { void runGenerate('video') }}
+                        >
+                          {generating === 'video' ? t('generating') : t('generateVideo')}
+                        </button>
+                        {generateTaskId === undefined
+                          ? null
+                          : (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--danger iv-btn--sm"
+                              onClick={() => { void apiRef.current.cancelTask(generateTaskId) }}
+                            >
+                              {t('generateCancel')}
+                            </button>
+                          )}
+                      </div>
+                      <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
                     <div className="iv-stats">
                       <span className="iv-stat"><b>{outputs.length}</b><span>{t('statOutputs')}</span></span>

@@ -51,6 +51,17 @@ export interface WorkbenchDiagnostics {
 }
 
 /** What the workbench UI may ask the host (phase 2, first slice). */
+/** `media/generate` 的返回（`A145`/`A147`）。 */
+export interface MediaGenerateResult {
+  readonly mediaMode?: 'image' | 'video'
+  readonly path?: string
+  readonly bytes?: number
+  readonly asset?: AssetRecord
+  readonly taskId?: string
+  /** `wait:false` 时为 true：结果要自己轮询 `listTasks` 拿。 */
+  readonly pending?: boolean
+}
+
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
@@ -89,6 +100,22 @@ export interface WorkbenchApi {
   removeResource: (id: string, force?: boolean) => Promise<boolean>
   /** Recorded generations, newest first. */
   listTasks: (limit?: number) => Promise<TaskRecord[]>
+  /**
+   * 工作台内直接生成（`A145`）：图片走同步；视频建议 `wait:false`，
+   * 立刻拿 `taskId` 再轮询 `listTasks`，生成中可用 `cancelTask` 取消。
+   */
+  generateMedia: (input: {
+    readonly mediaMode: 'image' | 'video'
+    readonly prompt: string
+    readonly projectId?: string
+    readonly size?: string
+    readonly model?: string
+    readonly image?: string
+    readonly duration?: number
+    readonly aspectRatio?: string
+    readonly resolution?: string
+    readonly wait?: boolean
+  }) => Promise<MediaGenerateResult>
   /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
   probeFfmpeg: (path?: string) => Promise<FfmpegProbe>
   /** 写运行时默认值覆盖（`R-CFG-2`）：与 composer 的 settings 走同一条路（留空 = 清除覆盖）。 */
@@ -217,6 +244,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,
     retryRun: async runId => (await call<{ run: WorkflowRunRecord }>('workflows/run-retry', { runId })).run,
     cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
+    generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
     getDiagnostics: () => call<WorkbenchDiagnostics>('diagnostics'),

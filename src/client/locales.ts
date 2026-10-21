@@ -2,6 +2,17 @@
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
+  | 'generateHeading'
+  | 'generatePromptLabel'
+  | 'generatePromptPlaceholder'
+  | 'generateImage'
+  | 'generateVideo'
+  | 'generating'
+  | 'generateCancel'
+  | 'generateDone'
+  | 'generateFailed'
+  | 'generateNeedsProject'
+  | 'generateCostHint'
   | 'tabTitle'
   | 'guideDescription'
   | 'sectionProject'
@@ -274,13 +285,25 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  generateHeading: 'Generate here',
+  generatePromptLabel: 'Prompt',
+  generatePromptPlaceholder: 'Describe the shot you want…',
+  generateImage: 'Generate image',
+  generateVideo: 'Generate video',
+  generating: 'Generating…',
+  generateCancel: 'Cancel',
+  generateDone: 'Generated and filed as an asset',
+  generateFailed: 'Generation failed',
+  generateNeedsProject: 'Pick a project at the top first, otherwise the result cannot be filed.',
+  generateCostHint: 'Runs against the effective parameters — this is a real provider call.',
+
   modeWorkflow: 'Workflow',
   modeTimeline: 'Timeline',
   paneAssets: 'Media assets',
   paneResources: 'Resources',
   panePreview: 'Preview',
   paneTasks: 'Tasks',
-  emptyHint: 'Skeleton only — projects, assets, tasks and the node canvas arrive in later phases.',
+  emptyHint: 'Projects, assets, the task ledger and a runnable node canvas are all available.',
   healthChecking: 'Connecting to host…',
   healthFailed: 'Host unavailable',
   panePlanned: 'Not runnable yet — planned for a later phase',
@@ -535,13 +558,25 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  generateHeading: '直接生成',
+  generatePromptLabel: '提示词',
+  generatePromptPlaceholder: '描述你想要的画面…',
+  generateImage: '生成图片',
+  generateVideo: '生成视频',
+  generating: '生成中…',
+  generateCancel: '取消生成',
+  generateDone: '已生成，并登记为项目素材',
+  generateFailed: '生成失败',
+  generateNeedsProject: '先在顶部选一个项目，生成结果才好归档。',
+  generateCostHint: '按当前生效参数真实调用服务商（会产生费用）。',
+
   modeWorkflow: '专业工作流',
   modeTimeline: '时间轴精剪',
   paneAssets: '媒体素材',
   paneResources: '创作资源',
   panePreview: '预览',
   paneTasks: '任务',
-  emptyHint: '项目、素材、资源与任务账本已可用；「专业工作流」模式里是节点画布（执行与项目存储随后端接入）。',
+  emptyHint: '项目、素材、资源与任务账本已可用；「专业工作流」模式里是可直接运行的节点画布。',
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
   panePlanned: '暂不可运行——排在后续阶段',

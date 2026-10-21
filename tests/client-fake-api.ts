@@ -76,6 +76,25 @@ export function fakeApi(options: {
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
   let counter = 0
   const api: WorkbenchApi = {
+  // `A149`：工作台内生成（测试替身）。图片立即"登记"一张素材；视频返回 pending + taskId。
+  generateMedia: async input => {
+    if (input.mediaMode === 'video') {
+      const task = {
+        schemaVersion: 4, id: 'tsk-generate-video', kind: 'video', status: 'running',
+        prompt: input.prompt, projectId: input.projectId,
+        createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+      }
+      tasks.push(task as never)
+      return { mediaMode: 'video', pending: true, taskId: task.id }
+    }
+    const asset = {
+      schemaVersion: 4, id: 'ast-generated', projectId: input.projectId ?? 'prj-1', kind: 'image',
+      path: '/tmp/outputs/generated.png', bytes: 2048, prompt: input.prompt,
+      createdAt: '2026-10-21T00:00:00.000Z',
+    }
+    assets.push(asset as never)
+    return { mediaMode: 'image', path: asset.path, bytes: 2048, asset: asset as never }
+  },
     health: async () => {
       calls.push('health')
       if (options.failHealth !== undefined) throw new Error(options.failHealth)
