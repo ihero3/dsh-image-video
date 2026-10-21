@@ -9,6 +9,9 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { copyFile } from 'node:fs/promises'
+import { basename } from 'node:path'
+import { extname } from 'node:path'
 import { extractOutcome } from '../workbench/ledger.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import { makeSubtitleIds } from '../workbench/subtitles.ts'
@@ -38,7 +41,7 @@ import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { sep } from 'node:path'
 import { resolve } from 'node:path'
-import { unlink } from 'node:fs/promises'
+import { stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { probeMediaSpec } from '../media/render.ts'
@@ -85,6 +88,15 @@ export function workbenchRpcStatus(): WorkbenchRpcStatus {
 }
 
 /** Host facts the channel answers with, plus the store behind the project API. */
+/** 批量登记/导入的单次上限（防一次性放大）。 */
+const MAX_BULK_ATTACH = 200
+
+/** 允许导入的扩展名 → 媒体种类。 */
+const IMPORTABLE_EXTENSIONS: Readonly<Record<string, 'image' | 'video'>> = {
+  '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.webp': 'image', '.gif': 'image',
+  '.mp4': 'video', '.mov': 'video', '.webm': 'video',
+}
+
 export interface WorkbenchRpcDeps {
   /** Configured provider name (`threerouter` | `wanx` | `minimax` | `seedance`). */
   provider: string
@@ -192,6 +204,30 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { removed: await deps.store.removeProject(text(payload, 'id')) }
     case 'assets/list':
       return { assets: await deps.store.listAssets(text(payload, 'projectId')) }
+    // `A152`：批量登记素材（「登记全部未登记产物」一次调用，避免 N 次往返）
+    case 'assets/attach-many': {
+      const projectId = text(payload, 'projectId')
+      const items = field(payload, 'items')
+      if (!Array.isArray(items)) throw new Error('items 必须是数组')
+      let created = 0
+      const results: unknown[] = []
+      for (const item of items.slice(0, MAX_BULK_ATTACH)) {
+        const record = (item ?? {}) as Record<string, unknown>
+        const path = typeof record.path === 'string' ? record.path.trim() : ''
+        if (path === '') continue
+        const kind = typeof record.kind === 'string' && record.kind !== ''
+          ? record.kind
+          : IMPORTABLE_EXTENSIONS[extname(path).toLowerCase()] ?? 'image'
+        const bytes = typeof record.bytes === 'number' ? record.bytes : undefined
+        const attached = await deps.store.attachAsset({
+          projectId, path, kind,
+          ...bytes === undefined ? {} : { bytes },
+        })
+        if (attached.created) created += 1
+        results.push(attached.asset)
+      }
+      return { created, assets: results }
+    }
     case 'assets/attach': {
       const attached = await deps.store.attachAsset({
         projectId: text(payload, 'projectId'),
@@ -518,6 +554,40 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       }
       const { manifestPath, manifest } = await exportProjectPackage({ store: deps.store, projectId, targetDir: chosen })
       return { package: { manifestPath, formatVersion: manifest.formatVersion, assets: manifest.assets.length, missing: manifest.missing.length } }
+    }
+    // `A152`：把任意本地媒体文件批量导入 outputs 目录并登记为项目素材。
+    // 复制（而不是引用外部路径）是为了让 `/outputs/<name>` 预览链路继续可用。
+    case 'media/import': {
+      const projectId = text(payload, 'projectId')
+      const raw = field(payload, 'paths')
+      if (!Array.isArray(raw)) throw new Error('paths 必须是字符串数组')
+      const sources = raw.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+      if (sources.length === 0) throw new Error('没有可导入的文件')
+      if (sources.length > MAX_BULK_ATTACH) throw new Error(`一次最多导入 ${String(MAX_BULK_ATTACH)} 个文件`)
+      const root = resolve(deps.outputsDir)
+      const imported: unknown[] = []
+      const skipped: Array<{ path: string; reason: string }> = []
+      for (const source of sources) {
+        try {
+          const info = await stat(source)
+          if (!info.isFile()) { skipped.push({ path: source, reason: '不是普通文件' }); continue }
+          const extension = extname(source).toLowerCase()
+          const kind = IMPORTABLE_EXTENSIONS[extension]
+          if (kind === undefined) { skipped.push({ path: source, reason: `不支持的扩展名 ${extension}` }); continue }
+          const safeName = basename(source).replace(/[^\w.-]/gu, '_')
+          const target = resolve(root, `${String(Date.now())}-${safeName}`)
+          if (target !== root && !target.startsWith(`${root}${sep}`)) {
+            skipped.push({ path: source, reason: '目标路径越界' })
+            continue
+          }
+          await copyFile(source, target)
+          const attached = await deps.store.attachAsset({ projectId, path: target, kind, bytes: info.size })
+          imported.push(attached.asset)
+        } catch (error) {
+          skipped.push({ path: source, reason: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      return { imported: imported.length, assets: imported, skipped }
     }
     // `A145`：工作台内直接生成（「快速创作」的生成入口）——复用对话里同一对工具，
     // 成功的产物自动登记为项目素材，并写一条任务账本记录（面板能看到）。

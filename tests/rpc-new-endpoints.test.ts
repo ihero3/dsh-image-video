@@ -110,4 +110,30 @@ describe('new endpoint coverage (A136)', () => {
     const preflight = await ok<{ summaryLine: string; ok: boolean }>('timelines/preflight', { timelineId: saved.id })
     expect(preflight.summaryLine.length).toBeGreaterThan(0)
   })
+
+  it('bulk-registers outputs and imports external files (A152)', async () => {
+    const { ok, outputsDir, project } = await harness()
+
+    // 批量登记（一次调用多条的路径）
+    const bulk = await ok<{ created: number; assets: Array<{ path: string }> }>('assets/attach-many', {
+      projectId: project.id,
+      items: [{ path: join(outputsDir, 'clip.mp4'), kind: 'video', bytes: 3 }],
+    })
+    expect(bulk.created).toBe(1)
+    expect(bulk.assets[0]?.path).toBe(join(outputsDir, 'clip.mp4'))
+
+    // 外部文件导入：复制进 outputs 才能走 /outputs 预览
+    const sourceDir = await mkdtemp(join(tmpdir(), 'dsh-import-'))
+    const source = join(sourceDir, 'outside.png')
+    await writeFile(source, 'png-bytes')
+    await writeFile(join(sourceDir, 'notes.txt'), 'text') // 存在但扩展名不支持 → 应被跳过并说明原因
+    const imported = await ok<{ imported: number; assets: Array<{ path: string }>; skipped: Array<{ path: string; reason: string }> }>(
+      'media/import',
+      { projectId: project.id, paths: [source, join(sourceDir, 'missing.png'), join(sourceDir, 'notes.txt')] },
+    )
+    expect(imported.imported).toBe(1)
+    expect(imported.assets[0]?.path.startsWith(outputsDir)).toBe(true)
+    expect(imported.skipped.length).toBe(2)
+    expect(imported.skipped.some(entry => entry.reason.includes('不支持的扩展名'))).toBe(true)
+  })
 })

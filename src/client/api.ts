@@ -99,6 +99,20 @@ export interface WorkbenchApi {
   /** Remove one resource record. */
   removeResource: (id: string, force?: boolean) => Promise<boolean>
   /** Recorded generations, newest first. */
+  /** 批量登记素材（`A152`）：一次登记多条，避免 N 次往返。 */
+  attachAssets: (input: {
+    readonly projectId: string
+    readonly items: readonly { readonly path: string; readonly kind?: string; readonly bytes?: number }[]
+  }) => Promise<{ readonly created: number; readonly assets: readonly AssetRecord[] }>
+  /** 从本地路径批量导入媒体并登记为项目素材（`A152`，文件会复制进 outputs）。 */
+  importMedia: (input: {
+    readonly projectId: string
+    readonly paths: readonly string[]
+  }) => Promise<{
+    readonly imported: number
+    readonly assets: readonly AssetRecord[]
+    readonly skipped: readonly { readonly path: string; readonly reason: string }[]
+  }>
   listTasks: (limit?: number) => Promise<TaskRecord[]>
   /**
    * 工作台内直接生成（`A145`）：图片走同步；视频建议 `wait:false`，
@@ -244,6 +258,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,
     retryRun: async runId => (await call<{ run: WorkflowRunRecord }>('workflows/run-retry', { runId })).run,
     cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
+    attachAssets: input => call<{ created: number; assets: AssetRecord[] }>('assets/attach-many', input),
+    importMedia: input => call<{ imported: number; assets: AssetRecord[]; skipped: Array<{ path: string; reason: string }> }>('media/import', input),
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,

@@ -344,6 +344,11 @@
 - [x] **A145 `media/generate`：工作台内直接生成** ✅ 2026-10-20：新增端点（复用 index 注入的 `proxyTool('image'|'video')` —— 与对话里 `generate_image`/`generate_video` **同一对工具**，参数语义/计费/账本一致）；给 `projectId` 时**产物自动登记为项目素材**并写任务账本（running→succeeded/failed，面板可见）；**生成类不自动重试**；测试 4 例（出图出片参数透传、素材登记、未装配报错、失败落账）
 - [ ] **A146 Track B 接「生成」按钮**（契约已就绪，见 `docs/HANDOFF.md` §六）
 
+## 批次七十一（A152 起，2026-10-21）
+
+- [x] **A152 批量登记 + 批量导入** ✅ 2026-10-21：①「登记全部未登记 (n)」**一次**登记所有最新产物（原先是"点一次登记一个、也不知道下一个是谁"）②「导入文件…」批量导入本地图片/视频 → **复制进 outputs** 保证预览链路可用 + 跳过不支持类型并给出原因；后端新增 `assets/attach-many` / `media/import`（单次上限 200）；测试 5 例（含不支持扩展名、缺失文件）
+- [ ] **A153 创作资源 ↔ 媒体素材关联**（角色归类：资源可挂参考图/定妆照）
+
 ## P1（能力补齐与规模化）
 
 - [x] **A6 Agent 工具面扩展** ✅ 2026-10-18：`workbench_timeline` 新增 trim（改起止/时长/源偏移）/ drop-clip（片段移出轨道）/ set-format（导出规格）/ set-track（音量静音）；`workbench_tasks` 新增 render-cancel（排队中的也能取消）；沿用 ≤20 批量护栏；顺手修了片段 id 同毫秒撞车（改用唯一生成器）；测试 10 例（含 T6-5 危险动作护栏仍绿）：`workbench_timeline` 增加 scrub/裁剪动作、`workbench_tasks` 增加 `render-cancel/export-status`、新增 `workbench_render` 启动导出；批量护栏（单次 ≤20 片段、并发 ≤2）。*（§10）*

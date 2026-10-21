@@ -882,6 +882,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
+  // `A152`：最新产物里尚未登记进当前项目的那些（按钮上直接显示数量）
+  const registeredPaths = new Set(assets.map(asset => asset.path))
+  const pendingOutputs = outputs.filter(output => !registeredPaths.has(output.path))
+
   const previewTarget = selectedAsset === undefined
     ? previewPath
     : { path: selectedAsset.path, kind: selectedAsset.kind }
@@ -2201,6 +2205,61 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 >
                   <Icon name="plus" />{t('registerLatest')}
                 </button>
+                <button
+                  type="button"
+                  className="iv-btn iv-btn--sm"
+                  disabled={busy || activeProject === undefined || pendingOutputs.length === 0}
+                  title={t('attachAll')}
+                  onClick={() => {
+                    void run(async () => {
+                      const project = activeProject
+                      if (project === undefined) return
+                      if (pendingOutputs.length === 0) {
+                        setNotice({ text: t('alreadyRegistered'), tone: 'info' })
+                        return
+                      }
+                      // `A152`：一次登记全部未登记产物（不再"点一次登记一个"、也不必猜下一个是谁）
+                      const result = await apiRef.current.attachAssets({
+                        projectId: project.id,
+                        items: pendingOutputs.map(output => ({ path: output.path, kind: output.kind, bytes: output.bytes })),
+                      })
+                      setAssets(await apiRef.current.listAssets(project.id))
+                      setNotice({ text: `${t('attachAllDone')}：${result.created}`, tone: 'info' })
+                    })
+                  }}
+                >
+                  <Icon name="plus" />{`${t('attachAll')} (${pendingOutputs.length})`}
+                </button>
+                <label className="iv-btn iv-btn--sm" style={{ cursor: 'pointer' }} title={t('importFiles')}>
+                  <Icon name="plus" />{t('importFiles')}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    style={{ display: 'none' }}
+                    onChange={event => {
+                      const files = [...(event.target.files ?? [])] as Array<File & { path?: string }>
+                      const paths = files
+                        .map(file => file.path)
+                        .filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+                      event.target.value = ''
+                      if (paths.length === 0) {
+                        setNotice({ text: t('importUnsupported'), tone: 'error' })
+                        return
+                      }
+                      void run(async () => {
+                        const project = activeProject
+                        if (project === undefined) return
+                        const result = await apiRef.current.importMedia({ projectId: project.id, paths })
+                        setAssets(await apiRef.current.listAssets(project.id))
+                        setNotice({
+                          text: `${t('importDone')}：${result.imported}${result.skipped.length > 0 ? ` · ${t('skippedCount')} ${result.skipped.length}` : ''}`,
+                          tone: 'info',
+                        })
+                      })
+                    }}
+                  />
+                </label>
                 <button
                   type="button"
                   className="iv-btn iv-btn--sm"

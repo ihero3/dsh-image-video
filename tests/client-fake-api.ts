@@ -76,6 +76,9 @@ export function fakeApi(options: {
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
   let counter = 0
   const api: WorkbenchApi = {
+  // `A152`：批量登记 / 批量导入（测试替身）
+  attachAssets: async input => ({ created: input.items.length, assets: [] }),
+  importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),
   // `A149`：工作台内生成（测试替身）。图片立即"登记"一张素材；视频返回 pending + taskId。
   generateMedia: async input => {
     if (input.mediaMode === 'video') {

@@ -2,6 +2,12 @@
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
+  | 'attachAll'
+  | 'skippedCount'
+  | 'attachAllDone'
+  | 'importFiles'
+  | 'importDone'
+  | 'importUnsupported'
   | 'generateReferenceLabel'
   | 'generateReferenceNone'
   | 'generateUseSelected'
@@ -290,6 +296,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  attachAll: 'Register all new',
+  skippedCount: 'skipped',
+  attachAllDone: 'Registered',
+  importFiles: 'Import files…',
+  importDone: 'Imported',
+  importUnsupported: 'Cannot read file paths here — importing needs the desktop app.',
+
   generateReferenceLabel: 'Reference image',
   generateReferenceNone: 'None (text-to-image / text-to-video)',
   generateUseSelected: 'Use selected asset',
@@ -569,6 +582,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  attachAll: '登记全部未登记',
+  skippedCount: '跳过',
+  attachAllDone: '已登记',
+  importFiles: '导入文件…',
+  importDone: '已导入',
+  importUnsupported: '这里拿不到文件路径——批量导入需在桌面应用里使用。',
+
   generateReferenceLabel: '参考图',
   generateReferenceNone: '未指定（纯文生图 / 文生视频）',
   generateUseSelected: '用选中素材',
