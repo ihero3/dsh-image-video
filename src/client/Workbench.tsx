@@ -292,6 +292,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
   // `A151`：参考图（多模态输入）—— 图片走图生图、视频走首帧
   const [generateReference, setGenerateReference] = useState<string | undefined>(undefined)
+  // `F1`：面板内就地可改的生成参数（初始值取生效默认值；改了就用改后的）
+  const [generateSize, setGenerateSize] = useState('')
+  const [generateAspect, setGenerateAspect] = useState('')
+  const [generateDuration, setGenerateDuration] = useState('')
 
   /** 生成后刷新当前项目的素材列表。 */
   const refreshAssetsAfterGenerate = async (): Promise<void> => {
@@ -318,6 +322,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         prompt,
         projectId: activeId,
         ...generateReference === undefined ? {} : { image: generateReference },
+        ...mediaMode === 'image'
+          ? generateSize.trim() === '' ? {} : { size: generateSize.trim() }
+          : {
+              ...generateAspect.trim() === '' ? {} : { aspectRatio: generateAspect.trim() },
+              ...Number(generateDuration) > 0 ? { duration: Number(generateDuration) } : {},
+            },
         ...mediaMode === 'video' ? { wait: false } : {},
       })
       if (result.pending === true && result.taskId !== undefined) {
@@ -887,6 +897,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `A152`：最新产物里尚未登记进当前项目的那些（按钮上直接显示数量）
   const registeredPaths = new Set(assets.map(asset => asset.path))
   const pendingOutputs = outputs.filter(output => !registeredPaths.has(output.path))
+
+  // `F1`：拿到生效默认值后回填一次（用户改过就不覆盖）
+  useEffect(() => {
+    if (health.status !== 'ok' || health.defaults === undefined) return
+    const defaults = health.defaults as unknown as Record<string, unknown>
+    setGenerateSize(previous => previous === '' ? String(defaults.imageSize ?? '') : previous)
+    setGenerateAspect(previous => previous === '' ? String(defaults.videoAspectRatio ?? '') : previous)
+    setGenerateDuration(previous => previous === '' ? String(defaults.videoDuration ?? '') : previous)
+  }, [health])
 
   const previewTarget = selectedAsset === undefined
     ? previewPath
@@ -1473,6 +1492,35 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         >
                           {t('generateUseSelected')}
                         </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span className="iv-meta">{t('defaultImageSize')}：</span>
+                        <input
+                          className="iv-input"
+                          style={{ width: '96px' }}
+                          aria-label={t('defaultImageSize')}
+                          value={generateSize}
+                          disabled={generating !== undefined}
+                          onChange={event => setGenerateSize(event.target.value)}
+                        />
+                        <span className="iv-meta">{t('defaultVideoAspectRatio')}：</span>
+                        <input
+                          className="iv-input"
+                          style={{ width: '76px' }}
+                          aria-label={t('defaultVideoAspectRatio')}
+                          value={generateAspect}
+                          disabled={generating !== undefined}
+                          onChange={event => setGenerateAspect(event.target.value)}
+                        />
+                        <span className="iv-meta">{t('defaultVideoDuration')}：</span>
+                        <input
+                          className="iv-input"
+                          style={{ width: '56px' }}
+                          aria-label={t('defaultVideoDuration')}
+                          value={generateDuration}
+                          disabled={generating !== undefined}
+                          onChange={event => setGenerateDuration(event.target.value)}
+                        />
                       </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         <button
