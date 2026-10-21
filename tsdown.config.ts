@@ -37,7 +37,14 @@ export default defineConfig([
     format: ['cjs'],
     platform: 'browser',
     target: 'es2022',
-    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+      // zustand (through @xyflow/react) reads import.meta.env in ESM source.
+      // This client bundle is CJS, so define the whole object; otherwise
+      // rolldown replaces import.meta with {} and warns, leaving dead
+      // development warnings in the production bundle.
+      'import.meta.env': JSON.stringify({ MODE: 'production' }),
+    },
     fixedExtension: false,
     dts: false,
     clean: false,

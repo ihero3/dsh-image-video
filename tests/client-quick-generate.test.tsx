@@ -60,3 +60,31 @@ describe('quick create generate (A149)', () => {
     await waitFor(() => { expect(cancelSpy).toHaveBeenCalledWith('tsk-gen-1') })
   })
 })
+
+describe('reference image plumbing (A151)', () => {
+  it('passes the referenced asset through as the image parameter', async () => {
+    const host = fakeApi({})
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '生成项目',
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    })
+    host.assets.push({
+      schemaVersion: 4, id: 'ast-ref', projectId: 'prj-1', kind: 'image',
+      path: '/tmp/outputs/ref-portrait.png', bytes: 4096, createdAt: '2026-10-21T00:00:00.000Z',
+    } as never)
+    const spy = vi.fn(async () => ({ mediaMode: 'image' as const, path: '/tmp/outputs/gen.png', bytes: 1 }))
+    ;(host.api as unknown as { generateMedia: typeof spy }).generateMedia = spy
+    render(<Workbench {...clientProps({ api: host.api })} />)
+
+    // 点素材行的「引用到提示词」→ 参考图落到表单
+    const reference = await screen.findByRole('button', { name: `${en.referenceAsset} ref-portrait.png` })
+    fireEvent.click(reference)
+    // 参考图落到表单后会出现「清除参考」（唯一锚点；文件名在素材行里也有一份）
+    expect(await screen.findByRole('button', { name: en.generateClearReference })).toBeTruthy()
+
+    fireEvent.change(await screen.findByPlaceholderText(en.generatePromptPlaceholder), { target: { value: '同一个人的侧脸' } })
+    fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
+    await waitFor(() => { expect(spy).toHaveBeenCalledTimes(1) })
+    expect(spy.mock.calls[0]![0]).toMatchObject({ mediaMode: 'image', image: '/tmp/outputs/ref-portrait.png' })
+  })
+})

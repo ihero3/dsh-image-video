@@ -288,6 +288,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generatePrompt, setGeneratePrompt] = useState('')
   const [generating, setGenerating] = useState<'image' | 'video' | undefined>(undefined)
   const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
+  // `A151`：参考图（多模态输入）—— 图片走图生图、视频走首帧
+  const [generateReference, setGenerateReference] = useState<string | undefined>(undefined)
 
   /** 生成后刷新当前项目的素材列表。 */
   const refreshAssetsAfterGenerate = async (): Promise<void> => {
@@ -313,6 +315,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         mediaMode,
         prompt,
         projectId: activeId,
+        ...generateReference === undefined ? {} : { image: generateReference },
         ...mediaMode === 'video' ? { wait: false } : {},
       })
       if (result.pending === true && result.taskId !== undefined) {
@@ -1433,13 +1436,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
                       <textarea
                         className="iv-input"
-                        rows={2}
+                        rows={3}
                         value={generatePrompt}
                         placeholder={t('generatePromptPlaceholder')}
                         disabled={generating !== undefined}
                         onChange={event => setGeneratePrompt(event.target.value)}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span className="iv-meta">{t('generateReferenceLabel')}：</span>
+                        {generateReference === undefined
+                          ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                          : (
+                            <>
+                              <span className="iv-chip" title={generateReference}>{baseName(generateReference)}</span>
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--ghost iv-btn--sm"
+                                onClick={() => setGenerateReference(undefined)}
+                              >
+                                {t('generateClearReference')}
+                              </button>
+                            </>
+                          )}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          disabled={selectedAsset === undefined}
+                          onClick={() => setGenerateReference(selectedAsset?.path)}
+                        >
+                          {t('generateUseSelected')}
+                        </button>
+                      </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                         <button
                           type="button"
@@ -2205,7 +2233,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <li key={asset.id} className="iv-row" data-active={asset.id === selectedId ? 'true' : 'false'}
                       draggable
                       data-asset-draggable="true"
-                      onDragStart={event => { onAssetDragStart(event, asset) }}>
+                      onDragStart={event => { onAssetDragStart(event, asset) }}
+                      onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}>
                       {asset.kind === 'image'
                         ? (
                           <img
@@ -2228,6 +2257,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <span className="iv-meta">{formatBytes(asset.bytes)}</span>
                       </button>
                       <div className="iv-row-actions">
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                          aria-label={`${t('referenceAsset')} ${baseName(asset.path)}`}
+                          title={t('referenceAsset')}
+                          disabled={busy}
+                          onClick={event => {
+                            event.stopPropagation()
+                            setGenerateReference(asset.path)
+                            setNotice({ text: `${t('referenceAsset')}：${baseName(asset.path)}`, tone: 'info' })
+                          }}
+                        >
+                          <Icon name="plus" size={12} />
+                        </button>
                         <button
                           type="button"
                           // 可访问名带上文件名：同一区域里可能有多个"删除"按钮

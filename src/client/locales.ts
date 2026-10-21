@@ -2,6 +2,11 @@
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
+  | 'generateReferenceLabel'
+  | 'generateReferenceNone'
+  | 'generateUseSelected'
+  | 'generateClearReference'
+  | 'referenceAsset'
   | 'generateHeading'
   | 'generatePromptLabel'
   | 'generatePromptPlaceholder'
@@ -285,6 +290,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  generateReferenceLabel: 'Reference image',
+  generateReferenceNone: 'None (text-to-image / text-to-video)',
+  generateUseSelected: 'Use selected asset',
+  generateClearReference: 'Clear reference',
+  referenceAsset: 'Reference in prompt',
+
   generateHeading: 'Generate here',
   generatePromptLabel: 'Prompt',
   generatePromptPlaceholder: 'Describe the shot you want…',
@@ -558,6 +569,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  generateReferenceLabel: '参考图',
+  generateReferenceNone: '未指定（纯文生图 / 文生视频）',
+  generateUseSelected: '用选中素材',
+  generateClearReference: '清除参考',
+  referenceAsset: '引用到提示词',
+
   generateHeading: '直接生成',
   generatePromptLabel: '提示词',
   generatePromptPlaceholder: '描述你想要的画面…',
