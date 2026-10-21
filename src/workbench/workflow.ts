@@ -331,6 +331,7 @@ export interface WorkflowTemplate {
  * 示例值只求"能跑通并看清链路"，用户改提示词即可；端口类型与必填项都满足校验。
  */
 export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
+
   {
     id: 'copy-to-video', labelKey: 'templateCopyToVideo',
     nodes: [
@@ -361,6 +362,44 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     ],
     edges: [[0, 1]],
   },
+  // `A-1`（2026-10-21）：四个"2 秒上手"模板 —— 单图 / 单视频 / 图文分镜 / 封面图。
+  // 文案 key 由 Track B 补（`templateQuickImage` 等）；数据层先落地，画布即可运行。
+  {
+    id: 'quick-image', labelKey: 'templateQuickImage',
+    nodes: [
+      { kind: 'script', params: { text: '一句话说清你要的画面（示例：雨夜霓虹街头，电影感）' } },
+      { kind: 'image-generate', params: { prompt: '雨夜霓虹街头，电影感，浅景深' } },
+    ],
+    edges: [[0, 1]],
+  },
+  {
+    id: 'quick-video', labelKey: 'templateQuickVideo',
+    nodes: [
+      { kind: 'script', params: { text: '一句话说清这段镜头（示例：镜头缓慢推近，光照流动）' } },
+      { kind: 'image-generate', params: { prompt: '首帧：雨夜霓虹街头，主体居中，电影感' } },
+      { kind: 'video-generate', params: { prompt: '镜头缓慢推近，光照流动', duration: 5, compare: false } },
+    ],
+    edges: [[0, 1], [1, 2]],
+  },
+  {
+    id: 'storyboard', labelKey: 'templateStoryboard',
+    nodes: [
+      { kind: 'creative-input', params: { brief: '30 秒产品短片：从环境空镜到产品特写' } },
+      { kind: 'script', params: { text: '镜头一：环境空镜；镜头二：人物入画；镜头三：产品特写＋字幕' } },
+      { kind: 'storyboard', params: { shots: 3, note: '每镜 5 秒' } },
+      { kind: 'image-generate', params: { prompt: '分镜首帧：产品置于木桌，侧逆光，浅景深' } },
+    ],
+    edges: [[0, 1], [1, 2], [2, 3]],
+  },
+  {
+    id: 'cover', labelKey: 'templateCover',
+    nodes: [
+      { kind: 'script', params: { text: '封面图：视频主视觉 + 大标题留白' } },
+      { kind: 'image-generate', params: { prompt: '竖版封面：主体居中偏右，左侧留出标题空间，高对比' } },
+    ],
+    edges: [[0, 1]],
+  },
+
 ]
 
 /** 端口兼容表：目标输入能接受哪些来源输出。`any` 全收；`asset` 可当 `media` 用。 */

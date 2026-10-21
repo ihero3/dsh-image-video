@@ -2,6 +2,10 @@
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
+  | 'templateQuickImage'
+  | 'templateQuickVideo'
+  | 'templateStoryboard'
+  | 'templateCover'
   | 'resourceReference'
   | 'resourceUseSelected'
   | 'resourceClear'
@@ -299,6 +303,11 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  templateQuickImage: 'Quick image',
+  templateQuickVideo: 'Quick video',
+  templateStoryboard: 'Storyboard',
+  templateCover: 'Cover image',
+
   resourceReference: 'Reference (makeup shot)',
   resourceUseSelected: 'Use selected asset',
   resourceClear: 'Clear',
@@ -589,6 +598,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  templateQuickImage: '快速出图',
+  templateQuickVideo: '快速出片',
+  templateStoryboard: '图文分镜',
+  templateCover: '封面图',
+
   resourceReference: '参考图（定妆照）',
   resourceUseSelected: '用选中素材',
   resourceClear: '清除',
