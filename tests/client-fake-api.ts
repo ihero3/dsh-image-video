@@ -76,6 +76,8 @@ export function fakeApi(options: {
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
   let counter = 0
   const api: WorkbenchApi = {
+  // `A153`：改资源（测试替身）
+  updateResource: async input => ({ id: input.id, projectId: 'prj-1', kind: 'role', name: input.name ?? 'x', scope: 'project', createdAt: '', updatedAt: '' } as never),
   // `A152`：批量登记 / 批量导入（测试替身）
   attachAssets: async input => ({ created: input.items.length, assets: [] }),
   importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),

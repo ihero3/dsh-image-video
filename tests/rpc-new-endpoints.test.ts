@@ -136,4 +136,25 @@ describe('new endpoint coverage (A136)', () => {
     expect(imported.skipped.length).toBe(2)
     expect(imported.skipped.some(entry => entry.reason.includes('不支持的扩展名'))).toBe(true)
   })
+
+  it('keeps a reference image on resources (A153)', async () => {
+    const { ok, project } = await harness()
+    const created = await ok<{ resource: { id: string; assetPath?: string } }>('resources/create', {
+      projectId: project.id, kind: 'role', name: '小雨', assetPath: '/tmp/outputs/ref.png',
+    })
+    expect(created.resource.assetPath).toBe('/tmp/outputs/ref.png')
+
+    // 只改名字/备注时，参考图要保留
+    const renamed = await ok<{ resource: { name: string; assetPath?: string } }>('resources/update', {
+      id: created.resource.id, name: '小雨（红衣）', note: '女主角',
+    })
+    expect(renamed.resource.name).toBe('小雨（红衣）')
+    expect(renamed.resource.assetPath).toBe('/tmp/outputs/ref.png')
+
+    // 显式 null 才清除
+    const cleared = await ok<{ resource: { assetPath?: string } }>('resources/update', {
+      id: created.resource.id, assetPath: null,
+    })
+    expect(cleared.resource.assetPath).toBeUndefined()
+  })
 })

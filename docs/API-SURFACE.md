@@ -96,6 +96,7 @@
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
 | `resources/list` | `{projectId?}` | `{resources}` |
+| `resources/update` | `{id,name?,note?,assetPath?}` | `{resource}` | **`A153`** 改资源：改名/备注/参考图；`assetPath: null` 清除，**不传则保留** |
 | `resources/create` | `{projectId,kind,name?}` | `{resource}` |
 | `resources/remove` | `{resourceId}` | `{removed}` |
 | `resources/usage` | `{resourceId?}` | `{usage}` |

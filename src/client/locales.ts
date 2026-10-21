@@ -2,6 +2,9 @@
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
+  | 'resourceReference'
+  | 'resourceUseSelected'
+  | 'resourceClear'
   | 'attachAll'
   | 'skippedCount'
   | 'attachAllDone'
@@ -296,6 +299,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  resourceReference: 'Reference (makeup shot)',
+  resourceUseSelected: 'Use selected asset',
+  resourceClear: 'Clear',
+
   attachAll: 'Register all new',
   skippedCount: 'skipped',
   attachAllDone: 'Registered',
@@ -582,6 +589,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  resourceReference: '参考图（定妆照）',
+  resourceUseSelected: '用选中素材',
+  resourceClear: '清除',
+
   attachAll: '登记全部未登记',
   skippedCount: '跳过',
   attachAllDone: '已登记',

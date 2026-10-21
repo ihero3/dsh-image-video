@@ -126,6 +126,11 @@ export interface ResourceRecord {
     /** Free-form description (appearance, mood, usage notes). */
     readonly note?: string;
     /**
+     * 参考图（`A153`）：该资源对应的定妆照/参考素材路径（outputs 内的相对或绝对路径）。
+     * 角色/场景资源挂上它，多镜生成时才有可对齐的视觉锚点。
+     */
+    readonly assetPath?: string;
+    /**
      * 资源作用域（`R-COL-1`，后置能力）：保留 `project`/`team`/`public` 字段，
      * **V1 一律写 `project`**，UI 不提供团队/公共入口。
      */

@@ -95,6 +95,7 @@ export interface WorkbenchApi {
     kind: ResourceKind
     name: string
     note?: string
+    assetPath?: string
   }) => Promise<ResourceRecord>
   /** Remove one resource record. */
   removeResource: (id: string, force?: boolean) => Promise<boolean>
@@ -184,6 +185,13 @@ export interface WorkbenchApi {
   /** File a recorded generation into a project. */
   assignTask: (id: string, projectId: string) => Promise<TaskRecord>
   /** Newest media files under the output directory. */
+  /** 改资源（`A153`）：改名 / 备注 / 参考图（`assetPath: null` 清除）。 */
+  updateResource: (input: {
+    id: string
+    name?: string
+    note?: string
+    assetPath?: string | null
+  }) => Promise<ResourceRecord>
   listOutputs: (limit?: number) => Promise<OutputFile[]>
   /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
   getDiagnostics: () => Promise<WorkbenchDiagnostics>
@@ -259,6 +267,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     retryRun: async runId => (await call<{ run: WorkflowRunRecord }>('workflows/run-retry', { runId })).run,
     cancelTask: async id => (await call<{ cancelled: boolean }>('tasks/cancel', { id })).cancelled,
     attachAssets: input => call<{ created: number; assets: AssetRecord[] }>('assets/attach-many', input),
+    updateResource: input => call<{ resource: ResourceRecord }>('resources/update', input).then(result => result.resource),
     importMedia: input => call<{ imported: number; assets: AssetRecord[]; skipped: Array<{ path: string; reason: string }> }>('media/import', input),
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,

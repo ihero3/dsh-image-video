@@ -271,6 +271,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
   const [resourceKind, setResourceKind] = useState<ResourceKind>('role')
   const [resourceName, setResourceName] = useState('')
+  // `A153`：资源的参考图（角色定妆照 / 场景基准）
+  const [resourceAsset, setResourceAsset] = useState<string | undefined>(undefined)
   const [resourceNote, setResourceNote] = useState('')
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
@@ -2472,7 +2474,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         await apiRef.current.createResource({
                           projectId: project.id, kind: resourceKind, name: resourceName.trim(),
                           ...note === '' ? {} : { note },
+                          ...resourceAsset === undefined ? {} : { assetPath: resourceAsset },
                         })
+                        setResourceAsset(undefined)
                         setResourceName('')
                         setResourceNote('')
                         await loadResources(project.id)
@@ -2480,6 +2484,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     }}
                   >
                     <Icon name="plus" />{t('addResource')}
+                  </button>
+                </div>
+                <div className="iv-add-row" style={{ marginTop: '4px' }}>
+                  <span className="iv-meta">{t('resourceReference')}：</span>
+                  {resourceAsset === undefined
+                    ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                    : (
+                      <>
+                        <span className="iv-chip" title={resourceAsset}>{baseName(resourceAsset)}</span>
+                        <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => setResourceAsset(undefined)}>
+                          {t('resourceClear')}
+                        </button>
+                      </>
+                    )}
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--ghost iv-btn--sm"
+                    disabled={selectedAsset === undefined}
+                    onClick={() => setResourceAsset(selectedAsset?.path)}
+                  >
+                    {t('resourceUseSelected')}
                   </button>
                 </div>
                 {resources.length === 0
@@ -2491,8 +2516,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   )
                   : (
                   <VirtualList className="iv-list" items={resources} renderRow={(resource, _index) => (
-                    <li key={resource.id} className="iv-row">
-                      <span className="iv-tile"><Icon name={RESOURCE_ICONS[resource.kind]} size={13} /></span>
+                    <li key={resource.id} className="iv-row"
+                      onClick={() => {
+                        if (resource.assetPath === undefined) return
+                        setPreviewPath({ path: resource.assetPath, kind: 'image' })
+                        setSelectedId(undefined)
+                      }}>
+                      {resource.assetPath === undefined
+                        ? <span className="iv-tile"><Icon name={RESOURCE_ICONS[resource.kind]} size={13} /></span>
+                        : (
+                          <img
+                            className="iv-thumb"
+                            src={`/outputs/${encodeURIComponent(baseName(resource.assetPath))}`}
+                            alt=""
+                          />
+                        )}
                       <span className="iv-row-main iv-ellipsis" title={resource.note ?? ''}>
                         {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
                       </span>

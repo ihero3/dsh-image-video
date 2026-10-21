@@ -122,6 +122,7 @@ export interface WorkbenchApi {
         kind: ResourceKind;
         name: string;
         note?: string;
+        assetPath?: string;
     }) => Promise<ResourceRecord>;
     /** Remove one resource record. */
     removeResource: (id: string, force?: boolean) => Promise<boolean>;
@@ -224,6 +225,13 @@ export interface WorkbenchApi {
     /** File a recorded generation into a project. */
     assignTask: (id: string, projectId: string) => Promise<TaskRecord>;
     /** Newest media files under the output directory. */
+    /** 改资源（`A153`）：改名 / 备注 / 参考图（`assetPath: null` 清除）。 */
+    updateResource: (input: {
+        id: string;
+        name?: string;
+        note?: string;
+        assetPath?: string | null;
+    }) => Promise<ResourceRecord>;
     listOutputs: (limit?: number) => Promise<OutputFile[]>;
     /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
     getDiagnostics: () => Promise<WorkbenchDiagnostics>;

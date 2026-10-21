@@ -284,6 +284,8 @@ export class WorkbenchStore {
     kind: ResourceKind | string
     name: unknown
     note?: string
+    /** 参考图（`A153`）：定妆照 / 参考素材路径。 */
+    assetPath?: string
     keyframes?: unknown
     scope?: unknown
   }): Promise<ResourceRecord> {
@@ -305,12 +307,45 @@ export class WorkbenchStore {
       createdAt: stamp,
       updatedAt: stamp,
       ...input.note === undefined || input.note === '' ? {} : { note: input.note },
+      ...input.assetPath === undefined || input.assetPath === '' ? {} : { assetPath: input.assetPath },
     }
     document.resources.push(resource)
     document.projects = document.projects.map(candidate =>
       candidate.id === project.id ? { ...candidate, updatedAt: stamp } : candidate)
     await this.save(document)
     return resource
+  }
+
+  /**
+   * Update one resource record (name / note / reference image).
+   * @param id - resource id.
+   * @param patch - fields to change; `assetPath: null` clears the reference image.
+   * @returns the updated record, or `undefined` when the id is unknown.
+   */
+  async updateResource(id: string, patch: {
+    name?: unknown
+    note?: string
+    assetPath?: string | null
+  }): Promise<ResourceRecord | undefined> {
+    const document = await this.load()
+    const index = document.resources.findIndex(resource => resource.id === id)
+    if (index === -1) return undefined
+    const current = document.resources[index]!
+    const next: ResourceRecord = {
+      ...current,
+      updatedAt: this.now().toISOString(),
+      ...patch.name === undefined ? {} : { name: normalizeResourceName(patch.name) },
+      ...patch.note === undefined ? {} : patch.note === '' ? { note: undefined as never } : { note: patch.note },
+      ...patch.assetPath === undefined ? {} : patch.assetPath === null ? { assetPath: undefined as never } : { assetPath: patch.assetPath },
+    }
+    // 显式清除时把键删掉（而不是留 `undefined`，避免落库出现 `"note": null` 这类脏值）
+    const cleaned: ResourceRecord = { ...next }
+    const mutable = cleaned as unknown as Record<string, unknown>
+    if (mutable.note === undefined) delete mutable.note
+    if (mutable.assetPath === undefined) delete mutable.assetPath
+    document.resources[index] = cleaned
+    await this.save(document)
+    return cleaned
   }
 
   /**

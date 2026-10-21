@@ -318,8 +318,22 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           name: validated(() => normalizeResourceName(field(payload, 'name'))),
           note: optionalText(payload, 'note'),
           ...field(payload, 'keyframes') === undefined ? {} : { keyframes: field(payload, 'keyframes') },
+          ...optionalText(payload, 'assetPath') === undefined ? {} : { assetPath: optionalText(payload, 'assetPath') as string },
         }),
       }
+    // `A153`：改资源（改名 / 备注 / 参考图；`assetPath: null` 表示清除参考图）
+    case 'resources/update': {
+      const id = text(payload, 'id')
+      const resource = await deps.store.updateResource(id, {
+        ...field(payload, 'name') === undefined ? {} : { name: field(payload, 'name') },
+        ...optionalText(payload, 'note') === undefined ? {} : { note: optionalText(payload, 'note') as string },
+        ...field(payload, 'assetPath') === undefined
+          ? {}
+          : { assetPath: field(payload, 'assetPath') === null ? null : text(payload, 'assetPath') },
+      })
+      if (resource === undefined) throw new Error(`unknown resource: ${id}`)
+      return { resource }
+    }
     case 'resources/remove':
       return {
         removed: await deps.store.removeResource(text(payload, 'id'), field(payload, 'force') === true ? { force: true } : {}),
