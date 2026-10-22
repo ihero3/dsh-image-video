@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import type { PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
+import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
@@ -61,6 +61,10 @@ export function fakeApi(options: {
   defaults?: Record<string, string | number | null>
   /** `A-5` 提示词库初始内容（B-10 测试替身）。 */
   prompts?: PromptRecord[]
+  /** `B-11` 体检三端点的返回（测试替身）。 */
+  sizeReport?: AssetSizeReport
+  duplicates?: AssetDuplicatesReport
+  projectStats?: AssetProjectStats
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -83,9 +87,9 @@ export function fakeApi(options: {
   /** `workflows/run` 收到的入参（B4 单节点运行断言用）。 */
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
   /** `B-9`：`composeMedia` 收到的入参（测试断言用）。 */
-  const composePayloads: Array<{ projectId: string; prompt: string; roles?: readonly string[]; scenes?: readonly string[]; props?: readonly string[] }> = []
+  const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[] }> = []
   /** `B-10`：`extractPrompt` 收到的入参（测试断言用）。 */
-  const extractInputs: Array<{ projectId?: string; assetId?: string; path?: string }> = []
+  const extractInputs: Array<{ path?: string }> = []
   /** `B-10`：提示词库（内存态，`savePrompt`/`removePrompt` 会改它）。 */
   const prompts: PromptRecord[] = [...(options.prompts ?? [])]
   let promptSequence = prompts.length
@@ -316,6 +320,20 @@ export function fakeApi(options: {
       runs.unshift(run)
       return run
     },
+    // `B-11`：素材库体检三端点（测试替身）。未提供报告时返回空结果，
+    // 让测试只声明它关心的那份数据。
+    assetSizeReport: async () => {
+      calls.push('assets/size-report')
+      return options.sizeReport ?? { totalBytes: 0, topBytes: 0, topShare: 0, medianBytes: 0, count: 0, top: [] }
+    },
+    assetDuplicates: async () => {
+      calls.push('assets/duplicates')
+      return options.duplicates ?? { groups: [], reclaimableBytes: 0, hashedFiles: 0, skippedFiles: 0 }
+    },
+    assetProjectStats: async () => {
+      calls.push('assets/project-stats')
+      return options.projectStats ?? { totalBytes: 0, projects: [], topShare: 0 }
+    },
     probeFfmpeg: async () => {
       calls.push('media/ffmpeg')
       return options.ffmpeg ?? { available: true, version: '7.1.1', path: '/opt/homebrew/bin/ffmpeg', encoders: { h264: true, aac: true } }
@@ -405,7 +423,7 @@ export function fakeApi(options: {
       const seen = new Map<string, AssetRecord>()
       let removed = 0
       for (const asset of [...assets]) {
-        const key = `${asset.projectId} ${asset.path}`
+        const key = `${asset.projectId}:${asset.path}`
         if (seen.has(key)) { removed += 1; assets.splice(assets.indexOf(asset), 1); continue }
         seen.set(key, asset)
       }
@@ -467,6 +485,21 @@ export async function createProject(host: ReturnType<typeof fakeApi>, name: stri
   fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: name } })
   fireEvent.click(screen.getByRole('button', { name: en.create }))
   await waitFor(() => { expect(host.projects).toHaveLength(1) })
+}
+
+/**
+ * jsdom 不实现媒体播放：挂载 `<video>` 的测试先补上 `play`/`pause`。
+ * @returns 恢复原实现的函数，调用方放进 `afterAll`。
+ */
+export function stubMediaPlayback(): () => void {
+  const originalPlay = HTMLMediaElement.prototype.play
+  const originalPause = HTMLMediaElement.prototype.pause
+  HTMLMediaElement.prototype.play = () => Promise.resolve()
+  HTMLMediaElement.prototype.pause = () => {}
+  return () => {
+    HTMLMediaElement.prototype.play = originalPlay
+    HTMLMediaElement.prototype.pause = originalPause
+  }
 }
 
 /** Re-export so test files need one import for render/screen/waitFor too. */
