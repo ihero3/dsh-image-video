@@ -261,6 +261,26 @@ export interface WorkbenchApi {
         note?: string;
         assetPath?: string | null;
     }) => Promise<ResourceRecord>;
+    /** 提示词库（`A-5`）。 */
+    listPrompts: () => Promise<readonly {
+        id: string;
+        name: string;
+        text: string;
+        source: string;
+    }[]>;
+    savePrompt: (input: {
+        id?: string;
+        name: string;
+        text: string;
+    }) => Promise<{
+        id: string;
+        name: string;
+        text: string;
+        source: string;
+    }>;
+    removePrompt: (id: string) => Promise<boolean>;
+    /** 图片 → 提示词（`A-5`）；宿主未注入视觉模型时会如实报错。 */
+    extractPrompt: (path: string) => Promise<string>;
     /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
     composeMedia: (input: {
         readonly projectId: string;

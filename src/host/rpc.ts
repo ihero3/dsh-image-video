@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { PromptLibrary } from '../workbench/prompts.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { copyFile } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -41,7 +42,7 @@ import {
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
 import { sep } from 'node:path'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
@@ -151,6 +152,15 @@ export function workbenchOptions(): WorkbenchOptions {
  * @param deps - host facts the answers are built from.
  * @returns the connection RPC handler.
  */
+/**
+ * Lazily built prompt library bound to the workbench data directory.
+ * @param deps - handler dependencies.
+ * @returns shared library instance.
+ */
+function promptLibraryFor(deps: WorkbenchRpcDeps): PromptLibrary {
+  return new PromptLibrary({ directory: dirname(deps.outputsDir) })
+}
+
 export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHandler {
   return async (endpoint, payload) => {
     try {
@@ -846,6 +856,33 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { imported: result }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
+    // `A-5`：提示词库（独立 JSON 文件，不动项目 schema）
+    case 'prompts/list':
+      return { prompts: await promptLibraryFor(deps).list() }
+    case 'prompts/save': {
+      const prompt = await promptLibraryFor(deps).save({
+        ...optionalText(payload, 'id') === undefined ? {} : { id: optionalText(payload, 'id') as string },
+        name: text(payload, 'name'),
+        text: text(payload, 'text'),
+        ...optionalText(payload, 'source') === undefined ? {} : { source: optionalText(payload, 'source') as 'manual' | 'extract' | 'template' },
+      })
+      return { prompt }
+    }
+    case 'prompts/remove':
+      return { removed: await promptLibraryFor(deps).remove(text(payload, 'id')) }
+    // `A-5`：图片 → 提示词提取。没有视觉模型适配器时**如实报错**（`R-BND-4` 不伪造结果）。
+    case 'prompts/extract': {
+      const vision = (deps as unknown as { generate?: { vision?: GenerationTool } }).generate?.vision
+      if (vision === undefined) {
+        throw new Error('提示词提取需要视觉模型适配器（当前宿主未注入 vision 适配器）；可先用手写提示词，或等宿主接入多模态模型')
+      }
+      const path = text(payload, 'path')
+      const controller = new AbortController()
+      const value = await vision.execute({ image: path }, { signal: controller.signal })
+      const outcome = extractOutcome(value)
+      if (outcome.outputPath === undefined) throw new Error('视觉模型没有返回提示词结果')
+      return { text: outcome.outputPath }
+    }
     case 'media/ffmpeg': {
       // 允许带一个 path 做"检查指定副本"的诊断（UI 的重新检查按钮用默认路径）
       const candidate = optionalText(payload, 'path')

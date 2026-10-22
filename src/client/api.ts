@@ -223,6 +223,13 @@ export interface WorkbenchApi {
     note?: string
     assetPath?: string | null
   }) => Promise<ResourceRecord>
+  /** 提示词库（`A-5`）。 */
+  listPrompts: () => Promise<readonly { id: string; name: string; text: string; source: string }[]>
+  savePrompt: (input: { id?: string; name: string; text: string }) =>
+    Promise<{ id: string; name: string; text: string; source: string }>
+  removePrompt: (id: string) => Promise<boolean>
+  /** 图片 → 提示词（`A-5`）；宿主未注入视觉模型时会如实报错。 */
+  extractPrompt: (path: string) => Promise<string>
   /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
   composeMedia: (input: {
     readonly projectId: string
@@ -310,6 +317,10 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     updateResource: input => call<{ resource: ResourceRecord }>('resources/update', input).then(result => result.resource),
     importMedia: input => call<{ imported: number; assets: AssetRecord[]; skipped: Array<{ path: string; reason: string }> }>('media/import', input),
     composeMedia: input => call<{ path: string; asset: AssetRecord; referencedImages: number }>('media/compose', input),
+    listPrompts: async () => (await call<{ prompts: Array<{ id: string; name: string; text: string; source: string }> }>('prompts/list', {})).prompts,
+    savePrompt: async input => (await call<{ prompt: { id: string; name: string; text: string; source: string } }>('prompts/save', input)).prompt,
+    removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,
+    extractPrompt: async path => (await call<{ text: string }>('prompts/extract', { path })).text,
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,

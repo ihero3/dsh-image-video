@@ -23,6 +23,10 @@
 | `assets/remove-many` | `{ids[],force?}` | `{removed,skipped[{id,reason}]}` | **`A-2`** 批量删除素材（单次 ≤200；不存在的 id 进 skipped 而不报错）|
 | `assets/attach-many` | `{projectId,items[{path,kind?,bytes?}]}` | `{created,assets}` | **`A152`** 批量登记素材（单次 ≤200；kind 缺省按扩展名推断）|
 | `media/import` | `{projectId,paths[]}` | `{imported,assets,skipped[{path,reason}]}` | **`A152`** 从本地路径批量导入媒体：**复制进 outputs**（保证 `/outputs` 预览可用），跳过不支持的类型并说明原因 |
+| `prompts/list` | `{}` | `{prompts[]}` | **`A-5`** 提示词库（独立 `prompts.json`，不动项目 schema）|
+| `prompts/save` | `{id?,name,text,source?}` | `{prompt}` | **`A-5`** 新增/更新提示词（名称/内容不能为空）|
+| `prompts/remove` | `{id}` | `{removed}` | **`A-5`** 删除 |
+| `prompts/extract` | `{path}` | `{text}` | **`A-5`** 图片→提示词；**宿主未注入视觉模型时如实报错**（`R-BND-4` 不伪造）|
 | `media/compose` | `{projectId,prompt,resourceIds[],size?,model?}` | `{path,asset,referencedImages,resourceIds}` | **`A-4`** 融合生图：按创作资源收集参考图（`assetPaths` 优先，回退 `assetPath`）与描述，一次生成并登记素材；**无生成适配器时如实报错** |
 | `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）|
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
