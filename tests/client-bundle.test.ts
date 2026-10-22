@@ -15,6 +15,7 @@ import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import * as reactDomClient from 'react-dom/client'
 import * as jsxRuntime from 'react/jsx-runtime'
+import * as Xyflow from '@xyflow/react'
 import { describe, expect, it } from 'vitest'
 import { inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
 
@@ -30,17 +31,20 @@ interface Registration {
 /**
  * The host modules the bundle is allowed to request.
  *
- * react / react-dom are the real packages: the canvas pulls `@xyflow/react`
- * inline, and that library calls React APIs at module scope (createContext …), so
- * hand-written stubs would only test the stub. The DSH *service* modules stay
- * stubs because their contract is "the loader provides them", not their behaviour.
+ * react / react-dom / `@xyflow/react` are the real packages: the canvas draws on
+ * React Flow, and that library calls React APIs at module scope (createContext …),
+ * so hand-written stubs would only test the stub. `@xyflow/react` reached this
+ * table by the A-6 externalisation (host `PLATFORM_MODULES`), which is exactly what
+ * makes it reachable without being inlined — a stub here would hide a broken
+ * `dsh.client.external` declaration. The DSH *service* modules stay stubs because
+ * their contract is "the loader provides them", not their behaviour.
  */
 const HOST_MODULES: Record<string, unknown> = {
   react: React,
   'react/jsx-runtime': jsxRuntime,
   'react-dom': ReactDOM,
   'react-dom/client': reactDomClient,
-
+  '@xyflow/react': Xyflow,
 }
 
 function loadBundle(): Registration {
@@ -79,5 +83,18 @@ describe('client bundle (module-loader contract)', () => {
     expect(exports.WORKBENCH_TAB_KIND).toBe(WORKBENCH_TAB_KIND)
     // 只允许请求宿主模块表里的东西；出现别的请求就是外置清单漏项
     expect(requested.every(request => request in HOST_MODULES)).toBe(true)
+    // A-6：画布依赖必须走模块表（`require("@xyflow/react")`），不能又被内联回去。
+    // 这条守住体积门禁的根因，而不是只守数字。
+    expect(requested).toContain('@xyflow/react')
+  })
+
+  it('keeps React Flow out of the artifact (A-6 externalisation)', () => {
+    const source = readFileSync(BUNDLE_PATH, 'utf8')
+    expect(source).toContain('require("@xyflow/react")')
+    // React Flow 的运行时类名只允许出现在画布自己的字符串里，不允许整库内联
+    expect(source).not.toContain('@xyflow/system')
+    // 外置后实测 427,503 B；硬天花板留 500 KB——把 React Flow 内联回来（+约 400 KB）立刻红。
+    // 绝对值这道比"占预算百分比"更抗口径变化（见 docs/A6-BUNDLE-EXTERNALIZE.md）
+    expect(Buffer.byteLength(source)).toBeLessThan(500_000)
   })
 })

@@ -31,3 +31,33 @@
 
 - 宿主模块表是**跨仓契约**：改错会让所有插件的 `require` 解析失败 → 必须先在 Harness 侧加模块、跑一次全量客户端构建再改插件。
 - React Flow 在宿主里若被 tree-shake 掉，插件 `require` 会拿到空对象 → 宿主需显式 re-export 或标记 sideEffects。
+
+---
+
+## 已落地（2026-10-22，v1.0.0-workbench-78）
+
+实测结果与本文的估算一致（体积确由画布依赖主导），但**落点与本文第 1 步的猜测不同**，记录实际做法：
+
+| 项 | 本文原计划 | 实际落地 |
+| --- | --- | --- |
+| 宿主模块表位置 | `packages/client/modules/src/index.ts` | `packages/client/web/src/platform.ts`（`PLATFORM_MODULES`）+ `src/seed.ts`（静态 import 与表项）——**这才是**壳真正 seed 给加载器的表，client/modules 只负责解析与路由 |
+| 外置粒度 | `@xyflow/react` + 逐个 `d3-*` | 只外置 `@xyflow/react` 一个词。插件代码只 import 它，`@xyflow/system` 与 `d3-*` 作为它的传递依赖**随宿主侧一起打包**，无需在插件侧逐个列 |
+| 插件构建 | `external: [...]` | `tsdown.config.ts` 的 `neverBundle` 加 `@xyflow/react`；`package.json` 加 `dsh.client.external: ["@xyflow/react"]` + `peerDependencies` |
+| 契约测试 | 允许这些模块 | 三条断言：产物必须 `require("@xyflow/react")`、不得内联 React Flow、入口硬天花板 500 KB |
+
+**实测（A-7/A-8/A-11 之后的真实基线）**：
+
+| 口径 | 外置前（A-8 实测基线） | 外置后 | 变化 |
+| --- | --- | --- | --- |
+| raw | 834,204 B | **427,503 B** | −406,701 B（−48.8%） |
+| gzip | 180,161 B | **89,329 B** | −90,832 B（−50.4%） |
+| 占**旧**预算（1,001,045 / 216,193） | 83% | **43% / 41%** | ≤80% 目标达成 |
+| 新基线（本版起） | — | 427,503 / 89,329 | 预算 = +20% = 513,004 / 107,195 |
+
+**被否掉的替代方案（懒加载 chunk）**：插件内 `import()` 画布确实能把入口打到 ~192 KB，但入口与
+chunk 的共享模块（样式表、图标）会被 rolldown 提升成共享 chunk，而加载器交给工厂的 `require`
+是**同步模块表查找**——同步 `require` 取不到包内 chunk，整包会在 materialize 时抛错。要让
+"入口静态依赖为空集"才能拆多 chunk，属加载器级重构，不在本版范围。
+
+**回滚点**（与本文一致）：去掉 `neverBundle` 的 `@xyflow/react` 与 `dsh.client.external` 两处、
+移除宿主 `PLATFORM_MODULES`/`seed` 的表项，重建即可（会回到 83% 预算，功能不变）。

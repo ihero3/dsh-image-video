@@ -63,6 +63,10 @@ export default defineConfig([
         '@deepseek-ai/dsh-client-locale/client',
         '@deepseek-ai/dsh-client-ui-slots',
         '@deepseek-ai/dsh-client-ui-sidebar-right/client',
+        // A-6 体积外置：画布依赖（React Flow 12 + @xyflow/system + d3-* 闭包）由
+        // 宿主平台模块表在运行时提供，插件产物不再内联它。宿主侧条目见
+        // @deepseek-ai/dsh-client-web 的 PLATFORM_MODULES（fork A-6）。
+        '@xyflow/react',
       ].some(requested => id === requested || id.startsWith(`${requested}/`)),
       // 其余一律内联（插件自己的依赖）
       alwaysBundle: (id: string) => !id.startsWith('node:'),

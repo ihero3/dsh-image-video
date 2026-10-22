@@ -2,6 +2,34 @@
 
 （下一轮的改动写这里）
 
+## [1.0.0-workbench-78] - 2026-10-22
+
+**1.0 里程碑：画布依赖体积外置 + 可交付性收口。** 从这一版起，画布依赖交给宿主平台
+模块表，插件入口产物减半以上；同时补齐示例项目包、3 分钟演示脚本与数据迁移说明，
+把「能跑」升级成「能交付」。
+
+- **A-6 体积外置（宿主模块表）**：`@xyflow/react`（含 `@xyflow/system` + `d3-*` 闭包）
+  不再内联进客户端产物，改由宿主 `@deepseek-ai/dsh-client-web` 的 `PLATFORM_MODULES`
+  统一提供，插件在 `dsh.client.external` 声明该外部依赖。
+  - 入口产物 raw **834,204 → 427,503 B（−48.8%）**、gzip **180,161 → 89,329 B（−50.4%）**；
+    占外置前的 +20% 预算（1,001,045 / 216,193）自 **83% → 43% / 41%**（B16 目标 ≤80% 达成）。
+  - 体积基线随之**重置**为 427,503 / 89,329，另留 500 KB 绝对天花板——回退内联必红
+    （方案与被否掉的懒加载替代见 `docs/A6-BUNDLE-EXTERNALIZE.md`）。
+  - 守门：`tests/client-bundle.test.ts` 新增两条断言——产物必须 `require("@xyflow/react")`、
+    不得把 React Flow 内联回来，且入口硬天花板 400 KB。
+- **A-10 模型流重试恢复（宿主侧）**：真问题不是"没挂插件"——`@deepseek-ai/dsh-llm-retry`
+  早已在 base bundle 且未被禁用（它本身无配置，`retryPolicy` 挂在各 provider 上）——
+  而是 **profile 里那段 `retryPolicy` 配置丢了**，于是回落到框架默认（5 次/500ms 起）。
+  现已按 fork 台账 R26 恢复：`mode: normal` + `maxRetries: 8` + 退避 `1000→20000ms`，
+  重试码用默认五类瞬时错误（含 `SERVER`，即模型流 5xx/502）。宿主侧回归守卫：
+  `packages/bundle/base/tests/base.spec.ts` 断言该行必须挂载且未禁用。
+- **P1 发布件**：`docs/RELEASE-NOTES-v1.0.0.md`（发布说明与验收清单）、
+  `docs/DEMO-3MIN.md`（3 分钟演示脚本）、`examples/hello-workbench/`（可直接导入的
+  示例项目包，由真实导出实现生成、由 `tests/example-package.test.ts` 验收录）、
+  `docs/MIGRATION-SCHEMA-V4.md`（工作台数据 v1→v4 迁移说明）。
+- **版本一致性**：`package.json` / `src/version.ts` / `lib/index.js` 三处同步 `1.0.0`。
+
+
 ### 批次八十（A-7）+ 体积基线抬升
 - A-7 `storyboard/plan`：剧本→分镜（确定性拆解，无 LLM 也不伪造）
 - **客户端束基线抬到 raw 834,204 / gzip 180,161**：Track B Round 2/3 新面板 + Track A 客户端契约带来的真实增量；

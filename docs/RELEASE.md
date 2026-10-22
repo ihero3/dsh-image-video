@@ -7,7 +7,7 @@
 | # | 命令 | 通过标准 |
 | --- | --- | --- |
 | 1 | `pnpm run typecheck` | 退出码 0（宿主与客户端两个 tsconfig 都过） |
-| 2 | `pnpm run test` | 全绿；跳过项必须写明原因（当前基线：419 passed / 5 skipped） |
+| 2 | `pnpm run test` | 全绿；跳过项必须写明原因（当前基线：**822 passed / 5 skipped**，144 个套件） |
 | 3 | `pnpm run build` | 产出 `lib/**`，且 `lib` 已入库（私有插件只复制 `lib/`） |
 | 4 | `pnpm run check:bundle` | 客户端产物在预算内（基线 +20%，超了就说明原因并同步抬基线） |
 
@@ -41,4 +41,10 @@ git push origin v0.x.y-workbench-N     # ← 推 tag 需要 owner 明确同意
 ## 5. 事后
 
 - 在 CHANGELOG 里补"已知缺口"（不许把没做的写成做了）。
-- 冒烟：`node scripts/verify-workbench-tab.mjs` + 一次**零生成花费**的导出（用已有素材）。
+- 冒烟：`node scripts/verify-workbench-tab.mjs` + 一次**零生成花费**的导出：
+
+  ```bash
+  npx tsx scripts/smoke-export.ts   # ffmpeg 本地合成夹具 → 真实导出 → 断言四件套
+  ```
+
+  它不调用任何模型：夹具由 `testsrc` 合成，只走 `RenderService` / `RenderRegistry` 生产链路。

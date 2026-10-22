@@ -15,8 +15,12 @@
  * 时间轴逐段预览 / 打磨）＋ Track A 的 A-1/A-2/A-3/A-4/A-5/A-9 客户端契约 →
  * raw 834,204 / gzip 180,161（+22%）。同样是**功能性增长**：A-6（React Flow/d3 外置到宿主模块表）
  * 未落地前，客户端必须自包含这些画布依赖，无法在本插件内部减肥（方案见 docs/A6-BUNDLE-EXTERNALIZE.md）。
+ * 2026-10-22 **A-6 外置后重置基线**：画布依赖（`@xyflow/react` 连 `@xyflow/system` + `d3-*` 闭包）
+ * 改由宿主平台模块表提供 → 入口回落到 raw 427,503 / gzip 89,329（相对上一基线 −48.8% / −50.4%）。
+ * 这里**必须**跟着往下重置：否则有人把 React Flow 内联回来时，产物（≈834 KB）仍在上一条
+ * 1,001,045 的预算内，门禁就形同虚设。硬天花板另见 `tests/client-bundle.test.ts`。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 834_204, gzip: 180_161 })
+export const BUNDLE_BASELINE = Object.freeze({ raw: 427_503, gzip: 89_329 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

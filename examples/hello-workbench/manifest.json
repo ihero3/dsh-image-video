@@ -1,0 +1,158 @@
+{
+  "formatVersion": 3,
+  "plugin": "dsh-image-video",
+  "exportedAt": "2026-10-22T00:00:00.000Z",
+  "project": {
+    "id": "prj-mvk6zq66-5u3yqm",
+    "name": "Hello Workbench（示例）",
+    "createdAt": "2026-10-22T23:48:50.621Z",
+    "updatedAt": "2026-10-22T23:48:50.623Z"
+  },
+  "assets": [
+    {
+      "id": "ast-mvk6zq67-gspdgo",
+      "kind": "image",
+      "file": "files/sample-cover.png",
+      "bytes": 67228,
+      "sha256": "6193b1a210b1ad83743d6fce4faa6c9690e1e135b285d454efba30f15635658d",
+      "originPath": "sample-cover.png",
+      "prompt": "示例封面：青蓝到琥珀的横向渐变（320×180，由 build-hello-workbench.ts 生成）"
+    }
+  ],
+  "resources": [
+    {
+      "schemaVersion": 4,
+      "id": "res-mvk6zq67-ozzrj6",
+      "projectId": "prj-mvk6zq66-5u3yqm",
+      "kind": "style",
+      "name": "示例风格：冷静科技感 / 低饱和",
+      "scope": "project",
+      "createdAt": "2026-10-22T23:48:50.623Z",
+      "updatedAt": "2026-10-22T23:48:50.623Z",
+      "note": "低饱和青蓝主色，克制的琥珀点缀，避免高对比度噪点。"
+    }
+  ],
+  "timelines": [
+    {
+      "schemaVersion": 1,
+      "id": "tml-mvk6zq68-odb0pi",
+      "projectId": "prj-mvk6zq66-5u3yqm",
+      "name": "示例：5 秒成片",
+      "frameRate": 30,
+      "tracks": [
+        {
+          "id": "v1",
+          "kind": "video",
+          "clips": [
+            {
+              "id": "c1",
+              "assetPath": "/Users/guxiongjian/Documents/code/dsh-image-video/examples/hello-workbench/files/sample-cover.png",
+              "startMs": 0,
+              "durationMs": 5000
+            }
+          ]
+        },
+        {
+          "id": "s1",
+          "kind": "subtitle",
+          "clips": [
+            {
+              "id": "c2",
+              "text": "Hello Workbench",
+              "startMs": 0,
+              "durationMs": 2500
+            }
+          ]
+        }
+      ],
+      "burnSubtitles": true,
+      "exportFormat": {
+        "width": 1280,
+        "height": 720,
+        "frameRate": 30
+      },
+      "normalizeLoudness": false,
+      "createdAt": "2026-10-22T23:48:50.624Z",
+      "updatedAt": "2026-10-22T23:48:50.624Z"
+    }
+  ],
+  "resourceUsage": [],
+  "summary": {
+    "projectName": "Hello Workbench（示例）",
+    "assets": 1,
+    "timelines": 1,
+    "workflows": 1,
+    "totalDurationMs": 5000,
+    "missing": 0,
+    "exportedAt": "2026-10-22T23:48:50.626Z",
+    "pluginVersion": "1.0.0"
+  },
+  "exportPresets": [],
+  "workflows": [
+    {
+      "schemaVersion": 1,
+      "id": "wfl-mvk6zq68-qi9lko",
+      "projectId": "prj-mvk6zq66-5u3yqm",
+      "name": "示例：三节点生成链",
+      "nodes": [
+        {
+          "id": "n-prompt",
+          "kind": "creative-input",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "params": {
+            "brief": ""
+          }
+        },
+        {
+          "id": "n-image",
+          "kind": "image-generate",
+          "position": {
+            "x": 320,
+            "y": 120
+          },
+          "params": {
+            "model": "",
+            "prompt": "一只在雨后街道上行走的猫，电影感侧光",
+            "ratio": "16:9"
+          }
+        },
+        {
+          "id": "n-video",
+          "kind": "video-generate",
+          "position": {
+            "x": 600,
+            "y": 120
+          },
+          "params": {
+            "model": "",
+            "prompt": "镜头缓慢推近，雨后街道反光",
+            "ratio": "16:9",
+            "duration": 5,
+            "resolution": "",
+            "referenceVideo": "",
+            "compare": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "n-prompt",
+          "target": "n-image"
+        },
+        {
+          "id": "e2",
+          "source": "n-image",
+          "target": "n-video"
+        }
+      ],
+      "createdAt": "2026-10-22T23:48:50.624Z",
+      "updatedAt": "2026-10-22T23:48:50.624Z"
+    }
+  ],
+  "tasks": [],
+  "missing": []
+}
