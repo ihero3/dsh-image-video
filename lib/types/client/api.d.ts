@@ -86,6 +86,23 @@ export interface MediaGenerateResult {
     /** `wait:false` 时为 true：结果要自己轮询 `listTasks` 拿。 */
     readonly pending?: boolean;
 }
+/**
+ * `tasks/running` 的一条在飞生成（`F3`）：客户端据此算"已用时"。
+ * 宿主注册表在生成**开始前**就落账，所以拿到 taskId 时这条一定在。
+ */
+export interface RunningGeneration {
+    readonly id: string;
+    readonly kind: MediaKind;
+    /** 调用开始的 ISO 8601 时间戳。 */
+    readonly startedAt: string;
+}
+/** `media/generate` 的一条参考素材（`G4` 尾帧/参考视频）：与工具 `media[]` 同构。 */
+export interface MediaReference {
+    readonly image?: string;
+    readonly video?: string;
+    readonly type?: string;
+    readonly position?: string;
+}
 export interface WorkbenchApi {
     /** Host facts (version, provider, output directory). */
     health: () => Promise<WorkbenchHealth>;
@@ -153,8 +170,17 @@ export interface WorkbenchApi {
     }>;
     listTasks: (limit?: number) => Promise<TaskRecord[]>;
     /**
+     * 在飞生成快照（`F3`）：宿主取消表里还活着的生成，带 `startedAt`。
+     * 生成进度条没有百分比时，用它算"已用时"（`生成中 · 12s`）。
+     */
+    listRunningTasks: () => Promise<RunningGeneration[]>;
+    /**
      * 工作台内直接生成（`A145`）：图片走同步；视频建议 `wait:false`，
      * 立刻拿 `taskId` 再轮询 `listTasks`，生成中可用 `cancelTask` 取消。
+     *
+     * `F2`：`images` 为**按序**多参考图（首图=底图，其余=风格/脸部参考）；
+     * 传了 `images` 就**不要**再传 `image`（工具侧 `image` 优先，会盖掉整组）。
+     * `G4`：`media` 为视频参考素材序列（尾帧/参考视频），`realPerson` 为真人勾选透传。
      */
     generateMedia: (input: {
         readonly mediaMode: 'image' | 'video';
@@ -163,6 +189,9 @@ export interface WorkbenchApi {
         readonly size?: string;
         readonly model?: string;
         readonly image?: string;
+        readonly images?: readonly string[];
+        readonly media?: readonly MediaReference[];
+        readonly realPerson?: boolean;
         readonly duration?: number;
         readonly aspectRatio?: string;
         readonly resolution?: string;
@@ -232,6 +261,18 @@ export interface WorkbenchApi {
         note?: string;
         assetPath?: string | null;
     }) => Promise<ResourceRecord>;
+    /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
+    composeMedia: (input: {
+        readonly projectId: string;
+        readonly prompt: string;
+        readonly resourceIds?: readonly string[];
+        readonly size?: string;
+        readonly model?: string;
+    }) => Promise<{
+        readonly path: string;
+        readonly asset: AssetRecord;
+        readonly referencedImages: number;
+    }>;
     listOutputs: (limit?: number) => Promise<OutputFile[]>;
     /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
     getDiagnostics: () => Promise<WorkbenchDiagnostics>;

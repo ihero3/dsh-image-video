@@ -629,6 +629,46 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     // `A145`：工作台内直接生成（「快速创作」的生成入口）——复用对话里同一对工具，
     // 成功的产物自动登记为项目素材，并写一条任务账本记录（面板能看到）。
+    // `A-4`：融合生图 —— 选角色/场景/物品（创作资源）→ 收集其参考图与描述 → 一次生成并登记素材
+    case 'media/compose': {
+      const projectId = text(payload, 'projectId')
+      const prompt = text(payload, 'prompt')
+      const tool = deps.generate?.image
+      if (tool === undefined) throw new Error('生成能力未装配：此宿主没有注入图片生成适配器')
+      const rawIds = field(payload, 'resourceIds')
+      const resourceIds = Array.isArray(rawIds)
+        ? rawIds.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+        : []
+      const resources = (await deps.store.listResources(projectId)).filter(resource => resourceIds.includes(resource.id))
+      const images: string[] = []
+      const parts: string[] = []
+      for (const resource of resources) {
+        const extra = resource as unknown as { assetPaths?: readonly string[]; assetPath?: string }
+        const paths = extra.assetPaths ?? (extra.assetPath === undefined ? [] : [extra.assetPath])
+        images.push(...paths)
+        parts.push(`${resource.kind}「${resource.name}」${resource.note === undefined ? '' : `：${resource.note}`}`)
+      }
+      const composedPrompt = [prompt, ...parts].filter(part => part.trim() !== '').join('\n')
+      const args: Record<string, unknown> = { prompt: composedPrompt }
+      if (images.length > 0) args.images = images
+      const size = optionalText(payload, 'size')
+      if (size !== undefined) args.size = size
+      const model = optionalText(payload, 'model')
+      if (model !== undefined) args.model = model
+      const controller = new AbortController()
+      const value = await tool.execute(args, { signal: controller.signal })
+      const outcome = extractOutcome(value)
+      if (outcome.outputPath === undefined) throw new Error('生成工具没有返回产物路径')
+      const info = await stat(outcome.outputPath).catch(() => undefined)
+      const attached = await deps.store.attachAsset({
+        projectId, path: outcome.outputPath, kind: 'image',
+        ...info === undefined ? {} : { bytes: info.size },
+      })
+      return {
+        path: outcome.outputPath, asset: attached.asset,
+        referencedImages: images.length, resourceIds: resources.map(resource => resource.id),
+      }
+    }
     case 'media/generate': {
       const mediaMode = optionalText(payload, 'mediaMode') === 'video' ? 'video' : 'image'
       const tool = mediaMode === 'video' ? deps.generate?.video : deps.generate?.image
@@ -652,6 +692,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
             ...image === undefined ? {} : { image },
             ...Array.isArray(field(payload, 'images')) ? { images: field(payload, 'images') } : {},
           }
+      // Track B 申请（B-3）：视频编辑的多素材序列与"含真人"开关原样透传给工具
+      if (Array.isArray(field(payload, 'media'))) (args as Record<string, unknown>).media = field(payload, 'media')
+      if (field(payload, 'realPerson') === true) (args as Record<string, unknown>).realPerson = true
       const projectId = optionalText(payload, 'projectId')
       const tracked = projectId !== undefined && projectId !== ''
       // `A147`：`wait:false` 时立即返回 taskId，前端轮询 `tasks/running` / `tasks/list` 拿结果。

@@ -223,6 +223,14 @@ export interface WorkbenchApi {
     note?: string
     assetPath?: string | null
   }) => Promise<ResourceRecord>
+  /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
+  composeMedia: (input: {
+    readonly projectId: string
+    readonly prompt: string
+    readonly resourceIds?: readonly string[]
+    readonly size?: string
+    readonly model?: string
+  }) => Promise<{ readonly path: string; readonly asset: AssetRecord; readonly referencedImages: number }>
   listOutputs: (limit?: number) => Promise<OutputFile[]>
   /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
   getDiagnostics: () => Promise<WorkbenchDiagnostics>
@@ -301,6 +309,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     attachAssets: input => call<{ created: number; assets: AssetRecord[] }>('assets/attach-many', input),
     updateResource: input => call<{ resource: ResourceRecord }>('resources/update', input).then(result => result.resource),
     importMedia: input => call<{ imported: number; assets: AssetRecord[]; skipped: Array<{ path: string; reason: string }> }>('media/import', input),
+    composeMedia: input => call<{ path: string; asset: AssetRecord; referencedImages: number }>('media/compose', input),
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,

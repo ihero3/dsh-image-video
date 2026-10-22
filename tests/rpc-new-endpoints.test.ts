@@ -49,7 +49,7 @@ async function harness() {
     return result.value as T
   }
   const project = await store.createProject('覆盖测试')
-  return { ok, store, outputsDir, project }
+  return { handler, ok, store, outputsDir, project }
 }
 
 describe('new endpoint coverage (A136)', () => {
@@ -193,5 +193,14 @@ describe('new endpoint coverage (A136)', () => {
       'timelines/copy-clip', { timelineId: saved.id, clipId: split.rightId },
     )
     expect(copied.timeline.tracks[0]!.clips.length).toBe(3)
+  })
+
+  it('refuses to compose without a generation adapter instead of faking success (A-4)', async () => {
+    const { handler, project } = await harness()
+    const result = await handler('media/compose', { projectId: project.id, prompt: '小雨在雨夜街头', resourceIds: [] }, new AbortController().signal)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error.message).toContain('生成能力未装配')
+    }
   })
 })
