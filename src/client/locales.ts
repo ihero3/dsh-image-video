@@ -288,6 +288,31 @@ export type WorkbenchLocaleKey =
   | 'diagErrors'
   | 'diagErrorsNone'
   | 'diagRefresh'
+  // ---- F2 多参考图选择器 ----
+  | 'generateRefsLabel'
+  | 'generateRefsHint'
+  | 'generateRefsAdd'
+  | 'generateRefsFull'
+  | 'generateRefsMoveUp'
+  | 'generateRefsMoveDown'
+  | 'generateRefsBase'
+  | 'generateRefsStyle'
+  // ---- F3 生成进度 ----
+  | 'generateElapsed'
+  | 'generateProgress'
+  // ---- G4 首尾帧 / 视频编辑 ----
+  | 'videoLastFrame'
+  | 'videoReferenceVideo'
+  | 'videoEditHint'
+  | 'videoRealPerson'
+  | 'videoEditPending'
+  // ---- G2 物料库分栏 ----
+  | 'resourceLibraries'
+  | 'resourceTabOther'
+  | 'resourceFilterPlaceholder'
+  // ---- B17 片段分割 ----
+  | 'clipSplit'
+  | 'clipSplitOutsideHint'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -585,6 +610,31 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   diagErrors: 'Recent errors',
   diagErrorsNone: 'No errors recorded',
   diagRefresh: 'Refresh',
+
+  generateRefsLabel: 'Reference images (ordered)',
+  generateRefsHint: 'First = base image, the rest = style / face references. Up to 6 — drag a chip or use the arrows to reorder.',
+  generateRefsAdd: 'Add selected asset',
+  generateRefsFull: 'At most 6 reference images',
+  generateRefsMoveUp: 'Move earlier',
+  generateRefsMoveDown: 'Move later',
+  generateRefsBase: 'base',
+  generateRefsStyle: 'ref',
+
+  generateElapsed: 'Generating · {sec}s',
+  generateProgress: 'Generation progress',
+
+  videoLastFrame: 'Last frame image',
+  videoReferenceVideo: 'Reference video',
+  videoEditHint: 'Video generation only: the last frame goes out as media[].type=last_frame; a reference video as reference_video (keeps the original framing and motion, rewrites content from your prompt).',
+  videoRealPerson: 'The reference video shows a real person',
+  videoEditPending: 'Last frame / reference video ride along in the request (media field) — they take effect once the host forwards them on media/generate.',
+
+  resourceLibraries: 'Libraries',
+  resourceTabOther: 'Other',
+  resourceFilterPlaceholder: 'Filter by name',
+
+  clipSplit: 'Split at playhead',
+  clipSplitOutsideHint: 'The playhead is outside this clip',
 }
 
 /** Simplified Chinese copy. */
@@ -880,4 +930,29 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   diagErrors: '最近错误',
   diagErrorsNone: '暂无错误记录',
   diagRefresh: '刷新',
+
+  generateRefsLabel: '参考图（按序）',
+  generateRefsHint: '首图=底图，其余为风格/脸部参考；最多 6 张，可拖拽 chip 或用箭头排序。',
+  generateRefsAdd: '加入选中素材',
+  generateRefsFull: '最多 6 张参考图',
+  generateRefsMoveUp: '前移',
+  generateRefsMoveDown: '后移',
+  generateRefsBase: '底图',
+  generateRefsStyle: '参考',
+
+  generateElapsed: '生成中 · {sec}s',
+  generateProgress: '生成进度',
+
+  videoLastFrame: '尾帧图',
+  videoReferenceVideo: '参考视频',
+  videoEditHint: '仅视频生成生效：尾帧图按 media[].type=last_frame 提交；参考视频按 reference_video 提交（保留原片构图与动作，按提示词改写内容）。',
+  videoRealPerson: '参考视频含真人出镜',
+  videoEditPending: '尾帧/参考视频已随请求透传（media 字段），待宿主 media/generate 转发后生效。',
+
+  resourceLibraries: '物料分栏',
+  resourceTabOther: '其他',
+  resourceFilterPlaceholder: '按名称筛选',
+
+  clipSplit: '在播放头分割',
+  clipSplitOutsideHint: '播放头不在这个片段内',
 }

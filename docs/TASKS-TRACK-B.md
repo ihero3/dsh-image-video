@@ -8,6 +8,15 @@
 
 > 完整清单与依赖顺序见 `docs/PLAN-TWO-TRACKS.md`（A / B 各一份，互不冲突）。
 
+### Wave 1（2026-10-22 完成：B-1～B-5，全部基于已存在端点）
+
+- [x] **B-1（F2 多参考图选择器）**：素材多选（≤6）→ 按序 chips（首图=底图，其余=风格/脸部参考），可拖拽 + 前移/后移按钮排序、逐个移除、封顶 6 张。发送口径：1 张走 `image`（兼容 A151），≥2 张走按序 `images[]`（工具侧 `image` 优先于 `images`，不两个一起发）。测试：`tests/client-multi-reference.test.tsx`（5 项：按序下发 / 单图兼容 / 按钮+拖拽排序 / 移除与清空 / 封顶）。
+- [x] **B-2（F3 生成进度）**：新增 `listRunningTasks`（`tasks/running` → `{running}`）；生成中显示已用时（宿主 `startedAt`，退化到本地点击时间）+ 不定进度条，无百分比时显示"生成中 · 12s"；本地秒表 `src/client/use-elapsed.ts` 每秒推进，统一轮询顺带刷新宿主快照。测试：`tests/client-generate-progress.test.tsx`（3 项：视频已用时随时间前进、图片同步秒表、确实调了 `tasks/running`）。
+- [x] **B-3（G4 首尾帧/视频编辑入口）**：视频生成表单增加「尾帧图」「参考视频」两个可选槽 + 真人勾选；请求体带 `media: [{image,type:'first_frame'}?, {image,type:'last_frame'}, {video,type:'reference_video'}]` 与 `realPerson` 透传（首帧也必须进 `media`——工具的 `image` 在 `media` 存在时被忽略）。**宿主 `media/generate` 尚未转发 `media`/`realPerson`，已按契约先行规则在 `docs/API-SURFACE.md`「B 申请区」登记待 A 认领**；界面同时给出"待宿主转发后生效"的诚实提示。测试：`tests/client-video-edit-slots.test.tsx`（4 项）。
+- [x] **B-4（G2 物料库分栏）**：创作资源面板拆成 角色/场景/物品 三个常驻栏 + 「其他」下拉（brand/style/voice/motion-track），切栏即筛选（`resources/list?kind=` 宿主支持，面板一次取全量本地过滤——零请求零闪烁），参考图缩略图，按名筛选（换栏自动清空）。新建资源归入当前栏。测试：`tests/client-resource-columns.test.tsx`（4 项）。
+- [x] **B-5（B17 片段手柄 + 分割/复制）**：左右手柄调时长维持既有接线（`timeline-math.ts`，测试固化）；新增「分割」按钮接域层 `splitClipAt`（拆分点=播放头，必须严格在片段内部，两半时长守恒、右半补 `inMs`）；「复制」从本地实现改接域层 `duplicateClip`（与 Agent 的 `split-clip`/`copy-clip` 同一套规则）。测试：`tests/client-timeline-interaction.test.tsx` 增补 3 项（分割守恒 + 选中右半、播放头在外时禁用、副本落点）。
+
+**Wave 1 门禁**：`tests/client-*.test.ts(x)` 24 个文件全绿（新增 16 项）+ `workbench.client` / `workflow-canvas.client` 全绿 + `pnpm run typecheck` 通过。未提交 `lib/`、未改 `package.json`、未打 tag。
 
 ## P0（用户最能感知的体验问题）
 
@@ -31,7 +40,7 @@
 - [x] **B14 接新契约**：转场选择器（clip.transition + transitionDurationMs）、变速/淡入淡出/裁剪控件（speed/fade/crop）、音轨淡入淡出滑块（track.fadeMs）、导出响度开关（timeline.normalizeLoudness）；已接线到 UI，值域钳制与 `saveTimeline` 持久化均已落地；测试：`tests/client-timeline-effects.test.tsx`（speed/fade/transition/loudness/audio-track-fade 共 4 项）。
 - [x] **B15 新面板**：字幕批量按钮（`timeline add-subtitles`，输入一段台词一键铺字幕）、模板市场（`workflow templates` / `from-template`，含 `drama-series`）、诊断面板（`diagnostics` 的 outputs 占用 + renders.stats 耗时）；已完成：字幕批量复用域层 `planSubtitleClips`、模板市场合并 `WORKFLOW_TEMPLATES`+`DRAMA_TEMPLATES` 并支持实例化、诊断面板新增客户端 `getDiagnostics` 调用（outputs 占用 / render 统计 / 近期错误）；测试：`tests/client-templates-diagnostics.test.tsx`（字幕批量 / 模板市场 / 诊断面板 共 3 项）。
 - [ ] **B16 体积回收**：当前占预算 83%（基线 682,374 raw / 151,212 gzip + 20%），目标**回收到 ≤ 80%**；做法：按需加载图标、拆样式表、去掉未用 locale。**审计结论（杠杆已全做，目标未达）**：①「去未用 locale」已删 7 个未引用键（-0.4KB）；②「图标按需」0 可删（39 个图标均被 `NODE_ICONS` 等使用）；③「拆样式表」0 安全收益（死选择器多为 React Flow 运行时类）。**根因同 B12**：体积被画布必需的 `@xyflow/react`+`d3-*` 主导；且本插件契约要求 `lib/client/plugin.js` 为自包含单文件——`tests/client-bundle.test.ts` 强制 factory 只能 `require` 宿主模块表，代码分割会被该契约测试拦截、在真实宿主亦加载失败（已实测并回退懒加载改造）。基线本身已占 83%（>80%），故 ≤80% 在 Track B 权限内**数学上不可达**（不可改构建/外置、不可破坏单文件契约）。达标须 Track A 外部化 React Flow/d3 并更新宿主模块表（即 B12 指出的 A 侧构建策略），随后同步抬高 `BUNDLE_BASELINE` 或在 CHANGELOG 说明（门禁自身允许的兜底路径）。B16 三杠杆的"纯代码"部分已交付，单文件产物回到 713,804 B（87%）。
-- [ ] **B17 拆分/复制/裁剪手柄**：接 A24 的 `split-clip`（域层实现后 B 再接线）
+- [x] **B17 拆分/复制/裁剪手柄**：已接 A24 域层 `split-clip`/`copy-clip`（`src/workbench/edits.ts`）——2026-10-22 完成：分割按钮（播放头为拆分点）+ 复制改接域层 + 手柄调时长测试固化，见上方 Wave 1 B-5。
 
 ## P2
 

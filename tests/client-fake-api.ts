@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import type { WorkbenchApi } from '../src/client/api.ts'
+import type { RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
@@ -52,6 +52,7 @@ export function fakeApi(options: {
   failHealth?: string
   tasks?: TaskRecord[]
   assets?: AssetRecord[]
+  running?: RunningGeneration[]
   workflows?: WorkflowRecord[]
   runs?: WorkflowRunRecord[]
   timelines?: TimelineRecord[]
@@ -72,6 +73,8 @@ export function fakeApi(options: {
   let lastExportOptions: import('../src/client/api.ts').TimelineExportOptions | undefined
   const savedDefaults: Array<Record<string, string | number | null>> = []
   const calls: string[] = []
+  /** `tasks/running` 的在飞生成（`F3` 测试替身）：测试可直接改 `startedAt` 推进时间。 */
+  const runningGenerations: RunningGeneration[] = [...(options.running ?? [])]
   /** `workflows/run` 收到的入参（B4 单节点运行断言用）。 */
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
   let counter = 0
@@ -176,6 +179,8 @@ export function fakeApi(options: {
       return true
     },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    // `F3`：在飞生成快照（宿主注册表口径，带 startedAt）
+    listRunningTasks: async () => { calls.push('tasks/running'); return [...runningGenerations] },
     runWorkflow: async (workflowId, only) => {
       calls.push('workflows/run')
       runPayloads.push({ workflowId, ...only === undefined ? {} : { only } })
@@ -340,7 +345,7 @@ export function fakeApi(options: {
       }
     },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, exportOptions: () => lastExportOptions }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, exportOptions: () => lastExportOptions }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */

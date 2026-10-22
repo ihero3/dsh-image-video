@@ -21,9 +21,10 @@ import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchOptions } from '../workbench-contract.ts'
 import { defaultParams, WORKFLOW_TEMPLATES, type NodeParamValue, type WorkflowRunRecord, type WorkflowRecord } from '../workbench/workflow.ts'
 import {
-  activeClipAt, CLIP_SPEED_RANGE, MAX_CLIP_FADE_MS, MAX_CLIP_TRANSITION_MS, MAX_TRACK_FADE_MS,
+  activeClipAt, CLIP_SPEED_RANGE, effectiveDurationMs, MAX_CLIP_FADE_MS, MAX_CLIP_TRANSITION_MS, MAX_TRACK_FADE_MS,
   timelineDurationMs, type ClipTransition, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind,
 } from '../workbench/timeline.ts'
+import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
 import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
@@ -35,11 +36,12 @@ import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { MediaReference, RunningGeneration, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
+import { useElapsedSeconds } from './use-elapsed.ts'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -168,6 +170,18 @@ function formatBytes(bytes: number): string {
 /** Resource kinds in picker order. */
 const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice', 'motion-track']
 
+/**
+ * 多参考图上限（`F2`）：首图=底图，其余=风格/脸部参考。
+ * 6 是与工具侧 `images[]` 的实用上限对齐的客户端护栏（再多对构图帮助有限、
+ * 请求体先变大），不是宿主限制。
+ */
+const MAX_REFERENCE_IMAGES = 6
+
+/** 片段 id 生成器（分割/复制用；随机后缀保证同帧内多次操作也不撞 id）。 */
+function nextClipId(): string {
+  return `clip-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 /** Localized label for one timeline track kind. */
 function trackKindKey(kind: TrackKind): WorkbenchLocaleKey {
   switch (kind) {
@@ -269,7 +283,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
-  const [resourceKind, setResourceKind] = useState<ResourceKind>('role')
+  // `G2` 物料库分栏：角色/场景/物品三个常驻栏 + 「其他」下拉（其余 kind）。
+  // 当前栏位即新建资源的 kind（「把选中素材归到该角色」由此来）。
+  const [resourceTab, setResourceTab] = useState<'role' | 'scene' | 'prop' | 'other'>('role')
+  const [resourceOtherKind, setResourceOtherKind] = useState<ResourceKind>('brand')
+  const [resourceFilter, setResourceFilter] = useState('')
   const [resourceName, setResourceName] = useState('')
   // `A153`：资源的参考图（角色定妆照 / 场景基准）
   const [resourceAsset, setResourceAsset] = useState<string | undefined>(undefined)
@@ -290,8 +308,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generatePrompt, setGeneratePrompt] = useState('')
   const [generating, setGenerating] = useState<'image' | 'video' | undefined>(undefined)
   const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
-  // `A151`：参考图（多模态输入）—— 图片走图生图、视频走首帧
-  const [generateReference, setGenerateReference] = useState<string | undefined>(undefined)
+  // `F2`：多参考图（**按序**）：首图=底图，其余=风格/脸部参考。
+  // 图片走 `images[]`（≥2 张）或 `image`（1 张，兼容 A151）；视频首帧取第一张。
+  const [generateImages, setGenerateImages] = useState<readonly string[]>([])
+  // 参考图 chip 的拖拽排序：拖着的位置 → 落点（鼠标用户；键盘用前移/后移按钮）
+  const [refDragFrom, setRefDragFrom] = useState<number | undefined>(undefined)
+  const [refDropAt, setRefDropAt] = useState<number | undefined>(undefined)
+  // `G4`：视频生成的尾帧图 / 参考视频 / 真人勾选——随请求透传 `media[]` 与 `realPerson`。
+  const [generateLastFrame, setGenerateLastFrame] = useState<string | undefined>(undefined)
+  const [generateRefVideo, setGenerateRefVideo] = useState<string | undefined>(undefined)
+  const [generateRealPerson, setGenerateRealPerson] = useState(false)
+  // `F3`：生成进度的起点——本地点击时间兜底；视频用 `tasks/running` 的 startedAt 校正。
+  const [generateStartedAt, setGenerateStartedAt] = useState<number | undefined>(undefined)
+  const [runningGenerations, setRunningGenerations] = useState<readonly RunningGeneration[]>([])
   // `F1`：面板内就地可改的生成参数（初始值取生效默认值；改了就用改后的）
   const [generateSize, setGenerateSize] = useState('')
   const [generateAspect, setGenerateAspect] = useState('')
@@ -307,6 +336,42 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }
 
+  /** 追加一张参考图（`F2`）：按序追加、去重、封顶 6 张。 */
+  const addReferenceImage = (path: string | undefined): void => {
+    if (path === undefined) return
+    if (generateImages.includes(path)) return
+    if (generateImages.length >= MAX_REFERENCE_IMAGES) {
+      setNotice({ text: t('generateRefsFull'), tone: 'error' })
+      return
+    }
+    setGenerateImages([...generateImages, path])
+    setNotice({ text: `${t('referenceAsset')}：${baseName(path)}`, tone: 'info' })
+  }
+
+  /** 参考图排序（`F2`）：把 from 位置移到 to 位置（拖拽落点或箭头按钮共用）。 */
+  const moveReferenceImage = (from: number, to: number): void => {
+    if (from === to || to < 0 || to >= generateImages.length) return
+    const next = [...generateImages]
+    const [moved] = next.splice(from, 1)
+    if (moved === undefined) return
+    next.splice(to, 0, moved)
+    setGenerateImages(next)
+  }
+
+  /**
+   * 视频参考素材序列（`G4`）：首帧（若有）+ 尾帧 + 参考视频。
+   * 与工具 `media[]` 同构；`media` 存在时工具的 `image` 字段被忽略，
+   * 所以首帧也必须进这个数组，不能只发 `image`。
+   */
+  const buildVideoMedia = (): MediaReference[] => {
+    const entries: MediaReference[] = []
+    const first = generateImages[0]
+    if (first !== undefined) entries.push({ image: first, type: 'first_frame' })
+    if (generateLastFrame !== undefined) entries.push({ image: generateLastFrame, type: 'last_frame' })
+    if (generateRefVideo !== undefined) entries.push({ video: generateRefVideo, type: 'reference_video' })
+    return entries
+  }
+
   /** 发一次生成（图片同步等待；视频立刻拿 taskId 交给轮询）。 */
   const runGenerate = async (mediaMode: 'image' | 'video'): Promise<void> => {
     const prompt = generatePrompt.trim()
@@ -316,12 +381,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       return
     }
     setGenerating(mediaMode)
+    // `F3`：进度条起点（本地点击时间）；视频随后被 tasks/running 的 startedAt 校正
+    setGenerateStartedAt(Date.now())
     try {
+      const references = generateImages
+      const first = references[0]
+      const videoMedia = mediaMode === 'video' ? buildVideoMedia() : []
       const result = await apiRef.current.generateMedia({
         mediaMode,
         prompt,
         projectId: activeId,
-        ...generateReference === undefined ? {} : { image: generateReference },
+        // `F2`：1 张走单图字段（工具侧 image 优先于 images，别两个一起发）；
+        // ≥2 张才发按序 `images`（首图=底图，其余=风格/脸部参考）。
+        ...references.length === 0
+          ? {}
+          : mediaMode === 'image'
+            ? references.length === 1 ? { image: first as string } : { images: references }
+            : videoMedia.length === 0 && references.length >= 1 ? { image: first as string } : {},
+        // `G4`：视频槽（尾帧/参考视频/真人勾选）随请求透传
+        ...videoMedia.length > 0 ? { media: videoMedia } : {},
+        ...mediaMode === 'video' && generateRealPerson ? { realPerson: true } : {},
         ...mediaMode === 'image'
           ? generateSize.trim() === '' ? {} : { size: generateSize.trim() }
           : {
@@ -363,6 +442,34 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
     setNotice({ text: `${t('generateFailed')}：${row.error ?? ''}`, tone: 'error' })
   }, [generateTaskId, tasks, activeId])
+
+  // `F3`：在飞生成的 `startedAt`（`tasks/running`）——已用时与进度条的数据源。
+  // 宿主注册表在生成**开始前**就落账，拿到 taskId 时这条一定在；统一轮询每跳
+  // （refreshTick）顺带刷新，任务结束（generateTaskId 清空）后自然停。
+  useEffect(() => {
+    if (generating === undefined) { setRunningGenerations([]); return }
+    let stale = false
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listRunningTasks()
+        if (!stale) setRunningGenerations(rows)
+      } catch {
+        // 拿不到就用本地点击时间兜底，不打扰用户
+      }
+    })()
+    return () => { stale = true }
+  }, [generating, generateTaskId, refreshTick])
+
+  // `F3`：已用时起点——优先 `tasks/running` 的 startedAt（宿主口径），
+  // 退化到本地点击时间（图片同步生成没有 taskId 可对）。
+  const activeRunning = runningGenerations.find(entry => entry.id === generateTaskId)
+  const elapsedStartedAt = ((): number | undefined => {
+    if (generating === undefined) return undefined
+    const stamp = activeRunning?.startedAt
+    const parsed = stamp === undefined ? Number.NaN : Date.parse(stamp)
+    return Number.isNaN(parsed) ? generateStartedAt : parsed
+  })()
+  const elapsedSeconds = useElapsedSeconds(elapsedStartedAt)
 
   const activeProject = projects.find(project => project.id === activeId)
   // 进入工作流模式（或切项目）时读回该项目的流程文档；没有就准备一份空文档
@@ -795,17 +902,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }, [resizing, timelineTotal])
 
-  /** 复制片段：紧随原片段之后放一份（新 id）。 */
-  const duplicateClip = (track: TimelineTrack, clip: TimelineClip): void => {
-    patchTrack(track.id, current => ({
-      ...current,
-      clips: current.clips.concat({
-        ...clip,
-        id: `clip-${Date.now().toString(36)}-${current.clips.length}`,
-        startMs: clip.startMs + clip.durationMs,
-      }),
-    }))
+  /**
+   * 复制片段（`B17`）：接域层 `duplicateClip`——与 Agent 的 `copy-clip`
+   * 同一套规则（新 id、紧随原片段之后、不重叠）。界面不再自己算一份。
+   */
+  const duplicateClip = (clipId: string): void => {
+    if (timeline === undefined) return
+    try {
+      const result = duplicateClipInTracks(timeline.tracks, clipId, nextClipId)
+      setTimeline({ ...timeline, tracks: result.tracks })
+      setTimelineState('dirty')
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+    }
     setSelectedClipId(undefined)
+  }
+
+  /**
+   * 分割片段（`B17`）：接域层 `splitClipAt`——与 Agent 的 `split-clip` 同一套规则
+   * （拆分点必须严格落在片段内部；两半时长之和守恒；右半补源内偏移 `inMs`，
+   * 变速时按 `speed` 折算）。拆分点取当前播放头。
+   */
+  const splitClip = (clipId: string): void => {
+    if (timeline === undefined) return
+    try {
+      const result = splitClipAt(timeline.tracks, clipId, playheadMs, nextClipId)
+      setTimeline({ ...timeline, tracks: result.tracks })
+      setTimelineState('dirty')
+      // 选中右半：紧接着就能再分割/复制，符合"一刀切下去"的直觉
+      setSelectedClipId(result.rightId)
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
+    }
   }
 
   /** 删除选中的片段（键盘 Delete 与垃圾桶按钮共用）。 */
@@ -911,6 +1039,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     ? previewPath
     : { path: selectedAsset.path, kind: selectedAsset.kind }
   const visibleAssets = assetFilter === 'all' ? assets : assets.filter(asset => asset.kind === assetFilter)
+
+  // `G2` 物料库分栏：当前栏位 kind + 名称筛选。`resources/list?kind=` 宿主是支持的，
+  // 这里一次取全量再本地过滤——切栏/改筛选零请求、零闪烁，也不会把「其他」栏的
+  // 数据反复拉进拉出。
+  const activeResourceKind: ResourceKind = resourceTab === 'other' ? resourceOtherKind : resourceTab
+  const resourceNeedle = resourceFilter.trim()
+  const visibleResources = resources.filter(resource =>
+    resource.kind === activeResourceKind
+    && (resourceNeedle === '' || resource.name.includes(resourceNeedle)),
+  )
 
   /** Run one host action, surfacing failure as a notice instead of a crash. */
   const run = useCallback(async (action: () => Promise<void>) => {
@@ -1468,30 +1606,171 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         onChange={event => setGeneratePrompt(event.target.value)}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span className="iv-meta">{t('generateReferenceLabel')}：</span>
-                        {generateReference === undefined
-                          ? <span className="iv-meta">{t('generateReferenceNone')}</span>
-                          : (
-                            <>
-                              <span className="iv-chip" title={generateReference}>{baseName(generateReference)}</span>
+                      {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
+                      <div className="iv-refs" data-generate-refs="true">
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className="iv-meta">{t('generateRefsLabel')}：</span>
+                          {generateImages.length === 0
+                            ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                            : (
                               <button
                                 type="button"
                                 className="iv-btn iv-btn--ghost iv-btn--sm"
-                                onClick={() => setGenerateReference(undefined)}
+                                onClick={() => { setGenerateImages([]); setRefDragFrom(undefined); setRefDropAt(undefined) }}
                               >
                                 {t('generateClearReference')}
                               </button>
-                            </>
+                            )}
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--ghost iv-btn--sm"
+                            data-generate-refs-add="true"
+                            disabled={selectedAsset === undefined || selectedAsset.kind !== 'image' || generateImages.length >= MAX_REFERENCE_IMAGES}
+                            onClick={() => { addReferenceImage(selectedAsset?.path) }}
+                          >
+                            {t('generateRefsAdd')}
+                          </button>
+                          {generateImages.length >= MAX_REFERENCE_IMAGES
+                            ? <span className="iv-meta">{t('generateRefsFull')}</span>
+                            : null}
+                        </div>
+                        {generateImages.length === 0
+                          ? null
+                          : (
+                            <ul className="iv-ref-list">
+                              {generateImages.map((path, index) => (
+                                <li
+                                  key={path}
+                                  className="iv-ref-chip"
+                                  data-generate-ref={path}
+                                  data-generate-ref-index={String(index)}
+                                  data-ref-drop={refDropAt === index && refDragFrom !== index ? 'true' : undefined}
+                                  draggable
+                                  onDragStart={event => {
+                                    event.dataTransfer.setData('text/plain', path)
+                                    event.dataTransfer.effectAllowed = 'move'
+                                    setRefDragFrom(index)
+                                  }}
+                                  onDragOver={event => {
+                                    if (refDragFrom === undefined) return
+                                    event.preventDefault()
+                                    setRefDropAt(index)
+                                  }}
+                                  onDrop={event => {
+                                    event.preventDefault()
+                                    const from = refDragFrom
+                                    setRefDragFrom(undefined)
+                                    setRefDropAt(undefined)
+                                    if (from !== undefined) moveReferenceImage(from, index)
+                                  }}
+                                  onDragEnd={() => { setRefDragFrom(undefined); setRefDropAt(undefined) }}
+                                >
+                                  <span className="iv-ref-order">{index + 1}</span>
+                                  <span className="iv-ref-role">{index === 0 ? t('generateRefsBase') : t('generateRefsStyle')}</span>
+                                  <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--up"
+                                    aria-label={`${t('generateRefsMoveUp')} ${baseName(path)}`}
+                                    title={t('generateRefsMoveUp')}
+                                    disabled={index === 0}
+                                    onClick={() => { moveReferenceImage(index, index - 1) }}
+                                  >
+                                    <Icon name="chevron" size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--down"
+                                    aria-label={`${t('generateRefsMoveDown')} ${baseName(path)}`}
+                                    title={t('generateRefsMoveDown')}
+                                    disabled={index === generateImages.length - 1}
+                                    onClick={() => { moveReferenceImage(index, index + 1) }}
+                                  >
+                                    <Icon name="chevron" size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--sm"
+                                    data-generate-ref-remove={path}
+                                    aria-label={`${t('remove')} ${baseName(path)}`}
+                                    title={t('remove')}
+                                    onClick={() => { setGenerateImages(generateImages.filter(candidate => candidate !== path)) }}
+                                  >
+                                    <Icon name="x" size={11} />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
                           )}
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--ghost iv-btn--sm"
-                          disabled={selectedAsset === undefined}
-                          onClick={() => setGenerateReference(selectedAsset?.path)}
-                        >
-                          {t('generateUseSelected')}
-                        </button>
+                        <span className="iv-meta">{t('generateRefsHint')}</span>
+                      </div>
+                      {/* `G4` 首尾帧 / 视频编辑槽：尾帧图 + 参考视频 + 真人勾选（仅视频生成生效） */}
+                      <div className="iv-vslots" data-video-slots="true">
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className="iv-meta">{t('videoLastFrame')}：</span>
+                          {generateLastFrame === undefined
+                            ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                            : (
+                              <>
+                                <span className="iv-chip" title={generateLastFrame}>{baseName(generateLastFrame)}</span>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setGenerateLastFrame(undefined) }}
+                                >
+                                  {t('resourceClear')}
+                                </button>
+                              </>
+                            )}
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--ghost iv-btn--sm"
+                            data-video-last-frame-use="true"
+                            disabled={selectedAsset === undefined || selectedAsset.kind !== 'image'}
+                            onClick={() => { setGenerateLastFrame(selectedAsset?.path) }}
+                          >
+                            {t('generateUseSelected')}
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span className="iv-meta">{t('videoReferenceVideo')}：</span>
+                          {generateRefVideo === undefined
+                            ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                            : (
+                              <>
+                                <span className="iv-chip" title={generateRefVideo}>{baseName(generateRefVideo)}</span>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setGenerateRefVideo(undefined); setGenerateRealPerson(false) }}
+                                >
+                                  {t('resourceClear')}
+                                </button>
+                              </>
+                            )}
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--ghost iv-btn--sm"
+                            data-video-reference-use="true"
+                            disabled={selectedAsset === undefined || selectedAsset.kind !== 'video'}
+                            onClick={() => { setGenerateRefVideo(selectedAsset?.path) }}
+                          >
+                            {t('generateUseSelected')}
+                          </button>
+                          <label className="iv-check">
+                            <input
+                              type="checkbox"
+                              checked={generateRealPerson}
+                              data-video-real-person="true"
+                              onChange={event => { setGenerateRealPerson(event.target.checked) }}
+                            />
+                            <span>{t('videoRealPerson')}</span>
+                          </label>
+                        </div>
+                        <span className="iv-meta">{t('videoEditHint')}</span>
+                        {generateLastFrame === undefined && generateRefVideo === undefined
+                          ? null
+                          : <span className="iv-meta" data-video-edit-pending="true">{t('videoEditPending')}</span>}
                       </div>
                       <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="iv-meta">{t('defaultImageSize')}：</span>
@@ -1551,6 +1830,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </button>
                           )}
                       </div>
+                      {/* `F3` 生成进度：服务商不给百分比，就显示已用时 + 不定进度条 */}
+                      {generating === undefined
+                        ? null
+                        : (
+                          <div className="iv-genprog" data-generate-progress="true">
+                            <span className="iv-chip iv-chip--run">
+                              <i className="iv-dot" aria-hidden="true" />
+                              {elapsedSeconds === undefined
+                                ? t('generating')
+                                : t('generateElapsed').replace('{sec}', String(elapsedSeconds))}
+                            </span>
+                            <span
+                              className="iv-progress iv-progress--run"
+                              role="progressbar"
+                              aria-label={t('generateProgress')}
+                            >
+                              <i />
+                            </span>
+                          </div>
+                        )}
                       <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
                     <div className="iv-stats">
@@ -1956,6 +2255,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                     const ratio = Math.max(1, timelineTotal)
                                     const left = (clip.startMs / ratio) * 100
                                     const width = Math.max(1.5, (clip.durationMs / ratio) * 100)
+                                    // `B17`：分割点=播放头，必须严格落在片段内部
+                                    //（与域层 splitClipAt 同口径；两端点上是无效拆分）
+                                    const splitInside = playheadMs > clip.startMs
+                                      && playheadMs < clip.startMs + effectiveDurationMs(clip)
                                     return (
                                       <div
                                         key={clip.id}
@@ -2129,9 +2432,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                             </>
                                           )
                                           : null}
+                                        <button type="button" className="iv-btn"
+                                          data-timeline-clip-split={clip.id}
+                                          aria-label={`${t('clipSplit')} ${clip.id}`}
+                                          title={splitInside ? t('clipSplit') : t('clipSplitOutsideHint')}
+                                          disabled={!splitInside}
+                                          onClick={event => { event.stopPropagation(); splitClip(clip.id) }}>
+                                          <Icon name="storyboard" size={11} />
+                                        </button>
                                         <button type="button" className="iv-btn" aria-label={`${t('clipDuplicate')} ${clip.id}`}
                                           title={t('clipDuplicate')}
-                                          onClick={event => { event.stopPropagation(); duplicateClip(track, clip) }}>
+                                          onClick={event => { event.stopPropagation(); duplicateClip(clip.id) }}>
                                           <Icon name="copy" size={11} />
                                         </button>
                                         <button type="button" className="iv-btn" aria-label={`${t('remove')} ${clip.id}`}
@@ -2374,8 +2685,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           disabled={busy}
                           onClick={event => {
                             event.stopPropagation()
-                            setGenerateReference(asset.path)
-                            setNotice({ text: `${t('referenceAsset')}：${baseName(asset.path)}`, tone: 'info' })
+                            // `F2`：追加进按序参考图列表（图片才是参考图；视频走视频槽）
+                            if (asset.kind === 'image') addReferenceImage(asset.path)
+                            else setGenerateRefVideo(asset.path)
                           }}
                         >
                           <Icon name="plus" size={12} />
@@ -2483,17 +2795,53 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneResources')}</h3>
+                <div className="iv-pane-actions">
+                  <input
+                    className="iv-input"
+                    style={{ width: '96px' }}
+                    aria-label={t('resourceFilterPlaceholder')}
+                    placeholder={t('resourceFilterPlaceholder')}
+                    data-resource-filter="true"
+                    value={resourceFilter}
+                    onChange={event => { setResourceFilter(event.target.value) }}
+                  />
+                </div>
               </div>
               <div className="iv-pane-body">
-                <div className="iv-add-row">
+                {/* `G2` 物料库分栏：角色/场景/物品三栏 + 「其他」下拉（其余 kind 各一栏） */}
+                <div className="iv-tabs" role="tablist" aria-label={t('resourceLibraries')}>
+                  {(['role', 'scene', 'prop'] as const).map(kind => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="tab"
+                      aria-selected={resourceTab === kind}
+                      className={`iv-tab${resourceTab === kind ? ' on' : ''}`}
+                      data-resource-tab={kind}
+                      onClick={() => { setResourceTab(kind); setResourceFilter('') }}
+                    >
+                      <Icon name={RESOURCE_ICONS[kind]} size={11} />
+                      {t(kindKey(kind))}
+                    </button>
+                  ))}
                   <select
-                    className="iv-select"
-                    aria-label={t('paneResources')}
-                    value={resourceKind}
-                    onChange={event => { setResourceKind(event.target.value as ResourceKind) }}
+                    className="iv-select iv-select--sm"
+                    aria-label={t('resourceTabOther')}
+                    data-resource-tab="other"
+                    value={resourceTab === 'other' ? resourceOtherKind : ''}
+                    onChange={event => {
+                      setResourceTab('other')
+                      setResourceOtherKind(event.target.value as ResourceKind)
+                      setResourceFilter('')
+                    }}
                   >
-                    {RESOURCE_KINDS.map(kind => <option key={kind} value={kind}>{t(kindKey(kind))}</option>)}
+                    <option value="" disabled>{t('resourceTabOther')}</option>
+                    {RESOURCE_KINDS.filter(kind => kind !== 'role' && kind !== 'scene' && kind !== 'prop')
+                      .map(kind => <option key={kind} value={kind}>{t(kindKey(kind))}</option>)}
                   </select>
+                </div>
+                <div className="iv-add-row">
+                  <span className="iv-meta">{t(kindKey(activeResourceKind))}</span>
                   <input
                     className="iv-input"
                     style={{ flex: 1, minWidth: '78px' }}
@@ -2520,7 +2868,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         if (project === undefined) return
                         const note = resourceNote.trim()
                         await apiRef.current.createResource({
-                          projectId: project.id, kind: resourceKind, name: resourceName.trim(),
+                          projectId: project.id, kind: activeResourceKind, name: resourceName.trim(),
                           ...note === '' ? {} : { note },
                           ...resourceAsset === undefined ? {} : { assetPath: resourceAsset },
                         })
@@ -2555,7 +2903,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {t('resourceUseSelected')}
                   </button>
                 </div>
-                {resources.length === 0
+                {visibleResources.length === 0
                   ? (
                     <div className="iv-empty">
                       <span className="iv-empty-tile"><Icon name="tag" size={17} /></span>
@@ -2563,7 +2911,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   )
                   : (
-                  <VirtualList className="iv-list" items={resources} renderRow={(resource, _index) => (
+                  <VirtualList className="iv-list" items={visibleResources} renderRow={(resource, _index) => (
                     <li key={resource.id} className="iv-row"
                       onClick={() => {
                         if (resource.assetPath === undefined) return

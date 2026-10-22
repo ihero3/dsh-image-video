@@ -229,6 +229,9 @@ describe('B5 timeline interaction', () => {
     // 复制：紧随原片段之后
     fireEvent.click(view.container.querySelector(`[aria-label^="${en.clipDuplicate}"]`) as HTMLElement)
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+    // 域层 duplicateClip：副本落在原片段结尾之后（0 + 3000）
+    const inputs = view.container.querySelectorAll('[data-timeline-track="video"] input')
+    expect(Number(inputs[4]!.value)).toBe(3000)
 
     // 选中一个片段，按 Delete 删掉
     fireEvent.click(view.container.querySelector('[data-timeline-clip]') as HTMLElement)
@@ -237,5 +240,47 @@ describe('B5 timeline interaction', () => {
     })
     fireEvent.keyDown(window, { key: 'Delete' })
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+  })
+
+  it('splits a clip at the playhead through the domain rule (B17)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    // 播放头推到 1500ms（3s 片段的中间）
+    const playhead = view.container.querySelector('[data-timeline-playhead]') as HTMLInputElement
+    fireEvent.change(playhead, { target: { value: '1500' } })
+
+    // 分割：域层 splitClipAt —— 两半时长守恒（1500 + 1500），右半起点=拆分点
+    fireEvent.click(view.container.querySelector('[data-timeline-clip-split]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
+
+    const inputs = view.container.querySelectorAll('[data-timeline-track="video"] input')
+    // 每片四个输入：起点 / 时长 / 变速 / 淡入淡出
+    expect(Number(inputs[0]!.value)).toBe(0)        // 左半起点
+    expect(Number(inputs[1]!.value)).toBe(1500)     // 左半时长
+    expect(Number(inputs[4]!.value)).toBe(1500)     // 右半起点
+    expect(Number(inputs[5]!.value)).toBe(1500)     // 右半时长
+
+    // 分割后选中右半：还能再切一刀
+    await waitFor(() => {
+      const selected = view.container.querySelectorAll('[data-timeline-clip]')
+      expect(selected[1]?.getAttribute('data-timeline-clip-selected')).toBe('true')
+    })
+  })
+
+  it('disables split when the playhead is outside the clip (B17)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    // 播放头在 0（片段起点）：严格内部才算，起点/终点都是无效拆分
+    const playhead = view.container.querySelector('[data-timeline-playhead]') as HTMLInputElement
+    fireEvent.change(playhead, { target: { value: '0' } })
+    const split = view.container.querySelector('[data-timeline-clip-split]') as HTMLButtonElement
+    expect(split.disabled).toBe(true)
+    expect(split.getAttribute('title')).toBe(en.clipSplitOutsideHint)
+
+    // 推进到片段内部，按钮启用
+    fireEvent.change(playhead, { target: { value: '1200' } })
+    expect(view.container.querySelector('[data-timeline-clip-split]')?.hasAttribute('disabled')).toBe(false)
   })
 })

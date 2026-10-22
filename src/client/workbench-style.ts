@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-18.5'
+export const WORKBENCH_STYLE_VERSION = '2026-10-21.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -261,8 +261,21 @@ export const WORKBENCH_STYLE = `
 .iv-progress>i{display:block;height:100%;border-radius:2px;background:var(--iv-acc);transition:width .3s ease}
 .iv-progress--ok>i{background:var(--iv-ok)}
 .iv-progress--err>i{background:var(--iv-danger)}
+/* F3：生成没有百分比——不定进度条（色带往返），配"生成中 · 12s"文案 */
+.iv-progress--run>i{width:38%;animation:iv-progress-run 1.15s ease-in-out infinite}
+@keyframes iv-progress-run{0%{margin-left:-38%}100%{margin-left:100%}}
 .iv-add-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
 .iv-add-row .iv-select{flex:1;min-width:110px}
+
+/* ============ G2 物料库分栏 ============ */
+.iv-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.iv-tab{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:var(--iv-r);
+  border:1px solid var(--iv-line-2);background:var(--iv-panel-2);color:var(--iv-tx2);font-size:10.5px;cursor:pointer}
+.iv-tab:hover{color:var(--iv-tx);border-color:color-mix(in srgb,currentColor 35%,transparent)}
+.iv-tab .iv-ico{color:var(--iv-tx3)}
+.iv-tab.on{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);background:var(--iv-acc-soft)}
+.iv-tab.on .iv-ico{color:var(--iv-acc)}
+.iv-tabs .iv-select{width:auto;min-width:64px}
 
 /* ============ 列表 ============ */
 .iv-list{display:flex;flex-direction:column;gap:2px;overflow:auto;min-height:0}
@@ -304,6 +317,28 @@ export const WORKBENCH_STYLE = `
 .iv-stat{border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);padding:6px 9px}
 .iv-stat b{display:block;font-size:16px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}
 .iv-stat span{font-size:9px;letter-spacing:.06em;color:var(--iv-tx3)}
+
+/* ============ F2 多参考图 chips ============ */
+.iv-refs{display:grid;gap:5px}
+.iv-ref-list{display:flex;flex-wrap:wrap;gap:4px}
+.iv-ref-chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 3px 0 0;max-width:100%;
+  border:1px solid var(--iv-line-2);border-radius:var(--iv-r);background:var(--iv-panel-2);font-size:10.5px;cursor:grab}
+.iv-ref-chip[data-ref-drop=true]{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
+.iv-ref-chip .iv-ellipsis{max-width:120px}
+.iv-ref-order{width:17px;align-self:stretch;display:grid;place-items:center;border-radius:var(--iv-r) 0 0 var(--iv-r);
+  background:var(--iv-panel-3);color:var(--iv-tx2);font-family:var(--iv-mono);font-size:9.5px}
+.iv-ref-role{font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--iv-tx3);text-transform:uppercase}
+.iv-ref-chip .iv-btn{width:18px;height:18px;padding:0;border-color:transparent;background:transparent;color:var(--iv-tx3)}
+.iv-ref-chip .iv-btn:hover:not(:disabled){color:var(--iv-tx);background:var(--iv-panel-3)}
+.iv-ref-move--up .iv-ico{transform:rotate(-90deg)}
+.iv-ref-move--down .iv-ico{transform:rotate(90deg)}
+
+/* ============ F3 生成进度 ============ */
+.iv-genprog{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ============ G4 视频槽（尾帧/参考视频/真人） ============ */
+.iv-vslots{display:grid;gap:5px;padding:7px 9px;border:1px dashed var(--iv-line-2);border-radius:var(--iv-r);
+  background:var(--iv-panel-2)}
 
 /* ============ 时间轴：监视器 / transport / 轨道 ============ */
 .iv-monitor{position:relative;min-height:168px;border-radius:4px;overflow:hidden;display:grid;place-items:center;

@@ -63,9 +63,10 @@
 | 想要什么（端点/字段/动作，写具体名字） | 界面要做什么（一句话） | 期望入参/出参 | 状态 |
 | --- | --- | --- | --- |
 | （示例）`timelines/save` 增加 `track.duckingDb` | 旁白压背景音乐 | `{duckingDb: number}`；导出按 `sidechaincompress` 处理 | 示例 |
+| `media/generate` 转发 `media[]`（每项 `{image?,video?,type?,position?}`）与 `realPerson`（布尔）到 `generate_video` 工具 | 「尾帧图 / 参考视频」槽生效（B-3 客户端已接线，请求体已按 `media:[{image,type:'last_frame'},{video,type:'reference_video'}]` 发送） | 入参在现有 `media/generate` 上加两个字段；宿主原样拼进 `generate_video` 的 `media` 参数即可（工具侧 `last_frame`/`reference_video` 已实现，见 `src/tools/generate-video.ts`） | **待认领（A）** |
 | | | | |
 
-**当前待认领：无**（2026-10-19 核对：只有一行占位"改 RPC 端点/数据模型/渲染参数"，不是可执行需求）。
+**当前待认领：1 条**（2026-10-21 B-3 登记：`media/generate` 转发 `media[]` + `realPerson`；2026-10-19 核对时只有一行占位"改 RPC 端点/数据模型/渲染参数"，不是可执行需求）。
 已就绪、无需申请的新契约（直接接）：`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
 `timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
