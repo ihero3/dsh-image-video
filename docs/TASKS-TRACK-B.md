@@ -18,6 +18,20 @@
 
 **Wave 1 门禁**：`tests/client-*.test.ts(x)` 24 个文件全绿（新增 16 项）+ `workbench.client` / `workflow-canvas.client` 全绿 + `pnpm run typecheck` 通过。未提交 `lib/`、未改 `package.json`、未打 tag。
 
+### Wave 2（2026-10-22 完成：B-6～B-10；B-9/B-10 界面已交付、宿主端点等 A-4/A-5）
+
+> A 于 2026-10-22 交付 A-1（四个快速模板 + 文案键）、A-2（`assets/remove-many`）、A-3（资源 `assetPaths[]`），并附送 A-9（`timelines/split-clip`/`copy-clip` RPC 端点，B-5 的域层接线与之同源、无漂移）。
+
+- [x] **B-6（F4 模板市场卡片）**：四个快速模板在模板市场里分两组展示——「快速上手」（quick-image / quick-video / storyboard / cover）与「完整链路」（原有模板）；文案键 A 已补，**描述由客户端 `TEMPLATE_HINTS` 补**（`WorkflowTemplate` 无 `describe` 字段，数据层归 A）；点卡即一键新建（实例化 + 落库 + 收起市场）。顺手补了 `.iv-tpl-*` 样式（B15 起模板卡一直无样式）。测试：`tests/client-template-market.test.tsx`（2 项：分组/名称/描述、点击实例化落库）。
+- [x] **B-7（F5 素材批量操作）**：素材行加多选复选框（点行=预览、点框=批量，两件事不互斥）；有选中时出现批量条——批量删除（一次 `assets/remove-many`，宿主单次 ≤200，不存在的 id 进 skipped）、批量引用到提示词（选中的图片按列表顺序进 F2 参考图，封顶 6 张）、清除选择；被引用的素材删除被拒后留在选区并给"仍要删除"（force）二次确认。测试：`tests/client-bulk-operations.test.tsx`（4 项）。
+- [x] **B-8（F6 资源资料库）**：资源可挂多张参考图——行内编辑器（增/删/清 + 计数 + 底图/参考角标）、行内「挂选中素材」一键归入、多参考图行缩略图 "+n" 角标；合并规则与数据层一致：**有 `assetPaths` 就以它为准，旧 `assetPath` 只在没有 `assetPaths` 时兜底**（否则删掉旧图会被合并视图放回来）；清空时两个字段一起清。测试：`tests/client-resource-references.test.tsx`（4 项：旧数据合并 / 挂选中素材 / 增删 / 清空）。
+- [x] **B-9（G3 融合生图 UI）**：界面已交付——快速创作面板内「融合生图」区：角色/场景/物品三组多选 chip（`aria-pressed` 可达）、按选区去重封顶 6 张的本地参考图预览（无图时明示"降级纯文生"）、独立提示词框与「融合生成」按钮，点击调 `media/compose`（`api.ts` 的 `composeMedia`）。**真机生效仍等 A-4 端点**（已在 API-SURFACE B 申请区登记；端点缺失时如实展示宿主错误、不伪造成功）。测试：`tests/client-fusion-compose.test.tsx`（4 项）。
+- [x] **B-10（G1 提示词 UI）**：界面已交付——「提示词工坊」区：选中图片素材 → `prompts/extract` 提取 → 结构化结果拼成可编辑草稿（主体/风格/材质/细节，缺字段跳过）→ `prompts/save` 入库 → `prompts/list` 列表 → 一键带入生成表单 / `prompts/remove` 删除。**真机生效仍等 A-5 端点**（视觉模型不可用时由宿主给清晰错误；界面如实报错、绝不编造结果）。测试：`tests/client-prompt-library.test.tsx`（4 项）。
+
+**Wave 2 门禁**：29 个 `client-*.test.*` 文件全绿（99 项，Wave 2 新增 18 项：B-6~B-8 10 项 + B-9/B-10 8 项）+ `workbench.client`(32) + `workflow-canvas.client`(13) + bundle 2 项 + 漂移 2 项 + `pnpm run typecheck` 通过。
+
+**仍挂在 API-SURFACE「B 申请区」的三条**：① B-3 的 `media/generate` 转发 `media[]`/`realPerson`；② A-4 `media/compose`（B-9 已接线）；③ A-5 `prompts/extract` + 提示词库 CRUD（B-10 已接线）。三者均按「契约先行」在客户端落地并写假宿主测试，宿主端点为唯一缺口。
+
 ## P0（用户最能感知的体验问题）
 
 - [x] **B1 轮询收敛**：现有 3 个定时器（导出 2s / 运行 2.5s / 项目 5s）合成 **1 个统一轮询**：间隔按活跃度自适应（有 running 任务 2s，否则 5s）、`document.hidden` 时暂停、加 ±20% 抖动；测试：隐藏时不再发请求、可见时恢复。

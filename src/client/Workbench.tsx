@@ -36,7 +36,7 @@ import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { MediaReference, RunningGeneration, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExtractedPrompt, MediaReference, PromptRecord, RunningGeneration, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -171,6 +171,37 @@ function formatBytes(bytes: number): string {
 const RESOURCE_KINDS: readonly ResourceKind[] = ['role', 'scene', 'prop', 'brand', 'style', 'voice', 'motion-track']
 
 /**
+ * `B-6`：模板描述（客户端侧映射）。`WorkflowTemplate` 只有 `labelKey` 没有
+ * `describe`（数据层归 Track A），所以"这张卡是干什么的"由界面补一份；
+ * 键即模板 id。
+ */
+const TEMPLATE_HINTS: Readonly<Partial<Record<string, WorkbenchLocaleKey>>> = {
+  'quick-image': 'templateQuickImageHint',
+  'quick-video': 'templateQuickVideoHint',
+  'storyboard': 'templateStoryboardHint',
+  'cover': 'templateCoverHint',
+}
+
+/** `B-6`：「快速上手」组的模板 id（A-1 的四个 2 秒模板），其余归「完整链路」。 */
+const QUICK_TEMPLATE_IDS: readonly string[] = ['quick-image', 'quick-video', 'storyboard', 'cover']
+
+/** `B-8`：一个资源最多挂几张参考图（与 F2 生成表单同一口径，UI 护栏而非宿主限制）。 */
+const MAX_RESOURCE_REFS = 6
+
+/**
+ * `B-8`：资源的参考图列表（合并新旧字段）。
+ * `A-3` 起新数据写 `assetPaths`；旧数据只有 `assetPath`。合并规则与数据层
+ * 注释一致：**有 `assetPaths` 就以它为准**（整组替换语义），旧 `assetPath`
+ * 只在没有 `assetPaths` 时兜底——否则删掉一张旧图后，它会被合并视图又放回来。
+ * @param resource - 资源记录。
+ * @returns 参考图路径（首图视为底图）。
+ */
+function resourceRefs(resource: ResourceRecord): readonly string[] {
+  if (resource.assetPaths !== undefined) return resource.assetPaths
+  return resource.assetPath === undefined ? [] : [resource.assetPath]
+}
+
+/**
  * 多参考图上限（`F2`）：首图=底图，其余=风格/脸部参考。
  * 6 是与工具侧 `images[]` 的实用上限对齐的客户端护栏（再多对构图帮助有限、
  * 请求体先变大），不是宿主限制。
@@ -225,6 +256,55 @@ function clockTime(iso: string): string {
 /** File name of an absolute path. */
 function baseName(path: string): string {
   return path.split('/').pop() ?? path
+}
+
+/**
+ * `B-10`：把宿主返回的结构化提示词拼成一段可编辑文本。
+ * 宿主给了整段 `text` 就优先用它；否则按 主体→风格→材质→细节 拼接，缺字段跳过。
+ * 各字段都为空时返回空串——界面据此提示"提取结果为空"，绝不编造内容。
+ */
+function composeExtractedPrompt(prompt: ExtractedPrompt): string {
+  const whole = prompt.text?.trim()
+  if (whole !== undefined && whole !== '') return whole
+  return [prompt.subject, prompt.style, prompt.material, prompt.details]
+    .map(part => part?.trim() ?? '')
+    .filter(part => part !== '')
+    .join(', ')
+}
+
+/** `B-9`：在选中的资源 id 列表里切换一个 id（保持追加顺序）。 */
+function toggleSelection(current: readonly string[], id: string): readonly string[] {
+  return current.includes(id) ? current.filter(candidate => candidate !== id) : [...current, id]
+}
+
+/** `B-9`：融合生图里一组可多选的资源 chip（角色 / 场景 / 物品各一组）。 */
+function FusionGroup(props: {
+  readonly kind: string
+  readonly label: string
+  readonly resources: readonly ResourceRecord[]
+  readonly selected: readonly string[]
+  readonly emptyHint: string
+  readonly onToggle: (id: string) => void
+}): ReactNode {
+  return (
+    <div className="iv-fusion-group" data-fusion-group={props.kind}>
+      <span className="iv-meta">{props.label}</span>
+      {props.resources.length === 0
+        ? <span className="iv-meta">{props.emptyHint}</span>
+        : props.resources.map(resource => (
+            <button
+              type="button"
+              key={resource.id}
+              className={`iv-chip${props.selected.includes(resource.id) ? ' iv-chip--ok' : ''}`}
+              aria-pressed={props.selected.includes(resource.id)}
+              data-fusion-pick={resource.id}
+              onClick={() => props.onToggle(resource.id)}
+            >
+              {resource.name}
+            </button>
+          ))}
+    </div>
+  )
 }
 
 /**
@@ -283,6 +363,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
+  // `B-7`：素材多选（批量删除 `assets/remove-many` / 批量引用到提示词）
+  const [selectedAssetIds, setSelectedAssetIds] = useState<readonly string[]>([])
+  // 批量删除被宿主拒（素材被引用）后，亮出"仍要删除"让用户明确承担后果
+  const [bulkForceIds, setBulkForceIds] = useState<readonly string[] | undefined>(undefined)
   // `G2` 物料库分栏：角色/场景/物品三个常驻栏 + 「其他」下拉（其余 kind）。
   // 当前栏位即新建资源的 kind（「把选中素材归到该角色」由此来）。
   const [resourceTab, setResourceTab] = useState<'role' | 'scene' | 'prop' | 'other'>('role')
@@ -292,6 +376,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `A153`：资源的参考图（角色定妆照 / 场景基准）
   const [resourceAsset, setResourceAsset] = useState<string | undefined>(undefined)
   const [resourceNote, setResourceNote] = useState('')
+  // `B-8`：正在管理参考图的资源（行内"管理参考图"打开的行内编辑器）
+  const [editingResourceId, setEditingResourceId] = useState<string | undefined>(undefined)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'dirty' | 'failed'>('saved')
@@ -325,6 +411,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateSize, setGenerateSize] = useState('')
   const [generateAspect, setGenerateAspect] = useState('')
   const [generateDuration, setGenerateDuration] = useState('')
+
+  // `B-9` 融合生图（`A-4` `media/compose`）：按资源 id 选角色/场景/物品 + 独立提示词。
+  const [composePrompt, setComposePrompt] = useState('')
+  const [composeRoles, setComposeRoles] = useState<readonly string[]>([])
+  const [composeScenes, setComposeScenes] = useState<readonly string[]>([])
+  const [composeProps, setComposeProps] = useState<readonly string[]>([])
+  const [composing, setComposing] = useState(false)
+  // `B-10` 提示词工坊（`A-5` `prompts/*`）：提取结果 / 名称 / 库 / 运行态。
+  const [promptDraft, setPromptDraft] = useState('')
+  const [promptName, setPromptName] = useState('')
+  const [prompts, setPrompts] = useState<readonly PromptRecord[]>([])
+  const [extracting, setExtracting] = useState(false)
 
   /** 生成后刷新当前项目的素材列表。 */
   const refreshAssetsAfterGenerate = async (): Promise<void> => {
@@ -1050,6 +1148,120 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     && (resourceNeedle === '' || resource.name.includes(resourceNeedle)),
   )
 
+  // `B-9` 融合生图：选中资源的参考图预览——去重、按角色→场景→物品的顺序、封顶 6 张。
+  // 这只是**本地预览**；真正用哪几张由宿主 `media/compose` 解析（缺图会降级为纯文生）。
+  const composeSelection = [...composeRoles, ...composeScenes, ...composeProps]
+  const composePreviewRefs = ((): readonly string[] => {
+    const seen = new Set<string>()
+    const paths: string[] = []
+    for (const id of composeSelection) {
+      const resource = resources.find(candidate => candidate.id === id)
+      if (resource === undefined) continue
+      for (const path of resourceRefs(resource)) {
+        if (seen.has(path)) continue
+        seen.add(path)
+        paths.push(path)
+        if (paths.length >= MAX_REFERENCE_IMAGES) return paths
+      }
+    }
+    return paths
+  })()
+  const composeResourcesOf = (kind: ResourceKind): readonly ResourceRecord[] =>
+    resources.filter(resource => resource.kind === kind)
+
+  /** `B-9`：融合生图——资源 id 交宿主解析参考图并生成（A-4 未落地时如实报错）。 */
+  const runCompose = async (): Promise<void> => {
+    const prompt = composePrompt.trim()
+    if (prompt === '') { setNotice({ text: t('fusionNeedsPrompt'), tone: 'error' }); return }
+    if (activeId === undefined) { setNotice({ text: t('generateNeedsProject'), tone: 'error' }); return }
+    setComposing(true)
+    try {
+      const result = await apiRef.current.composeMedia({
+        projectId: activeId,
+        prompt,
+        ...composeRoles.length > 0 ? { roles: composeRoles } : {},
+        ...composeScenes.length > 0 ? { scenes: composeScenes } : {},
+        ...composeProps.length > 0 ? { props: composeProps } : {},
+      })
+      await refreshAssetsAfterGenerate()
+      setComposePrompt('')
+      const suffix = result.path === undefined ? '' : `：${baseName(result.path)}`
+      setNotice({ text: `${t('fusionDone')}${suffix}`, tone: 'info' })
+    } catch (error) {
+      setNotice({ text: `${t('fusionFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    } finally {
+      setComposing(false)
+    }
+  }
+
+  // `B-10` 提示词库：全局库，挂载时拉一次；端点未落地（A-5 未实现）时保持空库，不打断其它面板。
+  useEffect(() => {
+    let stale = false
+    void (async () => {
+      try {
+        const rows = await apiRef.current.listPrompts()
+        if (!stale) setPrompts(rows)
+      } catch {
+        // 空库展示即可，真实错误在用户点「提取」时会如实弹出
+      }
+    })()
+    return () => { stale = true }
+  }, [])
+
+  /** `B-10`：从选中的图片素材提取结构化提示词（不可用则如实报错，不伪造结果）。 */
+  const runExtractPrompt = async (): Promise<void> => {
+    if (selectedAsset === undefined || selectedAsset.kind !== 'image') {
+      setNotice({ text: t('promptExtractNeedsAsset'), tone: 'error' })
+      return
+    }
+    setExtracting(true)
+    try {
+      const extracted = await apiRef.current.extractPrompt({ projectId: activeId, assetId: selectedAsset.id })
+      const text = composeExtractedPrompt(extracted)
+      setPromptDraft(text)
+      if (promptName.trim() === '') setPromptName(baseName(selectedAsset.path))
+      if (text === '') {
+        setNotice({ text: t('promptExtractEmpty'), tone: 'error' })
+      } else {
+        setNotice({ text: t('promptExtractDone'), tone: 'info' })
+      }
+    } catch (error) {
+      setNotice({ text: `${t('promptExtractFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  /** `B-10`：把提取/编辑后的结果存入提示词库。 */
+  const savePromptDraft = async (): Promise<void> => {
+    const text = promptDraft.trim()
+    if (text === '') { setNotice({ text: t('promptNeedsText'), tone: 'error' }); return }
+    const name = promptName.trim() === '' ? t('promptUntitled') : promptName.trim()
+    try {
+      const saved = await apiRef.current.savePrompt({ name, text })
+      setPrompts(current => [saved, ...current.filter(record => record.id !== saved.id)])
+      setNotice({ text: t('promptSaveDone'), tone: 'info' })
+    } catch (error) {
+      setNotice({ text: `${t('promptSaveFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    }
+  }
+
+  /** `B-10`：删除一条提示词。 */
+  const removePromptRecord = async (id: string): Promise<void> => {
+    try {
+      await apiRef.current.removePrompt(id)
+      setPrompts(current => current.filter(record => record.id !== id))
+    } catch (error) {
+      setNotice({ text: `${t('promptSaveFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    }
+  }
+
+  /** `B-10`：把库里的提示词一键带入生成表单。 */
+  const applyPrompt = (text: string): void => {
+    setGeneratePrompt(text)
+    setNotice({ text: t('promptApplyDone'), tone: 'info' })
+  }
+
   /** Run one host action, surfacing failure as a notice instead of a crash. */
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true)
@@ -1081,6 +1293,113 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const loadResources = useCallback(async (projectId: string) => {
     setResources(await apiRef.current.listResources(projectId))
   }, [])
+
+  // ============ B-7 素材批量操作 ============
+  /** 多选当前仍存在的素材（已删掉的自动退出选择，计数不会虚高）。 */
+  const selectedAssets = assets.filter(asset => selectedAssetIds.includes(asset.id))
+
+  /** 切换某个素材的选中态。 */
+  const toggleAssetSelection = (id: string): void => {
+    setSelectedAssetIds(current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id]))
+    setBulkForceIds(undefined)
+  }
+
+  /** 批量删除：一次 `assets/remove-many`；被引用的进 skipped 并给"仍要删除"。 */
+  const bulkRemoveAssets = (force: boolean): void => {
+    const ids = force ? bulkForceIds ?? [] : selectedAssetIds
+    if (ids.length === 0) return
+    void run(async () => {
+      const result = await apiRef.current.removeAssets({ ids, ...(force ? { force: true } : {}) })
+      const skippedIds = new Set(result.skipped.map(entry => entry.id))
+      // 没删掉的留在选区里，用户能一眼看到还剩谁
+      setSelectedAssetIds(current => current.filter(id => skippedIds.has(id)))
+      if (activeProject !== undefined) setAssets(await apiRef.current.listAssets(activeProject.id))
+      if (result.skipped.length === 0) {
+        setBulkForceIds(undefined)
+        setNotice({ text: t('bulkRemoveDone').replace('{n}', String(result.removed)), tone: 'info' })
+        return
+      }
+      if (!force) setBulkForceIds([...skippedIds])
+      setNotice({
+        text: `${t('bulkRemoveDone').replace('{n}', String(result.removed))} · ${t('bulkRemoveSkipped').replace('{n}', String(result.skipped.length))}`,
+        tone: 'error',
+      })
+    })
+  }
+
+  /** 批量引用：把选中的图片按列表顺序加进生成表单的参考图（封顶 6 张）。 */
+  const bulkReferenceAssets = (): void => {
+    const paths = selectedAssets
+      .filter(asset => asset.kind === 'image')
+      .map(asset => asset.path)
+      .filter(path => !generateImages.includes(path))
+    if (paths.length === 0) {
+      setNotice({ text: t('bulkReferenceNone'), tone: 'error' })
+      return
+    }
+    const room = Math.max(0, MAX_REFERENCE_IMAGES - generateImages.length)
+    const accepted = paths.slice(0, room)
+    if (accepted.length === 0) {
+      setNotice({ text: t('generateRefsFull'), tone: 'error' })
+      return
+    }
+    setGenerateImages([...generateImages, ...accepted])
+    setNotice({
+      text: `${t('bulkReferenceDone').replace('{n}', String(accepted.length))}${accepted.length < paths.length ? ` · ${t('generateRefsFull')}` : ''}`,
+      tone: 'info',
+    })
+  }
+
+  // ============ B-8 资源多参考图 ============
+  const editingResource = resources.find(resource => resource.id === editingResourceId)
+
+  /**
+   * 给资源挂一张参考图（「把选中素材归到该角色」）。
+   * `assetPaths` 是整组替换语义（宿主无 append 动作），所以先读当前值再 concat。
+   */
+  const attachRefToResource = (resourceId: string, path: string | undefined): void => {
+    if (path === undefined) return
+    const resource = resources.find(candidate => candidate.id === resourceId)
+    if (resource === undefined) return
+    const refs = resourceRefs(resource)
+    if (refs.includes(path)) {
+      setNotice({ text: t('resourceRefsDuplicate'), tone: 'error' })
+      return
+    }
+    if (refs.length >= MAX_RESOURCE_REFS) {
+      setNotice({ text: t('resourceRefsFull'), tone: 'error' })
+      return
+    }
+    void run(async () => {
+      const updated = await apiRef.current.updateResource({ id: resourceId, assetPaths: [...refs, path] })
+      // 局部替换：不整表重读，避免正在编辑的选区被冲掉
+      setResources(current => current.map(item => (item.id === resourceId ? updated : item)))
+      setNotice({ text: `${t('resourceRefsAdd')}：${baseName(path)}`, tone: 'info' })
+    })
+  }
+
+  /** 摘掉一张参考图；清空时连旧 `assetPath` 一起清（否则合并视图还会显示它）。 */
+  const removeRefFromResource = (resourceId: string, path: string): void => {
+    const resource = resources.find(candidate => candidate.id === resourceId)
+    if (resource === undefined) return
+    const next = resourceRefs(resource).filter(item => item !== path)
+    void run(async () => {
+      const updated = await apiRef.current.updateResource({
+        id: resourceId,
+        assetPaths: next.length === 0 ? null : next,
+        ...(next.length === 0 ? { assetPath: null } : {}),
+      })
+      setResources(current => current.map(item => (item.id === resourceId ? updated : item)))
+    })
+  }
+
+  /** 清空整组参考图（`assetPaths: null` + `assetPath: null`，旧单图一并清）。 */
+  const clearResourceRefs = (resourceId: string): void => {
+    void run(async () => {
+      const updated = await apiRef.current.updateResource({ id: resourceId, assetPaths: null, assetPath: null })
+      setResources(current => current.map(item => (item.id === resourceId ? updated : item)))
+    })
+  }
 
   useEffect(() => {
     void (async () => {
@@ -1602,6 +1921,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         rows={3}
                         value={generatePrompt}
                         placeholder={t('generatePromptPlaceholder')}
+                        data-generate-prompt="true"
                         disabled={generating !== undefined}
                         onChange={event => setGeneratePrompt(event.target.value)}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
@@ -1852,6 +2172,156 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         )}
                       <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
+                    {/* `B-9` 融合生图（G3）：选角色/场景/物品 → 参考图预览 → 调 media/compose */}
+                    <div className="iv-fusion" data-fusion="true">
+                      <div className="iv-fusion-head">
+                        <span className="iv-chip iv-chip--run"><Icon name="layers" size={11} />{t('fusionTitle')}</span>
+                        {composeSelection.length === 0
+                          ? null
+                          : (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              onClick={() => { setComposeRoles([]); setComposeScenes([]); setComposeProps([]) }}
+                            >
+                              {t('fusionClear')}
+                            </button>
+                          )}
+                      </div>
+                      <FusionGroup
+                        kind="role"
+                        label={t('fusionRoles')}
+                        resources={composeResourcesOf('role')}
+                        selected={composeRoles}
+                        emptyHint={t('fusionNoResources')}
+                        onToggle={id => setComposeRoles(current => toggleSelection(current, id))}
+                      />
+                      <FusionGroup
+                        kind="scene"
+                        label={t('fusionScenes')}
+                        resources={composeResourcesOf('scene')}
+                        selected={composeScenes}
+                        emptyHint={t('fusionNoResources')}
+                        onToggle={id => setComposeScenes(current => toggleSelection(current, id))}
+                      />
+                      <FusionGroup
+                        kind="prop"
+                        label={t('fusionProps')}
+                        resources={composeResourcesOf('prop')}
+                        selected={composeProps}
+                        emptyHint={t('fusionNoResources')}
+                        onToggle={id => setComposeProps(current => toggleSelection(current, id))}
+                      />
+                      <span className="iv-meta" data-fusion-preview="true">
+                        {composePreviewRefs.length === 0
+                          ? t('fusionPreviewNone')
+                          : t('fusionPreview').replace('{n}', String(composePreviewRefs.length))}
+                      </span>
+                      <textarea
+                        className="iv-input"
+                        rows={2}
+                        value={composePrompt}
+                        placeholder={t('fusionPromptPlaceholder')}
+                        data-fusion-prompt="true"
+                        disabled={composing}
+                        onChange={event => setComposePrompt(event.target.value)}
+                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                      />
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          data-fusion-run="true"
+                          disabled={composing || activeId === undefined || composePrompt.trim() === ''}
+                          onClick={() => { void runCompose() }}
+                        >
+                          {composing ? t('fusionRunning') : t('fusionRun')}
+                        </button>
+                        <span className="iv-meta">{t('fusionHint')}</span>
+                      </div>
+                    </div>
+                    {/* `B-10` 提示词工坊（G1）：选中图片 → 提取 → 编辑 → 入库 → 带入表单 */}
+                    <div className="iv-prompt-studio" data-prompt-studio="true">
+                      <div className="iv-fusion-head">
+                        <span className="iv-chip"><Icon name="sparkles" size={11} />{t('promptTitle')}</span>
+                        <span className="iv-meta">{t('promptSavedCount').replace('{n}', String(prompts.length))}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--sm"
+                          data-prompt-extract="true"
+                          disabled={extracting || selectedAsset === undefined || selectedAsset.kind !== 'image'}
+                          onClick={() => { void runExtractPrompt() }}
+                        >
+                          {extracting ? t('promptExtracting') : t('promptExtract')}
+                        </button>
+                        <span className="iv-meta" data-prompt-source="true">
+                          {selectedAsset === undefined || selectedAsset.kind !== 'image'
+                            ? t('promptExtractNeedsAsset')
+                            : baseName(selectedAsset.path)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'grid', gap: '4px' }}>
+                        <span className="iv-meta">{t('promptDraftLabel')}</span>
+                        <textarea
+                          className="iv-input"
+                          rows={2}
+                          value={promptDraft}
+                          data-prompt-draft="true"
+                          onChange={event => setPromptDraft(event.target.value)}
+                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <input
+                          className="iv-input"
+                          style={{ width: '160px' }}
+                          aria-label={t('promptNameLabel')}
+                          placeholder={t('promptNamePlaceholder')}
+                          value={promptName}
+                          data-prompt-name="true"
+                          onChange={event => setPromptName(event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          data-prompt-save="true"
+                          disabled={promptDraft.trim() === ''}
+                          onClick={() => { void savePromptDraft() }}
+                        >
+                          {t('promptSave')}
+                        </button>
+                      </div>
+                      <div className="iv-prompt-lib" data-prompt-library="true">
+                        <span className="iv-meta">{t('promptLibrary')}</span>
+                        {prompts.length === 0
+                          ? <span className="iv-meta">{t('promptLibraryEmpty')}</span>
+                          : prompts.map(record => (
+                              <div className="iv-prompt-row" key={record.id} data-prompt-item={record.id}>
+                                <span className="iv-ellipsis" title={record.text}>{record.name}</span>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  data-prompt-apply={record.id}
+                                  onClick={() => applyPrompt(record.text)}
+                                >
+                                  {t('promptApply')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--icon iv-btn--sm"
+                                  aria-label={`${t('promptRemove')} ${record.name}`}
+                                  data-prompt-remove={record.id}
+                                  onClick={() => { void removePromptRecord(record.id) }}
+                                >
+                                  <Icon name="x" size={11} />
+                                </button>
+                              </div>
+                            ))}
+                      </div>
+                      <span className="iv-meta">{t('promptHint')}</span>
+                    </div>
                     <div className="iv-stats">
                       <span className="iv-stat"><b>{outputs.length}</b><span>{t('statOutputs')}</span></span>
                       <span className="iv-stat"><b>{assets.length}</b><span>{t('statAssets')}</span></span>
@@ -1888,28 +2358,43 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {templateOpen
                     ? (
                       <div className="iv-tpl" data-workflow-template-market="true">
-                        {([...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES] as readonly {
-                          id: string; labelKey: string; describe?: string
-                          nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]
-                          edges: readonly (readonly [number, number])[]
-                        }[]).map(template => (
-                          <button
-                            key={template.id}
-                            type="button"
-                            className="iv-tpl-card"
-                            data-workflow-template={template.id}
-                            onClick={() => {
-                              if (activeProject === undefined) return
-                              setWorkflow(instantiateAnyTemplate(template))
-                              setWorkflowState('dirty')
-                              setTemplateOpen(false)
-                            }}>
-                            <Icon name="sparkles" size={12} />
-                            <span className="iv-tpl-name">
-                              {template.id === 'drama-series' ? t('templateDramaSeries') : t(template.labelKey as WorkbenchLocaleKey)}
-                            </span>
-                            <span className="iv-tpl-desc">{template.describe ?? ''}</span>
-                          </button>
+                        {([
+                          { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
+                          { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
+                        ] as readonly {
+                          group: WorkbenchLocaleKey
+                          templates: readonly {
+                            id: string; labelKey: string; describe?: string
+                            nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]
+                            edges: readonly (readonly [number, number])[]
+                          }[]
+                        }[]).map(section => (
+                          <div key={section.group} className="iv-tpl-group">
+                            <span className="iv-micro iv-tpl-group-title">{t(section.group)}</span>
+                            <div className="iv-tpl-grid">
+                              {section.templates.map(template => (
+                                <button
+                                  key={template.id}
+                                  type="button"
+                                  className="iv-tpl-card"
+                                  data-workflow-template={template.id}
+                                  onClick={() => {
+                                    if (activeProject === undefined) return
+                                    setWorkflow(instantiateAnyTemplate(template))
+                                    setWorkflowState('dirty')
+                                    setTemplateOpen(false)
+                                  }}>
+                                  <Icon name="sparkles" size={12} />
+                                  <span className="iv-tpl-name">
+                                    {template.id === 'drama-series' ? t('templateDramaSeries') : t(template.labelKey as WorkbenchLocaleKey)}
+                                  </span>
+                                  <span className="iv-tpl-desc">
+                                    {template.describe ?? (TEMPLATE_HINTS[template.id] === undefined ? '' : t(TEMPLATE_HINTS[template.id] as WorkbenchLocaleKey))}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                         {WORKFLOW_TEMPLATES.length + DRAMA_TEMPLATES.length === 0
                           ? <p className="iv-meta">{t('templateMarketEmpty')}</p>
@@ -2640,6 +3125,55 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <Icon name="copy" />{t('compactAssets')}
                 </button>
               </div>
+              {/* `B-7` 批量操作条：有选中才出现；删除走 assets/remove-many，引用走 F2 参考图列表 */}
+              {selectedAssets.length === 0
+                ? null
+                : (
+                  <div className="iv-bulk" data-asset-bulk="true">
+                    <span className="iv-chip iv-chip--run">
+                      <i className="iv-dot" aria-hidden="true" />
+                      {t('assetSelectedCount').replace('{n}', String(selectedAssets.length))}
+                    </span>
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--danger iv-btn--sm"
+                      data-bulk-remove="true"
+                      disabled={busy}
+                      onClick={() => { bulkRemoveAssets(false) }}
+                    >
+                      <Icon name="trash" size={11} />{t('bulkRemove')}
+                    </button>
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--sm"
+                      data-bulk-reference="true"
+                      disabled={busy}
+                      onClick={() => { bulkReferenceAssets() }}
+                    >
+                      <Icon name="plus" size={11} />{t('bulkReference')}
+                    </button>
+                    {bulkForceIds === undefined || bulkForceIds.length === 0
+                      ? null
+                      : (
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--danger iv-btn--sm"
+                          data-bulk-force-remove="true"
+                          disabled={busy}
+                          onClick={() => { bulkRemoveAssets(true) }}
+                        >
+                          {t('bulkForceRemove')} ({bulkForceIds.length})
+                        </button>
+                      )}
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      onClick={() => { setSelectedAssetIds([]); setBulkForceIds(undefined) }}
+                    >
+                      {t('bulkClear')}
+                    </button>
+                  </div>
+                )}
               {visibleAssets.length === 0
                 ? (
                   <div className="iv-empty">
@@ -2655,6 +3189,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       data-asset-draggable="true"
                       onDragStart={event => { onAssetDragStart(event, asset) }}
                       onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}>
+                      {/* `B-7`：多选复选框（点行=选中预览，点框=加入批量集，两件事不互斥） */}
+                      <label className="iv-check iv-row-check" onClick={event => { event.stopPropagation() }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedAssetIds.includes(asset.id)}
+                          data-asset-select={asset.id}
+                          aria-label={`${t('assetSelect')} ${baseName(asset.path)}`}
+                          onChange={() => { toggleAssetSelection(asset.id) }}
+                        />
+                      </label>
                       {asset.kind === 'image'
                         ? (
                           <img
@@ -2903,6 +3447,74 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {t('resourceUseSelected')}
                   </button>
                 </div>
+                {/* `B-8`：行内参考图编辑器（管理某个资源的多张参考图） */}
+                {editingResource === undefined
+                  ? null
+                  : (
+                    <div className="iv-refs-editor" data-resource-refs-editor={editingResource.id}>
+                      <div className="iv-add-row">
+                        <span className="iv-meta">
+                          {t('resourceRefsEditorTitle').replace('{name}', editingResource.name)}
+                        </span>
+                        <span className="iv-count">
+                          {t('resourceRefsCount').replace('{n}', String(resourceRefs(editingResource).length))}
+                        </span>
+                      </div>
+                      {resourceRefs(editingResource).length === 0
+                        ? <span className="iv-meta">{t('resourceRefsNone')}</span>
+                        : (
+                          <ul className="iv-ref-list">
+                            {resourceRefs(editingResource).map((path, index) => (
+                              <li key={path} className="iv-ref-chip" data-resource-ref={path}>
+                                <span className="iv-ref-order">{index + 1}</span>
+                                <span className="iv-ref-role">{index === 0 ? t('generateRefsBase') : t('generateRefsStyle')}</span>
+                                <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--icon iv-btn--sm"
+                                  data-resource-ref-remove={path}
+                                  aria-label={`${t('resourceRefsRemove')} ${baseName(path)}`}
+                                  title={t('resourceRefsRemove')}
+                                  disabled={busy}
+                                  onClick={() => { removeRefFromResource(editingResource.id, path) }}
+                                >
+                                  <Icon name="x" size={11} />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      <div className="iv-add-row">
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--sm"
+                          data-resource-refs-add="true"
+                          disabled={busy || selectedAsset === undefined
+                            || resourceRefs(editingResource).includes(selectedAsset.path)
+                            || resourceRefs(editingResource).length >= MAX_RESOURCE_REFS}
+                          onClick={() => { attachRefToResource(editingResource.id, selectedAsset?.path) }}
+                        >
+                          <Icon name="plus" size={11} />{t('resourceRefsAdd')}
+                        </button>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          data-resource-refs-clear="true"
+                          disabled={busy || resourceRefs(editingResource).length === 0}
+                          onClick={() => { clearResourceRefs(editingResource.id) }}
+                        >
+                          {t('resourceRefsClear')}
+                        </button>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          onClick={() => { setEditingResourceId(undefined) }}
+                        >
+                          {t('cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 {visibleResources.length === 0
                   ? (
                     <div className="iv-empty">
@@ -2911,21 +3523,30 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   )
                   : (
-                  <VirtualList className="iv-list" items={visibleResources} renderRow={(resource, _index) => (
+                  <VirtualList className="iv-list" items={visibleResources} renderRow={(resource, _index) => {
+                    const refs = resourceRefs(resource)
+                    return (
                     <li key={resource.id} className="iv-row"
                       onClick={() => {
-                        if (resource.assetPath === undefined) return
-                        setPreviewPath({ path: resource.assetPath, kind: 'image' })
+                        const first = refs[0]
+                        if (first === undefined) return
+                        setPreviewPath({ path: first, kind: 'image' })
                         setSelectedId(undefined)
                       }}>
-                      {resource.assetPath === undefined
+                      {refs.length === 0
                         ? <span className="iv-tile"><Icon name={RESOURCE_ICONS[resource.kind]} size={13} /></span>
                         : (
-                          <img
-                            className="iv-thumb"
-                            src={`/outputs/${encodeURIComponent(baseName(resource.assetPath))}`}
-                            alt=""
-                          />
+                          <span className="iv-thumb-wrap">
+                            <img
+                              className="iv-thumb"
+                              src={`/outputs/${encodeURIComponent(baseName(refs[0] as string))}`}
+                              alt=""
+                            />
+                            {/* `B-8`：多参考图角标（首图=底图，其余张数一眼可见） */}
+                            {refs.length > 1
+                              ? <span className="iv-thumb-more">+{refs.length - 1}</span>
+                              : null}
+                          </span>
                         )}
                       <span className="iv-row-main iv-ellipsis" title={resource.note ?? ''}>
                         {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
@@ -2942,6 +3563,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         )
                       })()}
                       <div className="iv-row-actions">
+                        {/* `B-8`：把选中素材挂到这个资源（"归到该角色"） */}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                          data-resource-attach={resource.id}
+                          aria-label={`${t('resourceAttachSelected')} · ${resource.name}`}
+                          title={t('resourceAttachSelected')}
+                          disabled={busy || selectedAsset === undefined || refs.includes(selectedAsset.path) || refs.length >= MAX_RESOURCE_REFS}
+                          onClick={event => {
+                            event.stopPropagation()
+                            attachRefToResource(resource.id, selectedAsset?.path)
+                          }}
+                        >
+                          <Icon name="plus" size={12} />
+                        </button>
+                        {/* `B-8`：管理这个资源的多张参考图 */}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                          data-resource-refs-manage={resource.id}
+                          aria-label={`${t('resourceRefsManage')} · ${resource.name}`}
+                          title={t('resourceRefsManage')}
+                          disabled={busy}
+                          onClick={event => {
+                            event.stopPropagation()
+                            setEditingResourceId(current => (current === resource.id ? undefined : resource.id))
+                          }}
+                        >
+                          <Icon name="sliders" size={12} />
+                        </button>
                         <button
                           type="button"
                           className={`iv-btn iv-btn--icon iv-btn--sm${confirming === resource.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
@@ -2988,7 +3639,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           : null}
                       </div>
                     </li>
-                  )} />
+                    )
+                  }} />
                 )}
               </div>
               </PaneBoundary>

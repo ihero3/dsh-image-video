@@ -69,9 +69,11 @@
 | --- | --- | --- | --- |
 | （示例）`timelines/save` 增加 `track.duckingDb` | 旁白压背景音乐 | `{duckingDb: number}`；导出按 `sidechaincompress` 处理 | 示例 |
 | `media/generate` 转发 `media[]`（每项 `{image?,video?,type?,position?}`）与 `realPerson`（布尔）到 `generate_video` 工具 | 「尾帧图 / 参考视频」槽生效（B-3 客户端已接线，请求体已按 `media:[{image,type:'last_frame'},{video,type:'reference_video'}]` 发送） | 入参在现有 `media/generate` 上加两个字段；宿主原样拼进 `generate_video` 的 `media` 参数即可（工具侧 `last_frame`/`reference_video` 已实现，见 `src/tools/generate-video.ts`） | **待认领（A）** |
+| `media/compose`（A-4） | 融合生图：选角色+场景+物品 → 一次拼装生成（B-9 客户端已接线，见 `src/client/api.ts` 的 `composeMedia`） | 入：`{projectId, prompt, roles?: string[], scenes?: string[], props?: string[]}`（**资源 id**；宿主按 id 解析各自参考图、缺图降级为纯文生）；出：`{mediaMode?, path?, bytes?, asset?, taskId?, referencePaths?}`（与 `media/generate` 同构；`referencePaths` 可选回显真正用到的参考图） | **待认领（A-4）** |
+| `prompts/extract` + `prompts/list` / `prompts/save` / `prompts/remove`（A-5） | 提示词工坊：从素材提取结构化提示词 → 编辑 → 入库 → 一键带入（B-10 客户端已接线，见 `src/client/api.ts` 的 `extractPrompt`/`listPrompts`/`savePrompt`/`removePrompt`） | `extract` 入：`{projectId?, assetId?, path?}`；出：`{style?, subject?, material?, details?, text?}`（客户端缺字段容忍；模型不可用时给清晰错误、**不伪造结果**）。`list` 出 `{prompts: PromptRecord[]}`；`save` 入 `{id?, name, text, tags?}` 出 `{prompt: PromptRecord}`；`remove` 入 `{id}` 出 `{removed: boolean}`。`PromptRecord = {id, name, text, tags?, createdAt?}` | **待认领（A-5）** |
 | | | | |
 
-**当前待认领：1 条**（2026-10-21 B-3 登记：`media/generate` 转发 `media[]` + `realPerson`；2026-10-19 核对时只有一行占位"改 RPC 端点/数据模型/渲染参数"，不是可执行需求）。
+**当前待认领：3 条**（2026-10-22 B-3/B-9/B-10 登记：① `media/generate` 转发 `media[]` + `realPerson`；② A-4 `media/compose`；③ A-5 `prompts/extract` + 提示词库 CRUD。三者客户端均已按「契约先行」接线并写了假宿主测试，宿主端点为唯一缺口）。
 已就绪、无需申请的新契约（直接接）：`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
 `timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
