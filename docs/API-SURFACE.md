@@ -23,6 +23,9 @@
 | `assets/remove-many` | `{ids[],force?}` | `{removed,skipped[{id,reason}]}` | **`A-2`** 批量删除素材（单次 ≤200；不存在的 id 进 skipped 而不报错）|
 | `assets/attach-many` | `{projectId,items[{path,kind?,bytes?}]}` | `{created,assets}` | **`A152`** 批量登记素材（单次 ≤200；kind 缺省按扩展名推断）|
 | `media/import` | `{projectId,paths[]}` | `{imported,assets,skipped[{path,reason}]}` | **`A152`** 从本地路径批量导入媒体：**复制进 outputs**（保证 `/outputs` 预览可用），跳过不支持的类型并说明原因 |
+| `exports/list` | `{projectId?,limit?}` | `{exports[]}` | **`A-11`** 导出历史（独立 `exports.json`，按项目过滤、默认 50 条）|
+| `exports/record` | `{projectId,timelineId}` | `{export}` | **`A-11`** 记录一次导出（初始 `queued`）|
+| `exports/update` | `{id,status?,outputPath?,bytes?,error?,elapsedSeconds?}` | `{export}` | **`A-11`** 更新导出状态/产物/失败原因 |
 | `prompts/list` | `{}` | `{prompts[]}` | **`A-5`** 提示词库（独立 `prompts.json`，不动项目 schema）|
 | `prompts/save` | `{id?,name,text,source?}` | `{prompt}` | **`A-5`** 新增/更新提示词（名称/内容不能为空）|
 | `prompts/remove` | `{id}` | `{removed}` | **`A-5`** 删除 |

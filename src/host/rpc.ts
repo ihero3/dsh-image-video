@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { copyFile } from 'node:fs/promises'
@@ -153,6 +154,15 @@ export function workbenchOptions(): WorkbenchOptions {
  * @returns the connection RPC handler.
  */
 /**
+ * Lazily built export history bound to the workbench data directory.
+ * @param deps - handler dependencies.
+ * @returns shared history instance.
+ */
+function exportHistoryFor(deps: WorkbenchRpcDeps): ExportHistory {
+  return new ExportHistory({ directory: dirname(deps.outputsDir) })
+}
+
+/**
  * Lazily built prompt library bound to the workbench data directory.
  * @param deps - handler dependencies.
  * @returns shared library instance.
@@ -253,7 +263,15 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     // 对话卡片入口的后端（`T6-1`）：卡片只给一个文件路径，由宿主决定放进哪个项目/时间轴
     case 'assets/quick-add': {
-      const path = text(payload, 'path')
+      // Track B 传 `{ projectId, assetId?, path? }`：优先按素材 id 解析真实路径
+      const assetId = optionalText(payload, 'assetId')
+      let path = optionalText(payload, 'path')
+      if (path === undefined && assetId !== undefined) {
+        const projectId = optionalText(payload, 'projectId')
+        const assets = projectId === undefined ? [] : await deps.store.listAssets(projectId)
+        path = assets.find(asset => asset.id === assetId)?.path
+      }
+      if (path === undefined) throw new Error('提示词提取需要 path 或 assetId')
       const explicit = optionalText(payload, 'projectId')
       const listed = await deps.store.listProjects()
       const project = explicit !== undefined && explicit !== ''
@@ -645,10 +663,14 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const prompt = text(payload, 'prompt')
       const tool = deps.generate?.image
       if (tool === undefined) throw new Error('生成能力未装配：此宿主没有注入图片生成适配器')
-      const rawIds = field(payload, 'resourceIds')
-      const resourceIds = Array.isArray(rawIds)
-        ? rawIds.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
-        : []
+      // Track B 的界面按角色/场景/物品分组传参；两套入参都接受，统一成 id 列表
+      const collected: string[] = []
+      for (const key of ['resourceIds', 'roles', 'scenes', 'props'] as const) {
+        const raw = field(payload, key)
+        if (!Array.isArray(raw)) continue
+        collected.push(...raw.filter((entry): entry is string => typeof entry === 'string' && entry !== ''))
+      }
+      const resourceIds = [...new Set(collected)]
       const resources = (await deps.store.listResources(projectId)).filter(resource => resourceIds.includes(resource.id))
       const images: string[] = []
       const parts: string[] = []
@@ -856,6 +878,31 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { imported: result }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
+    // `A-11`：导出历史（独立 exports.json；按项目可查，供界面展示成功/失败/重试）
+    case 'exports/list': {
+      const projectId = optionalText(payload, 'projectId')
+      const limit = Math.min(200, Math.max(1, Math.round(optionalNumber(payload, 'limit') ?? 50)))
+      const all = await exportHistoryFor(deps).list(projectId === undefined || projectId === '' ? undefined : projectId)
+      return { exports: all.slice(0, limit) }
+    }
+    case 'exports/record': {
+      const record = await exportHistoryFor(deps).start({
+        projectId: text(payload, 'projectId'),
+        timelineId: text(payload, 'timelineId'),
+      })
+      return { export: record }
+    }
+    case 'exports/update': {
+      const updated = await exportHistoryFor(deps).update(text(payload, 'id'), {
+        ...optionalText(payload, 'status') === undefined ? {} : { status: optionalText(payload, 'status') as 'queued' | 'running' | 'succeeded' | 'failed' },
+        ...optionalText(payload, 'outputPath') === undefined ? {} : { outputPath: optionalText(payload, 'outputPath') as string },
+        ...optionalNumber(payload, 'bytes') === undefined ? {} : { bytes: optionalNumber(payload, 'bytes') as number },
+        ...optionalText(payload, 'error') === undefined ? {} : { error: optionalText(payload, 'error') as string },
+        ...optionalNumber(payload, 'elapsedSeconds') === undefined ? {} : { elapsedSeconds: optionalNumber(payload, 'elapsedSeconds') as number },
+      })
+      if (updated === undefined) throw new Error(`unknown export: ${String(field(payload, 'id'))}`)
+      return { export: updated }
+    }
     // `A-5`：提示词库（独立 JSON 文件，不动项目 schema）
     case 'prompts/list':
       return { prompts: await promptLibraryFor(deps).list() }

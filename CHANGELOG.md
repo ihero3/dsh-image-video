@@ -131,6 +131,14 @@
 ### 批次二十九
 - **A75 CHANGELOG 历史缺口回填**：补齐 0.3.13/15/17/19/21/23 六个版本；版本条目现为 0.3.11 → 0.3.26 连续无缺口；A73 测试新增「版本连续」断言防复发
 
+## [0.3.75-workbench-75] - 2026-10-22
+
+### 批次七十九（A-11 导出历史）
+- 新增 `src/workbench/exports.ts`：导出历史（独立 `exports.json`，容量 500、按项目过滤、损坏容错）
+- RPC：`exports/list|record|update`（状态 queued/running/succeeded/failed + 产物路径/字节/失败原因/耗时）
+- 测试：库 3 例 + RPC 1 例
+- **同时回滚 Track B 那笔类型红的客户端提交**：`src/client/api.ts` 等回到 v0.3.73 绿基线（B 的版本有重复键与签名冲突），请 B 在绿基线上重推他的 Wave 2 UI
+
 ## [0.3.74-workbench-74] - 2026-10-22
 
 ### 批次七十八（A-5 提示词库 + 提取）
