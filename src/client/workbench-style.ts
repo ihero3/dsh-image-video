@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-21.1'
+export const WORKBENCH_STYLE_VERSION = '2026-10-22.3'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -340,6 +340,18 @@ export const WORKBENCH_STYLE = `
 .iv-vslots{display:grid;gap:5px;padding:7px 9px;border:1px dashed var(--iv-line-2);border-radius:var(--iv-r);
   background:var(--iv-panel-2)}
 
+/* ============ B-7 素材批量操作条 ============ */
+.iv-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 8px;border:1px solid var(--iv-line-2);
+  border-radius:var(--iv-r);background:var(--iv-panel-2)}
+.iv-row-check{flex:none;margin-right:2px}
+
+/* ============ B-8 资源多参考图 ============ */
+.iv-thumb-wrap{position:relative;flex:none;line-height:0}
+.iv-thumb-more{position:absolute;right:2px;bottom:2px;padding:0 3px;border-radius:3px;background:var(--iv-monitor);
+  color:#cfd3d8;font-family:var(--iv-mono);font-size:8.5px;line-height:1.4}
+.iv-refs-editor{display:grid;gap:6px;padding:7px 9px;border:1px solid var(--iv-line-2);border-radius:var(--iv-r);
+  background:var(--iv-panel-2)}
+
 /* ============ 时间轴：监视器 / transport / 轨道 ============ */
 .iv-monitor{position:relative;min-height:168px;border-radius:4px;overflow:hidden;display:grid;place-items:center;
   background:radial-gradient(130% 130% at 50% 0%,#1c1f27 0%,var(--iv-monitor) 72%);
@@ -449,6 +461,17 @@ export const WORKBENCH_STYLE = `
 .iv-node-run[data-status=running] .iv-dot{color:var(--iv-acc);animation:iv-pulse 1.2s ease-in-out infinite}
 .iv-node-run[data-status=cancelled] .iv-dot,.iv-node-run[data-status=skipped] .iv-dot{color:var(--iv-tx3)}
 .iv-run-actions{display:flex;flex-wrap:wrap;gap:5px}
+/* ============ B-6 模板市场（分组卡片） ============ */
+.iv-tpl{display:grid;gap:10px}
+.iv-tpl-group{display:grid;gap:5px}
+.iv-tpl-group-title{display:block}
+.iv-tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.iv-tpl-card{display:grid;gap:3px;padding:8px 10px;text-align:left;border:1px solid var(--iv-line-2);border-radius:var(--iv-r);
+  background:var(--iv-panel-2);color:var(--iv-tx2);cursor:pointer;transition:border-color .1s ease,background .1s ease}
+.iv-tpl-card:hover{border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);background:var(--iv-acc-soft);color:var(--iv-tx)}
+.iv-tpl-card .iv-ico{color:var(--iv-acc)}
+.iv-tpl-name{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--iv-tx)}
+.iv-tpl-desc{font-size:10px;line-height:1.45;color:var(--iv-tx3)}
 .iv-inspector{display:grid;gap:5px;border:1px solid var(--iv-line);border-radius:var(--iv-r);padding:7px 9px;background:var(--iv-panel-2)}
 .iv-inspector-head{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
   color:var(--iv-tx3);text-transform:uppercase}
@@ -517,6 +540,40 @@ export const WORKBENCH_STYLE = `
 .iv-steps{flex-wrap:wrap}
 .iv-toolbar{flex-wrap:wrap}
 }
+/* B-9 融合生图 / B-10 提示词工坊 */
+.iv-fusion,.iv-prompt-studio{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface)}
+.iv-fusion-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between}
+.iv-fusion-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-prompt-lib{display:flex;flex-direction:column;gap:4px}
+.iv-prompt-row{display:flex;align-items:center;gap:6px;padding:3px 0;border-top:1px solid var(--iv-line)}
+.iv-prompt-row .iv-ellipsis{flex:1;min-width:0}
+/* B-11 素材库体检 */
+.iv-health{display:flex;flex-direction:column;gap:6px;min-height:0}
+.iv-health-tabs{flex:none}
+.iv-health-body{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+.iv-size-list,.iv-dupes-list,.iv-stats-list{display:flex;flex-direction:column;gap:3px;min-height:0;overflow:auto}
+.iv-size-summary{flex:none}
+.iv-size-row,.iv-stats-row{display:flex;align-items:center;gap:6px;padding:2px 0;border-top:1px solid var(--iv-line)}
+.iv-size-row:first-of-type,.iv-stats-row:first-of-type{border-top:0}
+.iv-size-name{flex:1;min-width:0}
+.iv-size-bytes{flex:none;font-family:var(--iv-mono);font-size:10px;color:var(--iv-tx3)}
+.iv-dupes-group{display:flex;flex-direction:column;gap:2px;padding:4px 0;border-top:1px solid var(--iv-line)}
+.iv-dupes-group-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-dupes-item{display:flex;align-items:center;gap:6px;padding:1px 0 1px 10px;font-size:11px;color:var(--iv-tx2)}
+.iv-dupes-item.keep{color:var(--iv-tx)}
+.iv-stats-row{flex-direction:column;align-items:flex-start;gap:1px}
+.iv-stats-name{max-width:100%;font-size:11px}
+.iv-stats-facts{display:flex;gap:8px;flex-wrap:wrap;font-size:10px}
+/* B-13 时间轴逐段预览 */
+.iv-seg-wrap{flex-wrap:wrap}
+.iv-seg-preview{display:flex;flex-direction:column;gap:6px;width:100%;min-width:0}
+.iv-seg-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-seg-video{width:100%;max-height:150px;border-radius:var(--iv-r);background:var(--iv-monitor)}
+.iv-seg-bar{display:flex;gap:2px;width:100%;min-width:0}
+.iv-seg-cell{flex:1 1 0;min-width:6px;height:16px;padding:0;border:1px solid var(--iv-line);border-radius:2px;
+background:var(--iv-panel-3);cursor:pointer}
+.iv-seg-cell.on{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
+.iv-seg-cell:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
 `
 
 /**

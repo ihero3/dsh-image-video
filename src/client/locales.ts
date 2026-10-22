@@ -23,6 +23,7 @@ export type WorkbenchLocaleKey =
   | 'generateHeading'
   | 'generatePromptLabel'
   | 'generatePromptPlaceholder'
+  | 'generateShortcutHint'
   | 'generateImage'
   | 'generateVideo'
   | 'generating'
@@ -46,6 +47,7 @@ export type WorkbenchLocaleKey =
   | 'paneResources'
   | 'panePreview'
   | 'paneTasks'
+  | 'paneHealth'
   | 'emptyHint'
   | 'healthChecking'
   | 'healthFailed'
@@ -233,6 +235,7 @@ export type WorkbenchLocaleKey =
   | 'heroStepFile'
   | 'railAssets'
   | 'railTasks'
+  | 'railHealth'
   | 'railDefaults'
   | 'statusReady'
   | 'monitorProgram'
@@ -313,6 +316,118 @@ export type WorkbenchLocaleKey =
   // ---- B17 片段分割 ----
   | 'clipSplit'
   | 'clipSplitOutsideHint'
+  // ---- B-6 模板市场（F4 快速模板分组 + 描述） ----
+  | 'templateQuickGroup'
+  | 'templateFullGroup'
+  | 'templateQuickImageHint'
+  | 'templateQuickVideoHint'
+  | 'templateStoryboardHint'
+  | 'templateCoverHint'
+  // ---- B-7 素材批量操作 ----
+  | 'assetSelect'
+  | 'assetSelectedCount'
+  | 'bulkRemove'
+  | 'bulkReference'
+  | 'bulkClear'
+  | 'bulkRemoveDone'
+  | 'bulkRemoveSkipped'
+  | 'bulkForceRemove'
+  | 'bulkReferenceDone'
+  | 'bulkReferenceNone'
+  // ---- B-8 资源多参考图 ----
+  | 'resourceRefsManage'
+  | 'resourceRefsEditorTitle'
+  | 'resourceRefsAdd'
+  | 'resourceRefsRemove'
+  | 'resourceRefsClear'
+  | 'resourceRefsFull'
+  | 'resourceRefsCount'
+  | 'resourceRefsDuplicate'
+  | 'resourceAttachSelected'
+  | 'resourceRefsNone'
+  // ---- B-9 融合生图（G3，依赖 A-4 media/compose） ----
+  | 'fusionTitle'
+  | 'fusionHint'
+  | 'fusionPromptPlaceholder'
+  | 'fusionRoles'
+  | 'fusionScenes'
+  | 'fusionProps'
+  | 'fusionNoResources'
+  | 'fusionPreview'
+  | 'fusionPreviewNone'
+  | 'fusionRun'
+  | 'fusionRunning'
+  | 'fusionDone'
+  | 'fusionFailed'
+  | 'fusionNeedsPrompt'
+  | 'fusionClear'
+  // ---- B-10 提示词工坊（G1，依赖 A-5 prompts/extract） ----
+  | 'promptTitle'
+  | 'promptHint'
+  | 'promptExtract'
+  | 'promptExtracting'
+  | 'promptExtractNeedsAsset'
+  | 'promptExtractDone'
+  | 'promptExtractFailed'
+  | 'promptExtractEmpty'
+  | 'promptDraftLabel'
+  | 'promptNameLabel'
+  | 'promptNamePlaceholder'
+  | 'promptUntitled'
+  | 'promptSave'
+  | 'promptSaveDone'
+  | 'promptSaveFailed'
+  | 'promptNeedsText'
+  | 'promptLibrary'
+  | 'promptLibraryEmpty'
+  | 'promptApply'
+  | 'promptApplyDone'
+  | 'promptRemove'
+  | 'promptSavedCount'
+  | 'composeNeedsPrompt'
+  | 'composeEmptyHint'
+  | 'composeSelected'
+  | 'composeSelectHint'
+  | 'composePromptPlaceholder'
+  | 'composeDone'
+  | 'composeAssetCreated'
+  | 'composeBusy'
+  | 'composeRun'
+  | 'promptExtractEmpty'
+  | 'promptNamePlaceholder'
+  | 'promptSave'
+  | 'healthSize'
+  | 'healthDupes'
+  | 'healthStats'
+  | 'healthRun'
+  | 'healthRunning'
+  | 'healthEmptyHint'
+  | 'healthSizeSummary'
+  | 'healthMedian'
+  | 'healthUnused'
+  | 'healthNoDupes'
+  | 'healthReclaimable'
+  | 'healthSuggestedKeep'
+  | 'healthNoProjects'
+  | 'healthAssets'
+  | 'healthReferenced'
+  | 'healthTimelines'
+  | 'regenerate'
+  | 'regenerateHint'
+  | 'regenerateNoPrompt'
+  | 'useAsReference'
+  | 'useAsRefHint'
+  | 'addToTimeline'
+  | 'addToTimelineHint'
+  | 'addToTimelineDone'
+  | 'noTimelinesHint'
+  | 'segPreviewTitle'
+  | 'segPreviewEmpty'
+  | 'segPlay'
+  | 'segPause'
+  | 'segReplay'
+  | 'segTotal'
+  | 'segJump'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -353,6 +468,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateHeading: 'Generate here',
   generatePromptLabel: 'Prompt',
   generatePromptPlaceholder: 'Describe the shot you want…',
+  generateShortcutHint: '⌘/Ctrl + Enter to generate',
   generateImage: 'Generate image',
   generateVideo: 'Generate video',
   generating: 'Generating…',
@@ -368,6 +484,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   paneResources: 'Resources',
   panePreview: 'Preview',
   paneTasks: 'Tasks',
+  paneHealth: 'Library health',
   emptyHint: 'Projects, assets, the task ledger and a runnable node canvas are all available.',
   healthChecking: 'Connecting to host…',
   healthFailed: 'Host unavailable',
@@ -555,6 +672,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   heroStepFile: 'File into project',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
+  railHealth: 'Library health',
   railDefaults: 'Effective defaults',
   statusReady: 'Ready',
   monitorProgram: 'Program',
@@ -635,6 +753,117 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   clipSplit: 'Split at playhead',
   clipSplitOutsideHint: 'The playhead is outside this clip',
+
+  templateQuickGroup: 'Quick start',
+  templateFullGroup: 'Full pipeline',
+  templateQuickImageHint: 'One line → a first-frame image (2 nodes)',
+  templateQuickVideoHint: 'One line → first frame → a 5s video (3 nodes)',
+  templateStoryboardHint: 'Brief → script → storyboard → first frame (4 nodes)',
+  templateCoverHint: 'One line → a vertical cover image (2 nodes)',
+
+  assetSelect: 'Select asset',
+  assetSelectedCount: '{n} selected',
+  bulkRemove: 'Delete selected',
+  bulkReference: 'Reference selected',
+  bulkClear: 'Clear selection',
+  bulkRemoveDone: 'Deleted {n} assets',
+  bulkRemoveSkipped: '{n} skipped',
+  bulkForceRemove: 'Force delete selected',
+  bulkReferenceDone: 'Referenced {n} into the generate form',
+  bulkReferenceNone: 'No image assets in the selection',
+
+  resourceRefsManage: 'Manage references',
+  resourceRefsEditorTitle: 'References of {name}',
+  resourceRefsAdd: 'Attach selected asset',
+  resourceRefsRemove: 'Remove reference',
+  resourceRefsClear: 'Clear references',
+  resourceRefsFull: 'At most 6 references per resource',
+  resourceRefsCount: '{n} references',
+  resourceRefsDuplicate: 'Already attached to this resource',
+  resourceAttachSelected: 'Attach the selected asset to this resource',
+  resourceRefsNone: 'No reference image yet',
+
+  // ---- B-9 fusion generation (G3, needs A-4 media/compose) ----
+  fusionTitle: 'Fusion generation',
+  fusionHint: 'Pick roles, scenes and props, then compose them into one shot with a single prompt. Needs the host endpoint media/compose (A-4).',
+  fusionPromptPlaceholder: 'Describe how the selected roles, scenes and props come together…',
+  fusionRoles: 'Roles',
+  fusionScenes: 'Scenes',
+  fusionProps: 'Props',
+  fusionNoResources: 'Nothing to pick yet — add resources first.',
+  fusionPreview: '{n} reference images will be used',
+  fusionPreviewNone: 'No reference images — falls back to plain text-to-image',
+  fusionRun: 'Compose & generate',
+  fusionRunning: 'Composing…',
+  fusionDone: 'Composed and filed as an asset',
+  fusionFailed: 'Fusion failed',
+  fusionNeedsPrompt: 'Write a prompt first',
+  fusionClear: 'Clear selection',
+
+  // ---- B-10 prompt studio (G1, needs A-5 prompts/extract) ----
+  promptTitle: 'Prompt studio',
+  promptHint: 'Extract a structured prompt from a selected image, edit it, then save it to the prompt library. Needs the host endpoint prompts/extract (A-5).',
+  promptExtract: 'Extract prompt',
+  promptExtracting: 'Extracting…',
+  promptExtractNeedsAsset: 'Select an image asset first',
+  promptExtractDone: 'Prompt extracted — edit it below',
+  promptExtractFailed: 'Extraction failed',
+  promptExtractEmpty: 'The extractor returned nothing — try another image',
+  promptDraftLabel: 'Extracted prompt (editable)',
+  promptNameLabel: 'Prompt name',
+  promptNamePlaceholder: 'e.g. soft cinematic portrait',
+  promptUntitled: 'Untitled prompt',
+  promptSave: 'Save to library',
+  promptSaveDone: 'Saved to the prompt library',
+  promptSaveFailed: 'Could not save',
+  promptNeedsText: 'Nothing to save yet',
+  promptLibrary: 'Prompt library',
+  promptLibraryEmpty: 'No saved prompts yet',
+  promptApply: 'Use in form',
+  promptApplyDone: 'Loaded into the prompt box',
+  promptRemove: 'Delete prompt',
+  promptSavedCount: '{n} prompts',
+  composeNeedsPrompt: 'Describe your scene before fusing.',
+  composeEmptyHint: 'No resources of this kind yet — create one under Resources.',
+  composeSelected: 'Selected',
+  composeSelectHint: 'Pick a few resources from the columns above to fuse.',
+  composePromptPlaceholder: 'Describe the final look: style, mood, details…',
+  composeDone: 'Fused into',
+  composeAssetCreated: 'new asset',
+  composeBusy: 'Fusing…',
+  composeRun: 'Fuse and generate',
+  healthSize: 'Size report',
+  healthDupes: 'Duplicates',
+  healthStats: 'Per-project',
+  healthRun: 'Run report',
+  healthRunning: 'Scanning…',
+  healthEmptyHint: 'Run the report to see asset health.',
+  healthSizeSummary: 'Total',
+  healthMedian: 'median',
+  healthUnused: 'unused',
+  healthNoDupes: 'No duplicates found.',
+  healthReclaimable: 'Reclaimable',
+  healthSuggestedKeep: 'suggested keep',
+  healthNoProjects: 'No projects yet.',
+  healthAssets: 'assets',
+  healthReferenced: 'referenced',
+  healthTimelines: 'timelines',
+  regenerate: 'Regenerate',
+  regenerateHint: 'Run this prompt again with the same model.',
+  regenerateNoPrompt: 'This task has no prompt to regenerate from.',
+  useAsReference: 'Use as reference',
+  useAsRefHint: 'Put this output into the quick-generate reference slots.',
+  addToTimeline: 'Add to timeline',
+  addToTimelineHint: 'Append this clip to the current project timeline.',
+  addToTimelineDone: 'Appended to the timeline.',
+  noTimelinesHint: 'No timeline in this project yet.',
+  segPreviewTitle: 'Segment preview',
+  segPreviewEmpty: 'No video clips on the timeline yet.',
+  segPlay: 'Play',
+  segPause: 'Pause',
+  segReplay: 'Replay',
+  segTotal: 'total',
+  segJump: 'Jump to segment',
 }
 
 /** Simplified Chinese copy. */
@@ -673,6 +902,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateHeading: '直接生成',
   generatePromptLabel: '提示词',
   generatePromptPlaceholder: '描述你想要的画面…',
+  generateShortcutHint: '⌘/Ctrl + Enter 生成',
   generateImage: '生成图片',
   generateVideo: '生成视频',
   generating: '生成中…',
@@ -688,6 +918,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   paneResources: '创作资源',
   panePreview: '预览',
   paneTasks: '任务',
+  paneHealth: '素材库体检',
   emptyHint: '项目、素材、资源与任务账本已可用；「专业工作流」模式里是可直接运行的节点画布。',
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
@@ -875,6 +1106,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   heroStepFile: '登记进项目',
   railAssets: '媒体素材',
   railTasks: '生成任务',
+  railHealth: '素材库体检',
   railDefaults: '生效默认值',
   statusReady: '就绪',
   monitorProgram: '节目监视器',
@@ -955,4 +1187,115 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   clipSplit: '在播放头分割',
   clipSplitOutsideHint: '播放头不在这个片段内',
+
+  templateQuickGroup: '快速上手',
+  templateFullGroup: '完整链路',
+  templateQuickImageHint: '一句话 → 首帧图（2 节点）',
+  templateQuickVideoHint: '一句话 → 首帧图 → 5 秒视频（3 节点）',
+  templateStoryboardHint: '创意 → 文案 → 分镜 → 首帧图（4 节点）',
+  templateCoverHint: '一句话 → 竖版封面图（2 节点）',
+
+  assetSelect: '选择素材',
+  assetSelectedCount: '已选 {n}',
+  bulkRemove: '批量删除',
+  bulkReference: '批量引用',
+  bulkClear: '清除选择',
+  bulkRemoveDone: '已删除 {n} 个素材',
+  bulkRemoveSkipped: '{n} 个跳过',
+  bulkForceRemove: '仍要删除选中',
+  bulkReferenceDone: '已引用 {n} 张到生成表单',
+  bulkReferenceNone: '选中的没有图片素材',
+
+  resourceRefsManage: '管理参考图',
+  resourceRefsEditorTitle: '「{name}」的参考图',
+  resourceRefsAdd: '挂选中素材',
+  resourceRefsRemove: '移除参考图',
+  resourceRefsClear: '清空参考图',
+  resourceRefsFull: '一个资源最多 6 张参考图',
+  resourceRefsCount: '{n} 张参考图',
+  resourceRefsDuplicate: '该素材已挂在这个资源上',
+  resourceAttachSelected: '把选中素材挂到这个资源',
+  resourceRefsNone: '还没有参考图',
+
+  // ---- B-9 融合生图（G3，依赖 A-4 media/compose） ----
+  fusionTitle: '融合生图',
+  fusionHint: '选角色、场景和物品，用一段提示词拼装成一张画面。依赖宿主端点 media/compose（A-4）。',
+  fusionPromptPlaceholder: '描述选中的角色、场景、物品如何组合…',
+  fusionRoles: '角色',
+  fusionScenes: '场景',
+  fusionProps: '物品',
+  fusionNoResources: '还没有可选的资源，先去创建。',
+  fusionPreview: '将使用 {n} 张参考图',
+  fusionPreviewNone: '没有参考图，将降级为纯文生',
+  fusionRun: '融合生成',
+  fusionRunning: '融合生成中…',
+  fusionDone: '已融合生成并登记素材',
+  fusionFailed: '融合生成失败',
+  fusionNeedsPrompt: '先写一段提示词',
+  fusionClear: '清空选择',
+
+  // ---- B-10 提示词工坊（G1，依赖 A-5 prompts/extract） ----
+  promptTitle: '提示词工坊',
+  promptHint: '从选中的图片提取结构化提示词，可编辑后存入提示词库。依赖宿主端点 prompts/extract（A-5）。',
+  promptExtract: '提取提示词',
+  promptExtracting: '提取中…',
+  promptExtractNeedsAsset: '先选一张图片素材',
+  promptExtractDone: '已提取，可在下方编辑',
+  promptExtractFailed: '提取失败',
+  promptExtractEmpty: '提取结果为空，换一张图试试',
+  promptDraftLabel: '提取结果（可编辑）',
+  promptNameLabel: '提示词名称',
+  promptNamePlaceholder: '例如：柔和电影感人像',
+  promptUntitled: '未命名提示词',
+  promptSave: '存入提示词库',
+  promptSaveDone: '已存入提示词库',
+  promptSaveFailed: '存入失败',
+  promptNeedsText: '还没有可保存的内容',
+  promptLibrary: '提示词库',
+  promptLibraryEmpty: '提示词库还是空的',
+  promptApply: '带入生成表单',
+  promptApplyDone: '已带入提示词框',
+  promptRemove: '删除提示词',
+  promptSavedCount: '{n} 条提示词',
+  composeNeedsPrompt: '融合生图前先写一段描述。',
+  composeEmptyHint: '这类资源还没有——去「资源库」新建吧。',
+  composeSelected: '已选',
+  composeSelectHint: '从上方列里挑几个要融合的资源。',
+  composePromptPlaceholder: '描述最终画面：风格、氛围、细节…',
+  composeDone: '已融合成',
+  composeAssetCreated: '新素材',
+  composeBusy: '融合中…',
+  composeRun: '融合并生成',
+  healthSize: '体积排行',
+  healthDupes: '重复素材',
+  healthStats: '项目统计',
+  healthRun: '跑体检',
+  healthRunning: '扫描中…',
+  healthEmptyHint: '点按钮查看素材库体检报告。',
+  healthSizeSummary: '总计',
+  healthMedian: '中位数',
+  healthUnused: '未使用',
+  healthNoDupes: '没有重复素材。',
+  healthReclaimable: '可回收',
+  healthSuggestedKeep: '建议保留',
+  healthNoProjects: '还没有项目。',
+  healthAssets: '素材',
+  healthReferenced: '被引用',
+  healthTimelines: '时间轴',
+  regenerate: '重新生成',
+  regenerateHint: '用相同模型再跑一次这条提示词。',
+  regenerateNoPrompt: '这条任务没有可复用的提示词。',
+  useAsReference: '用作参考图',
+  useAsRefHint: '把这条产物放进快速生成的参考图槽位。',
+  addToTimeline: '加入时间轴',
+  addToTimelineHint: '把这段视频追加到当前项目的时间轴。',
+  addToTimelineDone: '已追加到时间轴。',
+  noTimelinesHint: '当前项目还没有时间轴。',
+  segPreviewTitle: '逐段预览',
+  segPreviewEmpty: '时间轴上还没有视频片段。',
+  segPlay: '播放',
+  segPause: '暂停',
+  segReplay: '重播',
+  segTotal: '总长',
+  segJump: '跳到第',
 }
