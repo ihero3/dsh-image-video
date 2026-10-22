@@ -105,3 +105,20 @@
   不包含真实生成产物（那是真实生成验收的事）。
 - **重试策略挂在宿主**：工作台侧无法自我验证 5xx 重试，只能由宿主侧测试与真机日志证明
   （`llm/retry` 事件会落盘在会话里）。
+
+## 8. 发布记录（2026-10-23）
+
+| 项 | 值 |
+| --- | --- |
+| 插件仓库提交 | `ihero3/dsh-image-video@5f93410`（main） |
+| 发布 tag | `v1.0.0-workbench-78`（annotated → 5f93410） |
+| Harness 提交 | `ihero3/deepseek-harness@2b9b909`（Fork A-6 平台词 + A-10 守卫 + 指针 bump） |
+| 子模块指针 | `plugins/dsh-image-video` → 5f93410（`git describe` = v1.0.0-workbench-78） |
+| 本机运行态核对 | 重启前 `GET /image-video/status` 仍是 `0.3.77`（旧进程）；**重启宿主后应变为 1.0.0**，否则说明壳没重新装配平台模块表 |
+
+重启后的两步核对：
+
+```bash
+curl -s http://127.0.0.1:54274/image-video/status   # version 应为 1.0.0
+npx tsx scripts/smoke-export.ts                     # 零花费导出冒烟（不调用模型）
+```
