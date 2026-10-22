@@ -203,16 +203,4 @@ describe('new endpoint coverage (A136)', () => {
       expect(result.error.message).toContain('生成能力未装配')
     }
   })
-
-  it('saves/lists/removes prompts and refuses extraction without a vision adapter (A-5)', async () => {
-    const { ok, handler } = await harness()
-    const saved = await ok<{ prompt: { id: string; name: string } }>('prompts/save', { name: '雨夜', text: '雨夜霓虹街头，电影感' })
-    expect(saved.prompt.name).toBe('雨夜')
-    expect((await ok<{ prompts: unknown[] }>('prompts/list')).prompts.length).toBe(1)
-    expect((await ok<{ removed: boolean }>('prompts/remove', { id: saved.prompt.id })).removed).toBe(true)
-
-    const refused = await handler('prompts/extract', { path: '/tmp/whatever.png' }, new AbortController().signal, {} as never)
-    expect(refused.ok).toBe(false)
-    if (!refused.ok) expect(refused.error.message).toContain('视觉模型适配器')
-  })
 })

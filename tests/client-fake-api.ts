@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
+import type { RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
@@ -53,18 +53,11 @@ export function fakeApi(options: {
   tasks?: TaskRecord[]
   assets?: AssetRecord[]
   running?: RunningGeneration[]
-  referencedAssetIds?: readonly string[]
   workflows?: WorkflowRecord[]
   runs?: WorkflowRunRecord[]
   timelines?: TimelineRecord[]
   ffmpeg?: { available: boolean; code?: string; message?: string; version?: string; path?: string }
   defaults?: Record<string, string | number | null>
-  /** `A-5` 提示词库初始内容（B-10 测试替身）。 */
-  prompts?: PromptRecord[]
-  /** `B-11` 体检三端点的返回（测试替身）。 */
-  sizeReport?: AssetSizeReport
-  duplicates?: AssetDuplicatesReport
-  projectStats?: AssetProjectStats
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -82,19 +75,12 @@ export function fakeApi(options: {
   const calls: string[] = []
   /** `tasks/running` 的在飞生成（`F3` 测试替身）：测试可直接改 `startedAt` 推进时间。 */
   const runningGenerations: RunningGeneration[] = [...(options.running ?? [])]
-  /** 被时间轴引用的素材 id（`A-2` 测试替身）：不带 force 删这些会进 skipped。 */
-  const referencedAssetIds = new Set<string>(options.referencedAssetIds ?? [])
   /** `workflows/run` 收到的入参（B4 单节点运行断言用）。 */
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
-  /** `B-9`：`composeMedia` 收到的入参（测试断言用）。 */
-  const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[] }> = []
-  /** `B-10`：`extractPrompt` 收到的入参（测试断言用）。 */
-  const extractInputs: Array<{ path?: string }> = []
-  /** `B-10`：提示词库（内存态，`savePrompt`/`removePrompt` 会改它）。 */
-  const prompts: PromptRecord[] = [...(options.prompts ?? [])]
-  let promptSequence = prompts.length
   let counter = 0
   const api: WorkbenchApi = {
+  // `A153`：改资源（测试替身）
+  updateResource: async input => ({ id: input.id, projectId: 'prj-1', kind: 'role', name: input.name ?? 'x', scope: 'project', createdAt: '', updatedAt: '' } as never),
   // `A152`：批量登记 / 批量导入（测试替身）
   attachAssets: async input => ({ created: input.items.length, assets: [] }),
   importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),
@@ -116,52 +102,6 @@ export function fakeApi(options: {
     }
     assets.push(asset as never)
     return { mediaMode: 'image', path: asset.path, bytes: 2048, asset: asset as never }
-  },
-  // `B-9`：融合生图（测试替身）。记录入参并"登记"一张合成素材。
-  composeMedia: async input => {
-    calls.push('media/compose')
-    composePayloads.push(input)
-    const asset = {
-      schemaVersion: 4, id: 'ast-composed', projectId: input.projectId, kind: 'image',
-      path: '/tmp/outputs/composed.png', bytes: 3072, prompt: input.prompt,
-      createdAt: '2026-10-22T00:00:00.000Z',
-    }
-    assets.push(asset as never)
-    return { mediaMode: 'image', path: asset.path, bytes: 3072, asset: asset as never }
-  },
-  // `B-10`：从图片提取结构化提示词（测试替身，返回固定四字段）。
-  extractPrompt: async input => {
-    calls.push('prompts/extract')
-    extractInputs.push(input)
-    return { style: 'cinematic', subject: 'a courier in the rain', material: 'neon reflections', details: 'shallow depth of field' }
-  },
-  listPrompts: async () => { calls.push('prompts/list'); return [...prompts] },
-  savePrompt: async input => {
-    calls.push('prompts/save')
-    const existing = input.id === undefined ? undefined : prompts.find(record => record.id === input.id)
-    if (existing !== undefined) {
-      const updated: PromptRecord = {
-        ...existing, name: input.name, text: input.text,
-        ...input.tags === undefined ? {} : { tags: input.tags },
-      }
-      prompts[prompts.indexOf(existing)] = updated
-      return updated
-    }
-    promptSequence += 1
-    const record: PromptRecord = {
-      id: `prm-${promptSequence}`, name: input.name, text: input.text,
-      ...input.tags === undefined ? {} : { tags: input.tags },
-      createdAt: '2026-10-22T00:00:00.000Z',
-    }
-    prompts.unshift(record)
-    return record
-  },
-  removePrompt: async id => {
-    calls.push('prompts/remove')
-    const index = prompts.findIndex(record => record.id === id)
-    if (index < 0) return false
-    prompts.splice(index, 1)
-    return true
   },
     health: async () => {
       calls.push('health')
@@ -209,24 +149,6 @@ export function fakeApi(options: {
       assets.splice(index, 1)
       return true
     },
-    // `A-2`：批量删除（测试替身）。不存在的 id 进 skipped；force 才能删被引用的。
-    removeAssets: async input => {
-      calls.push('assets/remove-many')
-      let removed = 0
-      const skipped: Array<{ id: string; reason: string }> = []
-      for (const id of input.ids.slice(0, 200)) {
-        const index = assets.findIndex(asset => asset.id === id)
-        if (index < 0) { skipped.push({ id, reason: '不存在' }); continue }
-        const referenced = referencedAssetIds.size > 0 && referencedAssetIds.has(id)
-        if (referenced && input.force !== true) {
-          skipped.push({ id, reason: '素材被时间轴引用，需 force' })
-          continue
-        }
-        assets.splice(index, 1)
-        removed += 1
-      }
-      return { removed, skipped }
-    },
     renameProject: async (id, name) => {
       calls.push('projects/rename')
       const index = projects.findIndex(project => project.id === id)
@@ -244,35 +166,10 @@ export function fakeApi(options: {
       const resource: ResourceRecord = {
         schemaVersion: 1, id: `res-${counter}`, projectId: input.projectId, kind: input.kind, name: input.name,
         createdAt: '2026-10-14T02:00:00.000Z', updatedAt: '2026-10-14T02:00:00.000Z',
-        scope: 'project',
         ...input.note === undefined ? {} : { note: input.note },
-        ...input.assetPath === undefined ? {} : { assetPath: input.assetPath },
-        ...input.assetPaths === undefined || input.assetPaths.length === 0 ? {} : { assetPaths: [...input.assetPaths] },
       }
       resources.push(resource)
       return resource
-    },
-    // `A153`/`A-3`：改资源（测试替身）。按宿主口径合并：
-    // `assetPaths` 传数组=整组替换、`null`=清除；`assetPath: null` 清旧单图；不传=保留。
-    updateResource: async input => {
-      calls.push('resources/update')
-      const index = resources.findIndex(resource => resource.id === input.id)
-      if (index < 0) throw new Error(`unknown resource: ${input.id}`)
-      const current = resources[index]!
-      const mutable: Record<string, unknown> = { ...current }
-      if (input.name !== undefined) mutable.name = input.name
-      if (input.note !== undefined) mutable.note = input.note
-      if (input.assetPath !== undefined) {
-        if (input.assetPath === null) delete mutable.assetPath
-        else mutable.assetPath = input.assetPath
-      }
-      if (input.assetPaths !== undefined) {
-        if (input.assetPaths === null) delete mutable.assetPaths
-        else mutable.assetPaths = [...input.assetPaths]
-      }
-      const updated = mutable as unknown as ResourceRecord
-      resources[index] = updated
-      return updated
     },
     removeResource: async (id) => {
       calls.push('resources/remove')
@@ -319,20 +216,6 @@ export function fakeApi(options: {
       }
       runs.unshift(run)
       return run
-    },
-    // `B-11`：素材库体检三端点（测试替身）。未提供报告时返回空结果，
-    // 让测试只声明它关心的那份数据。
-    assetSizeReport: async () => {
-      calls.push('assets/size-report')
-      return options.sizeReport ?? { totalBytes: 0, topBytes: 0, topShare: 0, medianBytes: 0, count: 0, top: [] }
-    },
-    assetDuplicates: async () => {
-      calls.push('assets/duplicates')
-      return options.duplicates ?? { groups: [], reclaimableBytes: 0, hashedFiles: 0, skippedFiles: 0 }
-    },
-    assetProjectStats: async () => {
-      calls.push('assets/project-stats')
-      return options.projectStats ?? { totalBytes: 0, projects: [], topShare: 0 }
     },
     probeFfmpeg: async () => {
       calls.push('media/ffmpeg')
@@ -423,7 +306,7 @@ export function fakeApi(options: {
       const seen = new Map<string, AssetRecord>()
       let removed = 0
       for (const asset of [...assets]) {
-        const key = `${asset.projectId}:${asset.path}`
+        const key = `${asset.projectId} ${asset.path}`
         if (seen.has(key)) { removed += 1; assets.splice(assets.indexOf(asset), 1); continue }
         seen.set(key, asset)
       }
@@ -462,7 +345,7 @@ export function fakeApi(options: {
       }
     },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, exportOptions: () => lastExportOptions }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
@@ -485,21 +368,6 @@ export async function createProject(host: ReturnType<typeof fakeApi>, name: stri
   fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: name } })
   fireEvent.click(screen.getByRole('button', { name: en.create }))
   await waitFor(() => { expect(host.projects).toHaveLength(1) })
-}
-
-/**
- * jsdom 不实现媒体播放：挂载 `<video>` 的测试先补上 `play`/`pause`。
- * @returns 恢复原实现的函数，调用方放进 `afterAll`。
- */
-export function stubMediaPlayback(): () => void {
-  const originalPlay = HTMLMediaElement.prototype.play
-  const originalPause = HTMLMediaElement.prototype.pause
-  HTMLMediaElement.prototype.play = () => Promise.resolve()
-  HTMLMediaElement.prototype.pause = () => {}
-  return () => {
-    HTMLMediaElement.prototype.play = originalPlay
-    HTMLMediaElement.prototype.pause = originalPause
-  }
 }
 
 /** Re-export so test files need one import for render/screen/waitFor too. */
