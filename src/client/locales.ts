@@ -6,6 +6,7 @@ export type WorkbenchLocaleKey =
   | 'templateQuickVideo'
   | 'templateStoryboard'
   | 'templateCover'
+  | 'templateProductionLine'
   | 'resourceReference'
   | 'resourceUseSelected'
   | 'resourceClear'
@@ -447,6 +448,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   templateQuickVideo: 'Quick video',
   templateStoryboard: 'Storyboard',
   templateCover: 'Cover image',
+  templateProductionLine: 'Production line',
 
   resourceReference: 'Reference (makeup shot)',
   resourceUseSelected: 'Use selected asset',
@@ -881,6 +883,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   templateQuickVideo: '快速出片',
   templateStoryboard: '图文分镜',
   templateCover: '封面图',
+  templateProductionLine: '生产线',
 
   resourceReference: '参考图（定妆照）',
   resourceUseSelected: '用选中素材',

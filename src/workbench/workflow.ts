@@ -391,6 +391,17 @@ export const WORKFLOW_TEMPLATES: readonly WorkflowTemplate[] = [
     ],
     edges: [[0, 1], [1, 2], [2, 3]],
   },
+  // `A-8` 生产线：剧本 → 分镜 → 首帧 → 视频（可直接运行；LLM 拆镜由 `storyboard/plan` 提供）
+  {
+    id: 'production-line', labelKey: 'templateProductionLine',
+    nodes: [
+      { kind: 'script', params: { text: '镜头一：雨夜街头，小雨撑伞回眸；镜头二：霓虹倒影里她的侧脸；镜头三：黑伞收拢，雨停。' } },
+      { kind: 'storyboard', params: { shots: 3, note: '每镜 5 秒，冷色调霓虹' } },
+      { kind: 'image-generate', params: { prompt: '分镜首帧：雨夜街头，小雨撑黑伞回眸，霓虹倒影，电影感' } },
+      { kind: 'video-generate', params: { prompt: '镜头缓慢推近，雨丝落下，霓虹光流动', duration: 5, compare: false } },
+    ],
+    edges: [[0, 1], [1, 2], [2, 3]],
+  },
   {
     id: 'cover', labelKey: 'templateCover',
     nodes: [

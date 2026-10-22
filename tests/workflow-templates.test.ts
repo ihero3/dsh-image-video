@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { WORKFLOW_TEMPLATES, nodeSpec } from '../src/workbench/workflow.ts'
 
-const REQUIRED = ['quick-image', 'quick-video', 'storyboard', 'cover'] as const
+const REQUIRED = ['quick-image', 'quick-video', 'storyboard', 'cover', 'production-line'] as const
 
 describe('quick-start templates (A-1)', () => {
   it('ships the four templates', () => {
