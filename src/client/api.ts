@@ -292,6 +292,9 @@ export interface WorkbenchApi {
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
    */
   extractPrompt: (input: { readonly path: string }) => Promise<ExtractedPrompt>
+  /** 剧本 → 分镜表（`A-7`）。 */
+  planStoryboard: (input: { projectId: string; script: string; shots?: number }) =>
+    Promise<{ shots: ReadonlyArray<{ index: number; shot: string; characters: readonly string[]; scene?: string; imagePrompt: string; videoPrompt: string }>; referencedResourceIds: readonly string[] }>
   /** 提示词库列表（`A-5`）。 */
   listPrompts: () => Promise<PromptRecord[]>
   /** 存入/更新一条提示词（`A-5`）。 */
@@ -444,6 +447,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     composeMedia: input => call<ComposeMediaResult>('media/compose', input),
     extractPrompt: input => call<ExtractedPrompt>('prompts/extract', input),
+    planStoryboard: input => call<{ shots: Array<{ index: number; shot: string; characters: string[]; scene?: string; imagePrompt: string; videoPrompt: string }>; referencedResourceIds: string[] }>('storyboard/plan', input),
     listPrompts: async () => (await call<{ prompts: PromptRecord[] }>('prompts/list')).prompts,
     savePrompt: async input => (await call<{ prompt: PromptRecord }>('prompts/save', input)).prompt,
     removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,

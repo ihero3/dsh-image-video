@@ -75,7 +75,6 @@ export interface WorkbenchDiagnostics {
         readonly errorCount: number;
     };
 }
-/** What the workbench UI may ask the host (phase 2, first slice). */
 /** `media/generate` 的返回（`A145`/`A147`）。 */
 export interface MediaGenerateResult {
     readonly mediaMode?: 'image' | 'video';
@@ -103,6 +102,89 @@ export interface MediaReference {
     readonly type?: string;
     readonly position?: string;
 }
+/**
+ * `G3` 融合生图的返回（`A-4` `media/compose`）：与 `media/generate` 同构。
+ * 宿主解析选中资源的参考图、缺图降级为纯文生，并登记素材。
+ */
+export interface ComposeMediaResult {
+    readonly mediaMode?: 'image' | 'video';
+    readonly path?: string;
+    readonly bytes?: number;
+    readonly asset?: AssetRecord;
+    readonly taskId?: string;
+    /** 宿主实际使用的参考图（可选回显；未返回时客户端用本地预览值）。 */
+    readonly referencePaths?: readonly string[];
+}
+/**
+ * `G1` 从图片提取的结构化提示词（`A-5` `prompts/extract`）。
+ * 字段名以宿主为准；客户端对缺失字段容错（拼接时跳过），不伪造内容。
+ */
+export interface ExtractedPrompt {
+    readonly style?: string;
+    readonly subject?: string;
+    readonly material?: string;
+    readonly details?: string;
+    /** 宿主拼好的整段提示词（有则优先使用）。 */
+    readonly text?: string;
+}
+/** 提示词库记录（`A-5` `prompts/list|save|remove`）。 */
+export interface PromptRecord {
+    readonly id: string;
+    readonly name: string;
+    readonly text: string;
+    readonly tags?: readonly string[];
+    readonly createdAt?: string;
+}
+/** `assets/size-report` 返回的条目（`A116`/B-11）：`sizeReport` 的 Top 项。 */
+export interface AssetSizeEntry {
+    readonly path: string;
+    readonly bytes: number;
+    /** 从未被任何时间轴引用。 */
+    readonly unused?: boolean;
+}
+/** `assets/size-report` 返回（`A116`/B-11）。 */
+export interface AssetSizeReport {
+    readonly totalBytes: number;
+    readonly topBytes: number;
+    /** Top N 占总量的比例（0–1）。 */
+    readonly topShare: number;
+    readonly medianBytes: number;
+    readonly count: number;
+    readonly top: readonly AssetSizeEntry[];
+}
+/** `assets/duplicates` 的一个重复组（`A112`/B-11）。 */
+export interface AssetDuplicateGroup {
+    /** 内容相同的素材路径；第一个是建议保留的。 */
+    readonly paths: readonly string[];
+    /** 单份字节数。 */
+    readonly bytes: number;
+    /** 建议保留的路径。 */
+    readonly keep: string;
+    readonly reclaimableBytes: number;
+}
+/** `assets/duplicates` 返回（`A112`/B-11）。 */
+export interface AssetDuplicatesReport {
+    readonly groups: readonly AssetDuplicateGroup[];
+    readonly reclaimableBytes: number;
+    readonly hashedFiles: number;
+    readonly skippedFiles: number;
+}
+/** `assets/project-stats` 返回的一个项目（`A132`/B-11）。 */
+export interface AssetProjectStat {
+    readonly projectId: string;
+    readonly name: string;
+    readonly assets: number;
+    readonly bytes: number;
+    /** 被时间轴引用到的字节。 */
+    readonly usedBytes: number;
+    readonly timelines: number;
+}
+/** `assets/project-stats` 返回（`A132`/B-11）。 */
+export interface AssetProjectStats {
+    readonly totalBytes: number;
+    readonly projects: readonly AssetProjectStat[];
+    readonly topShare: number;
+}
 export interface WorkbenchApi {
     /** Host facts (version, provider, output directory). */
     health: () => Promise<WorkbenchHealth>;
@@ -129,6 +211,20 @@ export interface WorkbenchApi {
     }>;
     /** Remove one asset record. */
     removeAsset: (id: string, force?: boolean) => Promise<boolean>;
+    /**
+     * 批量删除素材（`A-2`）：一次调用删多条（宿主单次 ≤200）。
+     * 不存在的 id 与被引用的素材进 `skipped` 并带原因，不中断整批。
+     */
+    removeAssets: (input: {
+        readonly ids: readonly string[];
+        readonly force?: boolean;
+    }) => Promise<{
+        readonly removed: number;
+        readonly skipped: readonly {
+            readonly id: string;
+            readonly reason: string;
+        }[];
+    }>;
     /** Rename a project. */
     renameProject: (id: string, name: string) => Promise<ProjectRecord>;
     /** One project's resources, newest first (optionally one kind). */
@@ -140,10 +236,23 @@ export interface WorkbenchApi {
         name: string;
         note?: string;
         assetPath?: string;
+        /** 多张参考图（`A-3`）：首图视为底图；与 `assetPath` 同时给时以本字段为准。 */
+        assetPaths?: readonly string[];
     }) => Promise<ResourceRecord>;
     /** Remove one resource record. */
     removeResource: (id: string, force?: boolean) => Promise<boolean>;
-    /** Recorded generations, newest first. */
+    /**
+     * 改资源（`A153`/`A-3`）：改名 / 备注 / 参考图。
+     * `assetPath: null` 清除单图；`assetPaths` 传数组=整组替换，`null`=清除；
+     * 不传=保留。追加一张 = 读当前值 concat 后再传（客户端读写改写）。
+     */
+    updateResource: (input: {
+        id: string;
+        name?: string;
+        note?: string;
+        assetPath?: string | null;
+        assetPaths?: readonly string[] | null;
+    }) => Promise<ResourceRecord>;
     /** 批量登记素材（`A152`）：一次登记多条，避免 N 次往返。 */
     attachAssets: (input: {
         readonly projectId: string;
@@ -197,6 +306,53 @@ export interface WorkbenchApi {
         readonly resolution?: string;
         readonly wait?: boolean;
     }) => Promise<MediaGenerateResult>;
+    /**
+     * 融合生图（`G3`/`A-4`）：把选中的角色/场景/物品**资源 id**连同提示词交宿主，
+     * 由宿主解析各自参考图、缺图降级为纯文生、拼装后生成并登记素材。
+     * 端点未落地时这里会抛错——界面如实展示，不伪造成功。
+     */
+    composeMedia: (input: {
+        readonly projectId: string;
+        readonly prompt: string;
+        /** 选中创作资源的 id（角色/场景/物品混排，宿主按各自主键拼装参考图与描述）。 */
+        readonly resourceIds: readonly string[];
+        readonly size?: string;
+        readonly model?: string;
+    }) => Promise<ComposeMediaResult>;
+    /**
+     * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
+     * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
+     */
+    extractPrompt: (input: {
+        readonly path: string;
+    }) => Promise<ExtractedPrompt>;
+    /** 剧本 → 分镜表（`A-7`）。 */
+    planStoryboard: (input: {
+        projectId: string;
+        script: string;
+        shots?: number;
+    }) => Promise<{
+        shots: ReadonlyArray<{
+            index: number;
+            shot: string;
+            characters: readonly string[];
+            scene?: string;
+            imagePrompt: string;
+            videoPrompt: string;
+        }>;
+        referencedResourceIds: readonly string[];
+    }>;
+    /** 提示词库列表（`A-5`）。 */
+    listPrompts: () => Promise<PromptRecord[]>;
+    /** 存入/更新一条提示词（`A-5`）。 */
+    savePrompt: (input: {
+        readonly id?: string;
+        readonly name: string;
+        readonly text: string;
+        readonly tags?: readonly string[];
+    }) => Promise<PromptRecord>;
+    /** 删除一条提示词（`A-5`）。 */
+    removePrompt: (id: string) => Promise<boolean>;
     /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
     probeFfmpeg: (path?: string) => Promise<FfmpegProbe>;
     /** 写运行时默认值覆盖（`R-CFG-2`）：与 composer 的 settings 走同一条路（留空 = 清除覆盖）。 */
@@ -253,26 +409,13 @@ export interface WorkbenchApi {
     cancelTask: (id: string) => Promise<boolean>;
     /** File a recorded generation into a project. */
     assignTask: (id: string, projectId: string) => Promise<TaskRecord>;
+    /** B-11 素材库体检：Top N/总量/中位数/占比，标注是否未使用（`assets/size-report`）。 */
+    assetSizeReport: (topN?: number) => Promise<AssetSizeReport>;
+    /** B-11 内容去重：按大小分组 sha256，给建议保留项与可回收字节（`assets/duplicates`）。 */
+    assetDuplicates: (maxHashFiles?: number) => Promise<AssetDuplicatesReport>;
+    /** B-11 项目统计：素材数/总字节/被引用字节/时间轴数，按占用降序（`assets/project-stats`）。 */
+    assetProjectStats: () => Promise<AssetProjectStats>;
     /** Newest media files under the output directory. */
-    /** 改资源（`A153`）：改名 / 备注 / 参考图（`assetPath: null` 清除）。 */
-    updateResource: (input: {
-        id: string;
-        name?: string;
-        note?: string;
-        assetPath?: string | null;
-    }) => Promise<ResourceRecord>;
-    /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
-    composeMedia: (input: {
-        readonly projectId: string;
-        readonly prompt: string;
-        readonly resourceIds?: readonly string[];
-        readonly size?: string;
-        readonly model?: string;
-    }) => Promise<{
-        readonly path: string;
-        readonly asset: AssetRecord;
-        readonly referencedImages: number;
-    }>;
     listOutputs: (limit?: number) => Promise<OutputFile[]>;
     /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
     getDiagnostics: () => Promise<WorkbenchDiagnostics>;

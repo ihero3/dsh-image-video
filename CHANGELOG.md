@@ -2,6 +2,11 @@
 
 （下一轮的改动写这里）
 
+### 批次八十（A-7）+ 体积基线抬升
+- A-7 `storyboard/plan`：剧本→分镜（确定性拆解，无 LLM 也不伪造）
+- **客户端束基线抬到 raw 834,204 / gzip 180,161**：Track B Round 2/3 新面板 + Track A 客户端契约带来的真实增量；
+  A-6（React Flow/d3 外置）落地前无法在插件内减肥，方案见 `docs/A6-BUNDLE-EXTERNALIZE.md`
+
 ### 批次七十二
 - **A153 创作资源挂参考图（角色归类）**：资源可绑定定妆照/参考素材，资源行显示缩略图、点开看大图；新增 `resources/update`
 
@@ -130,6 +135,13 @@
 
 ### 批次二十九
 - **A75 CHANGELOG 历史缺口回填**：补齐 0.3.13/15/17/19/21/23 六个版本；版本条目现为 0.3.11 → 0.3.26 连续无缺口；A73 测试新增「版本连续」断言防复发
+
+## [0.3.76-workbench-76] - 2026-10-22
+
+### 批次八十（A-7 剧本→分镜）
+- 新增 `src/workbench/storyboard.ts`：剧本确定性拆解为分镜表（切句 → 按目标镜数均匀分组 → 识别项目资源里的 角色/场景 → 生成 imagePrompt / videoPrompt）；空剧本如实报错，不伪造
+- RPC：`storyboard/plan`（`{projectId,script,shots?}` → `{shots,referencedResourceIds}`）+ 客户端契约
+- 测试：4 例（拆分/镜数封顶/资源识别/空剧本拒绝）→ 解锁 Track B-15
 
 ## [0.3.75-workbench-75] - 2026-10-22
 

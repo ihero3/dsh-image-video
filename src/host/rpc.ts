@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { planStoryboard } from '../workbench/storyboard.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
@@ -878,6 +879,20 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { imported: result }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
+    // `A-7`：剧本 → 结构化分镜表（确定性拆解；接入 LLM 后可替换同一契约）
+    case 'storyboard/plan': {
+      const projectId = text(payload, 'projectId')
+      const script = text(payload, 'script')
+      const resources = await deps.store.listResources(projectId)
+      return planStoryboard({
+        script,
+        ...optionalNumber(payload, 'shots') === undefined ? {} : { shots: optionalNumber(payload, 'shots') as number },
+        resources: resources.map(resource => ({
+          id: resource.id, kind: resource.kind, name: resource.name,
+          ...resource.note === undefined ? {} : { note: resource.note },
+        })),
+      })
+    }
     // `A-11`：导出历史（独立 exports.json；按项目可查，供界面展示成功/失败/重试）
     case 'exports/list': {
       const projectId = optionalText(payload, 'projectId')
