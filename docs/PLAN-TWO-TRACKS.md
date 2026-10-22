@@ -48,3 +48,46 @@
 3. **A 负责发版**（`release.mjs` → build → gate → tag → push → Harness 指针）；B **不要**提交 `lib/`、不要打 tag。
 4. **冲突处理**：如果 B 必须动 A 的文件，先在该文件头写 `// TODO(A):` 一行说明，交给 A 改。
 5. **每日一条状态**：各自在 `docs/TASKS-TRACK-A.md` / `docs/TASKS-TRACK-B.md` 勾选进度，A 发版时汇总。
+
+---
+
+# Round 2 分工（2026-10-22，v0.3.74 之后）
+
+> 上一轮 B 已完成 B-1~B-8 ✓；A 已完成 A-1/A-2/A-3/A-4/A-5/A-9 与 F1 ✓。
+> 本轮原则不变：**A 改 host/workbench/media/tools/lib/发布；B 只改 `src/client/**` + `tests/*client*`**；
+> B 不碰 `lib/`、`package.json`、tag；需要新端点先在 `docs/API-SURFACE.md` 的「B 申请区」写一行，A 认领。
+
+## Track B（**现在就能全部开工**，所需契约都已上线）
+
+| # | 任务 | 依赖（已就绪）| 验收 |
+| --- | --- | --- | --- |
+| **B-9** | **融合生图 UI**：从创作资源里多选 角色/场景/物品 → 预览拼装（参考图数量 + 描述）→ 调 `media/compose` → 结果进素材 | `media/compose` ✓ | 请求体含 `resourceIds`；结果登记素材；客户端测试 |
+| **B-10** | **提示词 UI**：提示词库列表/保存/删除；「从素材提取」按钮调 `prompts/extract`，**把报错当"需配置"提示**（不是失败态）→ 可编辑后一键带入生成表单 | `prompts/list|save|remove|extract` ✓ | CRUD 全通；extract 报错时展示引导文案；测试 |
+| **B-11** | **素材库体检界面**：去重结果（`assets/duplicates`）/体积排行（`assets/size-report`）/项目统计（`assets/project-stats`） | 三个端点 ✓ | 三块数据渲染 + 空态；测试 |
+| **B-12** | **生成结果卡片**：生成完成后在面板内显示缩略图 + 「重新生成」+「用作参考图」+「加入时间轴」 | `media/generate` ✓ `attachAsset` ✓ | 三个动作各一条测试 |
+| **B-13** | **时间轴逐段预览**：用现有片段顺序播放（`<video>` 队列），显示当前片段序号/总时长（真正的合成预览留给 A 的 ffmpeg）| 现有时间轴数据 ✓ | 播放/暂停/跳段；测试 |
+| **B-14** | **打磨**：空态引导、快捷键（生成 `⌘⏎`）、对比度/焦点环、错误文案统一 | — | 无 lint/类型错误 + 2 条测试 |
+
+## Track A（后端 / 跨仓 / 发布）
+
+| # | 任务 | 说明 | 阻塞谁 |
+| --- | --- | --- | --- |
+| **A-6** | **体积外置**（B16）：宿主模块表加 `@xyflow/react` + `d3-*`，插件 client face 外置，束回 ≤80% | 方案已落 `docs/A6-BUNDLE-EXTERNALIZE.md`，6 步 + 回滚点 | 发布质量 |
+| **A-10** | **宿主 provider 层流式重试**：把插件的 `retry-policy` 策略搬到 Harness provider（模型流 502/中断自动重试 3~6 次）| 插件层已完成 ✓，这层补上才算根治 | 稳定性 |
+| **A-7** | **`storyboard/plan`**：剧本 → 结构化分镜表（镜头/角色/场景/台词/图片提示词/视频提示词），无 LLM 适配器时**如实报错** | 新端点 + 测试 | **B-15** |
+| **A-11** | **`exports/history`**：导出历史按项目归档（列表/失败原因/产物路径）| 新端点 + 测试 | **B-16** |
+| **A-8** | **生产线编排**：A-1 模板 + A-7 分镜串成「剧本→分镜→生图→视频→导出」可运行模板 | 依赖 A-7 | 发布质量 |
+| **P1** | **发布 v1.0.0**：版本跨 1.0.0 + 发布说明 + 3 分钟演示 + 示例项目包 + schema v4 迁移说明 | A only（发版归 A）| — |
+
+## Wave 3（B 依赖 A 的，等 A 落地后我做通知）
+
+| # | 任务 | 依赖 |
+| --- | --- | --- |
+| **B-15** | 分镜表编辑 UI（可改镜头/提示词、批量重排）| A-7 |
+| **B-16** | 导出历史面板（按项目看成功/失败/重试）| A-11 |
+
+## 纪律（同前）
+1. A 跑 `bash scripts/gate.sh`；B 至少 `pnpm run typecheck` + `vitest run tests/client-*`。
+2. 端点/字段变更同步 `docs/API-SURFACE.md`。
+3. A 负责 `release.mjs` → build → gate → tag → push → Harness 指针；B 不碰这些。
+4. 冲突时 B 留 `// TODO(A):` 一行，交 A 改。

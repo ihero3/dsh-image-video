@@ -65,3 +65,7 @@
 
 - 改 RPC 端点/数据模型/渲染参数 → 在 `docs/API-SURFACE.md` 的「B 申请」写一行，A 认领。
 - 提交 `lib/`、改 `package.json`/lock、打 tag。
+
+## Round 2（2026-10-22，B-9..B-14（全部可立即开工））
+
+> 详见 `docs/PLAN-TWO-TRACKS.md` 的「Round 2 分工」。

@@ -385,3 +385,7 @@
 ## 交付物
 
 每个 P0/P1 项：代码 + 测试 + `docs/API-SURFACE.md` 更新（若涉及端点）+ CHANGELOG 一行。
+
+## Round 2（2026-10-22，A-6/A-7/A-8/A-10/A-11 + 发布）
+
+> 详见 `docs/PLAN-TWO-TRACKS.md` 的「Round 2 分工」。
