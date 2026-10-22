@@ -9,6 +9,7 @@
  * `src/workbench-contract.ts`, which both halves import, so the browser bundle
  * carries them without pulling in any host code.
  */
+import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { copyFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { extname } from 'node:path'
@@ -814,6 +815,30 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     // ---- 时间轴（阶段 5）--------------------------------------------------------
     case 'timelines/list':
       return { timelines: await deps.store.listTimelines(text(payload, 'projectId')) }
+    // `A-9`：客户端可直接分割/复制片段（此前只有工具动作，UI 无法调用）
+    case 'timelines/split-clip': {
+      const timeline = await deps.store.findTimeline(text(payload, 'timelineId'))
+      if (timeline === undefined) throw new Error(`unknown timeline: ${String(field(payload, 'timelineId'))}`)
+      const split = splitClipAt(timeline.tracks, text(payload, 'clipId'), Math.max(0, Math.round(optionalNumber(payload, 'atMs') ?? 0)), () => newWorkbenchId('clip'))
+      const saved = await deps.store.saveTimeline({
+        id: timeline.id, projectId: timeline.projectId, name: timeline.name, tracks: split.tracks,
+        frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
+        ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat },
+      })
+      return { timeline: saved, leftId: split.leftId, rightId: split.rightId }
+    }
+    case 'timelines/copy-clip': {
+      const timeline = await deps.store.findTimeline(text(payload, 'timelineId'))
+      if (timeline === undefined) throw new Error(`unknown timeline: ${String(field(payload, 'timelineId'))}`)
+      const copy = duplicateClip(timeline.tracks, text(payload, 'clipId'), () => newWorkbenchId('clip'))
+      const tracks = (copy as unknown as { tracks: typeof timeline.tracks }).tracks
+      const saved = await deps.store.saveTimeline({
+        id: timeline.id, projectId: timeline.projectId, name: timeline.name, tracks,
+        frameRate: timeline.frameRate, burnSubtitles: timeline.burnSubtitles,
+        ...timeline.exportFormat === undefined ? {} : { exportFormat: timeline.exportFormat },
+      })
+      return { timeline: saved }
+    }
     case 'timelines/save':
       return {
         timeline: await deps.store.saveTimeline({

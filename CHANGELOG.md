@@ -131,6 +131,12 @@
 ### 批次二十九
 - **A75 CHANGELOG 历史缺口回填**：补齐 0.3.13/15/17/19/21/23 六个版本；版本条目现为 0.3.11 → 0.3.26 连续无缺口；A73 测试新增「版本连续」断言防复发
 
+## [0.3.72-workbench-72] - 2026-10-22
+
+### 批次七十六（A-9 分割/复制端点）
+- 新增 `timelines/split-clip` / `timelines/copy-clip`：客户端可以直接分割与复制片段（此前只有 Agent 工具动作，UI 无法调用）
+- 修复点：`splitClipAt` 返回 `SplitResult`、`duplicateClip` 返回 `DuplicateResult`，都必须取 `.tracks` —— 解锁 Track B-5 片段手柄
+
 ## [0.3.71-workbench-71] - 2026-10-21
 
 ### 批次七十五（A-2 + A-3）

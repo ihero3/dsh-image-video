@@ -122,6 +122,8 @@
 | `timelines/save` | `{projectId,id?,tracks,frameRate?,burnSubtitles?,exportFormat?,normalizeLoudness?,burnLanguage?}` | `{timeline}` |
 | `subtitles/export` | `{timelineId,trackId?,format?}` | `{srt,cues}`（`A118` 导出标准 SRT）|
 | `subtitles/import` | `{timelineId,srt,format?,trackId?,offsetMs?,replace?}` | `{timeline,imported,skipped}`（`A118` 导入 SRT 为字幕片段）|
+| `timelines/split-clip` | `{timelineId,clipId,atMs}` | `{timeline,leftId,rightId}` | **`A-9`** 客户端分割片段（此前只有工具动作）|
+| `timelines/copy-clip` | `{timelineId,clipId}` | `{timeline}` | **`A-9`** 客户端复制片段 |
 | `timelines/duplicate` | `{timelineId,name?}` | `{timeline}`（`A86` 整条复制为副本：片段 id 重新生成、素材共享、名字自动去重）|
 | `timelines/remove` | `{timelineId}` | `{removed}` |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline ≤2MB / 片段 ≤400 / 轨道 ≤50） | `{ok,issues}` |

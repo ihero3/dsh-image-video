@@ -175,4 +175,23 @@ describe('new endpoint coverage (A136)', () => {
     const cleared = await ok<{ resource: { assetPaths?: string[] } }>('resources/update', { id: created.resource.id, assetPaths: null })
     expect(cleared.resource.assetPaths).toBeUndefined()
   })
+
+  it('splits and copies clips over RPC (A-9)', async () => {
+    const { ok, store, project, outputsDir } = await harness()
+    const saved = await store.saveTimeline({
+      projectId: project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: join(outputsDir, 'clip.mp4'), startMs: 0, durationMs: 2000 }] }],
+    })
+    const split = await ok<{ timeline: { tracks: Array<{ clips: Array<{ id: string; durationMs: number }> }> }; leftId: string; rightId: string }>(
+      'timelines/split-clip', { timelineId: saved.id, clipId: 'c1', atMs: 800 },
+    )
+    expect(split.timeline.tracks[0]!.clips.length).toBe(2)
+    expect(split.leftId).toBe('c1')
+    expect(split.rightId).not.toBe('c1')
+
+    const copied = await ok<{ timeline: { tracks: Array<{ clips: unknown[] }> } }>(
+      'timelines/copy-clip', { timelineId: saved.id, clipId: split.rightId },
+    )
+    expect(copied.timeline.tracks[0]!.clips.length).toBe(3)
+  })
 })
