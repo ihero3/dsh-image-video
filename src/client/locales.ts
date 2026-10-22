@@ -1,4 +1,4 @@
-/** Workbench copy: every string the right-pane surface renders. */
+﻿/** Workbench copy: every string the right-pane surface renders. */
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
@@ -381,6 +381,46 @@ export type WorkbenchLocaleKey =
   | 'promptApplyDone'
   | 'promptRemove'
   | 'promptSavedCount'
+  | 'composeNeedsPrompt'
+  | 'composeEmptyHint'
+  | 'composeSelected'
+  | 'composeSelectHint'
+  | 'composePromptPlaceholder'
+  | 'composeDone'
+  | 'composeAssetCreated'
+  | 'composeBusy'
+  | 'composeRun'
+  | 'promptNew'
+  | 'promptRefresh'
+  | 'promptExtractLabel'
+  | 'promptPickAsset'
+  | 'promptNoImageAssets'
+  | 'promptExtractEmpty'
+  | 'promptNeedSetup'
+  | 'promptNamePlaceholder'
+  | 'promptTextPlaceholder'
+  | 'promptTagsPlaceholder'
+  | 'promptSave'
+  | 'promptCancel'
+  | 'promptEmpty'
+  | 'promptUse'
+  | 'promptEdit'
+  | 'healthSize'
+  | 'healthDupes'
+  | 'healthStats'
+  | 'healthRun'
+  | 'healthRunning'
+  | 'healthEmptyHint'
+  | 'healthSizeSummary'
+  | 'healthMedian'
+  | 'healthUnused'
+  | 'healthNoDupes'
+  | 'healthReclaimable'
+  | 'healthSuggestedKeep'
+  | 'healthNoProjects'
+  | 'healthAssets'
+  | 'healthReferenced'
+  | 'healthTimelines'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -773,6 +813,46 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   promptApplyDone: 'Loaded into the prompt box',
   promptRemove: 'Delete prompt',
   promptSavedCount: '{n} prompts',
+  composeNeedsPrompt: 'Describe your scene before fusing.',
+  composeEmptyHint: 'No resources of this kind yet — create one under Resources.',
+  composeSelected: 'Selected',
+  composeSelectHint: 'Pick a few resources from the columns above to fuse.',
+  composePromptPlaceholder: 'Describe the final look: style, mood, details…',
+  composeDone: 'Fused into',
+  composeAssetCreated: 'new asset',
+  composeBusy: 'Fusing…',
+  composeRun: 'Fuse and generate',
+  promptNew: 'New',
+  promptRefresh: 'Reload',
+  promptExtractLabel: 'Extract from image',
+  promptPickAsset: 'Pick an image asset…',
+  promptNoImageAssets: 'No image assets yet — generate one first.',
+  promptExtractEmpty: 'Extraction returned nothing. Edit manually below.',
+  promptNeedSetup: 'Visual model not configured. You can still type a prompt by hand.',
+  promptNamePlaceholder: 'Name this prompt',
+  promptTextPlaceholder: 'Prompt text — what the model will see',
+  promptTagsPlaceholder: 'tags, comma-separated',
+  promptSave: 'Save',
+  promptCancel: 'Cancel',
+  promptEmpty: 'No saved prompts yet. Save one or extract from an image.',
+  promptUse: 'Use',
+  promptEdit: 'Edit',
+  healthSize: 'Size report',
+  healthDupes: 'Duplicates',
+  healthStats: 'Per-project',
+  healthRun: 'Run report',
+  healthRunning: 'Scanning…',
+  healthEmptyHint: 'Run the report to see asset health.',
+  healthSizeSummary: 'Total',
+  healthMedian: 'median',
+  healthUnused: 'unused',
+  healthNoDupes: 'No duplicates found.',
+  healthReclaimable: 'Reclaimable',
+  healthSuggestedKeep: 'suggested keep',
+  healthNoProjects: 'No projects yet.',
+  healthAssets: 'assets',
+  healthReferenced: 'referenced',
+  healthTimelines: 'timelines',
 }
 
 /** Simplified Chinese copy. */
@@ -1163,4 +1243,44 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   promptApplyDone: '已带入提示词框',
   promptRemove: '删除提示词',
   promptSavedCount: '{n} 条提示词',
+  composeNeedsPrompt: '融合生图前先写一段描述。',
+  composeEmptyHint: '这类资源还没有——去「资源库」新建吧。',
+  composeSelected: '已选',
+  composeSelectHint: '从上方列里挑几个要融合的资源。',
+  composePromptPlaceholder: '描述最终画面：风格、氛围、细节…',
+  composeDone: '已融合成',
+  composeAssetCreated: '新素材',
+  composeBusy: '融合中…',
+  composeRun: '融合并生成',
+  promptNew: '新建',
+  promptRefresh: '刷新',
+  promptExtractLabel: '从图片提取',
+  promptPickAsset: '选一张图片素材…',
+  promptNoImageAssets: '还没有图片素材——先生成一张吧。',
+  promptExtractEmpty: '没提取到内容，直接在下方手动编辑。',
+  promptNeedSetup: '视觉模型未配置。可以直接手写提示词。',
+  promptNamePlaceholder: '给提示词起个名字',
+  promptTextPlaceholder: '提示词内容——模型会看到这段文字',
+  promptTagsPlaceholder: '标签，逗号分隔',
+  promptSave: '保存',
+  promptCancel: '取消',
+  promptEmpty: '还没有保存的提示词。写一个或从图片提取。',
+  promptUse: '带入',
+  promptEdit: '编辑',
+  healthSize: '体积排行',
+  healthDupes: '重复素材',
+  healthStats: '项目统计',
+  healthRun: '跑体检',
+  healthRunning: '扫描中…',
+  healthEmptyHint: '点按钮查看素材库体检报告。',
+  healthSizeSummary: '总计',
+  healthMedian: '中位数',
+  healthUnused: '未使用',
+  healthNoDupes: '没有重复素材。',
+  healthReclaimable: '可回收',
+  healthSuggestedKeep: '建议保留',
+  healthNoProjects: '还没有项目。',
+  healthAssets: '素材',
+  healthReferenced: '被引用',
+  healthTimelines: '时间轴',
 }

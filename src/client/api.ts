@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The browser half's typed face over the `/image-video` channel.
  *
  * Endpoint names and result shapes are mirrored by hand (the host half is a
@@ -50,7 +50,6 @@ export interface WorkbenchDiagnostics {
   readonly errors: { readonly errors: readonly { readonly source: string; readonly code?: string; readonly message: string; readonly at: string }[]; readonly errorCount: number }
 }
 
-/** What the workbench UI may ask the host (phase 2, first slice). */
 /** `media/generate` 的返回（`A145`/`A147`）。 */
 export interface MediaGenerateResult {
   readonly mediaMode?: 'image' | 'video'
@@ -117,6 +116,43 @@ export interface PromptRecord {
   readonly createdAt?: string
 }
 
+/** `assets/size-report` 返回（`A116`/B-11）。 */
+export interface AssetSizeReport {
+  readonly topN: number
+  readonly totalBytes: number
+  readonly medianBytes: number
+  readonly assets: readonly {
+    readonly id: string
+    readonly name: string
+    readonly bytes: number
+    readonly usedIn: readonly string[]
+    readonly unused: boolean
+  }[]
+}
+
+/** `assets/duplicates` 返回（`A112`/B-11）。 */
+export interface AssetDuplicatesReport {
+  readonly groups: readonly {
+    readonly bytes: number
+    readonly hash?: string
+    readonly items: readonly { readonly id: string; readonly name: string; readonly path: string }[]
+    readonly suggestedKeepId?: string
+  }[]
+  readonly reclaimableBytes: number
+}
+
+/** `assets/project-stats` 返回（`A132`/B-11）。 */
+export interface AssetProjectStats {
+  readonly projects: readonly {
+    readonly projectId: string
+    readonly name: string
+    readonly assetCount: number
+    readonly totalBytes: number
+    readonly referencedBytes: number
+    readonly timelineCount: number
+  }[]
+}
+
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
@@ -176,7 +212,6 @@ export interface WorkbenchApi {
     assetPath?: string | null
     assetPaths?: readonly string[] | null
   }) => Promise<ResourceRecord>
-  /** Recorded generations, newest first. */
   /** 批量登记素材（`A152`）：一次登记多条，避免 N 次往返。 */
   attachAssets: (input: {
     readonly projectId: string
@@ -305,28 +340,12 @@ export interface WorkbenchApi {
   cancelTask: (id: string) => Promise<boolean>
   /** File a recorded generation into a project. */
   assignTask: (id: string, projectId: string) => Promise<TaskRecord>
-  /** 改资源（`A153`）：改名 / 备注 / 参考图（`assetPath: null` 清除）。 */
-  updateResource: (input: {
-    id: string
-    name?: string
-    note?: string
-    assetPath?: string | null
-  }) => Promise<ResourceRecord>
-  /** 提示词库（`A-5`）。 */
-  listPrompts: () => Promise<readonly { id: string; name: string; text: string; source: string }[]>
-  savePrompt: (input: { id?: string; name: string; text: string }) =>
-    Promise<{ id: string; name: string; text: string; source: string }>
-  removePrompt: (id: string) => Promise<boolean>
-  /** 图片 → 提示词（`A-5`）；宿主未注入视觉模型时会如实报错。 */
-  extractPrompt: (path: string) => Promise<string>
-  /** 融合生图（`A-4`）：按创作资源收集参考图与描述后一次生成。 */
-  composeMedia: (input: {
-    readonly projectId: string
-    readonly prompt: string
-    readonly resourceIds?: readonly string[]
-    readonly size?: string
-    readonly model?: string
-  }) => Promise<{ readonly path: string; readonly asset: AssetRecord; readonly referencedImages: number }>
+  /** B-11 素材库体检：Top N/总量/中位数/占比，标注是否未使用（`assets/size-report`）。 */
+  assetSizeReport: (topN?: number) => Promise<AssetSizeReport>
+  /** B-11 内容去重：按大小分组 sha256，给建议保留项与可回收字节（`assets/duplicates`）。 */
+  assetDuplicates: (maxHashFiles?: number) => Promise<AssetDuplicatesReport>
+  /** B-11 项目统计：素材数/总字节/被引用字节/时间轴数，按占用降序（`assets/project-stats`）。 */
+  assetProjectStats: () => Promise<AssetProjectStats>
   /** Newest media files under the output directory. */
   listOutputs: (limit?: number) => Promise<OutputFile[]>
   /** 诊断快照：版本、数据规模、渲染队列、输出占用、近错。 */
@@ -363,7 +382,6 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     listRunningTasks: async () => (await call<{ running: RunningGeneration[] }>('tasks/running')).running,
     probeFfmpeg: async path => (await call<{ ffmpeg: FfmpegProbe }>('media/ffmpeg', path === undefined ? {} : { path })).ffmpeg,
     saveDefaults: async patch => {
-      // 走 HTTP 路由而不是 RPC：这条路由与 composer/settings 共用同一份校验（parseDefaultsPatch）
       const response = await fetch('/image-video/defaults', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -407,11 +425,6 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     attachAssets: input => call<{ created: number; assets: AssetRecord[] }>('assets/attach-many', input),
     updateResource: input => call<{ resource: ResourceRecord }>('resources/update', input).then(result => result.resource),
     importMedia: input => call<{ imported: number; assets: AssetRecord[]; skipped: Array<{ path: string; reason: string }> }>('media/import', input),
-    composeMedia: input => call<{ path: string; asset: AssetRecord; referencedImages: number }>('media/compose', input),
-    listPrompts: async () => (await call<{ prompts: Array<{ id: string; name: string; text: string; source: string }> }>('prompts/list', {})).prompts,
-    savePrompt: async input => (await call<{ prompt: { id: string; name: string; text: string; source: string } }>('prompts/save', input)).prompt,
-    removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,
-    extractPrompt: async path => (await call<{ text: string }>('prompts/extract', { path })).text,
     generateMedia: input => call<MediaGenerateResult>('media/generate', input),
     composeMedia: input => call<ComposeMediaResult>('media/compose', input),
     extractPrompt: input => call<ExtractedPrompt>('prompts/extract', input),
@@ -419,6 +432,9 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     savePrompt: async input => (await call<{ prompt: PromptRecord }>('prompts/save', input)).prompt,
     removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
+    assetSizeReport: topN => call<AssetSizeReport>('assets/size-report', topN === undefined ? {} : { topN }),
+    assetDuplicates: maxHashFiles => call<AssetDuplicatesReport>('assets/duplicates', maxHashFiles === undefined ? {} : { maxHashFiles }),
+    assetProjectStats: () => call<AssetProjectStats>('assets/project-stats'),
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
     getDiagnostics: () => call<WorkbenchDiagnostics>('diagnostics'),
   }

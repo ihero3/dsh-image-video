@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Workbench surface: the right-pane tab body.
  *
  * Phase 1 shipped the skeleton and the host health check; this is the first
@@ -42,6 +42,9 @@ import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
+import { FusionComposePanel } from './panels/FusionComposePanel.tsx'
+import { PromptLibraryPanel } from './panels/PromptLibraryPanel.tsx'
+import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -3005,6 +3008,54 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           {/* ============ 下部停靠区：四个面板（常驻） ============ */}
           <div className="iv-dock">
             <section className="iv-pane" data-workbench-pane="paneAssets" data-workbench-planned="false">
+            {/* B-9 融合生图 pane */}
+            <section className="iv-pane" data-workbench-pane="paneCompose" data-workbench-planned="false">
+              <PaneBoundary label={t('paneCompose')} t={t}>
+                <div className="iv-pane-head">
+                  <span className="iv-pane-tile"><Icon name="sparkles" size={13} /></span>
+                  <h3 className="iv-pane-title">{t('paneCompose')}</h3>
+                </div>
+                {activeProject === undefined
+                  ? <div className="iv-empty">{t('projectNone')}</div>
+                  : <FusionComposePanel
+                      api={apiRef.current}
+                      projectId={activeProject.id}
+                      resources={resources}
+                      onAssetCreated={asset => { setAssets(prev => [asset, ...prev]) }}
+                      t={(key) => t(key as WorkbenchLocaleKey)}
+                    />
+                }
+              </PaneBoundary>
+            </section>
+
+            {/* B-10 提示词库 pane */}
+            <section className="iv-pane" data-workbench-pane="panePrompts" data-workbench-planned="false">
+              <PaneBoundary label={t('panePrompts')} t={t}>
+                <div className="iv-pane-head">
+                  <span className="iv-pane-tile"><Icon name="script" size={13} /></span>
+                  <h3 className="iv-pane-title">{t('panePrompts')}</h3>
+                </div>
+                <PromptLibraryPanel
+                  api={apiRef.current}
+                  projectId={activeProject?.id ?? ''}
+                  assets={assets}
+                  onUsePrompt={text => { setGeneratePrompt(text) }}
+                  t={(key) => t(key as WorkbenchLocaleKey)}
+                />
+              </PaneBoundary>
+            </section>
+
+            {/* B-11 素材库体检 pane */}
+            <section className="iv-pane" data-workbench-pane="paneHealth" data-workbench-planned="false">
+              <PaneBoundary label={t('paneHealth')} t={t}>
+                <div className="iv-pane-head">
+                  <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
+                  <h3 className="iv-pane-title">{t('paneHealth')}</h3>
+                </div>
+                <AssetHealthPanel api={apiRef.current} t={(key) => t(key as WorkbenchLocaleKey)} />
+              </PaneBoundary>
+            </section>
+
               <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>

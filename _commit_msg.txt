@@ -1,0 +1,13 @@
+﻿feat(client): Round 2 B-9~B-11 - FusionCompose + PromptLibrary + AssetHealth panes
+
+B-9 FusionComposePanel: role/scene/prop 多资源多选 + composeMedia 调用
+B-10 PromptLibraryPanel: CRUD + 从素材提取（错误当需配置提示）
+B-11 AssetHealthPanel: size-report / duplicates / project-stats 三 tab
+
+fix(api.ts): 清理 merge 引入的重复方法定义（updateResource/composeMedia/extractPrompt/listPrompts/savePrompt/removePrompt）
+  - WorkbenchApi 接口 + 实现各有一处重复
+  - 统一保留新版签名（assetPaths=null 清除、roles/scenes/props 资源 id 拼装、ExtractedPrompt 结构化返回）
+  - 新增 AssetSizeReport/AssetDuplicatesReport/AssetProjectStats 类型 + 三端点实现
+
+新 locale keys (en/zh): paneCompose/panePrompts/paneHealth + compose*/prompt*/health* 系列
+Workbench.tsx: 3 新 import + 3 rail 按钮 + 3 dock pane section
