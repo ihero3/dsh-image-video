@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Workbench surface: the right-pane tab body.
  *
  * Phase 1 shipped the skeleton and the host health check; this is the first
@@ -42,9 +42,9 @@ import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
-import { FusionComposePanel } from './panels/FusionComposePanel.tsx'
-import { PromptLibraryPanel } from './panels/PromptLibraryPanel.tsx'
 import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
+import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
+import { TaskCard } from './panels/TaskCard.tsx'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -308,6 +308,26 @@ function FusionGroup(props: {
           ))}
     </div>
   )
+}
+
+/**
+ * 新建项目的空白成片文档（视频/音频/字幕三轨）。
+ * @param project - 文档归属的项目。
+ * @returns 尚未落库的时间轴记录。
+ */
+function emptyTimeline(project: ProjectRecord): TimelineRecord {
+  const stamp = new Date().toISOString()
+  return {
+    schemaVersion: 1, id: newWorkbenchId('tml'), projectId: project.id, name: `${project.name} 成片`,
+    frameRate: 30,
+    tracks: [
+      { id: 'track-video', kind: 'video', clips: [] },
+      { id: 'track-audio', kind: 'audio', clips: [] },
+      { id: 'track-subtitle', kind: 'subtitle', clips: [] },
+    ],
+    burnSubtitles: true,
+    createdAt: stamp, updatedAt: stamp,
+  }
 }
 
 /**
@@ -637,21 +657,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         if (stale) return
         const existing = rows[0]
         if (existing !== undefined) { setTimeline(existing); setTimelineState('saved'); return }
-        const stamp = new Date().toISOString()
-        setTimeline(current => {
-          if (current !== undefined && current.projectId === project.id) return current
-          return {
-            schemaVersion: 1, id: newWorkbenchId('tml'), projectId: project.id, name: `${project.name} 成片`,
-            frameRate: 30,
-            tracks: [
-              { id: 'track-video', kind: 'video', clips: [] },
-              { id: 'track-audio', kind: 'audio', clips: [] },
-              { id: 'track-subtitle', kind: 'subtitle', clips: [] },
-            ],
-            burnSubtitles: true,
-            createdAt: stamp, updatedAt: stamp,
-          }
-        })
+        setTimeline(current => current !== undefined && current.projectId === project.id ? current : emptyTimeline(project))
         setTimelineState('saved')
       } catch (error) {
         if (!stale) setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
@@ -822,6 +828,43 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       }
     })
     void stamp
+  }
+
+  /**
+   * `B-12`：把一条生成产物追加到当前项目时间轴的视频轨。
+   *
+   * 快速生成模式下时间轴没有载入（`timeline === undefined`），所以先读回该项目已有文档，
+   * 没有就新建一份，追加后立即落库 —— 不依赖时间轴模式的去抖保存。
+   * @param path - 产物在 outputs 里的路径。
+   */
+  const appendToTimeline = (path: string): void => {
+    const project = activeProject
+    if (project === undefined) return
+    void run(async () => {
+      let doc = timeline !== undefined && timeline.projectId === project.id ? timeline : undefined
+      if (doc === undefined) {
+        const rows = await apiRef.current.listTimelines(project.id)
+        doc = rows[0] ?? emptyTimeline(project)
+      }
+      const videoTrack = doc.tracks.find(track => track.kind === 'video')
+      const end = videoTrack?.clips.reduce(
+        (longest, clip) => Math.max(longest, clip.startMs + clip.durationMs), 0,
+      ) ?? 0
+      const clip: TimelineClip = {
+        id: nextClipId(), startMs: end, durationMs: 3000, assetPath: path,
+      }
+      const tracks = videoTrack === undefined
+        ? [...doc.tracks, { id: 'track-video', kind: 'video' as const, clips: [clip] }]
+        : doc.tracks.map(track => track.id === videoTrack.id ? { ...track, clips: [...track.clips, clip] } : track)
+      const stored = await apiRef.current.saveTimeline({
+        id: doc.id, projectId: doc.projectId, name: doc.name, tracks,
+        frameRate: doc.frameRate, burnSubtitles: doc.burnSubtitles,
+        exportFormat: doc.exportFormat, normalizeLoudness: doc.normalizeLoudness,
+      })
+      setTimeline(stored)
+      setTimelineState('saved')
+      setNotice({ text: t('addToTimelineDone'), tone: 'info' })
+    })
   }
 
   /**
@@ -1179,13 +1222,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     if (activeId === undefined) { setNotice({ text: t('generateNeedsProject'), tone: 'error' }); return }
     setComposing(true)
     try {
-      const result = await apiRef.current.composeMedia({
-        projectId: activeId,
-        prompt,
-        ...composeRoles.length > 0 ? { roles: composeRoles } : {},
-        ...composeScenes.length > 0 ? { scenes: composeScenes } : {},
-        ...composeProps.length > 0 ? { props: composeProps } : {},
-      })
+      const result = await apiRef.current.composeMedia({ projectId: activeId, prompt, resourceIds: composeSelection })
       await refreshAssetsAfterGenerate()
       setComposePrompt('')
       const suffix = result.path === undefined ? '' : `：${baseName(result.path)}`
@@ -1219,7 +1256,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
     setExtracting(true)
     try {
-      const extracted = await apiRef.current.extractPrompt({ projectId: activeId, assetId: selectedAsset.id })
+      const extracted = await apiRef.current.extractPrompt({ path: selectedAsset.path })
       const text = composeExtractedPrompt(extracted)
       setPromptDraft(text)
       if (promptName.trim() === '') setPromptName(baseName(selectedAsset.path))
@@ -1876,6 +1913,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <Icon name="clock" size={15} />
             <span className="iv-rail-tip">{t('railTasks')}</span>
           </button>
+          <button
+            type="button"
+            className="iv-rail-btn"
+            aria-label={t('railHealth')}
+            onClick={() => { scrollToPane('paneHealth') }}
+          >
+            <Icon name="filter" size={15} />
+            <span className="iv-rail-tip">{t('railHealth')}</span>
+          </button>
           <div className="iv-rail-bottom">
             <button
               type="button"
@@ -1927,8 +1973,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         data-generate-prompt="true"
                         disabled={generating !== undefined}
                         onChange={event => setGeneratePrompt(event.target.value)}
+                        onKeyDown={event => {
+                          if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+                          event.preventDefault()
+                          if (generating === undefined && activeId !== undefined) void runGenerate('image')
+                        }}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
+                      <span className="iv-meta" data-generate-shortcut="true">{t('generateShortcutHint')}</span>
                       {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
                       <div className="iv-refs" data-generate-refs="true">
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2541,6 +2593,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </button>
                   </div>
 
+                  {/* B-13 逐段预览 */}
+                  <div className="iv-toolbar iv-seg-wrap">
+                    <span className="iv-meta">{t('segPreviewTitle')}</span>
+                    <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)} />
+                  </div>
+
+
                   {/* 导出操作行 */}
                   <div className="iv-toolbar iv-toolbar--export">
                     {/* B6 分辨率 / 帧率 / 宽高比选择 */}
@@ -3007,44 +3066,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
           {/* ============ 下部停靠区：四个面板（常驻） ============ */}
           <div className="iv-dock">
-            <section className="iv-pane" data-workbench-pane="paneAssets" data-workbench-planned="false">
-            {/* B-9 融合生图 pane */}
-            <section className="iv-pane" data-workbench-pane="paneCompose" data-workbench-planned="false">
-              <PaneBoundary label={t('paneCompose')} t={t}>
-                <div className="iv-pane-head">
-                  <span className="iv-pane-tile"><Icon name="sparkles" size={13} /></span>
-                  <h3 className="iv-pane-title">{t('paneCompose')}</h3>
-                </div>
-                {activeProject === undefined
-                  ? <div className="iv-empty">{t('projectNone')}</div>
-                  : <FusionComposePanel
-                      api={apiRef.current}
-                      projectId={activeProject.id}
-                      resources={resources}
-                      onAssetCreated={asset => { setAssets(prev => [asset, ...prev]) }}
-                      t={(key) => t(key as WorkbenchLocaleKey)}
-                    />
-                }
-              </PaneBoundary>
-            </section>
-
-            {/* B-10 提示词库 pane */}
-            <section className="iv-pane" data-workbench-pane="panePrompts" data-workbench-planned="false">
-              <PaneBoundary label={t('panePrompts')} t={t}>
-                <div className="iv-pane-head">
-                  <span className="iv-pane-tile"><Icon name="script" size={13} /></span>
-                  <h3 className="iv-pane-title">{t('panePrompts')}</h3>
-                </div>
-                <PromptLibraryPanel
-                  api={apiRef.current}
-                  projectId={activeProject?.id ?? ''}
-                  assets={assets}
-                  onUsePrompt={text => { setGeneratePrompt(text) }}
-                  t={(key) => t(key as WorkbenchLocaleKey)}
-                />
-              </PaneBoundary>
-            </section>
-
             {/* B-11 素材库体检 pane */}
             <section className="iv-pane" data-workbench-pane="paneHealth" data-workbench-planned="false">
               <PaneBoundary label={t('paneHealth')} t={t}>
@@ -3052,10 +3073,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
                   <h3 className="iv-pane-title">{t('paneHealth')}</h3>
                 </div>
-                <AssetHealthPanel api={apiRef.current} t={(key) => t(key as WorkbenchLocaleKey)} />
+                <AssetHealthPanel
+                  api={apiRef.current}
+                  formatBytes={formatBytes}
+                  t={(key) => t(key as WorkbenchLocaleKey)}
+                />
               </PaneBoundary>
             </section>
 
+            <section className="iv-pane" data-workbench-pane="paneAssets" data-workbench-planned="false">
               <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
@@ -3713,71 +3739,32 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   )
                   : (
                   <VirtualList className="iv-list" items={tasks} renderRow={(task, _index) => (
-                    <li key={task.id} className="iv-row">
-                      <span className={taskDotClass(task.status)} aria-hidden="true" />
-                      <button
-                        type="button"
-                        className="iv-row-btn"
-                        aria-label={`${t('previewOutput')} ${task.id}`}
-                        disabled={task.outputPath === undefined}
-                        onClick={() => {
-                          const path = task.outputPath
-                          if (path === undefined) return
-                          // 一律按路径预览：该产物可能登记在**别的项目**里，
-                          // 那样 assets（按当前项目过滤）里根本没有它。
-                          setPreviewPath({ path, kind: task.kind })
-                          setSelectedId(assets.find(asset => asset.path === path)?.id)
-                        }}
-                        title={task.error ?? task.prompt ?? task.outputPath ?? ''}
-                      >
-                        {t(statusKey(task.status))}{' · '}{task.model ?? '—'}{' · '}{formatBytes(task.bytes ?? 0)}{' · '}{clockTime(task.createdAt)}
-                      </button>
-                      <div className="iv-row-actions">
-                        {task.status === 'running'
-                          ? (
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--sm"
-                              aria-label={`${t('cancelTask')} ${task.id}`}
-                              title={t('cancelTask')}
-                              disabled={busy}
-                              onClick={() => {
-                                void run(async () => {
-                                  await apiRef.current.cancelTask(task.id)
-                                  await loadTasks()
-                                })
-                              }}
-                            >
-                              {t('cancelTask')}
-                            </button>
-                          )
-                          : null}
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--sm"
-                          aria-label={`${t('registerAsAsset')} ${task.id}`}
-                          title={t('registerAsAsset')}
-                          disabled={busy || activeProject === undefined || task.outputPath === undefined}
-                          onClick={() => {
-                            void run(async () => {
-                              const project = activeProject
-                              const path = task.outputPath
-                              if (project === undefined || path === undefined) return
-                              const attached = await apiRef.current.attachAsset({
-                                projectId: project.id, path, kind: task.kind,
-                                bytes: task.bytes, provider: task.provider, model: task.model, prompt: task.prompt,
-                              })
-                              if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
-                              await apiRef.current.assignTask(task.id, project.id)
-                              setAssets(await apiRef.current.listAssets(project.id))
-                              await loadTasks()
-                            })
-                          }}
-                        >
-                          {t('registerAsAsset')}
-                        </button>
-                      </div>
-                    </li>
+                    <TaskCard
+                      key={task.id}
+                      api={apiRef.current}
+                      task={task}
+                      projectId={activeProject?.id}
+                      statusLabel={t(statusKey(task.status))}
+                      dotClass={taskDotClass(task.status)}
+                      metaText={`${task.model ?? '—'} · ${formatBytes(task.bytes ?? 0)} · ${clockTime(task.createdAt)}`}
+                      onPreview={(path, kind) => {
+                        // 一律按路径预览：该产物可能登记在**别的项目**里，
+                        // 那样 assets（按当前项目过滤）里根本没有它。
+                        setPreviewPath({ path, kind })
+                        setSelectedId(assets.find(asset => asset.path === path)?.id)
+                      }}
+                      onUseAsReference={(path, kind) => {
+                        // `F2`：图片进按序参考图列表；视频进参考视频槽。
+                        if (kind === 'image') addReferenceImage(path)
+                        else setGenerateRefVideo(path)
+                      }}
+                      onAddToTimeline={activeProject === undefined ? undefined : appendToTimeline}
+                      onTasksChanged={loadTasks}
+                      onAssetsChanged={refreshAssetsAfterGenerate}
+                      onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                      run={action => { void run(action) }}
+                      t={t}
+                    />
                   )} />
                 )}
               </div>

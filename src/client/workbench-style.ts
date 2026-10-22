@@ -547,6 +547,33 @@ export const WORKBENCH_STYLE = `
 .iv-prompt-lib{display:flex;flex-direction:column;gap:4px}
 .iv-prompt-row{display:flex;align-items:center;gap:6px;padding:3px 0;border-top:1px solid var(--iv-line)}
 .iv-prompt-row .iv-ellipsis{flex:1;min-width:0}
+/* B-11 素材库体检 */
+.iv-health{display:flex;flex-direction:column;gap:6px;min-height:0}
+.iv-health-tabs{flex:none}
+.iv-health-body{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+.iv-size-list,.iv-dupes-list,.iv-stats-list{display:flex;flex-direction:column;gap:3px;min-height:0;overflow:auto}
+.iv-size-summary{flex:none}
+.iv-size-row,.iv-stats-row{display:flex;align-items:center;gap:6px;padding:2px 0;border-top:1px solid var(--iv-line)}
+.iv-size-row:first-of-type,.iv-stats-row:first-of-type{border-top:0}
+.iv-size-name{flex:1;min-width:0}
+.iv-size-bytes{flex:none;font-family:var(--iv-mono);font-size:10px;color:var(--iv-tx3)}
+.iv-dupes-group{display:flex;flex-direction:column;gap:2px;padding:4px 0;border-top:1px solid var(--iv-line)}
+.iv-dupes-group-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-dupes-item{display:flex;align-items:center;gap:6px;padding:1px 0 1px 10px;font-size:11px;color:var(--iv-tx2)}
+.iv-dupes-item.keep{color:var(--iv-tx)}
+.iv-stats-row{flex-direction:column;align-items:flex-start;gap:1px}
+.iv-stats-name{max-width:100%;font-size:11px}
+.iv-stats-facts{display:flex;gap:8px;flex-wrap:wrap;font-size:10px}
+/* B-13 时间轴逐段预览 */
+.iv-seg-wrap{flex-wrap:wrap}
+.iv-seg-preview{display:flex;flex-direction:column;gap:6px;width:100%;min-width:0}
+.iv-seg-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-seg-video{width:100%;max-height:150px;border-radius:var(--iv-r);background:var(--iv-monitor)}
+.iv-seg-bar{display:flex;gap:2px;width:100%;min-width:0}
+.iv-seg-cell{flex:1 1 0;min-width:6px;height:16px;padding:0;border:1px solid var(--iv-line);border-radius:2px;
+background:var(--iv-panel-3);cursor:pointer}
+.iv-seg-cell.on{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
+.iv-seg-cell:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
 `
 
 /**

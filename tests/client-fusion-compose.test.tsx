@@ -65,13 +65,12 @@ describe('B-9 fusion compose (G3)', () => {
     fireEvent.click(view.container.querySelector('[data-fusion-run="true"]') as HTMLElement)
 
     await waitFor(() => { expect(host.composePayloads).toHaveLength(1) })
+    const payload = host.composePayloads[0] as { resourceIds?: readonly string[] }
     expect(host.composePayloads[0]).toMatchObject({
       projectId: 'prj-1',
       prompt: '林萧撑着伞站在雨夜街头',
-      roles: ['res-role'],
-      scenes: ['res-scene'],
-      props: ['res-prop'],
     })
+    expect([...(payload.resourceIds ?? [])].sort()).toEqual(['res-prop', 'res-role', 'res-scene'])
     // 成功后确认：素材刷新 + 完成提示
     await waitFor(() => { expect(screen.getByRole('status').textContent).toContain(en.fusionDone) })
     expect(host.assets.some(asset => asset.id === 'ast-composed')).toBe(true)

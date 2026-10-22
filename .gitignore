@@ -3,3 +3,5 @@ outputs/
 *.log
 .DS_Store
 *.tgz
+
+_commit_msg.txt

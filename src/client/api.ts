@@ -116,41 +116,60 @@ export interface PromptRecord {
   readonly createdAt?: string
 }
 
+/** `assets/size-report` 返回的条目（`A116`/B-11）：`sizeReport` 的 Top 项。 */
+export interface AssetSizeEntry {
+  readonly path: string
+  readonly bytes: number
+  /** 从未被任何时间轴引用。 */
+  readonly unused?: boolean
+}
+
 /** `assets/size-report` 返回（`A116`/B-11）。 */
 export interface AssetSizeReport {
-  readonly topN: number
   readonly totalBytes: number
+  readonly topBytes: number
+  /** Top N 占总量的比例（0–1）。 */
+  readonly topShare: number
   readonly medianBytes: number
-  readonly assets: readonly {
-    readonly id: string
-    readonly name: string
-    readonly bytes: number
-    readonly usedIn: readonly string[]
-    readonly unused: boolean
-  }[]
+  readonly count: number
+  readonly top: readonly AssetSizeEntry[]
+}
+
+/** `assets/duplicates` 的一个重复组（`A112`/B-11）。 */
+export interface AssetDuplicateGroup {
+  /** 内容相同的素材路径；第一个是建议保留的。 */
+  readonly paths: readonly string[]
+  /** 单份字节数。 */
+  readonly bytes: number
+  /** 建议保留的路径。 */
+  readonly keep: string
+  readonly reclaimableBytes: number
 }
 
 /** `assets/duplicates` 返回（`A112`/B-11）。 */
 export interface AssetDuplicatesReport {
-  readonly groups: readonly {
-    readonly bytes: number
-    readonly hash?: string
-    readonly items: readonly { readonly id: string; readonly name: string; readonly path: string }[]
-    readonly suggestedKeepId?: string
-  }[]
+  readonly groups: readonly AssetDuplicateGroup[]
   readonly reclaimableBytes: number
+  readonly hashedFiles: number
+  readonly skippedFiles: number
+}
+
+/** `assets/project-stats` 返回的一个项目（`A132`/B-11）。 */
+export interface AssetProjectStat {
+  readonly projectId: string
+  readonly name: string
+  readonly assets: number
+  readonly bytes: number
+  /** 被时间轴引用到的字节。 */
+  readonly usedBytes: number
+  readonly timelines: number
 }
 
 /** `assets/project-stats` 返回（`A132`/B-11）。 */
 export interface AssetProjectStats {
-  readonly projects: readonly {
-    readonly projectId: string
-    readonly name: string
-    readonly assetCount: number
-    readonly totalBytes: number
-    readonly referencedBytes: number
-    readonly timelineCount: number
-  }[]
+  readonly totalBytes: number
+  readonly projects: readonly AssetProjectStat[]
+  readonly topShare: number
 }
 
 export interface WorkbenchApi {
@@ -263,19 +282,16 @@ export interface WorkbenchApi {
   composeMedia: (input: {
     readonly projectId: string
     readonly prompt: string
-    readonly roles?: readonly string[]
-    readonly scenes?: readonly string[]
-    readonly props?: readonly string[]
+    /** 选中创作资源的 id（角色/场景/物品混排，宿主按各自主键拼装参考图与描述）。 */
+    readonly resourceIds: readonly string[]
+    readonly size?: string
+    readonly model?: string
   }) => Promise<ComposeMediaResult>
   /**
-   * 提示词提取（`G1`/`A-5`）：图片素材 → 结构化提示词（风格/主体/材质/细节）。
+   * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
    */
-  extractPrompt: (input: {
-    readonly projectId?: string
-    readonly assetId?: string
-    readonly path?: string
-  }) => Promise<ExtractedPrompt>
+  extractPrompt: (input: { readonly path: string }) => Promise<ExtractedPrompt>
   /** 提示词库列表（`A-5`）。 */
   listPrompts: () => Promise<PromptRecord[]>
   /** 存入/更新一条提示词（`A-5`）。 */
@@ -432,9 +448,11 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     savePrompt: async input => (await call<{ prompt: PromptRecord }>('prompts/save', input)).prompt,
     removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
-    assetSizeReport: topN => call<AssetSizeReport>('assets/size-report', topN === undefined ? {} : { topN }),
-    assetDuplicates: maxHashFiles => call<AssetDuplicatesReport>('assets/duplicates', maxHashFiles === undefined ? {} : { maxHashFiles }),
-    assetProjectStats: () => call<AssetProjectStats>('assets/project-stats'),
+    assetSizeReport: async topN =>
+      (await call<{ size: AssetSizeReport }>('assets/size-report', topN === undefined ? {} : { topN })).size,
+    assetDuplicates: async maxHashFiles =>
+      (await call<{ duplicates: AssetDuplicatesReport }>('assets/duplicates', maxHashFiles === undefined ? {} : { maxHashFiles })).duplicates,
+    assetProjectStats: async () => (await call<{ stats: AssetProjectStats }>('assets/project-stats')).stats,
     listOutputs: async limit => (await call<{ outputs: OutputFile[] }>('outputs/list', { limit })).outputs,
     getDiagnostics: () => call<WorkbenchDiagnostics>('diagnostics'),
   }

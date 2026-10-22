@@ -1,4 +1,4 @@
-﻿/** Workbench copy: every string the right-pane surface renders. */
+/** Workbench copy: every string the right-pane surface renders. */
 
 /** Locale keys the workbench renders. */
 export type WorkbenchLocaleKey =
@@ -23,6 +23,7 @@ export type WorkbenchLocaleKey =
   | 'generateHeading'
   | 'generatePromptLabel'
   | 'generatePromptPlaceholder'
+  | 'generateShortcutHint'
   | 'generateImage'
   | 'generateVideo'
   | 'generating'
@@ -46,6 +47,7 @@ export type WorkbenchLocaleKey =
   | 'paneResources'
   | 'panePreview'
   | 'paneTasks'
+  | 'paneHealth'
   | 'emptyHint'
   | 'healthChecking'
   | 'healthFailed'
@@ -233,6 +235,7 @@ export type WorkbenchLocaleKey =
   | 'heroStepFile'
   | 'railAssets'
   | 'railTasks'
+  | 'railHealth'
   | 'railDefaults'
   | 'statusReady'
   | 'monitorProgram'
@@ -390,21 +393,9 @@ export type WorkbenchLocaleKey =
   | 'composeAssetCreated'
   | 'composeBusy'
   | 'composeRun'
-  | 'promptNew'
-  | 'promptRefresh'
-  | 'promptExtractLabel'
-  | 'promptPickAsset'
-  | 'promptNoImageAssets'
   | 'promptExtractEmpty'
-  | 'promptNeedSetup'
   | 'promptNamePlaceholder'
-  | 'promptTextPlaceholder'
-  | 'promptTagsPlaceholder'
   | 'promptSave'
-  | 'promptCancel'
-  | 'promptEmpty'
-  | 'promptUse'
-  | 'promptEdit'
   | 'healthSize'
   | 'healthDupes'
   | 'healthStats'
@@ -421,6 +412,22 @@ export type WorkbenchLocaleKey =
   | 'healthAssets'
   | 'healthReferenced'
   | 'healthTimelines'
+  | 'regenerate'
+  | 'regenerateHint'
+  | 'regenerateNoPrompt'
+  | 'useAsReference'
+  | 'useAsRefHint'
+  | 'addToTimeline'
+  | 'addToTimelineHint'
+  | 'addToTimelineDone'
+  | 'noTimelinesHint'
+  | 'segPreviewTitle'
+  | 'segPreviewEmpty'
+  | 'segPlay'
+  | 'segPause'
+  | 'segReplay'
+  | 'segTotal'
+  | 'segJump'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -461,6 +468,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateHeading: 'Generate here',
   generatePromptLabel: 'Prompt',
   generatePromptPlaceholder: 'Describe the shot you want…',
+  generateShortcutHint: '⌘/Ctrl + Enter to generate',
   generateImage: 'Generate image',
   generateVideo: 'Generate video',
   generating: 'Generating…',
@@ -476,6 +484,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   paneResources: 'Resources',
   panePreview: 'Preview',
   paneTasks: 'Tasks',
+  paneHealth: 'Library health',
   emptyHint: 'Projects, assets, the task ledger and a runnable node canvas are all available.',
   healthChecking: 'Connecting to host…',
   healthFailed: 'Host unavailable',
@@ -663,6 +672,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   heroStepFile: 'File into project',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
+  railHealth: 'Library health',
   railDefaults: 'Effective defaults',
   statusReady: 'Ready',
   monitorProgram: 'Program',
@@ -822,21 +832,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   composeAssetCreated: 'new asset',
   composeBusy: 'Fusing…',
   composeRun: 'Fuse and generate',
-  promptNew: 'New',
-  promptRefresh: 'Reload',
-  promptExtractLabel: 'Extract from image',
-  promptPickAsset: 'Pick an image asset…',
-  promptNoImageAssets: 'No image assets yet — generate one first.',
-  promptExtractEmpty: 'Extraction returned nothing. Edit manually below.',
-  promptNeedSetup: 'Visual model not configured. You can still type a prompt by hand.',
-  promptNamePlaceholder: 'Name this prompt',
-  promptTextPlaceholder: 'Prompt text — what the model will see',
-  promptTagsPlaceholder: 'tags, comma-separated',
-  promptSave: 'Save',
-  promptCancel: 'Cancel',
-  promptEmpty: 'No saved prompts yet. Save one or extract from an image.',
-  promptUse: 'Use',
-  promptEdit: 'Edit',
   healthSize: 'Size report',
   healthDupes: 'Duplicates',
   healthStats: 'Per-project',
@@ -853,6 +848,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   healthAssets: 'assets',
   healthReferenced: 'referenced',
   healthTimelines: 'timelines',
+  regenerate: 'Regenerate',
+  regenerateHint: 'Run this prompt again with the same model.',
+  regenerateNoPrompt: 'This task has no prompt to regenerate from.',
+  useAsReference: 'Use as reference',
+  useAsRefHint: 'Put this output into the quick-generate reference slots.',
+  addToTimeline: 'Add to timeline',
+  addToTimelineHint: 'Append this clip to the current project timeline.',
+  addToTimelineDone: 'Appended to the timeline.',
+  noTimelinesHint: 'No timeline in this project yet.',
+  segPreviewTitle: 'Segment preview',
+  segPreviewEmpty: 'No video clips on the timeline yet.',
+  segPlay: 'Play',
+  segPause: 'Pause',
+  segReplay: 'Replay',
+  segTotal: 'total',
+  segJump: 'Jump to segment',
 }
 
 /** Simplified Chinese copy. */
@@ -891,6 +902,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateHeading: '直接生成',
   generatePromptLabel: '提示词',
   generatePromptPlaceholder: '描述你想要的画面…',
+  generateShortcutHint: '⌘/Ctrl + Enter 生成',
   generateImage: '生成图片',
   generateVideo: '生成视频',
   generating: '生成中…',
@@ -906,6 +918,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   paneResources: '创作资源',
   panePreview: '预览',
   paneTasks: '任务',
+  paneHealth: '素材库体检',
   emptyHint: '项目、素材、资源与任务账本已可用；「专业工作流」模式里是可直接运行的节点画布。',
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
@@ -1093,6 +1106,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   heroStepFile: '登记进项目',
   railAssets: '媒体素材',
   railTasks: '生成任务',
+  railHealth: '素材库体检',
   railDefaults: '生效默认值',
   statusReady: '就绪',
   monitorProgram: '节目监视器',
@@ -1252,21 +1266,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   composeAssetCreated: '新素材',
   composeBusy: '融合中…',
   composeRun: '融合并生成',
-  promptNew: '新建',
-  promptRefresh: '刷新',
-  promptExtractLabel: '从图片提取',
-  promptPickAsset: '选一张图片素材…',
-  promptNoImageAssets: '还没有图片素材——先生成一张吧。',
-  promptExtractEmpty: '没提取到内容，直接在下方手动编辑。',
-  promptNeedSetup: '视觉模型未配置。可以直接手写提示词。',
-  promptNamePlaceholder: '给提示词起个名字',
-  promptTextPlaceholder: '提示词内容——模型会看到这段文字',
-  promptTagsPlaceholder: '标签，逗号分隔',
-  promptSave: '保存',
-  promptCancel: '取消',
-  promptEmpty: '还没有保存的提示词。写一个或从图片提取。',
-  promptUse: '带入',
-  promptEdit: '编辑',
   healthSize: '体积排行',
   healthDupes: '重复素材',
   healthStats: '项目统计',
@@ -1283,4 +1282,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   healthAssets: '素材',
   healthReferenced: '被引用',
   healthTimelines: '时间轴',
+  regenerate: '重新生成',
+  regenerateHint: '用相同模型再跑一次这条提示词。',
+  regenerateNoPrompt: '这条任务没有可复用的提示词。',
+  useAsReference: '用作参考图',
+  useAsRefHint: '把这条产物放进快速生成的参考图槽位。',
+  addToTimeline: '加入时间轴',
+  addToTimelineHint: '把这段视频追加到当前项目的时间轴。',
+  addToTimelineDone: '已追加到时间轴。',
+  noTimelinesHint: '当前项目还没有时间轴。',
+  segPreviewTitle: '逐段预览',
+  segPreviewEmpty: '时间轴上还没有视频片段。',
+  segPlay: '播放',
+  segPause: '暂停',
+  segReplay: '重播',
+  segTotal: '总长',
+  segJump: '跳到第',
 }

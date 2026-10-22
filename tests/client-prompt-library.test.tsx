@@ -51,7 +51,7 @@ describe('B-10 prompt studio (G1)', () => {
     fireEvent.click(view.container.querySelector('[data-prompt-extract="true"]') as HTMLElement)
 
     await waitFor(() => { expect(host.extractInputs).toHaveLength(1) })
-    expect(host.extractInputs[0]).toMatchObject({ projectId: 'prj-1', assetId: 'ast-1' })
+    expect(host.extractInputs[0]).toMatchObject({ path: '/tmp/outputs/shot.png' })
     const draft = view.container.querySelector('[data-prompt-draft="true"]') as HTMLTextAreaElement
     // 主体 → 风格 → 材质 → 细节（缺字段跳过）
     await waitFor(() => {
