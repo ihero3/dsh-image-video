@@ -9,7 +9,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply, inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
-import { Workbench, type WorkbenchInjected } from '../src/client/Workbench.tsx'
+import type { WorkbenchInjected } from '../src/client/Workbench.tsx'
+import { WorkbenchSeat } from '../src/client/WorkbenchSeat.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 /** One registered tab definition, narrowed to the fields this test asserts. */
@@ -103,7 +104,8 @@ describe('workbench browser half', () => {
     expect(face.kind).toBe(WORKBENCH_TAB_KIND)
     expect(typeof face.api.health).toBe('function')
     expect(typeof face.api.createProject).toBe('function')
-    expect(stub.component()).toBe(Workbench)
+    // A-6 修订后注册的是「座位薄壳」：真正的 Workbench 在包内 chunk 里，首次打开才加载
+    expect(stub.component()).toBe(WorkbenchSeat)
   })
 
   it('lifts the dictionaries, the tab type and the seat on teardown', () => {

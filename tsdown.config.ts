@@ -1,6 +1,48 @@
+import MagicString from 'magic-string'
 import { defineConfig } from 'tsdown'
 
 const PACKAGE_NAME = 'dsh-image-video'
+
+/** 宿主 `CLIENT_CHUNK` 契约：包内 chunk 名必须以 `client.` 开头。 */
+const CLIENT_CHUNK_NAME = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
+
+/**
+ * Rolldown 在 CJS 产物里把 `import()` 编译成
+ * `Promise.resolve().then(() => require('./client.X.js'))`；而宿主工厂收到的 `require`
+ * 是**同步模块表查找**（不会去取脚本），只有 `require.async` 会按包内路由加载 chunk。
+ * 这里把生成式改写成 `require.async(...)`；漏改一个 chunk 就直接构建失败，
+ * 不留"运行期必然失败"的 require。
+ */
+function asyncChunkRequire() {
+  return {
+    name: 'dsh-image-video-client-async-chunk',
+    renderChunk(code: string, chunk: { dynamicImports: string[] }, outputOptions: { format?: string }) {
+      if (outputOptions.format !== 'cjs') return null
+      const transformed = new MagicString(code)
+      for (const request of chunk.dynamicImports) {
+        // rolldown 报告的 dynamicImports 形如 `client/client.X.js`（相对 outDir），
+        // 而加载器的 chunk 名是入口同目录的裸文件名——只取 basename。
+        const fileName = request.slice(request.lastIndexOf('/') + 1)
+        if (!CLIENT_CHUNK_NAME.test(fileName)) continue
+        const specifier = `./${fileName}`
+        const pattern = new RegExp(
+          `Promise\\.resolve\\(\\)\\.then\\(\\(\\)\\s*=>\\s*require\\((['"])${specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1\\)\\)`,
+          'gu',
+        )
+        const matches = [...code.matchAll(pattern)]
+        if (matches.length === 0) {
+          throw new Error(`client bundle: dynamic chunk ${JSON.stringify(specifier)} has no generated import expression`)
+        }
+        for (const match of matches) {
+          transformed.overwrite(match.index!, match.index! + match[0].length, `require.async(${JSON.stringify(specifier)})`)
+        }
+      }
+      return transformed.hasChanged()
+        ? { code: transformed.toString(), map: transformed.generateMap({ hires: true }) }
+        : null
+    },
+  }
+}
 
 /**
  * 自包含构建：两个面各产出自己的产物，消费方安装时无需执行构建脚本。
@@ -63,17 +105,22 @@ export default defineConfig([
         '@deepseek-ai/dsh-client-locale/client',
         '@deepseek-ai/dsh-client-ui-slots',
         '@deepseek-ai/dsh-client-ui-sidebar-right/client',
-        // A-6 体积外置：画布依赖（React Flow 12 + @xyflow/system + d3-* 闭包）由
-        // 宿主平台模块表在运行时提供，插件产物不再内联它。宿主侧条目见
-        // @deepseek-ai/dsh-client-web 的 PLATFORM_MODULES（fork A-6）。
-        '@xyflow/react',
       ].some(requested => id === requested || id.startsWith(`${requested}/`)),
       // 其余一律内联（插件自己的依赖）
       alwaysBundle: (id: string) => !id.startsWith('node:'),
     },
+    plugins: [asyncChunkRequire()],
     outputOptions: {
       entryFileNames: '[name].js',
-      banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE_NAME)}, factory: (require) => {`,
+      // A-6 修订：界面（含 React Flow + d3 闭包）进包内 chunk，与入口**同目录**
+      // （宿主按"入口文件所在目录 + 文件名"取 chunk）。
+      chunkFileNames: 'client/client.[name].js',
+      // 入口与 chunk 同一条注册契约；chunk 多带 `chunk:` 字段（**裸文件名**，
+      // 宿主会拼成 `<包名>/<fileName>`），入口的键是包名本身。
+      banner: (chunk: { isEntry: boolean; fileName: string }) => {
+        const chunkName = JSON.stringify(chunk.fileName.slice(chunk.fileName.lastIndexOf('/') + 1))
+        return `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE_NAME)}, ${chunk.isEntry ? '' : `chunk: ${chunkName}, `}factory: (require) => {`
+      },
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     },

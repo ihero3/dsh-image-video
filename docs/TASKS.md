@@ -168,13 +168,10 @@
 
 ## 13. v1.0.0 发布轮（2026-10-23，A-6 / A-10 / P1）
 
-- [x] **A-6 画布依赖外置**｜跨仓（Harness 平台模块表 + 插件构建）｜**已完成**：`@xyflow/react`（连
-  `@xyflow/system` 与 `d3-*` 闭包）改由宿主 `PLATFORM_MODULES`/seed 提供，插件用
-  `dsh.client.external` 声明。入口产物 **834,204 → 427,182 B raw（−48.8%）**、gzip 180,161 → 89,276；
-  占外置前 +20% 预算 **83% → 43%**（B16 目标 ≤80% 达成）。基线重置为 427,503/89,329，另留 500 KB
-  绝对天花板（回退内联必红）。被否掉的懒加载 chunk 方案与回滚点：
-  `docs/A6-BUNDLE-EXTERNALIZE.md`。验证：`build:lib:client` 全量通过 + 宿主 209 测试绿 +
-  `client-bundle` 三条断言绿｜R-NFR-1、R-NFR-3
+- [x] **A-6 体积改造定稿：自包含 + 按需加载**｜插件｜**已完成**：入口拆成注册壳（44,782 B）
+  + 界面 chunk（793,139 B，含 React Flow 连 d3 闭包，首次打开工作台才下载）；入口 **−94.6%**、
+  总产物仅 +0.4%；**宿主零改动**（不再要求 `@xyflow/react` 平台词，装到任意 DSH 都有画布）。
+  否决方案与根因记录见 `docs/A6-BUNDLE-EXTERNALIZE.md`｜R-NFR-1、R-NFR-3
 - [x] **A-10 模型流重试恢复**｜宿主 profile（用户态配置）｜**已完成**：真问题不是插件没挂
   （`@deepseek-ai/dsh-llm-retry` 早在 base bundle 且未禁用），而是 profile 的 `retryPolicy` 段丢失
   → 回落到框架默认（5 次/500ms）。按 fork 台账 **R26** 恢复 `normal` + 8 次 + 退避 1s→20s；

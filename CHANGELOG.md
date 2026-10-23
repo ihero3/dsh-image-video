@@ -8,15 +8,16 @@
 模块表，插件入口产物减半以上；同时补齐示例项目包、3 分钟演示脚本与数据迁移说明，
 把「能跑」升级成「能交付」。
 
-- **A-6 体积外置（宿主模块表）**：`@xyflow/react`（含 `@xyflow/system` + `d3-*` 闭包）
-  不再内联进客户端产物，改由宿主 `@deepseek-ai/dsh-client-web` 的 `PLATFORM_MODULES`
-  统一提供，插件在 `dsh.client.external` 声明该外部依赖。
-  - 入口产物 raw **834,204 → 427,503 B（−48.8%）**、gzip **180,161 → 89,329 B（−50.4%）**；
-    占外置前的 +20% 预算（1,001,045 / 216,193）自 **83% → 43% / 41%**（B16 目标 ≤80% 达成）。
-  - 体积基线随之**重置**为 427,503 / 89,329，另留 500 KB 绝对天花板——回退内联必红
-    （方案与被否掉的懒加载替代见 `docs/A6-BUNDLE-EXTERNALIZE.md`）。
-  - 守门：`tests/client-bundle.test.ts` 新增两条断言——产物必须 `require("@xyflow/react")`、
-    不得把 React Flow 内联回来，且入口硬天花板 400 KB。
+- **A-6 体积改造定稿：自包含 + 按需加载（宿主零改动）**：入口只做注册（**44,782 B / 15,013 gzip**），
+  整套界面（含 `@xyflow/react` + `@xyflow/system` + `d3-*` 闭包）成为插件自己的包内 chunk
+  （`client.Workbench.js`，793,139 B），首次打开工作台时经 `require.async` 取。
+  入口相对改前 **−94.6%**，总产物仅 +0.4%（同一份库，改成按需）。
+  - 放弃"宿主平台模块表外置"（入口 427 KB 那条路）：那要求**每个宿主先加 `@xyflow/react` 词**，
+    否则第三方装了插件也没有画布——对"任意 DSH 可安装"不成立。
+  - 也否掉"入口 + 多个 chunk"：宿主 `require` 同步查表，取不到未 async 回的 chunk，共享模块被提升
+    成中间 chunk 就会整包 materialize 抛错；入口零界面依赖才彻底消除共享。
+  - 守门：`client-bundle.test.ts` 6 条（基线词/`require.async`/无内联/`dsh.client.external` 为空/chunk 注册/
+    chunk 自带 React Flow）；`check:bundle` 改为**同时守入口与总产物**。
 - **A-10 模型流重试恢复（宿主侧）**：真问题不是"没挂插件"——`@deepseek-ai/dsh-llm-retry`
   早已在 base bundle 且未被禁用（它本身无配置，`retryPolicy` 挂在各 provider 上）——
   而是 **profile 里那段 `retryPolicy` 配置丢了**，于是回落到框架默认（5 次/500ms 起）。

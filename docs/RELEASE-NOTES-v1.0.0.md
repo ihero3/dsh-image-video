@@ -8,30 +8,27 @@
 这一版把**画布依赖从插件产物里搬到了宿主平台模块表**：入口产物从 87% 预算落到 39%，
 同时补齐示例项目包、3 分钟演示脚本和数据迁移说明——「能跑」升级为「能交付」。
 
-## 1. 体积外置（本版核心）
+## 1. 体积改造（本版核心）：自包含 + 按需加载
 
-**做法**：`@xyflow/react`（连它的 `@xyflow/system` 与 `d3-*` 传递闭包）不再内联进
-`lib/client/plugin.js`，改由宿主 `@deepseek-ai/dsh-client-web` 的 `PLATFORM_MODULES`
-统一提供一次性模块；插件在 `package.json` 的 `dsh.client.external` 里声明该外部依赖，
-构建期按模块表外置、运行期由加载器的模块表应答 `require("@xyflow/react")`。
+**做法（v1.0.0 定稿）**：插件入口只做注册（44.8 KB），整套界面——含 `@xyflow/react`（React Flow +
+`d3-*` 闭包）——打包成**插件自己的包内 chunk**，首次打开工作台时经宿主的 `require.async` 按需取。
 
-| 口径 | 0.3.77（外置前，A-8 实测基线） | 1.0.0（外置后） | 变化 |
+| 口径 | 改前（全部内联进入口） | v1.0.0 | 变化 |
 | --- | --- | --- | --- |
-| raw | 834,204 B | **427,503 B** | −406,701 B（−48.8%） |
-| gzip | 180,161 B | **89,329 B** | −90,832 B（−50.4%） |
-| 占**旧**预算（1,001,045 / 216,193） | 83% | **43% / 41%** | B16 目标 ≤80% ✅ |
+| 入口 `lib/client/plugin.js` | 834,204 B / 180,161 B(gz) | **44,782 B / 15,013 B(gz)** | −94.6% / −91.7% |
+| 包内 chunk（打开工作台才下载） | — | 793,139 B / 166,771 B(gz) | 新增 |
+| 总产物 | 834,204 B | 837,921 B | +0.4%（同一份库，改成按需） |
 
-基线与门禁一并收紧：本版起 `BUNDLE_BASELINE = 427,503 / 89,329`（预算 = +20% =
-513,004 / 107,195），并保留 500 KB 的**绝对**天花板——回退内联（≈ +400 KB）两条都会红。
-
-- 原因不是「删了功能」，而是体积主体本来就不是插件自有代码：画布必需的 React Flow + d3
-  闭包约 430 KB raw（分析见 [`A6-BUNDLE-EXTERNALIZE.md`](./A6-BUNDLE-EXTERNALIZE.md)：
-  现状实测、被否掉的懒加载方案、回滚点都在里面）。
-- **宿主侧要求**：宿主必须是带 A-6 平台词的版本（`PLATFORM_MODULES` 含 `@xyflow/react`，
-  seed 提供真实实例）。旧宿主会看到加载器报 `require("@xyflow/react") missed the module table`
-  ——这是**明确报错**，不是静默降级。
-- 守门（`tests/client-bundle.test.ts`）新增三条断言：产物必须 `require("@xyflow/react")`、
-  不得把 React Flow 内联回来、入口有 500 KB 硬天花板。数字可以被讨论，根因不能被改回去。
+- **宿主零改动、插件自包含**：装到**任何** DSH（含上游原版）都有画布，不要求宿主先加平台词、
+  也不需要为插件升级宿主。这是本版放弃"宿主模块表外置"方案的原因（那条路要求用户先换宿主，
+  第三方安装者会直接没有画布）。
+- **为什么不做"入口 + 多个 chunk"**：宿主的 `require` 是**同步查表**，取不到尚未 `require.async`
+  回来的 chunk；入口与 chunk 一旦有共享模块，rolldown 会提升出中间 chunk → 整包 materialize 抛错。
+  所以入口做成"零界面依赖"，共享问题从根上消失。
+- 守门：`tests/client-bundle.test.ts` 6 条断言（入口只请求宿主基线词、入口内是
+  `require.async("./client.Workbench.js")`、入口无 `react-flow__` 且 <120 KB、`dsh.client.external` 为空、
+  chunk 以 `<包名>/client.Workbench.js` 注册、chunk 自带 React Flow）；`check:bundle` **同时守
+  入口与总产物**两个口径。
 
 ## 2. 模型流重试恢复（宿主侧改动）
 
@@ -75,13 +72,13 @@
 | --- | --- |
 | 工作台数据 `schemaVersion` | 1→4 自动迁移（只升不降；比插件新的数据会明确拒绝并提示） |
 | 项目包 `formatVersion` | 支持 1..3 导入；本版导出 3 |
-| 旧宿主（无 A-6 平台词） | **不兼容**：画布会在加载器处明确报错。宿主与本版需成对升级 |
+| 旧宿主 / 上游原版宿主 | **兼容**：插件自包含（界面走包内 chunk），不要求宿主新增任何平台词 |
 | 宿主：插件对 | 插件仍只依赖稳定的客户端服务（connection / locale / slots / sidebar-right），无新增服务依赖 |
 
 ## 6. 发布前验收清单
 
 - [x] `pnpm run build` 产出 `lib/**`，`lib/index.js` 里 `PLUGIN_VERSION = "1.0.0"`
-- [x] `pnpm run check:bundle` 通过（43% / 41% 旧预算；基线已重置为 427,503 / 89,329）
+- [x] `pnpm run check:bundle` 通过：入口 44,782 B / 预算 53,736 B（83%）；总产物 837,921 B / 预算 1,005,504 B（83%）
 - [x] `pnpm run typecheck` 退出码 0（宿主 + 客户端两个 tsconfig）
 - [x] `npx vitest run`：**822 passed / 5 skipped**，144 个套件通过、0 失败
 - [x] 宿主侧：`base.spec.ts` / `client/modules` / `client/web` 共 **209 passed**，`build:lib:client` 全量构建通过
@@ -121,8 +118,8 @@
 | 检查 | 结果 |
 | --- | --- |
 | `GET /image-video/status` | `version: 1.0.0`（宿主新进程，端口随机为 63924） |
-| 启动图里的插件行 | `external: ["@xyflow/react"]`（新的外置声明已生效） |
-| 拉取插件产物 | HTTP 200、408,032 B、含 `require("@xyflow/react")` |
+| 启动图里的插件行 | `external` 为空（插件自包含，不向宿主索要平台词） |
+| 拉取插件产物 | HTTP 200；入口含 `require.async("./client.Workbench.js")` |
 | 工作台挂载 | 595 个 `iv-*` 节点、7 个面板（画布/体检/素材/预览/资源/任务/诊断） |
 | **画布真机渲染** | 切「专业工作流」后 **5 个 `.react-flow__node` + 2 条边 + 1 个 viewport** 全部渲染 → **React Flow 确实由宿主模块表供给**，控制台无 `missed the module table` |
 

@@ -48,9 +48,6 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-ui-renderer"
-      ],
-      "external": [
-        "@xyflow/react"
       ]
     }
   },
@@ -82,8 +79,7 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-credentials": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-llm": "^0.2.1-alpha.1",
-    "@deepseek-ai/dsh-tools": "^0.2.1-alpha.1",
-    "@xyflow/react": "12.12.0"
+    "@deepseek-ai/dsh-tools": "^0.2.1-alpha.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -139,6 +135,7 @@
     "@vitest/coverage-v8": "4.1.11",
     "@xyflow/react": "12.12.0",
     "jsdom": "^30.1.2",
+    "magic-string": "0.30.21",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",

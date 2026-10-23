@@ -6,24 +6,29 @@
  */
 
 /**
- * 基线（于 `lib/client/plugin.js` 实测）与 +20% 预算。
+ * 体积口径（A-6 修订版：自包含 + 包内惰性 chunk）。
  *
- * 2026-10-16 首次可发布：raw 548,282 / gzip 121,161。
- * 2026-10-19 抬基线：同事 B 的 B1–B13 界面工作（达芬奇风格样式表、图标集、统一轮询/虚拟列表/
- * 错误边界/导出面板/a11y）带来真实增量 → raw 682,374 / gzip 151,212（+24%）。
- * 2026-10-22 抬基线：Track B Round 2/3 的新面板（融合生图 / 提示词库 / 素材体检 / 生成结果卡片 /
- * 时间轴逐段预览 / 打磨）＋ Track A 的 A-1/A-2/A-3/A-4/A-5/A-9 客户端契约 →
- * raw 834,204 / gzip 180,161（+22%）。同样是**功能性增长**：A-6（React Flow/d3 外置到宿主模块表）
- * 未落地前，客户端必须自包含这些画布依赖，无法在本插件内部减肥（方案见 docs/A6-BUNDLE-EXTERNALIZE.md）。
- * 2026-10-22 **A-6 外置后重置基线**：画布依赖（`@xyflow/react` 连 `@xyflow/system` + `d3-*` 闭包）
- * 改由宿主平台模块表提供 → 入口回落到 raw 427,503 / gzip 89,329（相对上一基线 −48.8% / −50.4%）。
- * 这里**必须**跟着往下重置：否则有人把 React Flow 内联回来时，产物（≈834 KB）仍在上一条
- * 1,001,045 的预算内，门禁就形同虚设。硬天花板另见 `tests/client-bundle.test.ts`。
+ * 两个都要守，缺一不可：
+ * - **入口 `lib/client/plugin.js`**：用户打开工作台之前就要下载的那份（现在只做注册，~45 KB）；
+ * - **总产物**（入口 + `lib/client/client.*.js` 全部 chunk）：首屏 + 首次打开工作台的完整代价。
+ *
+ * 历史基线：
+ * 2026-10-16 首次可发布 raw 548,282 / gzip 121,161；
+ * 2026-10-19 B1–B13 界面工作 → 682,374 / 151,212；
+ * 2026-10-22 A-7/A-8 生产线与分镜 → 834,204 / 180,161（这是"把 React Flow 内联进入口"时的值）；
+ * 2026-10-23 **A-6 修订**：入口拆成注册壳、界面（含 React Flow）进包内 chunk →
+ *   入口 44,780 / 15,010，总量 837,920 / 181,780。**总量没变**（同一个库，只是改成按需下载），
+ *   但初始加载从 834 KB 降到 45 KB；且不再依赖宿主平台词（装到任何 DSH 都有画布）。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 427_503, gzip: 89_329 })
+export const BUNDLE_BASELINE = Object.freeze({ raw: 44_780, gzip: 15_010 })
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 837_920, gzip: 181_780 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),
+})
+export const BUNDLE_TOTAL_BUDGET = Object.freeze({
+  raw: Math.round(BUNDLE_TOTAL_BASELINE.raw * 1.2),
+  gzip: Math.round(BUNDLE_TOTAL_BASELINE.gzip * 1.2),
 })
 
 /**

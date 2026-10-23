@@ -24,7 +24,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: the slot declarations this file registers against.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { createWorkbenchApi } from './api.ts'
-import { Workbench, type WorkbenchInjected } from './Workbench.tsx'
+import type { WorkbenchInjected } from './Workbench.tsx'
+import { WorkbenchSeat } from './WorkbenchSeat.tsx'
 import { NS, en, zh, type WorkbenchLocaleKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -68,7 +69,7 @@ export function apply(ctx: ClientContext): void {
     key: WORKBENCH_TAB_ID,
     locale: NS,
     inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND, api: createWorkbenchApi(requireConnection(ctx)) }),
-  }, Workbench))
+  }, WorkbenchSeat))
 }
 
 /**

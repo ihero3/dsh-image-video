@@ -61,3 +61,44 @@ chunk 的共享模块（样式表、图标）会被 rolldown 提升成共享 chu
 
 **回滚点**（与本文一致）：去掉 `neverBundle` 的 `@xyflow/react` 与 `dsh.client.external` 两处、
 移除宿主 `PLATFORM_MODULES`/`seed` 的表项，重建即可（会回到 83% 预算，功能不变）。
+
+---
+
+## 最终修订（2026-10-23）：改为「插件自包含 + 包内惰性 chunk」，宿主零改动
+
+上一节落的"宿主平台模块表提供 `@xyflow/react`"**已被否决并回退**。原因不是技术不可行，而是分发前提不成立：
+
+> 插件要能装到**任意** DSH（包括上游原版宿主）。要求宿主先有 `@xyflow/react` 平台词，
+> 等于"第三方用户装了我们的插件却没有画布"——这是坏体验，也违背插件自包含的分发原则。
+
+### 最终做法
+
+1. **入口只做注册**（`src/client/WorkbenchSeat.tsx`）：`lazy(() => import('./Workbench.tsx'))`，
+   入口静态依赖只剩宿主基线词（react / react-dom / jsx-runtime / cordis 服务）；
+2. **界面成为一个包内 chunk**：`chunkFileNames: 'client/client.[name].js'`，构建期把
+   `Promise.resolve().then(() => require('./client.Workbench.js'))` 改写成
+   `require.async('./client.Workbench.js')`（`tsdown.config.ts` 的 `asyncChunkRequire` 插件，
+   用 magic-string 保 sourcemap）；
+3. **chunk 注册**：banner 带 `chunk: "<裸文件名>"`，宿主按 `<包名>/<fileName>` 记账并按
+   `/plugins/<包名>/<fileName>?rev=…` 取文件（入口同目录）。
+
+### 为什么这次能成、上一版懒加载却失败
+
+上一版失败在"入口与 chunk **共享模块**（样式表、图标）被 rolldown 提升成中间 chunk，入口同步
+`require` 取不到"。这次把**入口做成零界面依赖**——所有共享都发生在 chunk 内部，天然不存在中间
+chunk。这是关键差异，不是运气。
+
+### 实测
+
+| 口径 | 改前 | 改后 | 变化 |
+| --- | --- | --- | --- |
+| 入口 | 834,204 B / 180,161 gz | **44,782 B / 15,013 gz** | −94.6% / −91.7% |
+| chunk | — | 793,139 B / 166,771 gz | 按需 |
+| 总计 | 834,204 B | 837,921 B | +0.4% |
+
+### 沿用/新增的契约
+
+- **沿用**：宿主的 `require.async` + 包内 chunk 路由（`packages/client/modules` 早已内置并有测试），
+  本次**没有新增任何宿主契约**；
+- **新增**：插件侧 `client-bundle.test.ts` 6 条断言 + `check:bundle` 双口径（入口 / 总产物）。
+
