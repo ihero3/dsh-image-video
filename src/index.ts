@@ -56,6 +56,7 @@ import { RenderRegistry } from './media/render-registry.ts'
 import { planRetention } from './media/retention.ts'
 import { listOutputs } from './workbench/outputs.ts'
 import { RenderService } from './media/render.ts'
+import { createTtsProvider, ttsAvailability } from './media/tts.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -358,6 +359,8 @@ export function apply(ctx: Context, config: Config): void {
       runner: workflowRunner, renders: renderRegistry,
       // `A145`：工作台内直接生成复用同一对工具（参数语义/计费/账本一致）
       generate: { image: proxyTool('image'), video: proxyTool('video') },
+      // `P0-1`：配音应用层（计划可用；合成等 TTS 接口联调，未接入时端点明确拒绝）
+      voice: { availability: () => ttsAvailability(config.tts), provider: createTtsProvider(config.tts) },
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,

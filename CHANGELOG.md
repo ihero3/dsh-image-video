@@ -2,6 +2,20 @@
 
 （下一轮的改动写这里）
 
+### 批次七十（P0-1 配音应用层：契约先定，接口后接）
+- **TTS 契约**（`src/media/tts.ts`）：`TtsProvider`（`listVoices` / `synthesize`）+ 可用性视图 +
+  `TtsNotReadyError`（机器码 `tts/not-ready`）。**未接入时绝不假装成功**——接口联调通过后只换 provider 实现。
+- **配置**：插件配置新增 `tts` 段（provider/apiKey/apiKeyEnv/baseURL/model/defaultVoice/voices），
+  空配置即"没接 TTS"；填入音色后界面可先列音色。
+- **端点**：`voice/status`（可用性 + 原因）、`voice/plan`（**字幕 → 配音计划**：逐句台词/字数/估算时长/
+  与字幕槽位不匹配的提醒；零花费只读）、`voice/synthesize`（未接入时明确拒绝并给可操作原因）。
+- **时长估算**（`src/workbench/voice.ts`）：中文 4.5 字/秒、英文 2.6 词/秒；标点不计字数；
+  长于槽位 20% / 短于 60% 给逐句提醒（避免成片"挤压下一句"或"留白"）。
+- **界面**：时间轴面板新增「配音」卡片——状态（可用/未接入 + 原因）、生成计划、逐句预览、
+  「生成配音」在接口上线前禁用；接口上线后一行不用改（`status.available` 变 true 即可点）。
+- 测试：`tests/workbench-voice.test.ts` 7 条（估算/计划/可用性/端点拒绝）+ `client-voice-card.test.tsx`
+  3 条（未接入禁用/计划渲染/失败可读）；`docs/API-SURFACE.md` 补三个端点。
+
 ### 批次六十九（P0-2 一键成片）
 - **剧本 → 分镜 →（生图）→ 生视频 一条命令跑通**：新增 `pipelines/compose`（只编排、零花费）
   与 `pipelines/run`（编排并起跑）两个端点；编排纯函数 `src/workbench/pipeline.ts` 复用 A-7 的

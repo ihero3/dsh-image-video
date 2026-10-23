@@ -446,6 +446,15 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotsCount'
   | 'pipelineWarnings'
   | 'pipelineNeedsProject'
+  | 'voiceTitle'
+  | 'voiceHint'
+  | 'voicePlan'
+  | 'voicePlanning'
+  | 'voiceLines'
+  | 'voiceChars'
+  | 'voiceEstimate'
+  | 'voiceGenerate'
+  | 'voiceNotReady'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -472,6 +481,15 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotsCount: 'shots',
   pipelineWarnings: 'Note',
   pipelineNeedsProject: 'Create or pick a project first',
+  voiceTitle: 'Dub (voice-over)',
+  voiceHint: 'Turn the subtitle track into a dub plan: lines, characters and estimated duration. Synthesis turns on once the TTS API is live.',
+  voicePlan: 'Build dub plan',
+  voicePlanning: 'Planning…',
+  voiceLines: 'lines',
+  voiceChars: 'chars',
+  voiceEstimate: 'estimated',
+  voiceGenerate: 'Synthesize',
+  voiceNotReady: 'Not available yet',
   projectNone: 'No project yet',
   saveSaved: 'Saved',
   saveSaving: 'Saving…',
@@ -924,6 +942,15 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotsCount: '个分镜',
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个项目',
+  voiceTitle: '配音（旁白）',
+  voiceHint: '把字幕轨变成配音计划：台词、字数、估算时长一目了然。TTS 接口联调通过后即可一键生成。',
+  voicePlan: '生成配音计划',
+  voicePlanning: '计算中…',
+  voiceLines: '句',
+  voiceChars: '字',
+  voiceEstimate: '预计',
+  voiceGenerate: '生成配音',
+  voiceNotReady: '暂不可用',
   projectNone: '还没有项目',
   saveSaved: '已保存',
   saveSaving: '保存中…',

@@ -127,6 +127,9 @@
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
 | `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources}}` —— **只编排不跑**（零花费；`P0-2`） |
 | `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
+| `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?}}` —— 配音可用性（TTS 未接入时 `available:false` + 原因；`P0-1`） |
+| `voice/plan` | `{timelineId}` | `{plan: {lines:[{clipId,text,chars,slotMs,estimatedMs,warning?}], totalChars, estimatedMs, warnings}, voice}` —— 字幕→配音计划（零花费、只读） |
+| `voice/synthesize` | `{text, voiceId?}` | `{audio:{audioPath,bytes,durationMs}}` —— TTS 未接入时**明确拒绝**（`tts/not-ready` + 可操作原因） |
 
 ### 时间轴与导出
 

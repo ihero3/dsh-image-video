@@ -2,6 +2,40 @@ import z from "@deepseek-ai/schemastery";
 import { ContextFormed } from "@deepseek-ai/dsh-llm";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { IncomingMessage, ServerResponse } from "node:http";
+//#region src/media/tts.d.ts
+/**
+ * TTS 接入点（`P0-1` 应用层）：**契约先定、实现等接口**。
+ *
+ * owner 口径（2026-10-23）：Threerouter 后续会提供 TTS 服务，调用方式与生图/生视频一致；
+ * 接口联调通过前，先把应用层做完 —— 也就是"谁能念、念什么、多久、错了怎么说"。
+ *
+ * 因此本模块只做三件事：
+ * 1. 定义 provider 的**唯一契约**（接入时只实现这一个接口，别处不改）；
+ * 2. 给出**可用性视图**（未配置/未接入 → 明确原因，界面照着显示）；
+ * 3. 未接入时**绝不假装成功**：`synthesize` 抛带机器码的可操作错误。
+ *
+ * @module dsh-image-video/media/tts
+ */
+/** 一个可选音色。 */
+interface TtsVoice {
+  readonly id: string;
+  readonly name: string;
+  /** BCP-47 语言码（如 `zh-CN` / `en-US`），用于界面筛选。 */
+  readonly languages?: string[];
+  readonly gender?: 'female' | 'male' | 'neutral';
+}
+/** 插件配置里的 `tts` 段（字段与 schema 输出一一对应；空值 = 没接 TTS）。 */
+interface TtsSettings {
+  readonly provider: 'threerouter';
+  readonly apiKey: string;
+  readonly apiKeyEnv: string;
+  readonly baseURL: string;
+  readonly model: string;
+  readonly defaultVoice: string;
+  /** 音色清单：接口上线前由配置提供；上线后可改为远端拉取。 */
+  readonly voices: TtsVoice[];
+}
+//#endregion
 //#region src/config.d.ts
 /** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threerouter 为聚合器（所有模型）。 */
 type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance';
@@ -100,6 +134,11 @@ interface Config {
   outputsDir: string;
   /** 图片最终结果的品牌水印后处理。 */
   watermark: WatermarkConfig;
+  /**
+   * TTS 配音（`P0-1` 应用层）：**空配置表示"没接 TTS"**（schema 会给一份空默认值，
+   * 所以这里不是 optional）。接口联调通过前，填音色/模型可先让计划与音色列表可读；合成仍会明确拒绝。
+   */
+  tts: TtsSettings;
 }
 /** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
 declare const Config: z<Config>;

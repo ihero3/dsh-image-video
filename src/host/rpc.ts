@@ -11,6 +11,8 @@
  */
 import { planStoryboard } from '../workbench/storyboard.ts'
 import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
+import { planDub } from '../workbench/voice.ts'
+import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
@@ -125,6 +127,11 @@ export interface WorkbenchRpcDeps {
   probeCache?: { get: (file: string) => Promise<{ width?: number; height?: number; fps?: number; durationMs?: number; hasAudio: boolean } | undefined> }
   /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
   readonly diagnostics?: { snapshot: () => { errors: readonly unknown[]; errorCount: number } }
+  /**
+   * TTS 配音（`P0-1` 应用层）：缺省表示宿主没装配 TTS（`voice/status` 会说明原因）。
+   * 接口联调通过后只需换掉 `provider` 的实现，端点与界面不变。
+   */
+  readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
   /** 默认值编辑器的可选项；缺省时不带该字段。 */
@@ -505,6 +512,34 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const workflow = await deps.store.findWorkflow(pipeline.workflowId)
       if (workflow === undefined) throw new Error(`unknown workflow: ${pipeline.workflowId}`)
       return { pipeline, run: await deps.runner.begin(workflow) }
+    }
+    // ---- 配音（`P0-1` 应用层）：计划/时长估算现在可用，合成等 TTS 接口联调 ----------
+    case 'voice/status': {
+      return { voice: deps.voice?.availability() ?? ttsAvailability(undefined) }
+    }
+    case 'voice/plan': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      return {
+        plan: planDub(timeline),
+        voice: deps.voice?.availability() ?? ttsAvailability(undefined),
+      }
+    }
+    case 'voice/synthesize': {
+      // 未接入时**绝不假装成功**：给机器码 + 可操作原因（界面直接展示）
+      const voice = deps.voice
+      const availability = voice?.availability() ?? ttsAvailability(undefined)
+      if (voice === undefined || !availability.available) {
+        throw new TtsNotReadyError(availability.reason ?? 'TTS 服务未配置')
+      }
+      const spoken = text(payload, 'text')
+      const voiceId = optionalText(payload, 'voiceId')
+      const audio = await voice.provider.synthesize({
+        text: spoken,
+        ...voiceId === undefined ? {} : { voiceId },
+      })
+      return { audio }
     }
     // 时间轴一致性校验（`A34`）：可传 timelineId，也可直接传一份未保存的 document 做保存前预检
     case 'timelines/validate': {

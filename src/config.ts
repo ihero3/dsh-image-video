@@ -60,6 +60,8 @@ export interface WatermarkConfig {
   glowBlurRatio: number
 }
 
+import type { TtsSettings } from './media/tts.ts'
+
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
@@ -108,6 +110,11 @@ export interface Config {
   outputsDir: string
   /** 图片最终结果的品牌水印后处理。 */
   watermark: WatermarkConfig
+  /**
+   * TTS 配音（`P0-1` 应用层）：**空配置表示"没接 TTS"**（schema 会给一份空默认值，
+   * 所以这里不是 optional）。接口联调通过前，填音色/模型可先让计划与音色列表可读；合成仍会明确拒绝。
+   */
+  tts: TtsSettings
 }
 
 /** 服务商凭证 schema，复用于 threerouter/wanx/minimax/seedance。apiKey 可空（未激活的 provider 留空）。 */
@@ -160,6 +167,23 @@ export const Config: z<Config> = z.object({
     glowColor: '#ffffff',
     glowBlurRatio: 0.18,
   }).description('图片最终结果的品牌水印后处理（内存内合成，只落盘最终图）'),
+  tts: z.object({
+    provider: z.union(['threerouter']).default('threerouter').description('TTS 服务商（当前仅 threerouter，接口待联调）'),
+    apiKey: z.string().default('').description('TTS 服务的 API Key；留空走凭证引用或环境变量'),
+    apiKeyEnv: z.string().role('credential-ref').default('THREEROUTER_TTS_API_KEY').description('TTS API Key 的凭证引用名'),
+    baseURL: z.string().default('').description('TTS 接口地址，留空使用服务商默认'),
+    model: z.string().default('').description('TTS 模型名，留空使用服务商默认'),
+    defaultVoice: z.string().default('').description('默认音色 id'),
+    voices: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      languages: z.array(z.string()).default([]),
+      gender: z.union(['female', 'male', 'neutral']).default('neutral'),
+    })).default([]).description('可选音色清单（接口上线前由配置提供）'),
+  }).default({
+    provider: 'threerouter', apiKey: '', apiKeyEnv: 'THREEROUTER_TTS_API_KEY',
+    baseURL: '', model: '', defaultVoice: '', voices: [],
+  }).description('TTS 配音（P0-1）：空配置表示未接入；填入音色/模型后可预览配音计划'),
 })
 
 /**

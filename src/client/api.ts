@@ -172,6 +172,42 @@ export interface AssetProjectStats {
   readonly topShare: number
 }
 
+/** 音色（`P0-1`）：接口上线前来自配置，上线后来自服务商。 */
+export interface VoiceProfile {
+  readonly id: string
+  readonly name: string
+  readonly languages?: string[]
+  readonly gender?: 'female' | 'male' | 'neutral'
+}
+
+/** 配音可用性（`voice/status`）。 */
+export interface VoiceStatus {
+  readonly available: boolean
+  readonly provider: string
+  readonly reason?: string
+  readonly voices: readonly VoiceProfile[]
+  readonly defaultVoice?: string
+  readonly model?: string
+}
+
+/** 一条配音行（与字幕片段一一对应）。 */
+export interface DubLineView {
+  readonly clipId: string
+  readonly text: string
+  readonly chars: number
+  readonly slotMs: number
+  readonly estimatedMs: number
+  readonly warning?: string
+}
+
+/** 配音计划（`voice/plan`，零花费）。 */
+export interface DubPlanView {
+  readonly lines: readonly DubLineView[]
+  readonly totalChars: number
+  readonly estimatedMs: number
+  readonly warnings: readonly string[]
+}
+
 /** 一键流水线入参（`P0-2`）：剧本 + 可选编排参数。 */
 export interface PipelineRunInput {
   readonly projectId: string
@@ -377,6 +413,12 @@ export interface WorkbenchApi {
   /** 一键流水线：把剧本编排成工作流（只落库、不起跑）。 */
   composePipeline: (input: PipelineRunInput) => Promise<PipelineResult>
   /** 一键流水线：编排并立刻起跑（剧本 → 分镜 → 生图 → 生视频）。 */
+  /** 配音可用性：未接入 TTS 时 `available: false` + 可读原因。 */
+  voiceStatus: () => Promise<VoiceStatus>
+  /** 从时间轴字幕生成配音计划（零花费；只读）。 */
+  voicePlan: (timelineId: string) => Promise<{ plan: DubPlanView; voice: VoiceStatus }>
+  /** 合成一句配音（接口未接入时抛可操作错误）。 */
+  voiceSynthesize: (input: { text: string; voiceId?: string }) => Promise<{ audio: { audioPath: string; bytes: number; durationMs: number } }>
   runPipeline: (input: PipelineRunInput) => Promise<{ pipeline: PipelineResult; run: WorkflowRunRecord }>
   /** Run records for a project (optionally one workflow), newest first. */
   listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>
@@ -468,6 +510,9 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     composePipeline: input =>
       call<{ pipeline: PipelineResult }>('pipelines/compose', input).then(result => result.pipeline),
     runPipeline: input => call<{ pipeline: PipelineResult; run: WorkflowRunRecord }>('pipelines/run', input),
+    voiceStatus: async () => (await call<{ voice: VoiceStatus }>('voice/status', {})).voice,
+    voicePlan: input => call<{ plan: DubPlanView; voice: VoiceStatus }>('voice/plan', { timelineId: input }),
+    voiceSynthesize: input => call<{ audio: { audioPath: string; bytes: number; durationMs: number } }>('voice/synthesize', input),
     listRuns: async (projectId, workflowId) =>
       (await call<{ runs: WorkflowRunRecord[] }>('workflows/runs', { projectId, workflowId })).runs,
     cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,

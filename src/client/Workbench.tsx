@@ -33,6 +33,7 @@ import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import { VirtualList } from './VirtualList.tsx'
 import { PaneBoundary } from './PaneBoundary.tsx'
 import { PipelineCard } from './PipelineCard.tsx'
+import { VoiceCard } from './VoiceCard.tsx'
 import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
@@ -2547,6 +2548,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ? (
                 <section className="iv-pane" data-workbench-pane="paneTimeline" data-workbench-planned="false">
                   <PaneBoundary label={t('timelineTitle')} t={t}>
+                  <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="film" size={13} /></span>
                     <h3 className="iv-pane-title">{t('timelineTitle')}</h3>
