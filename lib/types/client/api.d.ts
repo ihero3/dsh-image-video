@@ -185,6 +185,29 @@ export interface AssetProjectStats {
     readonly projects: readonly AssetProjectStat[];
     readonly topShare: number;
 }
+/** 一键流水线入参（`P0-2`）：剧本 + 可选编排参数。 */
+export interface PipelineRunInput {
+    readonly projectId: string;
+    readonly script: string;
+    readonly mode?: 'image-to-video' | 'text-to-video';
+    readonly shots?: number;
+    readonly imageModel?: string;
+    readonly videoModel?: string;
+    readonly ratio?: string;
+    readonly duration?: number;
+    readonly strictResources?: boolean;
+    readonly styleNote?: string;
+}
+/** 一键流水线编排结果（已落库的工作流 + 诊断）。 */
+export interface PipelineResult {
+    readonly workflowId: string;
+    readonly name: string;
+    readonly mode: string;
+    readonly shots: number;
+    readonly nodes: number;
+    readonly warnings: readonly string[];
+    readonly missingResources: readonly string[];
+}
 export interface WorkbenchApi {
     /** Host facts (version, provider, output directory). */
     health: () => Promise<WorkbenchHealth>;
@@ -399,6 +422,13 @@ export interface WorkbenchApi {
     compactAssets: () => Promise<number>;
     /** Start a run of the stored workflow. `only` limits the run to those nodes and their downstream (B4 single-node run). */
     runWorkflow: (workflowId: string, only?: readonly string[]) => Promise<WorkflowRunRecord>;
+    /** 一键流水线：把剧本编排成工作流（只落库、不起跑）。 */
+    composePipeline: (input: PipelineRunInput) => Promise<PipelineResult>;
+    /** 一键流水线：编排并立刻起跑（剧本 → 分镜 → 生图 → 生视频）。 */
+    runPipeline: (input: PipelineRunInput) => Promise<{
+        pipeline: PipelineResult;
+        run: WorkflowRunRecord;
+    }>;
     /** Run records for a project (optionally one workflow), newest first. */
     listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>;
     /** Cancel a running workflow run. */

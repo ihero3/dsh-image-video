@@ -32,6 +32,7 @@ import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import { VirtualList } from './VirtualList.tsx'
 import { PaneBoundary } from './PaneBoundary.tsx'
+import { PipelineCard } from './PipelineCard.tsx'
 import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
@@ -1947,6 +1948,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ? (
                 <section className="iv-pane">
                   <PaneBoundary label={t('modeQuick')} t={t}>
+                  <PipelineCard
+                    api={apiRef.current}
+                    t={t}
+                    projectId={activeProject?.id}
+                    onStarted={() => { setMode('workflow') }}
+                  />
                   <div className="iv-hero">
                     <div className="iv-hero-top">
                       <span className="iv-hero-ico"><Icon name="bolt" size={19} /></span>

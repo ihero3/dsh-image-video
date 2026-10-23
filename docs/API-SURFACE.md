@@ -125,6 +125,8 @@
 | `workflows/runs` | `{projectId,workflowId?}` | `{runs}` |
 | `workflows/run-cancel` | `{runId}` | `{cancelled}` |
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
+| `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources}}` —— **只编排不跑**（零花费；`P0-2`） |
+| `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
 
 ### 时间轴与导出
 

@@ -10,6 +10,7 @@
  * carries them without pulling in any host code.
  */
 import { planStoryboard } from '../workbench/storyboard.ts'
+import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
@@ -159,6 +160,69 @@ export function workbenchOptions(): WorkbenchOptions {
  * @param deps - handler dependencies.
  * @returns shared history instance.
  */
+/**
+ * 把「一键流水线」的编排请求变成一张已保存的工作流（`P0-2`）。
+ *
+ * 复用：分镜拆解 `planStoryboard`（A-7）+ 画布执行器；本函数只做装配与落库。
+ * 风格约束默认取项目里第一条 `style` 资源的 note（用户不用重复填）。
+ * @param deps - RPC 依赖（store 等）。
+ * @param payload - RPC 载荷（projectId / script / 选项）。
+ * @returns 已保存的工作流 id 与编排诊断。
+ * @throws {Error} 剧本为空、项目未知、或严格模式下缺物料。
+ */
+async function composePipeline(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+): Promise<{
+  workflowId: string
+  name: string
+  mode: string
+  shots: number
+  nodes: number
+  warnings: string[]
+  missingResources: string[]
+}> {
+  const projectId = text(payload, 'projectId')
+  const script = text(payload, 'script')
+  const resources = await deps.store.listResources(projectId)
+  const styleResource = resources.find(resource => resource.kind === 'style' && (resource.note ?? '') !== '')
+  const options: PipelineOptions = {
+    ...field(payload, 'mode') === 'text-to-video' ? { mode: 'text-to-video' as const } : field(payload, 'mode') === 'image-to-video' ? { mode: 'image-to-video' as const } : {},
+    ...optionalNumber(payload, 'shots') === undefined ? {} : { shots: optionalNumber(payload, 'shots') as number },
+    ...optionalText(payload, 'imageModel') === undefined ? {} : { imageModel: optionalText(payload, 'imageModel') as string },
+    ...optionalText(payload, 'videoModel') === undefined ? {} : { videoModel: optionalText(payload, 'videoModel') as string },
+    ...optionalText(payload, 'ratio') === undefined ? {} : { ratio: optionalText(payload, 'ratio') as string },
+    ...optionalNumber(payload, 'duration') === undefined ? {} : { duration: optionalNumber(payload, 'duration') as number },
+    ...field(payload, 'strictResources') === true ? { strictResources: true } : {},
+    ...optionalText(payload, 'styleNote') === undefined
+      ? styleResource?.note === undefined ? {} : { styleNote: styleResource.note }
+      : { styleNote: optionalText(payload, 'styleNote') as string },
+  }
+  const draft = planPipeline({
+    script,
+    options,
+    resources: resources.map(resource => ({
+      id: resource.id, kind: resource.kind, name: resource.name,
+      ...resource.note === undefined ? {} : { note: resource.note },
+    })),
+  })
+  const stored = await deps.store.saveWorkflow({
+    projectId,
+    name: draft.name,
+    nodes: draft.nodes,
+    edges: draft.edges,
+  })
+  return {
+    workflowId: stored.id,
+    name: stored.name,
+    mode: draft.mode,
+    shots: draft.diagnostics.shots,
+    nodes: draft.diagnostics.nodes,
+    warnings: [...draft.diagnostics.warnings],
+    missingResources: [...draft.diagnostics.missingResources],
+  }
+}
+
 function exportHistoryFor(deps: WorkbenchRpcDeps): ExportHistory {
   return new ExportHistory({ directory: dirname(deps.outputsDir) })
 }
@@ -429,6 +493,18 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const previous = await deps.store.findRun(runId)
       if (previous === undefined) throw new Error(`unknown run: ${runId}`)
       return { run: await deps.runner.retry(previous) }
+    }
+    // ---- 一键自动流水线（`P0-2`）：剧本 → 分镜 →（生图）→ 生视频 的编排与起跑 ----------
+    // 与画布同一套执行语义：这里只负责"把剧本编排成图"，执行仍走 `deps.runner`。
+    case 'pipelines/compose': {
+      const pipeline = await composePipeline(deps, payload)
+      return { pipeline }
+    }
+    case 'pipelines/run': {
+      const pipeline = await composePipeline(deps, payload)
+      const workflow = await deps.store.findWorkflow(pipeline.workflowId)
+      if (workflow === undefined) throw new Error(`unknown workflow: ${pipeline.workflowId}`)
+      return { pipeline, run: await deps.runner.begin(workflow) }
     }
     // 时间轴一致性校验（`A34`）：可传 timelineId，也可直接传一份未保存的 document 做保存前预检
     case 'timelines/validate': {

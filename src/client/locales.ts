@@ -429,6 +429,23 @@ export type WorkbenchLocaleKey =
   | 'segReplay'
   | 'segTotal'
   | 'segJump'
+  | 'pipelineTitle'
+  | 'pipelineHint'
+  | 'pipelineScriptLabel'
+  | 'pipelineScriptPlaceholder'
+  | 'pipelineModeImageToVideo'
+  | 'pipelineModeTextToVideo'
+  | 'pipelineShots'
+  | 'pipelineDuration'
+  | 'pipelineStrict'
+  | 'pipelineRun'
+  | 'pipelineRunning'
+  | 'pipelineStarted'
+  | 'pipelineCompose'
+  | 'pipelineComposed'
+  | 'pipelineShotsCount'
+  | 'pipelineWarnings'
+  | 'pipelineNeedsProject'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -438,6 +455,23 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   tabTitle: 'dsh-image-video workbench',
   guideDescription: 'Projects, media assets and generation tasks for image and video work.',
   sectionProject: 'Project',
+  pipelineTitle: 'One-click film: script → shots → image → video',
+  pipelineHint: 'Paste a script; the host splits it into shots and builds a runnable canvas chain for you.',
+  pipelineScriptLabel: 'Script',
+  pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
+  pipelineModeImageToVideo: 'Image → video',
+  pipelineModeTextToVideo: 'Text → video',
+  pipelineShots: 'Shots',
+  pipelineDuration: 'Seconds per shot',
+  pipelineStrict: 'Strict (registered roles/scenes required)',
+  pipelineRun: 'Run pipeline',
+  pipelineRunning: 'Running…',
+  pipelineStarted: 'Pipeline started',
+  pipelineCompose: 'Compose only (free)',
+  pipelineComposed: 'Pipeline saved (not started)',
+  pipelineShotsCount: 'shots',
+  pipelineWarnings: 'Note',
+  pipelineNeedsProject: 'Create or pick a project first',
   projectNone: 'No project yet',
   saveSaved: 'Saved',
   saveSaving: 'Saving…',
@@ -873,6 +907,23 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   tabTitle: 'dsh-image-video 工作台',
   guideDescription: '图片与视频创作的项目、媒体素材与生成任务。',
   sectionProject: '项目',
+  pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
+  pipelineHint: '粘贴剧本，宿主自动拆成分镜并生成一条可直接跑的画布流水线。',
+  pipelineScriptLabel: '剧本',
+  pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
+  pipelineModeImageToVideo: '图生视频',
+  pipelineModeTextToVideo: '文生视频',
+  pipelineShots: '分镜数',
+  pipelineDuration: '每镜秒数',
+  pipelineStrict: '严格模式（要求已登记角色/场景）',
+  pipelineRun: '一键生成',
+  pipelineRunning: '执行中…',
+  pipelineStarted: '已起跑',
+  pipelineCompose: '仅编排（零花费）',
+  pipelineComposed: '流水线已保存（未起跑）',
+  pipelineShotsCount: '个分镜',
+  pipelineWarnings: '提醒',
+  pipelineNeedsProject: '先创建或选择一个项目',
   projectNone: '还没有项目',
   saveSaved: '已保存',
   saveSaving: '保存中…',
