@@ -116,7 +116,17 @@
 | 子模块指针 | `plugins/dsh-image-video` → `a41417c` |
 | 发布门禁 | `bash scripts/gate.sh` **5/5 全绿**（typecheck / 822 passed / build / 427,503 B / 覆盖度 83.83·72.46·83.2·86.81） |
 
-本机运行态核对（重启前实测仍是旧进程 `0.3.77`，属预期）：
+**重启后真机核对（2026-10-23 08:20，已通过）**：
+
+| 检查 | 结果 |
+| --- | --- |
+| `GET /image-video/status` | `version: 1.0.0`（宿主新进程，端口随机为 63924） |
+| 启动图里的插件行 | `external: ["@xyflow/react"]`（新的外置声明已生效） |
+| 拉取插件产物 | HTTP 200、408,032 B、含 `require("@xyflow/react")` |
+| 工作台挂载 | 595 个 `iv-*` 节点、7 个面板（画布/体检/素材/预览/资源/任务/诊断） |
+| **画布真机渲染** | 切「专业工作流」后 **5 个 `.react-flow__node` + 2 条边 + 1 个 viewport** 全部渲染 → **React Flow 确实由宿主模块表供给**，控制台无 `missed the module table` |
+
+重启前的旧进程实测仍是 `0.3.77`（预期）：
 
 ```bash
 curl -s http://127.0.0.1:54274/image-video/status   # 重启后 version 应为 1.0.0
