@@ -113,15 +113,19 @@
 | 子模块指针 | `plugins/dsh-image-video` → `a41417c` |
 | 发布门禁 | `bash scripts/gate.sh` **5/5 全绿**（typecheck / 822 passed / build / 427,503 B / 覆盖度 83.83·72.46·83.2·86.81） |
 
-**重启后真机核对（2026-10-23 08:20，已通过）**：
+**重启后真机核对（2026-10-23 20:32，已通过）**：
 
 | 检查 | 结果 |
 | --- | --- |
-| `GET /image-video/status` | `version: 1.0.0`（宿主新进程，端口随机为 63924） |
-| 启动图里的插件行 | `external` 为空（插件自包含，不向宿主索要平台词） |
-| 拉取插件产物 | HTTP 200；入口含 `require.async("./client.Workbench.js")` |
-| 工作台挂载 | 595 个 `iv-*` 节点、7 个面板（画布/体检/素材/预览/资源/任务/诊断） |
-| **画布真机渲染** | 切「专业工作流」后 **5 个 `.react-flow__node` + 2 条边 + 1 个 viewport** 全部渲染 → **React Flow 确实由宿主模块表供给**，控制台无 `missed the module table` |
+| `GET /image-video/status` | `version: 1.0.0`（新宿主进程，端口 61687） |
+| 启动图里的插件行 | **`external: null`** —— 插件不向宿主索要任何平台词（宿主壳已回退，不含 `@xyflow/react`） |
+| 入口产物 | 200、39,347 B、含 `require.async("./client.Workbench.js")` |
+| 包内 chunk | 200、778,226 B、注册为 `chunk: "client.Workbench.js"`、内含 React Flow |
+| 工作台挂载 | 7 个面板（画布/体检/素材/预览/资源/任务/诊断） |
+| **画布真机渲染** | 切「专业工作流」后 **5 个 `.react-flow__node` + 2 条边 + 1 个 viewport** 全部渲染 → **自包含 chunk 在真实 Electron 宿主里加载成功**，控制台只有一条与插件无关的 `/plugins/events` 重连失败 |
+
+> 这条证据的意义：宿主**没有** `@xyflow/react` 平台词，插件仍然渲染出画布 ——
+> 即"任何人装了这个插件就有画布"，与宿主版本无关。
 
 重启前的旧进程实测仍是 `0.3.77`（预期）：
 
