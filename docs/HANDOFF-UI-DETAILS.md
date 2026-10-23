@@ -10,7 +10,10 @@
 # ② 核对运行态版本（界面头部可能来自旧客户端实例，以这个端点为准）
 curl -s http://127.0.0.1:54274/image-video/status     # version 应为 1.0.0
 
-# ③ 改插件后的刷新：脚本在 **Harness 仓库根**（不是本仓库），别用 dev --skip-build（会跳过插件构建）
+# ③ 改插件后的刷新（二选一）
+#    A. 只改界面（src/client/**）——**不用重启**：起一个 watch，存盘即生效（HMR 500ms 轮询产物 mtime）
+cd <harness 仓库根> && sh scripts/dev-watch-plugin.sh
+#    B. 改了宿主半边（src/host|workbench|media|tools）——必须重启（Node 模块不热替换）
 cd <harness 仓库根> && sh scripts/refresh-plugin-dev.sh
 ```
 

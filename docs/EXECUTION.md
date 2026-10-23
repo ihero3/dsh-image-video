@@ -320,7 +320,7 @@ pnpm -C apps/desktop run start       # 重新准备开发工程并启动
 | 改动范围 | 需要做什么 |
 | --- | --- |
 | `src/host` / `src/workbench` / `src/media` / `src/tools`（宿主半边）| `build:plugins` + 重启应用 |
-| `src/client/**`（界面半边，B 的地盘）| 同上（client bundle 也在 `build:plugins` 里）|
+| `src/client/**`（界面半边，B 的地盘）| **不用重启**：`sh scripts/dev-watch-plugin.sh`（Harness 根）起 watch，存盘后 HMR 自动让界面生效（2026-10-23 实测）|
 | 只改测试/文档 | 不用重启 |
 
 > 另：`pnpm` 版本保持 **11.28.5**（= 仓库 `packageManager`），不要升到 12。
@@ -405,4 +405,22 @@ owner 明确指出分发前提：**插件要给任意 DSH 用户安装，装完�
 
 关键坑（第二次踩通）：入口若静态引用任何界面模块，rolldown 会把共享模块提升成中间 chunk，而宿主
 `require` 是同步查表 → 整包 materialize 抛错。所以入口必须**零界面依赖**。
+
+### 开发期热更新：改界面不用重启（2026-10-23 实测）
+
+机制：`@deepseek-ai/dsh-hmr` 以 **500ms 轮询客户端产物的 mtime/ctime/size**，变化即通过 SSE 通知客户端
+重新取该插件（不刷新页面、不重启宿主）。所以开发循环可简化为「保存 → 自动重建 → 界面自动生效」。
+
+实测证据：把 `src/client/locales.ts` 的一键成片标题临时改成带 `【热更新】` 的版本，
+起 `pnpm --filter dsh-image-video run dev`（tsdown --watch），**未重启 App**，2 秒后页面即新文案；
+改回后自动还原。
+
+一条命令（Harness 仓库根）：
+
+```sh
+sh scripts/dev-watch-plugin.sh    # = pnpm --filter dsh-image-video run dev
+```
+
+边界：只覆盖**插件**。`src/host|workbench|media|tools`（宿主半边，Node 进程）仍需
+`sh scripts/refresh-plugin-dev.sh` 重启；Harness 壳/平台层改动仍需整仓重建 + 重启。
 
