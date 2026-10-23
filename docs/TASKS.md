@@ -188,5 +188,7 @@
   `MISSING DEPENDENCY` → 声明后 **5/5 全绿**（822 passed / 5 skipped；覆盖度 83.83·72.46·83.2·86.81）
 - [x] **零花费导出冒烟**｜插件｜**已完成**：`scripts/smoke-export.ts` 用 ffmpeg 本地合成夹具走真实
   导出：成片 76,309 B / 3000 ms + 封面帧 + 随片 SRT + 自动登记素材 + 台账 succeeded，**0 次模型调用**
-- [ ] **真机验收（owner）**：重启宿主后 `GET /image-video/status` 应为 `1.0.0`；真实生成各 1 次
-  （图片 / 视频，产生费用）留任务 id 与产物路径
+- [x] **重启后真机核对**（2026-10-23 08:20）：`GET /image-video/status` = `1.0.0`；启动图插件行
+  `external: ["@xyflow/react"]`；工作台 7 面板挂载；切「专业工作流」后画布 **5 节点 / 2 边 / 1 viewport**
+  渲染正常、控制台无 `missed the module table` → A-6 端到端生效
+- [ ] **真实生成验收（owner）**：图片 1 次 + 视频 1 次（产生费用），留任务 id 与产物路径
