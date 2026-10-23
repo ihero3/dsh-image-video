@@ -113,7 +113,7 @@
 
 ## 9. 阶段 7：稳定性与发布
 
-- [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；当前实测占预算 83%｜R-NFR-3｜T2-11
+- [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；**2026-10-22 A-6 外置后基线重置为 raw 427,503 / gzip 89,329**（见 §13），当前实测 83%（含 +20% 余量）｜R-NFR-3｜T2-11
 - [x] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜**已完成**：`tests/error-actionability.test.ts` 三组断言——① 服务商/HTTP（401 Key 无效、403 未开通、429 配额含 Retry-After、409 幂等冲突、5xx 可重试且带原文）；② **数据迁移**：工作台 JSON 损坏时报"哪个文件 + 先备份再删 + 否则一直失败"（本轮补的实现）；③ ffmpeg 缺失/无权限/缺编码器的机器码与装法。磁盘满/编码器不支持在导出失败面测试里另有三例｜R-NFR-5｜T5-6
 - [x] **T7-3** 结构化日志：任务 ID / 节点 ID / 耗时 / 服务商可串联｜插件｜**已完成**：三类事件各一条 JSON——① `generation`（`taskId`/`kind`/`status`/`durationMs`/`model`/`prompt`/服务商与产物来自工具 outcome）；② `workflow-node`（`runId`/`nodeId`/`kind`/`attempt`/`status`/`durationMs`/产物或错误）；③ `render`（`renderId`/`timelineId`/`status`/`durationMs`/`bytes`/`outputPath`，失败带机器码）。三个钩子都是可选注入（账本/运行器/导出表），宿主接到 `ctx.logger.info` 输出单行 JSON；测试断言三类事件的字段齐全｜R-NFR-4｜T7-2
 - [x] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜**已完成**：`docs/GATE-1-EVIDENCE.md` 汇总——① 登记素材（幂等，重复登记 created=false）；② 画布真跑生成（图像任务与产物 `1792107894148-d2fd6aa6.png`）；③ 运行记录逐节点状态（`running → succeeded` + `attempts`）；④ 时间轴三轨拼片（`[1,0,0]`）；⑤ 顺序预览与字幕样式（预览切换点与导出切分点一致，阈值 1 帧）；⑥ ffmpeg 能力探测（`ok · 8.0`）；⑦ **导出成片**（render `render-mvaj8rwa-2ch5b` / `succeeded 100%` / 产物 `1792128846545-61h1j9.mp4`）；⑧ 产物自动登记成素材（`时间轴导出（tml-…）`）。全部为**零生成花费**路径（已有产物 + 本机 ffmpeg）｜R-NFR-5｜T5-6
@@ -165,3 +165,28 @@
 | 6 | `R-QCK-4`、`R-PRJ-7`、`R-ENT-3`、`R-AGT-2..4` |
 | 7 | `R-NFR-1..5`、`R-TML-5`、`R-TML-7` |
 | 8 | `R-PRJ-5`、`R-COL-2`、`R-BND-3` |
+
+## 13. v1.0.0 发布轮（2026-10-23，A-6 / A-10 / P1）
+
+- [x] **A-6 画布依赖外置**｜跨仓（Harness 平台模块表 + 插件构建）｜**已完成**：`@xyflow/react`（连
+  `@xyflow/system` 与 `d3-*` 闭包）改由宿主 `PLATFORM_MODULES`/seed 提供，插件用
+  `dsh.client.external` 声明。入口产物 **834,204 → 427,182 B raw（−48.8%）**、gzip 180,161 → 89,276；
+  占外置前 +20% 预算 **83% → 43%**（B16 目标 ≤80% 达成）。基线重置为 427,503/89,329，另留 500 KB
+  绝对天花板（回退内联必红）。被否掉的懒加载 chunk 方案与回滚点：
+  `docs/A6-BUNDLE-EXTERNALIZE.md`。验证：`build:lib:client` 全量通过 + 宿主 209 测试绿 +
+  `client-bundle` 三条断言绿｜R-NFR-1、R-NFR-3
+- [x] **A-10 模型流重试恢复**｜宿主 profile（用户态配置）｜**已完成**：真问题不是插件没挂
+  （`@deepseek-ai/dsh-llm-retry` 早在 base bundle 且未禁用），而是 profile 的 `retryPolicy` 段丢失
+  → 回落到框架默认（5 次/500ms）。按 fork 台账 **R26** 恢复 `normal` + 8 次 + 退避 1s→20s；
+  宿主侧加回归守卫（`packages/bundle/base/tests/base.spec.ts`）｜R-NFR-5
+- [x] **P1 发布 v1.0.0**｜插件｜**已完成**：版本三处同步 `1.0.0`；发布说明
+  `docs/RELEASE-NOTES-v1.0.0.md`、数据迁移说明 `docs/MIGRATION-SCHEMA-V4.md`、3 分钟演示脚本
+  `docs/DEMO-3MIN.md`、示例项目包 `examples/hello-workbench/`（真实导出实现生成 + 导入验收测试
+  `tests/example-package.test.ts`）、界面交接 `docs/HANDOFF-UI-DETAILS.md`；tag
+  `v1.0.0-workbench-78`
+- [x] **发布门禁补齐**｜插件｜**已完成**：`@vitest/coverage-v8` 未声明导致 `gate.sh` 第 5 步
+  `MISSING DEPENDENCY` → 声明后 **5/5 全绿**（822 passed / 5 skipped；覆盖度 83.83·72.46·83.2·86.81）
+- [x] **零花费导出冒烟**｜插件｜**已完成**：`scripts/smoke-export.ts` 用 ffmpeg 本地合成夹具走真实
+  导出：成片 76,309 B / 3000 ms + 封面帧 + 随片 SRT + 自动登记素材 + 台账 succeeded，**0 次模型调用**
+- [ ] **真机验收（owner）**：重启宿主后 `GET /image-video/status` 应为 `1.0.0`；真实生成各 1 次
+  （图片 / 视频，产生费用）留任务 id 与产物路径

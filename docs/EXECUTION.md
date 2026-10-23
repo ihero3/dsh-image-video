@@ -280,7 +280,8 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 
 ## 维护状态（2026-10-20 起，Track A）
 
-**状态**：Track A 的功能与质量债已清空 —— 61 个版本、732 个测试、函数覆盖 83.77%、9 轮对抗性扫荡修掉 23 个真问题。
+**状态**：**v1.0.0 已发布**（`v1.0.0-workbench-78`，2026-10-23）—— 78 个版本、**822 个测试**、
+函数覆盖 **83.2%**、五道门 **5/5 全绿**；A-6 画布依赖外置把入口包从 834,204 → 427,182 B（−48.8%）。
 
 **自动化节奏**（owner 决定：暂停，等需求）：
 - 定时安全网提醒**已删除**；
@@ -350,3 +351,46 @@ await (await fetch('/image-video/status')).json()
 
 修法：Host 启动后、认证前清掉该 origin 的旧 cookie（`apps/desktop/src/host-cookies.ts`，best-effort）。
 所以：**遇到"右栏全空 + 控制台 431"，先怀疑 cookie 累积，重启前清一次即可自愈。**
+
+### v1.0.0 发布轮：A-6 外置落地 + A-10 恢复 + 门禁补齐（2026-10-23）
+
+**A-6（体积外置）**：把 `@xyflow/react`（连 `@xyflow/system` + `d3-*` 闭包）从"每个插件内联一份"
+改成"宿主平台模块表提供一份"。落点与方案文档的猜测不同：真正 seed 给加载器的表在
+`packages/client/web/src/platform.ts`（`PLATFORM_MODULES`）+ `src/seed.ts`，
+`packages/client/modules` 只负责解析与路由。插件侧只需要 `tsdown neverBundle` +
+`dsh.client.external` 两处声明，**不用逐个外置 d3**（插件只 import `@xyflow/react`）。
+
+| 口径 | 外置前（A-8 基线） | 外置后 | 变化 |
+|---|---|---|---|
+| raw | 834,204 B | **427,182 B** | −48.8% |
+| gzip | 180,161 B | **89,276 B** | −50.4% |
+| 占外置前预算（1,001,045） | 83% | **43%** | ≤80% 达标 |
+
+**试过但否掉的方案**：插件内 `import()` 懒加载画布。入口确实能到 ~192 KB，但入口与 chunk 的共享模块
+（样式表、图标）会被 rolldown 提升成共享 chunk；加载器交给工厂的 `require` 是**同步模块表查找**，
+取不到包内 chunk → 整包在 materialize 时抛错。要拆多 chunk 得先让"入口静态依赖为空集"，属加载器级重构。
+
+**基线处理**：`BUNDLE_BASELINE` 同步重置为 427,503/89,329（+20% 预算 = 513,004/107,195），并在
+`tests/client-bundle.test.ts` 留 500 KB **绝对**天花板——否则有人把 React Flow 内联回来时，
+产物仍在旧预算（1,001,045）内，门禁就形同虚设。
+
+**A-10（重试）**：交接说的"插件没挂"不成立——`@deepseek-ai/dsh-llm-retry` 早在 base bundle
+且未被禁用；它本身**没有配置**，`retryPolicy` 挂在 provider 上。真正丢的是 profile 里那段配置
+（profile patch 被重写过），于是回落到框架默认（5 次 / 500ms 起）。已按 **R26** 恢复
+`normal` + 8 次 + 退避 1s→20s，并在 `packages/bundle/base/tests/base.spec.ts` 加"必须挂载且
+未禁用"的守卫。教训：R26 是**用户态配置**（不在 git 里），重写 profile 时必须重新贴回。
+
+**门禁补齐**：`gate.sh` 第 5 步一直是 `MISSING DEPENDENCY: @vitest/coverage-v8`（覆盖率工具从未
+声明进 devDependencies，旧 node_modules 里是手工残留）→ 声明 `@vitest/coverage-v8@4.1.11` 后
+5/5 全绿。另一处顺手修的坑：`vitest.config.ts` 把 `@deepseek-ai/dsh-client-connection` 的源码
+别名写死成"子模块布局"路径，**独立检出**（`~/code/dsh-image-video`）时两个 RPC 套件起不来 →
+改成"两种布局取存在的那个"。
+
+**零花费导出冒烟**：`scripts/smoke-export.ts` —— ffmpeg 本地合成 3 秒夹具 → 真实导出 →
+断言成片/封面/随片 SRT/自动登记素材/台账 succeeded，**全程 0 次模型调用**。发布前必跑。
+
+**产物与指针**：插件 tag `v1.0.0-workbench-78`；`lib/` 用当前锁文件重建并验证**构建幂等**
+（同机两次构建 sha 相同）；Harness 侧 bump 到 `72ca04d`。
+
+**真机核对口径**：重启宿主后 `GET /image-video/status` 的 `version` 必须是 `1.0.0`（界面头部可能
+来自旧客户端实例）；画布能拖拽/缩放/连线 = `@xyflow/react` 命中了平台模块表。
