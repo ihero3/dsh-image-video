@@ -110,15 +110,18 @@
 
 | 项 | 值 |
 | --- | --- |
-| 插件仓库提交 | `ihero3/dsh-image-video@5f93410`（main） |
-| 发布 tag | `v1.0.0-workbench-78`（annotated → 5f93410） |
-| Harness 提交 | `ihero3/deepseek-harness@2b9b909`（Fork A-6 平台词 + A-10 守卫 + 指针 bump） |
-| 子模块指针 | `plugins/dsh-image-video` → 5f93410（`git describe` = v1.0.0-workbench-78） |
-| 本机运行态核对 | 重启前 `GET /image-video/status` 仍是 `0.3.77`（旧进程）；**重启宿主后应变为 1.0.0**，否则说明壳没重新装配平台模块表 |
+| 插件仓库 | `ihero3/dsh-image-video@a41417c`（main；含最终 `lib/` 产物，构建已验证幂等） |
+| 发布 tag | `v1.0.0-workbench-78` → 本提交 |
+| Harness 仓库 | `ihero3/deepseek-harness@840dd40`（Fork A-6 平台词 + A-10 守卫 + 指针 bump） |
+| 子模块指针 | `plugins/dsh-image-video` → `a41417c` |
+| 发布门禁 | `bash scripts/gate.sh` **5/5 全绿**（typecheck / 822 passed / build / 427,503 B / 覆盖度 83.83·72.46·83.2·86.81） |
 
-重启后的两步核对：
+本机运行态核对（重启前实测仍是旧进程 `0.3.77`，属预期）：
 
 ```bash
-curl -s http://127.0.0.1:54274/image-video/status   # version 应为 1.0.0
+curl -s http://127.0.0.1:54274/image-video/status   # 重启后 version 应为 1.0.0
 npx tsx scripts/smoke-export.ts                     # 零花费导出冒烟（不调用模型）
 ```
+
+> 注：`lib/` 是入库产物。若本机工具链版本与锁文件不一致，`pnpm run build` 可能只产生
+> 空行/注释缩进级差异——用 `git diff lib` 确认无语义变化即可，不必惊慌。
