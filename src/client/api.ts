@@ -465,7 +465,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
         workflowId,
         ...only === undefined ? {} : { only },
       })).run,
-    composePipeline: input => call<PipelineResult>('pipelines/compose', input),
+    composePipeline: input =>
+      call<{ pipeline: PipelineResult }>('pipelines/compose', input).then(result => result.pipeline),
     runPipeline: input => call<{ pipeline: PipelineResult; run: WorkflowRunRecord }>('pipelines/run', input),
     listRuns: async (projectId, workflowId) =>
       (await call<{ runs: WorkflowRunRecord[] }>('workflows/runs', { projectId, workflowId })).runs,

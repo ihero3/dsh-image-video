@@ -13,6 +13,13 @@
 - 契约：`tests/workbench-pipeline.test.ts` 10 条（模式/分镜/连线/参数/严格拒绝/空剧本/落库/起跑）；
   `docs/API-SURFACE.md` 补两个端点（`rpc-contract-drift` 守住）。
 
+### 批次六十九（续）：真机修崩溃
+- **修 `pipelines/compose` 响应未解包**：端点返回 `{pipeline}`，客户端 api 当初按 `PipelineResult` 直接取 →
+  卡片读 `result.warnings.length` 时整块快速创作面板被错误边界拦下（真机 Console 可见）。
+  现在 api 解包 `.pipeline`，卡片对 `warnings` 再做一次兜底。
+- **补渲染测试** `tests/client-pipeline-card.test.tsx` 3 条：仅编排渲染结果（分镜数/id/提醒）、
+  `warnings` 缺失不崩、一键生成起跑并把 workflowId 交给画布 —— 这正是单测原本漏掉的路径。
+
 ## [1.0.0-workbench-78] - 2026-10-22
 
 **1.0 里程碑：画布依赖体积外置 + 可交付性收口。** 从这一版起，画布依赖交给宿主平台

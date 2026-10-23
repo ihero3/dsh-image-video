@@ -201,11 +201,11 @@ export function PipelineCard(props: PipelineCardProps) {
                   <span className="iv-meta">
                     {result.shots} {t('pipelineShotsCount')} · {result.nodes} nodes · {result.workflowId}
                   </span>
-                  {result.warnings.length === 0
+                  {(result.warnings ?? []).length === 0
                     ? null
                     : (
                       <ul className="iv-meta" style={{ margin: 0, paddingLeft: '18px' }}>
-                        {result.warnings.map(warning => <li key={warning}>{t('pipelineWarnings')}：{warning}</li>)}
+                        {(result.warnings ?? []).map(warning => <li key={warning}>{t('pipelineWarnings')}：{warning}</li>)}
                       </ul>
                     )}
                 </div>
