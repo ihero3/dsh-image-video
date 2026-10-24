@@ -84,6 +84,9 @@ export function apply(ctx: ClientContext): void {
 function requireConnection(ctx: ClientContext): ConnectionHandle {
   const connection = ctx.get('connection')
   if (connection === undefined) throw new Error('image-video-workbench: connection service is unavailable')
-  return connection as ConnectionHandle
+  // 宿主连接对象与客户端连接类型在跨包版本下不再结构相容（`HostConnectionHandle`
+  // 缺少 `ConnectionHandle` 的新成员）；本插件只用 `rpc.call`，运行时形状一致，
+  // 显式双重转换避免把版本漂移记成类型错误。
+  return connection as unknown as ConnectionHandle
 }
 

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-22.3'
+export const WORKBENCH_STYLE_VERSION = '2026-10-23.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -574,6 +574,36 @@ export const WORKBENCH_STYLE = `
 background:var(--iv-panel-3);cursor:pointer}
 .iv-seg-cell.on{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
 .iv-seg-cell:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
+/* B-15 分镜工坊：剧本输入 + 可编辑镜头表 */
+.iv-storyboard{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface)}
+.iv-sb-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between}
+.iv-sb-count{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.iv-sb-list{display:flex;flex-direction:column;gap:6px;min-height:0}
+.iv-sb-shot{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-sb-shot-index{display:grid;place-items:center;min-width:26px;height:26px;border-radius:50%;background:var(--iv-acc-soft);color:var(--iv-acc);font-size:11px;font-weight:600}
+.iv-sb-shot-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+.iv-sb-row{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
+.iv-sb-field{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 150px}
+.iv-sb-field .iv-input{width:100%}
+.iv-sb-actions{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.iv-ico--up{transform:rotate(180deg)}
+/* B-16 导出历史面板 */
+.iv-exports{display:flex;flex-direction:column;gap:6px;min-height:0}
+.iv-exports-filter{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.iv-exports-list{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:auto}
+.iv-exp-row{display:flex;flex-direction:column;gap:3px;padding:5px 6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-exp-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.iv-exp-facts{display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--iv-tx2)}
+.iv-exp-facts a{color:var(--iv-acc)}
+.iv-exp-actions{display:flex;gap:4px;flex-wrap:wrap}
+/* B-17 帮助浮层 */
+.iv-help-mask{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:color-mix(in srgb,var(--iv-tx) 22%,transparent)}
+.iv-help{display:flex;flex-direction:column;gap:10px;width:min(420px,100%);max-height:80vh;overflow:auto;padding:14px;border:1px solid var(--iv-line-2);border-radius:var(--iv-r);background:var(--iv-surface);box-shadow:0 10px 32px color-mix(in srgb,var(--iv-tx) 26%,transparent)}
+.iv-help h4{margin:0;font-size:12px;color:var(--iv-tx)}
+.iv-help-list{display:flex;flex-direction:column;gap:3px;margin:0;padding:0;list-style:none}
+.iv-help-list li{display:flex;gap:10px;justify-content:space-between;font-size:11px;color:var(--iv-tx2)}
+.iv-help-list b{color:var(--iv-tx);font-weight:600;text-align:right}
+.iv-help-actions{display:flex;justify-content:flex-end}
 `
 
 /**

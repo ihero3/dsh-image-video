@@ -455,6 +455,68 @@ export type WorkbenchLocaleKey =
   | 'voiceEstimate'
   | 'voiceGenerate'
   | 'voiceNotReady'
+  | 'storyboardTitle'
+  | 'storyboardHint'
+  | 'storyboardScriptLabel'
+  | 'storyboardScriptPlaceholder'
+  | 'storyboardCountLabel'
+  | 'storyboardPlan'
+  | 'storyboardPlanning'
+  | 'storyboardEmpty'
+  | 'storyboardShotsCount'
+  | 'storyboardReferenced'
+  | 'storyboardNeedsScript'
+  | 'storyboardNeedsProject'
+  | 'storyboardPlanFailed'
+  | 'storyboardPlanDone'
+  | 'storyboardAddShot'
+  | 'storyboardRemoveShot'
+  | 'storyboardMoveUp'
+  | 'storyboardMoveDown'
+  | 'storyboardShotLabel'
+  | 'storyboardCharactersLabel'
+  | 'storyboardCharactersEmpty'
+  | 'storyboardSceneLabel'
+  | 'storyboardImagePromptLabel'
+  | 'storyboardVideoPromptLabel'
+  | 'storyboardToGenerate'
+  | 'storyboardToCanvas'
+  | 'storyboardSentGenerate'
+  | 'storyboardSentCanvas'
+  | 'storyboardToCanvasFailed'
+  | 'storyboardEmptyPrompt'
+  | 'paneExports'
+  | 'exportsHint'
+  | 'exportsEmpty'
+  | 'exportsFilterAll'
+  | 'exportsFilterProject'
+  | 'exportsRefresh'
+  | 'exportsOutput'
+  | 'exportsElapsed'
+  | 'exportsError'
+  | 'exportsRetry'
+  | 'exportsRetryDone'
+  | 'exportsRetryFailed'
+  | 'exportsTimelineMissing'
+  | 'exportsCount'
+  | 'exportsOpen'
+  | 'exportsFailedNote'
+  | 'exportsCancelledNote'
+  | 'railExports'
+  | 'railHelp'
+  | 'helpTitle'
+  | 'helpShortcuts'
+  | 'helpModes'
+  | 'helpModeQuick'
+  | 'helpModeWorkflow'
+  | 'helpModeTimeline'
+  | 'helpClose'
+  | 'helpGenerateShortcut'
+  | 'helpUndoShortcut'
+  | 'helpPlayShortcut'
+  | 'helpDeleteShortcut'
+  | 'exampleProject'
+  | 'exampleProjectDone'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -918,6 +980,68 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   segReplay: 'Replay',
   segTotal: 'total',
   segJump: 'Jump to segment',
+  storyboardTitle: 'Storyboard workshop',
+  storyboardHint: 'Paste a script, break it into shots, then edit every shot before it goes to generation or the canvas.',
+  storyboardScriptLabel: 'Script',
+  storyboardScriptPlaceholder: 'Paste or write the script here — one shot per sentence group…',
+  storyboardCountLabel: 'Target shots',
+  storyboardPlan: 'Break into shots',
+  storyboardPlanning: 'Breaking…',
+  storyboardEmpty: 'No shots yet — paste a script above and break it into shots.',
+  storyboardShotsCount: '{n} shots',
+  storyboardReferenced: '{n} resources referenced',
+  storyboardNeedsScript: 'The script is empty — at least one sentence is needed.',
+  storyboardNeedsProject: 'Create or pick a project first.',
+  storyboardPlanFailed: 'Storyboard planning failed',
+  storyboardPlanDone: 'Planned {n} shots.',
+  storyboardAddShot: 'Add shot',
+  storyboardRemoveShot: 'Remove shot',
+  storyboardMoveUp: 'Move up',
+  storyboardMoveDown: 'Move down',
+  storyboardShotLabel: 'Shot',
+  storyboardCharactersLabel: 'Characters',
+  storyboardCharactersEmpty: 'none detected',
+  storyboardSceneLabel: 'Scene',
+  storyboardImagePromptLabel: 'Image prompt',
+  storyboardVideoPromptLabel: 'Video prompt',
+  storyboardToGenerate: 'To generate form',
+  storyboardToCanvas: 'To canvas',
+  storyboardSentGenerate: 'Shot {n} image prompt sent to the generate form.',
+  storyboardSentCanvas: 'Shot {n} image prompt sent to the canvas image node.',
+  storyboardToCanvasFailed: 'Could not send to canvas',
+  storyboardEmptyPrompt: 'This shot has no image prompt yet — write one first.',
+  paneExports: 'Export history',
+  exportsHint: 'Every export attempt, newest first. Failed ones keep their reason and can be retried.',
+  exportsEmpty: 'No exports yet — render a timeline and it will show up here.',
+  exportsFilterAll: 'All projects',
+  exportsFilterProject: 'Filter by project',
+  exportsRefresh: 'Refresh',
+  exportsOutput: 'Output',
+  exportsElapsed: 'Elapsed',
+  exportsError: 'Failure',
+  exportsRetry: 'Retry export',
+  exportsRetryDone: 'Retry started for {name}.',
+  exportsRetryFailed: 'Retry failed',
+  exportsTimelineMissing: 'timeline no longer exists',
+  exportsCount: '{n} records',
+  exportsOpen: 'Open output',
+  exportsFailedNote: 'Export failed',
+  exportsCancelledNote: 'Export cancelled',
+  railExports: 'Export history',
+  railHelp: 'Help',
+  helpTitle: 'Help',
+  helpShortcuts: 'Shortcuts',
+  helpModes: 'Modes',
+  helpModeQuick: 'Quick create — generate images or videos right here, with reference images.',
+  helpModeWorkflow: 'Workflow — chain script → storyboard → image → video → render on the canvas.',
+  helpModeTimeline: 'Timeline — assemble clips, subtitles and audio, then export the film.',
+  helpClose: 'Close',
+  helpGenerateShortcut: 'Ctrl/⌘ + Enter — start generation',
+  helpUndoShortcut: 'Ctrl/⌘ + Z / Shift+Z — undo / redo',
+  helpPlayShortcut: 'Space — play or pause the timeline',
+  helpDeleteShortcut: 'Delete — remove the selected clip or node',
+  exampleProject: 'Example project',
+  exampleProjectDone: 'Example project created — try the Quick image template on the canvas.',
 }
 
 /** Simplified Chinese copy. */
@@ -1379,4 +1503,66 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   segReplay: '重播',
   segTotal: '总长',
   segJump: '跳到第',
+  storyboardTitle: '分镜工坊',
+  storyboardHint: '贴上剧本，一键拆成镜头表；每个镜头都能改，改完再送进生成表单或画布。',
+  storyboardScriptLabel: '剧本',
+  storyboardScriptPlaceholder: '把剧本粘贴或输入到这里——按句组拆成镜头…',
+  storyboardCountLabel: '目标镜头数',
+  storyboardPlan: '拆解分镜',
+  storyboardPlanning: '拆解中…',
+  storyboardEmpty: '还没有镜头——在上方贴上剧本并点「拆解分镜」。',
+  storyboardShotsCount: '{n} 个镜头',
+  storyboardReferenced: '引用 {n} 个创作资源',
+  storyboardNeedsScript: '剧本是空的——至少需要一句话。',
+  storyboardNeedsProject: '先创建或选择一个项目。',
+  storyboardPlanFailed: '分镜拆解失败',
+  storyboardPlanDone: '已拆出 {n} 个镜头。',
+  storyboardAddShot: '添加镜头',
+  storyboardRemoveShot: '删除镜头',
+  storyboardMoveUp: '上移',
+  storyboardMoveDown: '下移',
+  storyboardShotLabel: '镜头描述',
+  storyboardCharactersLabel: '角色',
+  storyboardCharactersEmpty: '未识别到角色',
+  storyboardSceneLabel: '场景',
+  storyboardImagePromptLabel: '图片提示词',
+  storyboardVideoPromptLabel: '视频提示词',
+  storyboardToGenerate: '带入生成',
+  storyboardToCanvas: '送入画布',
+  storyboardSentGenerate: '第 {n} 镜的图片提示词已带入生成表单。',
+  storyboardSentCanvas: '第 {n} 镜的图片提示词已送入画布图片节点。',
+  storyboardToCanvasFailed: '送入画布失败',
+  storyboardEmptyPrompt: '这一镜还没有图片提示词——先写一个。',
+  paneExports: '导出历史',
+  exportsHint: '每一次导出尝试都在这里，新的在前；失败的保留原因，可直接重试。',
+  exportsEmpty: '还没有导出记录——渲染一条时间轴后就会出现在这里。',
+  exportsFilterAll: '全部项目',
+  exportsFilterProject: '按项目筛选',
+  exportsRefresh: '刷新',
+  exportsOutput: '产物',
+  exportsElapsed: '耗时',
+  exportsError: '失败原因',
+  exportsRetry: '重试导出',
+  exportsRetryDone: '已为 {name} 重新开始导出。',
+  exportsRetryFailed: '重试失败',
+  exportsTimelineMissing: '对应时间轴已不存在',
+  exportsCount: '{n} 条记录',
+  exportsOpen: '打开产物',
+  exportsFailedNote: '导出失败',
+  exportsCancelledNote: '导出已取消',
+  railExports: '导出历史',
+  railHelp: '帮助',
+  helpTitle: '帮助',
+  helpShortcuts: '快捷键',
+  helpModes: '模式说明',
+  helpModeQuick: '快速创作——就在这里生成图片或视频，可带多张参考图。',
+  helpModeWorkflow: '工作流——在画布上串起 剧本→分镜→生图→视频→导出。',
+  helpModeTimeline: '时间轴——组装片段、字幕与音轨，然后导出成片。',
+  helpClose: '关闭',
+  helpGenerateShortcut: 'Ctrl/⌘ + Enter——开始生成',
+  helpUndoShortcut: 'Ctrl/⌘ + Z / Shift+Z——撤销 / 重做',
+  helpPlayShortcut: '空格——播放 / 暂停时间轴',
+  helpDeleteShortcut: 'Delete——删除选中的片段或节点',
+  exampleProject: '示例项目',
+  exampleProjectDone: '示例项目已建好——去画布试试「快速图片」模板。',
 }

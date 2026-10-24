@@ -38,7 +38,7 @@ import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { ExtractedPrompt, MediaReference, PromptRecord, RunningGeneration, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -47,6 +47,7 @@ import { useElapsedSeconds } from './use-elapsed.ts'
 import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
 import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
 import { TaskCard } from './panels/TaskCard.tsx'
+import { ExportHistoryPanel } from './panels/ExportHistoryPanel.tsx'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -448,6 +449,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [promptName, setPromptName] = useState('')
   const [prompts, setPrompts] = useState<readonly PromptRecord[]>([])
   const [extracting, setExtracting] = useState(false)
+  // `B-15` 分镜工坊（`A-7` `storyboard/plan`）：剧本 → 可编辑镜头表。
+  const [storyboardScript, setStoryboardScript] = useState('')
+  const [storyboardTarget, setStoryboardTarget] = useState('')
+  const [storyboardShots, setStoryboardShots] = useState<readonly StoryboardShot[]>([])
+  const [storyboardBusy, setStoryboardBusy] = useState(false)
+  // `B-16` 导出历史（`A-11`）：发起导出时记一笔，终态回写；面板据此刷新。
+  const [exportRecordId, setExportRecordId] = useState<string | undefined>(undefined)
+  const [exportsTick, setExportsTick] = useState(0)
+  // `B-17` 帮助浮层（快捷键 + 模式说明）。
+  const [helpOpen, setHelpOpen] = useState(false)
 
   /** 生成后刷新当前项目的素材列表。 */
   const refreshAssetsAfterGenerate = async (): Promise<void> => {
@@ -1304,6 +1315,166 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setNotice({ text: t('promptApplyDone'), tone: 'info' })
   }
 
+  // ============ B-15 分镜工坊（`A-7` `storyboard/plan`）============
+  /** 镜头表统一重排序号：增/删/移之后保持 1-based 连续（界面只认 index 不认数组位）。 */
+  const reindexStoryboard = (shots: readonly StoryboardShot[]): StoryboardShot[] =>
+    shots.map((shot, position) => ({ ...shot, index: position + 1 }))
+
+  /**
+   * `B-15`：剧本 → 分镜表。宿主做确定性拆解（切句→分组→按创作资源识别角色/场景），
+   * 空剧本/无项目在本地拦；宿主错误（如空剧本的领域错误）如实展示，不伪造结果。
+   */
+  const runPlanStoryboard = async (): Promise<void> => {
+    const script = storyboardScript.trim()
+    if (script === '') { setNotice({ text: t('storyboardNeedsScript'), tone: 'error' }); return }
+    if (activeId === undefined) { setNotice({ text: t('storyboardNeedsProject'), tone: 'error' }); return }
+    const target = Number(storyboardTarget)
+    setStoryboardBusy(true)
+    try {
+      const plan = await apiRef.current.planStoryboard({
+        projectId: activeId,
+        script,
+        ...Number.isFinite(target) && target > 0 ? { shots: Math.round(target) } : {},
+      })
+      setStoryboardShots(plan.shots)
+      const referenced = plan.referencedResourceIds.length === 0
+        ? ''
+        : ` · ${t('storyboardReferenced').replace('{n}', String(plan.referencedResourceIds.length))}`
+      setNotice({
+        text: `${t('storyboardPlanDone').replace('{n}', String(plan.shots.length))}${referenced}`,
+        tone: 'info',
+      })
+    } catch (error) {
+      setNotice({ text: `${t('storyboardPlanFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    } finally {
+      setStoryboardBusy(false)
+    }
+  }
+
+  /** 改一个镜头的文本字段（描述/场景/图片提示词/视频提示词）。 */
+  const patchStoryboardText = (index: number, field: 'shot' | 'scene' | 'imagePrompt' | 'videoPrompt', value: string): void => {
+    setStoryboardShots(current => current.map((shot, position) => (position === index ? { ...shot, [field]: value } : shot)))
+  }
+
+  /** 改一个镜头的角色列表（输入框里是逗号/顿号分隔的文本，落表前拆成数组）。 */
+  const patchStoryboardCharacters = (index: number, value: string): void => {
+    setStoryboardShots(current => current.map((shot, position) => (position === index
+      ? { ...shot, characters: value.split(/[,，、]/u).map(part => part.trim()).filter(part => part !== '') }
+      : shot)))
+  }
+
+  /** 上移/下移一个镜头（到头/到尾不越界），移完重排序号。 */
+  const moveStoryboardShot = (index: number, delta: number): void => {
+    setStoryboardShots(current => {
+      const to = index + delta
+      if (to < 0 || to >= current.length) return current
+      const next = [...current]
+      const [moved] = next.splice(index, 1)
+      if (moved === undefined) return current
+      next.splice(to, 0, moved)
+      return reindexStoryboard(next)
+    })
+  }
+
+  /** 删除一个镜头并重排序号。 */
+  const removeStoryboardShot = (index: number): void => {
+    setStoryboardShots(current => reindexStoryboard(current.filter((_, position) => position !== index)))
+  }
+
+  /** 手动补一个空镜头（宿主拆解不满意时用户自己加）。 */
+  const addStoryboardShot = (): void => {
+    setStoryboardShots(current => reindexStoryboard([...current, {
+      index: current.length + 1, shot: '', characters: [], scene: undefined, imagePrompt: '', videoPrompt: '',
+    }]))
+  }
+
+  /** `B-15`：把某镜的图片提示词带入快速生成表单（只填表，不自动生成）。 */
+  const storyboardToGenerate = (shot: StoryboardShot): void => {
+    if (shot.imagePrompt.trim() === '') { setNotice({ text: t('storyboardEmptyPrompt'), tone: 'error' }); return }
+    setGeneratePrompt(shot.imagePrompt)
+    setNotice({ text: t('storyboardSentGenerate').replace('{n}', String(shot.index)), tone: 'info' })
+  }
+
+  /**
+   * `B-15`：把某镜的图片提示词送进画布的图片生成节点——已有图片节点就改它的
+   * 提示词，没有就追加一个；随后切到工作流模式让用户看见。存盘失败如实报错。
+   */
+  const storyboardToCanvas = async (shot: StoryboardShot): Promise<void> => {
+    const prompt = shot.imagePrompt.trim()
+    if (prompt === '') { setNotice({ text: t('storyboardEmptyPrompt'), tone: 'error' }); return }
+    if (activeId === undefined) { setNotice({ text: t('storyboardNeedsProject'), tone: 'error' }); return }
+    const projectId = activeId
+    try {
+      const rows = await apiRef.current.listWorkflows(projectId)
+      const stamp = new Date().toISOString()
+      const base = rows[0] ?? {
+        schemaVersion: 1 as const, id: newWorkbenchId('wfl'), projectId,
+        name: `${activeProject?.name ?? ''} 工作流`, nodes: [] as WorkflowRecord['nodes'], edges: [] as WorkflowRecord['edges'],
+        createdAt: stamp, updatedAt: stamp,
+      }
+      const imageNode = base.nodes.find(node => node.kind === 'image-generate')
+      const nodes = imageNode === undefined
+        ? [...base.nodes, {
+            id: `${base.id}-${base.nodes.length}`, kind: 'image-generate' as const,
+            position: { x: base.nodes.length * 220, y: 0 },
+            params: { ...defaultParams('image-generate'), prompt },
+          }]
+        : base.nodes.map(node => (node.id === imageNode.id ? { ...node, params: { ...node.params, prompt } } : node))
+      const stored = await apiRef.current.saveWorkflow({
+        id: base.id, projectId, name: base.name, nodes, edges: base.edges,
+      })
+      setWorkflow(stored)
+      setWorkflowState('saved')
+      setMode('workflow')
+      setNotice({ text: t('storyboardSentCanvas').replace('{n}', String(shot.index)), tone: 'info' })
+    } catch (error) {
+      setNotice({ text: `${t('storyboardToCanvasFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    }
+  }
+
+  // ============ B-16 导出历史（`A-11` `exports/*`）============
+  /**
+   * 渲染任务终态时把导出尝试回写历史：状态/产物/字节/失败原因/耗时。
+   * 记账是遥测性质——失败静默（历史里这条会停在旧状态，不影响导出结论）；
+   * `exportRecordId` 出手即清，同一次任务不会重复回写。
+   */
+  useEffect(() => {
+    if (exportRecordId === undefined || renderJob === undefined) return
+    if (renderJob.status !== 'succeeded' && renderJob.status !== 'failed' && renderJob.status !== 'cancelled') return
+    const recordId = exportRecordId
+    const job = renderJob
+    setExportRecordId(undefined)
+    void (async () => {
+      try {
+        await apiRef.current.updateExport({
+          id: recordId,
+          status: job.status === 'succeeded' ? 'succeeded' : 'failed',
+          ...job.outputPath === undefined ? {} : { outputPath: job.outputPath },
+          ...job.bytes === undefined ? {} : { bytes: job.bytes },
+          ...job.status === 'succeeded'
+            ? {}
+            : { error: job.error ?? (job.status === 'cancelled' ? t('exportsCancelledNote') : t('exportsFailedNote')) },
+          ...job.durationMs === undefined ? {} : { elapsedSeconds: Math.max(1, Math.round(job.durationMs / 1000)) },
+        })
+        setExportsTick(current => current + 1)
+      } catch {
+        // 记账失败不打扰用户；下一次导出会记新账
+      }
+    })()
+  }, [exportRecordId, renderJob, t])
+
+  /** `B-16`：从历史面板重试一次导出——先记一笔新账，再按原时间轴/项目重渲。 */
+  const retryExport = async (record: ExportRecord, label: string): Promise<void> => {
+    try {
+      const attempt = await apiRef.current.recordExport({ projectId: record.projectId, timelineId: record.timelineId })
+      setExportRecordId(attempt.id)
+      setRenderJob(await apiRef.current.renderTimeline(record.timelineId, record.projectId))
+      setNotice({ text: t('exportsRetryDone').replace('{name}', label), tone: 'info' })
+    } catch (error) {
+      setNotice({ text: `${t('exportsRetryFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+    }
+  }
+
   /** Run one host action, surfacing failure as a notice instead of a crash. */
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true)
@@ -1473,6 +1644,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   activeProjectRef.current = activeProject
   const workflowIdRef = useRef(workflow?.id)
   workflowIdRef.current = workflow?.id
+  // `B-16`：挂着未收尾的导出尝试时，即使不在时间轴模式也跟着轮询渲染状态，
+  // 否则从历史面板发起的重试没人回写终态。
+  const exportRecordIdRef = useRef(exportRecordId)
+  exportRecordIdRef.current = exportRecordId
   useUnifiedPolling({
     active: pollingActive,
     enabled: tab.visible,
@@ -1483,7 +1658,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           await loadTasks()
           const project = activeProjectRef.current
           if (project !== undefined) setAssets(await apiRef.current.listAssets(project.id))
-          if (modeRef.current === 'timeline' && project !== undefined) {
+          if ((modeRef.current === 'timeline' || exportRecordIdRef.current !== undefined) && project !== undefined) {
             setRenderJob((await apiRef.current.listRenders(project.id))[0])
           }
           if (modeRef.current === 'workflow' && project !== undefined) {
@@ -1665,6 +1840,42 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               {t('create')}
             </button>
           </span>
+          {projects.length === 0
+            ? (
+              <button
+                type="button"
+                className="iv-btn iv-btn--sm"
+                data-workbench-example-project="true"
+                disabled={busy}
+                onClick={() => {
+                  void run(async () => {
+                    const project = await apiRef.current.createProject(t('exampleProject'))
+                    await loadProjects()
+                    setActiveId(project.id)
+                    // 示例内容：套用「快速图片」模板，让画布上立刻有东西可看
+                    const template = WORKFLOW_TEMPLATES.find(candidate => candidate.id === 'quick-image')
+                    if (template !== undefined) {
+                      const id = newWorkbenchId('wfl')
+                      const workflow = await apiRef.current.saveWorkflow({
+                        id, projectId: project.id, name: template.id,
+                        nodes: template.nodes.map((node, index) => ({
+                          id: `${id}-${index}`, kind: node.kind,
+                          position: { x: (index % 4) * 220, y: Math.floor(index / 4) * 160 },
+                          params: node.params ?? defaultParams(node.kind),
+                        })),
+                        edges: template.edges.map(([from, to]) => ({ id: `${id}-${from}-${to}`, source: `${id}-${from}`, target: `${id}-${to}` })),
+                      })
+                      setWorkflow(workflow)
+                      setWorkflowState('saved')
+                    }
+                    setNotice({ text: t('exampleProjectDone'), tone: 'info' })
+                  })
+                }}
+              >
+                <Icon name="box" size={11} />{t('exampleProject')}
+              </button>
+            )
+            : null}
         </div>
         <div className="iv-top-meta">
           <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
@@ -1924,7 +2135,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <Icon name="filter" size={15} />
             <span className="iv-rail-tip">{t('railHealth')}</span>
           </button>
+          <button
+            type="button"
+            className="iv-rail-btn"
+            aria-label={t('railExports')}
+            onClick={() => { scrollToPane('paneExports') }}
+          >
+            <Icon name="download" size={15} />
+            <span className="iv-rail-tip">{t('railExports')}</span>
+          </button>
           <div className="iv-rail-bottom">
+            <button
+              type="button"
+              className="iv-rail-btn"
+              aria-label={t('railHelp')}
+              aria-expanded={helpOpen}
+              data-workbench-help-toggle="true"
+              onClick={() => { setHelpOpen(open => !open) }}
+            >
+              <Icon name="help" size={15} />
+              <span className="iv-rail-tip">{t('railHelp')}</span>
+            </button>
             <button
               type="button"
               className="iv-rail-btn"
@@ -2385,6 +2616,198 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                       <span className="iv-meta">{t('promptHint')}</span>
                     </div>
+                    {/* `B-15` 分镜工坊（A-7）：剧本 → 可编辑镜头表 → 带入生成 / 送入画布 */}
+                    <div className="iv-storyboard" data-storyboard="true">
+                      <div className="iv-sb-head">
+                        <span className="iv-chip"><Icon name="storyboard" size={11} />{t('storyboardTitle')}</span>
+                        {storyboardShots.length === 0
+                          ? null
+                          : (
+                            <span className="iv-sb-count">
+                              <span className="iv-meta" data-storyboard-count="true">
+                                {t('storyboardShotsCount').replace('{n}', String(storyboardShots.length))}
+                              </span>
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--ghost iv-btn--sm"
+                                data-storyboard-add="true"
+                                onClick={addStoryboardShot}
+                              >
+                                <Icon name="plus" size={11} />{t('storyboardAddShot')}
+                              </button>
+                            </span>
+                          )}
+                      </div>
+                      <span className="iv-meta">{t('storyboardHint')}</span>
+                      <div className="iv-sb-field">
+                        <span className="iv-meta">{t('storyboardScriptLabel')}</span>
+                        <textarea
+                          className="iv-input"
+                          rows={3}
+                          value={storyboardScript}
+                          placeholder={t('storyboardScriptPlaceholder')}
+                          data-storyboard-script="true"
+                          disabled={storyboardBusy}
+                          onChange={event => setStoryboardScript(event.target.value)}
+                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                        />
+                      </div>
+                      <div className="iv-sb-row">
+                        <label className="iv-sb-field" style={{ flex: '0 0 120px' }}>
+                          <span className="iv-meta">{t('storyboardCountLabel')}</span>
+                          <input
+                            className="iv-input"
+                            type="number"
+                            min={1}
+                            max={60}
+                            value={storyboardTarget}
+                            placeholder={t('none')}
+                            data-storyboard-target="true"
+                            disabled={storyboardBusy}
+                            onChange={event => setStoryboardTarget(event.target.value)}
+                            style={{ font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          data-storyboard-plan="true"
+                          disabled={storyboardBusy || activeId === undefined || storyboardScript.trim() === ''}
+                          onClick={() => { void runPlanStoryboard() }}
+                        >
+                          <Icon name="sparkles" size={11} />{storyboardBusy ? t('storyboardPlanning') : t('storyboardPlan')}
+                        </button>
+                        <span className="iv-meta">{activeId === undefined ? t('storyboardNeedsProject') : ''}</span>
+                      </div>
+                      {storyboardShots.length === 0
+                        ? <div className="iv-empty" data-storyboard-empty="true">{t('storyboardEmpty')}</div>
+                        : (
+                          <div className="iv-sb-list">
+                            {storyboardShots.map((shot, index) => (
+                              <div className="iv-sb-shot" key={`shot-${shot.index}-${index}`} data-storyboard-shot={String(index)}>
+                                <span className="iv-sb-shot-index">{shot.index}</span>
+                                <div className="iv-sb-shot-body">
+                                  <div className="iv-sb-row">
+                                    <label className="iv-sb-field">
+                                      <span className="iv-meta">{t('storyboardShotLabel')}</span>
+                                      <input
+                                        className="iv-input"
+                                        value={shot.shot}
+                                        data-storyboard-field="shot"
+                                        onChange={event => patchStoryboardText(index, 'shot', event.target.value)}
+                                        style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                      />
+                                    </label>
+                                    <label className="iv-sb-field">
+                                      <span className="iv-meta">{t('storyboardSceneLabel')}</span>
+                                      <input
+                                        className="iv-input"
+                                        value={shot.scene ?? ''}
+                                        placeholder={t('none')}
+                                        data-storyboard-field="scene"
+                                        onChange={event => patchStoryboardText(index, 'scene', event.target.value)}
+                                        style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                      />
+                                    </label>
+                                  </div>
+                                  <label className="iv-sb-field">
+                                    <span className="iv-meta">
+                                      {t('storyboardCharactersLabel')}
+                                      {shot.characters.length === 0 ? `（${t('storyboardCharactersEmpty')}）` : ''}
+                                    </span>
+                                    <input
+                                      className="iv-input"
+                                      value={shot.characters.join('、')}
+                                      data-storyboard-field="characters"
+                                      onChange={event => patchStoryboardCharacters(index, event.target.value)}
+                                      style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                    />
+                                  </label>
+                                  <label className="iv-sb-field">
+                                    <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
+                                    <textarea
+                                      className="iv-input"
+                                      rows={2}
+                                      value={shot.imagePrompt}
+                                      data-storyboard-field="imagePrompt"
+                                      onChange={event => patchStoryboardText(index, 'imagePrompt', event.target.value)}
+                                      style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                    />
+                                  </label>
+                                  <label className="iv-sb-field">
+                                    <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
+                                    <textarea
+                                      className="iv-input"
+                                      rows={2}
+                                      value={shot.videoPrompt}
+                                      data-storyboard-field="videoPrompt"
+                                      onChange={event => patchStoryboardText(index, 'videoPrompt', event.target.value)}
+                                      style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                    />
+                                  </label>
+                                  <div className="iv-sb-actions">
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--sm"
+                                      data-storyboard-to-generate={String(index)}
+                                      onClick={() => storyboardToGenerate(shot)}
+                                    >
+                                      <Icon name="bolt" size={11} />{t('storyboardToGenerate')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--sm"
+                                      data-storyboard-to-canvas={String(index)}
+                                      onClick={() => { void storyboardToCanvas(shot) }}
+                                    >
+                                      <Icon name="flow" size={11} />{t('storyboardToCanvas')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--icon iv-btn--sm"
+                                      aria-label={t('storyboardMoveUp')}
+                                      data-storyboard-up={String(index)}
+                                      disabled={index === 0}
+                                      onClick={() => moveStoryboardShot(index, -1)}
+                                    >
+                                      <Icon name="chevron" size={11} className="iv-ico--up" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--icon iv-btn--sm"
+                                      aria-label={t('storyboardMoveDown')}
+                                      data-storyboard-down={String(index)}
+                                      disabled={index === storyboardShots.length - 1}
+                                      onClick={() => moveStoryboardShot(index, 1)}
+                                    >
+                                      <Icon name="chevron" size={11} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--icon iv-btn--sm"
+                                      aria-label={`${t('storyboardRemoveShot')} ${shot.index}`}
+                                      data-storyboard-remove={String(index)}
+                                      onClick={() => removeStoryboardShot(index)}
+                                    >
+                                      <Icon name="trash" size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      {storyboardShots.length === 0 ? null : (
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          data-storyboard-add-bottom="true"
+                          onClick={addStoryboardShot}
+                        >
+                          <Icon name="plus" size={11} />{t('storyboardAddShot')}
+                        </button>
+                      )}
+                    </div>
                     <div className="iv-stats">
                       <span className="iv-stat"><b>{outputs.length}</b><span>{t('statOutputs')}</span></span>
                       <span className="iv-stat"><b>{assets.length}</b><span>{t('statAssets')}</span></span>
@@ -2648,6 +3071,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       onClick={() => {
                         setAssetRegistered(false)
                         void run(async () => {
+                          // `B-16`：先记一笔导出账（遥测性质，记账失败不挡导出本身）
+                          try {
+                            const attempt = await apiRef.current.recordExport({
+                              projectId: timeline.projectId, timelineId: timeline.id,
+                            })
+                            setExportRecordId(attempt.id)
+                          } catch {
+                            // 历史记账失败静默：导出照常，历史里少一条
+                          }
                           setRenderJob(await apiRef.current.renderTimeline(
                             timeline.id, timeline.projectId,
                             { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
@@ -3085,6 +3517,24 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <AssetHealthPanel
                   api={apiRef.current}
                   formatBytes={formatBytes}
+                  t={(key) => t(key as WorkbenchLocaleKey)}
+                />
+              </PaneBoundary>
+            </section>
+
+            {/* B-16 导出历史 pane（A-11 exports/*） */}
+            <section className="iv-pane" data-workbench-pane="paneExports" data-workbench-planned="false">
+              <PaneBoundary label={t('paneExports')} t={t}>
+                <div className="iv-pane-head">
+                  <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
+                  <h3 className="iv-pane-title">{t('paneExports')}</h3>
+                </div>
+                <ExportHistoryPanel
+                  api={apiRef.current}
+                  projects={projects}
+                  formatBytes={formatBytes}
+                  refreshTick={exportsTick}
+                  onRetry={(record, label) => { void retryExport(record, label) }}
                   t={(key) => t(key as WorkbenchLocaleKey)}
                 />
               </PaneBoundary>
@@ -3843,6 +4293,40 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           <span className="iv-mono">{kind}</span>
         </div>
       </footer>
+
+      {/* ============ B-17 帮助浮层（快捷键 + 模式说明）============ */}
+      {helpOpen
+        ? (
+          <div className="iv-help-mask" data-workbench-help="true" onClick={event => { if (event.target === event.currentTarget) setHelpOpen(false) }}>
+            <div className="iv-help" role="dialog" aria-label={t('helpTitle')}>
+              <h4>{t('helpTitle')}</h4>
+              <h4>{t('helpModes')}</h4>
+              <ul className="iv-help-list">
+                <li><span>{t('helpModeQuick')}</span></li>
+                <li><span>{t('helpModeWorkflow')}</span></li>
+                <li><span>{t('helpModeTimeline')}</span></li>
+              </ul>
+              <h4>{t('helpShortcuts')}</h4>
+              <ul className="iv-help-list">
+                <li><span>{t('helpGenerateShortcut')}</span></li>
+                <li><span>{t('helpUndoShortcut')}</span></li>
+                <li><span>{t('helpPlayShortcut')}</span></li>
+                <li><span>{t('helpDeleteShortcut')}</span></li>
+              </ul>
+              <div className="iv-help-actions">
+                <button
+                  type="button"
+                  className="iv-btn iv-btn--sm"
+                  data-workbench-help-close="true"
+                  onClick={() => { setHelpOpen(false) }}
+                >
+                  {t('helpClose')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+        : null}
     </div>
   )
 }

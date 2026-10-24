@@ -84,7 +84,9 @@ describe('workbench project and asset flow', () => {
 
     expect(host.calls).toContain('projects/create')
     expect(view.container.querySelector('[data-workbench-projects]')?.getAttribute('data-workbench-projects')).toBe('1')
-    expect(screen.getByRole('option', { name: '我的第一个项目' })).toBeTruthy()
+    // 顶栏项目选择器里出现新项目（导出历史面板也有项目下拉，用 aria-label 限定范围）
+    const picker = screen.getByRole('combobox', { name: en.sectionProject })
+    expect([...picker.querySelectorAll('option')].some(option => option.textContent === '我的第一个项目')).toBe(true)
   })
 
   it('registers the newest unregistered output as an asset and previews it', async () => {
@@ -179,7 +181,8 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(host.calls).toContain('projects/rename') })
     await waitFor(() => { expect(root.getAttribute('data-workbench-save')).toBe('saved') })
     expect(host.projects[0]?.name).toBe('新名字')
-    expect(screen.getByRole('option', { name: '新名字' })).toBeTruthy()
+    const picker = screen.getByRole('combobox', { name: en.sectionProject })
+    expect([...picker.querySelectorAll('option')].some(option => option.textContent === '新名字')).toBe(true)
   })
 
   it('loads the stored workflow when entering the workflow mode', async () => {

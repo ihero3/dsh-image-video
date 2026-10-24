@@ -69,3 +69,46 @@
 ## Round 2（2026-10-22，B-9..B-14（全部可立即开工））
 
 > 详见 `docs/PLAN-TWO-TRACKS.md` 的「Round 2 分工」。
+
+## Round 3（2026-10-24，B-15..B-17；基于 v1.0.0 `38e0314`）
+
+> A 的 A-7（`storyboard/plan`）与 A-11（`exports/*`）均已上线（v1.0.0，契约见
+> `docs/API-SURFACE.md` 第 26–29 行），Wave 3 三项全部完成。
+
+- [x] **B-15（分镜表编辑 UI）**：快速模式新增「分镜工坊」——剧本 + 可选目标镜头数 →
+  `storyboard/plan`（`{projectId,script,shots?}` → `{shots,referencedResourceIds}`）→
+  镜头表：序号/镜头描述/角色（逗号顿号文本）/场景/图片提示词/视频提示词全部可改，
+  支持增删镜、上移/下移（移完 1-based 重排序号）、「带入生成」（只填表不自动生成）、
+  「送入画布」（有图片生成节点就改写其提示词，没有就追加一个并切到工作流模式）。
+  空剧本/无项目用按钮禁用拦；宿主错误（如空剧本）如实展示、不伪造镜头。
+  测试：`tests/client-storyboard-edit.test.tsx`（7 项：入参形状/禁用护栏/改后带入/
+  送入画布新建/改写既有节点/增删移重排/宿主错误如实）。
+- [x] **B-16（导出历史面板）**：dock 新增「导出历史」pane（`src/client/panels/ExportHistoryPanel.tsx`）——
+  `exports/list` 四态徽标（queued/running/succeeded/failed，复用任务状态文案）、
+  产物走 `/outputs/<文件名>` 只读路由可点开、字节/耗时/失败原因原样展示、
+  按项目筛选、空态；失败行给「重试导出」（先 `exports/record` 记新账再按原时间轴重渲，
+  且不在时间轴模式也会被轮询跟着收尾）。时间轴模式点导出时自动记账，
+  渲染终态经统一轮询捕获后 `exports/update` 回写（取消 → failed + 宿主原因，不伪装成功）。
+  测试：`tests/client-export-history.test.tsx`（5 项：四态事实渲染/空态/项目筛选/
+  重试记账/导出全链路记账与回写）。
+- [x] **B-17（发布前收尾）**：左栏新增「帮助」入口——浮层列三个模式说明与**真实存在**的
+  快捷键（Ctrl/⌘+Enter 生成、Ctrl/⌘+Z/Shift+Z 撤销重做、空格播放、Delete 删除；
+  没绑定的键不写）；无项目时顶栏出现「示例项目」按钮——一键建项并套用 quick-image
+  模板（script → image-generate），让新用户打开就有东西可看。真实生成端到端走查
+  （图片 + 视频各一次）需 A 授权/API key，操作路径与预期写在
+  `docs/WALKTHROUGH-v1.0.0.md`，授权后约 10 分钟可完成。
+  测试：`tests/client-release-polish.test.tsx`（3 项：帮助浮层内容与开关/示例项目
+  建项套模板/有项目后按钮隐藏）。
+
+**Round 3 门禁**：`pnpm run typecheck` 通过；客户端 36 个测试文件全绿
+（`client-*` 32 + `workbench.client` + `workflow-canvas.client` + 新增 3 个），
+新增 15 项（B-15 7 + B-16 5 + B-17 3）。未提交 `lib/`、未改 `package.json`/lock、未打 tag。
+
+**Round 3 环境备注（需 A 决策）**：
+1. 本地构建跑不了：pnpm store 缺 `@jridgewell/sourcemap-codec`（`magic-string` 的依赖），
+   `pnpm run build` 在 tsdown 处失败——发版构建请重跑 `pnpm run check:bundle` 确认体积
+   （A-6 后入口已按需加载，新增主要在按需块）。
+2. 远端历史被重组：`origin/main` 现为分叉 lineage（`478832a`，树里没有 `src/client`、
+   `src/host`、`src/workbench`、`docs/` 与 134 个测试文件），含全部双轨工作的
+   `38e0314`（v1.0.0）本地完好。本轮基于 `38e0314`；**未向 origin 推送**，
+   reconcile 方式待 A 决定。

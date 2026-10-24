@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
+import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, ExportRecord, PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
@@ -65,6 +65,8 @@ export function fakeApi(options: {
   sizeReport?: AssetSizeReport
   duplicates?: AssetDuplicatesReport
   projectStats?: AssetProjectStats
+  /** `B-16`：导出历史初始内容（测试替身）。 */
+  exports?: ExportRecord[]
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
@@ -90,9 +92,14 @@ export function fakeApi(options: {
   const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[] }> = []
   /** `B-10`：`extractPrompt` 收到的入参（测试断言用）。 */
   const extractInputs: Array<{ path?: string }> = []
+  /** `B-15`：`planStoryboard` 收到的入参（测试断言用）。 */
+  const storyboardPayloads: Array<{ projectId: string; script: string; shots?: number }> = []
   /** `B-10`：提示词库（内存态，`savePrompt`/`removePrompt` 会改它）。 */
   const prompts: PromptRecord[] = [...(options.prompts ?? [])]
   let promptSequence = prompts.length
+  /** `B-16`：导出历史（内存态，`recordExport`/`updateExport` 会改它）。 */
+  const exportRecords: ExportRecord[] = [...(options.exports ?? [])]
+  let exportSequence = exportRecords.length
   let counter = 0
   const api: WorkbenchApi = {
   // `A152`：批量登记 / 批量导入（测试替身）
@@ -162,6 +169,62 @@ export function fakeApi(options: {
     if (index < 0) return false
     prompts.splice(index, 1)
     return true
+  },
+  // `B-15`：剧本 → 分镜表（测试替身）。记录入参，返回固定的两镜拆解。
+  planStoryboard: async input => {
+    calls.push('storyboard/plan')
+    storyboardPayloads.push(input)
+    return {
+      shots: [
+        {
+          index: 1, shot: '镜头一：晨光落在杯口', characters: [],
+          imagePrompt: '晨光落在杯口；电影感构图，主体清晰，光影统一',
+          videoPrompt: '晨光落在杯口；镜头运动克制，画面连贯，时长约 5 秒',
+        },
+        {
+          index: 2, shot: '镜头二：热气缓慢升腾', characters: [],
+          imagePrompt: '热气缓慢升腾；电影感构图，主体清晰，光影统一',
+          videoPrompt: '热气缓慢升腾；镜头运动克制，画面连贯，时长约 5 秒',
+        },
+      ],
+      referencedResourceIds: [],
+    }
+  },
+  // `B-16`：导出历史（测试替身）。list 按项目过滤；record 追加 queued；
+  // update 原地改状态/产物/原因/耗时；未知 id 如实抛错（与宿主一致）。
+  listExports: async input => {
+    calls.push('exports/list')
+    return input?.projectId === undefined
+      ? [...exportRecords]
+      : exportRecords.filter(record => record.projectId === input.projectId)
+  },
+  recordExport: async input => {
+    calls.push('exports/record')
+    exportSequence += 1
+    const stamp = '2026-10-23T00:00:00.000Z'
+    const record: ExportRecord = {
+      id: `exp-${exportSequence}`, projectId: input.projectId, timelineId: input.timelineId,
+      status: 'queued', startedAt: stamp, updatedAt: stamp,
+    }
+    exportRecords.unshift(record)
+    return record
+  },
+  updateExport: async input => {
+    calls.push('exports/update')
+    const index = exportRecords.findIndex(record => record.id === input.id)
+    if (index < 0) throw new Error(`unknown export: ${input.id}`)
+    const current = exportRecords[index]!
+    const updated: ExportRecord = {
+      ...current,
+      ...input.status === undefined ? {} : { status: input.status },
+      ...input.outputPath === undefined ? {} : { outputPath: input.outputPath },
+      ...input.bytes === undefined ? {} : { bytes: input.bytes },
+      ...input.error === undefined ? {} : { error: input.error },
+      ...input.elapsedSeconds === undefined ? {} : { elapsedSeconds: input.elapsedSeconds },
+      updatedAt: '2026-10-23T00:01:00.000Z',
+    }
+    exportRecords[index] = updated
+    return updated
   },
     health: async () => {
       calls.push('health')
@@ -462,7 +525,7 @@ export function fakeApi(options: {
       }
     },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
