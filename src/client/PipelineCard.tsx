@@ -8,7 +8,8 @@
  * 用户能立刻看到节点、运行记录与每镜产物。
  */
 import { useState } from 'react'
-import type { PipelineResult, WorkbenchApi } from './api.ts'
+import type { PipelineResult, PipelineRunInput, WorkbenchApi } from './api.ts'
+import type { ResourceKind } from '../workbench/records.ts'
 import { Icon } from './icons.tsx'
 import type { WorkbenchLocaleKey } from './locales.ts'
 
@@ -43,9 +44,11 @@ export function PipelineCard(props: PipelineCardProps) {
   /** 只编排不跑：零花费预览分镜与提示词，确认后再点「一键生成」。 */
   const composeOnly = async (): Promise<void> => {
     if (projectId === undefined || projectId === '' || script.trim() === '') return
+    const input: PipelineRunInput = { projectId, script, mode, shots, duration, strictResources: strict }
     setRunning(true); setError(undefined); setResult(undefined)
     try {
-      setResult(await api.composePipeline({ projectId, script, mode, shots, duration, strictResources: strict }))
+      setResult(await api.composePipeline(input))
+      setComposeInput(input)
       setStarted(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -54,6 +57,8 @@ export function PipelineCard(props: PipelineCardProps) {
     }
   }
   const [result, setResult] = useState<PipelineResult | undefined>(undefined)
+  /** 上一次成功「仅编排」的入参——登记新物料后按同一入参重编，刷新自动匹配结果。 */
+  const [composeInput, setComposeInput] = useState<PipelineRunInput | undefined>(undefined)
   /** 本次结果是「已起跑」还是「仅编排」——决定结果条文案。 */
   const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -62,21 +67,37 @@ export function PipelineCard(props: PipelineCardProps) {
 
   async function run(): Promise<void> {
     if (!canRun) return
+    const input: PipelineRunInput = { projectId: projectId as string, script, mode, shots, duration, strictResources: strict }
     setRunning(true)
     setError(undefined)
     setResult(undefined)
     try {
-      const started = await api.runPipeline({
-        projectId: projectId as string,
-        script,
-        mode,
-        shots,
-        duration,
-        strictResources: strict,
-      })
+      const started = await api.runPipeline(input)
       setResult(started.pipeline)
+      setComposeInput(input)
       setStarted(true)
       props.onStarted(started.pipeline.workflowId)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  /**
+   * 把「物料缺失」清单里的一个名字登记进资源库，然后按上一次编排的同一入参重新 compose——
+   * 自动匹配是宿主行为，重编一次即可刷新 missing/warnings，不需要新端点。
+   * 登记失败如实报错，不伪造"已匹配"。
+   */
+  const registerMissing = async (name: string, kind: ResourceKind): Promise<void> => {
+    const input = composeInput
+    if (input === undefined) return
+    setRunning(true)
+    setError(undefined)
+    try {
+      await api.createResource({ projectId: input.projectId, kind, name })
+      setResult(await api.composePipeline(input))
+      setStarted(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -207,6 +228,35 @@ export function PipelineCard(props: PipelineCardProps) {
                       <ul className="iv-meta" style={{ margin: 0, paddingLeft: '18px' }}>
                         {(result.warnings ?? []).map(warning => <li key={warning}>{t('pipelineWarnings')}：{warning}</li>)}
                       </ul>
+                    )}
+                  {(result.missingResources ?? []).length === 0
+                    ? <span className="iv-meta" data-pipeline-missing-none="true">{t('pipelineMissingNone')}</span>
+                    : (
+                      <div style={{ display: 'grid', gap: '4px' }} data-pipeline-missing="true">
+                        <span className="iv-meta">
+                          <Icon name="alert" size={11} /> {t('pipelineMissingTitle')}
+                        </span>
+                        <span className="iv-meta">{t('pipelineMissingHint')}</span>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {(result.missingResources ?? []).map(name => (
+                            <span className="iv-chip iv-chip--warn" key={name} data-pipeline-missing-item={name}>
+                              <span style={{ marginRight: '4px' }}>{name}</span>
+                              {(['role', 'scene', 'prop'] as const).map(kind => (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  data-pipeline-register={kind}
+                                  disabled={running}
+                                  onClick={() => { void registerMissing(name, kind) }}
+                                >
+                                  {t(kind === 'role' ? 'pipelineRegisterRole' : kind === 'scene' ? 'pipelineRegisterScene' : 'pipelineRegisterProp')}
+                                </button>
+                              ))}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                 </div>
               )}

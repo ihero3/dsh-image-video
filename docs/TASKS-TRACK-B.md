@@ -2,7 +2,7 @@
 
 > 归属：**同事 B**（Track B）。地盘：`src/client/**` + 客户端测试 + UI 文档。**不碰** `src/host`、`src/workbench`、`src/media`、`lib`、依赖。
 > 前置：先把 `docs/COLLABORATION.md` 看一遍（文件所有权矩阵 + 分支规则）。
-> 每项完成条件：`bash scripts/gate.sh` 全绿（lib 由 A 提交，你本地 build 自测即可）+ 客户端测试 + 截图。
+> 每项完成条件：`bash scripts/gate.sh` 全绿（2026-10-25 起 `lib/` 停止入库、由 harness 侧 `pnpm run build:plugins` 生成；本地 `pnpm run build` 自测即可，**不再提交 `lib/`**）+ 客户端测试 + 截图。
 
 ## 双轨分工（2026-10-21）
 
@@ -64,7 +64,7 @@
 ## 你不能做的（要交给 A）
 
 - 改 RPC 端点/数据模型/渲染参数 → 在 `docs/API-SURFACE.md` 的「B 申请」写一行，A 认领。
-- 提交 `lib/`、改 `package.json`/lock、打 tag。
+- 改 `package.json`/lock、打 tag（`lib/` 自 2026-10-25 起已停止入库，由 `build:plugins` 生成，无需任何人提交）。
 
 ## Round 2（2026-10-22，B-9..B-14（全部可立即开工））
 
@@ -112,3 +112,21 @@
    `src/host`、`src/workbench`、`docs/` 与 134 个测试文件），含全部双轨工作的
    `38e0314`（v1.0.0）本地完好。本轮基于 `38e0314`；**未向 origin 推送**，
    reconcile 方式待 A 决定。
+
+## Round 4（2026-10-25，基于 `28d9213`；P0-2 待补第一项：物料自动匹配）
+
+> 基线变化（同事 A 交接后各进一个提交）：插件 `396179c → 28d9213`、harness `88cd5aa0 → 73f7ff56`，
+> 都是「`lib/` 停止跟踪，改由 harness `pnpm run build:plugins` 生成」——交接提醒 #2 据此改写：
+> 改 `src/**` 后本地 `pnpm run build` 自测即可，`lib/` 不再需要提交。
+
+- [x] **B-18（物料自动匹配闭环）**：`pipelines/compose` 早回传 `missingResources`（剧本提到、
+  资源库没有的物料名），客户端类型也有该字段，但界面一直没渲染——严格模式下用户只看到
+  "对不上"，不知缺什么、去哪补。`PipelineCard` 结果区新增缺失清单：每个缺失名一个
+  `iv-chip--warn` chip + 「登记为角色/场景/物品」快速按钮（`resources/create`）→ 成功后
+  **按上一次编排的同一入参自动重编**，刷新匹配结果（免费、零新端点）；登记失败如实报错、
+  缺项不消失；缺失为空时显示"未检测到缺失物料"（无假阳性）；登记进行中按钮禁用。
+  `runPipeline` 路径同样记住入参，起跑后也能补登记。locales 三处同步（`pipelineMissingTitle/Hint/None`、
+  `pipelineRegisterRole/Scene/Prop` 七个键，en/zh）。测试：`tests/client-pipeline-materials.test.tsx`
+  （5 项：缺失清单渲染 / 登记后自动重编且入参正确 / 失败不伪造 / 空缺失无假阳性 / 进行中禁用）。
+- 配套契约申请（见 `docs/API-SURFACE.md`「B 申请区」）：`pipelines/compose|run` 显式 `resourceIds`
+  （物料手动挑选）+ `matchedResources` 回显——**待 A 认领**；契约未落地前客户端不做无契约功能。

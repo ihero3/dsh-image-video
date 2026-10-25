@@ -446,6 +446,12 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotsCount'
   | 'pipelineWarnings'
   | 'pipelineNeedsProject'
+  | 'pipelineMissingTitle'
+  | 'pipelineMissingHint'
+  | 'pipelineMissingNone'
+  | 'pipelineRegisterRole'
+  | 'pipelineRegisterScene'
+  | 'pipelineRegisterProp'
   | 'voiceTitle'
   | 'voiceHint'
   | 'voicePlan'
@@ -543,6 +549,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotsCount: 'shots',
   pipelineWarnings: 'Note',
   pipelineNeedsProject: 'Create or pick a project first',
+  pipelineMissingTitle: 'Missing materials',
+  pipelineMissingHint: 'Names the script mentions but the resource library does not have yet. Strict mode refuses to run; register one and matching re-runs automatically.',
+  pipelineMissingNone: 'No missing materials detected',
+  pipelineRegisterRole: 'As role',
+  pipelineRegisterScene: 'As scene',
+  pipelineRegisterProp: 'As prop',
   voiceTitle: 'Dub (voice-over)',
   voiceHint: 'Turn the subtitle track into a dub plan: lines, characters and estimated duration. Synthesis turns on once the TTS API is live.',
   voicePlan: 'Build dub plan',
@@ -1066,6 +1078,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotsCount: '个分镜',
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个项目',
+  pipelineMissingTitle: '物料缺失',
+  pipelineMissingHint: '剧本提到、资源库还没有的角色/场景/物品。严格模式会拒绝执行；登记后会自动重新匹配。',
+  pipelineMissingNone: '未检测到缺失物料',
+  pipelineRegisterRole: '登记为角色',
+  pipelineRegisterScene: '登记为场景',
+  pipelineRegisterProp: '登记为物品',
   voiceTitle: '配音（旁白）',
   voiceHint: '把字幕轨变成配音计划：台词、字数、估算时长一目了然。TTS 接口联调通过后即可一键生成。',
   voicePlan: '生成配音计划',
