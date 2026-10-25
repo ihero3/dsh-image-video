@@ -88,6 +88,32 @@ describe('media/generate (A145)', () => {
     expect(calls[0]).toMatchObject({ prompt: '海浪', duration: 6, aspectRatio: '9:16' })
   })
 
+  it('forwards the video media[] sequence and realPerson flag (B-3 申请，A 认领)', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const { ok, outputsDir } = await harness({
+      video: { async execute(args) { calls.push(args as Record<string, unknown>); return { videoPath: join(outputsDir, 'edited.mp4'), bytes: 2 } } },
+    })
+    await ok('media/generate', {
+      mediaMode: 'video',
+      prompt: '把背景换成雪夜街道，保留原片动作',
+      duration: 5,
+      media: [
+        { image: 'last-frame.png', type: 'last_frame' },
+        { video: 'source.mp4', type: 'reference_video' },
+      ],
+      realPerson: true,
+    })
+    // 原样透传给 generate_video：工具侧按 type/position 解释，宿主不该改写或丢字段
+    expect(calls[0]).toMatchObject({
+      prompt: '把背景换成雪夜街道，保留原片动作',
+      media: [
+        { image: 'last-frame.png', type: 'last_frame' },
+        { video: 'source.mp4', type: 'reference_video' },
+      ],
+      realPerson: true,
+    })
+  })
+
   it('refuses clearly when no generation adapter is wired', async () => {
     const { call } = await harness()
     const result = await call('media/generate', { prompt: '随便' })
