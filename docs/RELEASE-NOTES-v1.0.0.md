@@ -37,7 +37,7 @@
 - **真问题不是插件没挂**：`@deepseek-ai/dsh-llm-retry` 早已在 base bundle 里，且没有
   `disabled`；它本身**没有配置**，`retryPolicy` 挂在各 provider 上，缺省是 `normal` + 5 次
   + 500ms 起退避。
-- **丢的是 profile 里的策略**：桌面 profile 的 `llm-pi-ai.providers.threerouter` 一度没有
+- **丢的是 profile 里的策略**：桌面 profile 的 `llm-pi-ai.providers.threevideo` 一度没有
   `retryPolicy` 段，于是回落到框架默认。现已按 fork 台账 **R26** 恢复：
   `mode: normal`、`maxRetries: 8`、退避 `1000 → 20000ms`，重试码用默认五类瞬时错误
   （`TRANSPORT` / `SERVER` / `TIMEOUT` / `RATE_LIMIT` / `EMPTY_RESPONSE`）。

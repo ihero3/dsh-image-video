@@ -28,8 +28,8 @@ async function harness(options: { image?: GenerationTool; video?: GenerationTool
   })
   const renders = new RenderRegistry({ render: new RenderService({ outputsDir }) })
   const handler = createWorkbenchHandler({
-    provider: 'threerouter', outputsDir, store, registry, runner, renders,
-    defaults: () => ({ mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null, videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5 }),
+    provider: 'threevideo', outputsDir, store, registry, runner, renders,
+    defaults: () => ({ mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null, videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5 }),
     ...options.image === undefined && options.video === undefined ? {} : {
       generate: {
         image: options.image ?? ({ async execute() { throw new Error('no image tool') } }),

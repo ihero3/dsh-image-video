@@ -55,7 +55,7 @@ describe('workbench store', () => {
     const { store } = await makeStore()
     const project = await store.createProject('素材')
     const { asset, created } = await store.attachAsset({
-      projectId: project.id, path: '/tmp/outputs/shot.png', kind: 'image', bytes: 2048, provider: 'threerouter',
+      projectId: project.id, path: '/tmp/outputs/shot.png', kind: 'image', bytes: 2048, provider: 'threevideo',
     })
     expect(created).toBe(true)
     expect(asset.kind).toBe('image')
@@ -115,7 +115,7 @@ describe('workbench store', () => {
 
   it('closes generations left running by a previous process', async () => {
     const { store } = await makeStore()
-    const running = await store.recordTask({ kind: 'video', status: 'running', provider: 'threerouter' })
+    const running = await store.recordTask({ kind: 'video', status: 'running', provider: 'threevideo' })
     await store.recordTask({ kind: 'image', status: 'succeeded' })
     expect(await store.failStaleRunning('interrupted by host restart')).toBe(1)
     const closed = (await store.listTasks()).find(task => task.id === running.id)
@@ -136,7 +136,7 @@ describe('workbench store', () => {
     const { store, directory } = await makeStore()
     const project = await store.createProject('账本')
     const task = await store.recordTask({
-      kind: 'video', status: 'succeeded', provider: 'threerouter', model: 'minimax-h3',
+      kind: 'video', status: 'succeeded', provider: 'threevideo', model: 'minimax-h3',
       outputPath: '/tmp/outputs/clip.mp4', bytes: 4096, startedAt: '2026-10-13T00:00:00.000Z',
     })
     expect(task.status).toBe('succeeded')

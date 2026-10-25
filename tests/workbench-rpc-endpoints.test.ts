@@ -47,10 +47,10 @@ async function makeHandler() {
     },
   })
   const handler = createWorkbenchHandler({
-    provider: 'threerouter', outputsDir, store, registry, runner, renders,
+    provider: 'threevideo', outputsDir, store, registry, runner, renders,
     defaults: () => ({
-      mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
-      videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+      mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
+      videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
     }),
   })
   /** Call one endpoint and fail the test on a refused envelope. */
@@ -67,7 +67,7 @@ describe('workbench channel endpoints', () => {
     const { ok } = await makeHandler()
     const health = await ok<{ version: string; provider: string; channel: string }>('health')
     expect(health.channel).toBe('/image-video')
-    expect(health.provider).toBe('threerouter')
+    expect(health.provider).toBe('threevideo')
   })
 
   it('walks the project and asset lifecycle', async () => {
@@ -515,7 +515,7 @@ describe('workbench channel endpoints', () => {
     const { ok, store } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '账本项目' })
     const recorded = await store.recordTask({
-      kind: 'image', status: 'succeeded', provider: 'threerouter', model: 'minimax-image-01',
+      kind: 'image', status: 'succeeded', provider: 'threevideo', model: 'minimax-image-01',
       outputPath: '/tmp/x/shot.jpg', bytes: 106_000,
     })
 

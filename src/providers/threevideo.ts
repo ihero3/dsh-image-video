@@ -1,5 +1,5 @@
 /**
- * Threerouter 适配器：基于 threerouter.com 统一媒体生成 API。
+ * Threevideo 适配器：基于 threevideo.com 统一媒体生成 API。
  * 生图（文生图 + 图生图）两条传输：
  *   1. 异步（推荐，`imageTransport: async`）——POST /images/generations/async 返回
  *      202 + task_id，GET /images/tasks/{task_id} 轮询，响应丢失时
@@ -10,8 +10,8 @@
  *      兼容统一入口顶层 url / urls 形态。同步路径无幂等保证，因此**永不自动重提**。
  * 视频走 POST /media/generations 创建 → GET /media/{id} 轮询 → GET /media/{id}/content 下载，
  * 请求显式携带 media_kind=video。鉴权统一 Bearer Token。
- * 服务端契约见 docs/threerouter-async-image-contract.md。
- * @module dsh-image-video/providers/threerouter
+ * 服务端契约见 docs/threevideo-async-image-contract.md。
+ * @module dsh-image-video/providers/threevideo
  */
 
 import { request, requestFull, parseRetryAfterMs, GenerationError, downloadMedia } from '../http-client.ts'
@@ -20,15 +20,15 @@ import { VIDEO_DURATION_UNSUPPORTED, VIDEO_MODEL_DEFAULT_RESOLUTION } from '../r
 import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, HttpOpts, AsyncImageSubmit } from './types.ts'
 import { toRequestOpts, normalizeImageSize, aliImageSize } from './types.ts'
 
-/** Threerouter 默认文生图模型（千问图像 3.0，服务端模态注册表收录；旧默认 wan2.1-image 未收录会按文本派发）。 */
+/** Threevideo 默认文生图模型（千问图像 3.0，服务端模态注册表收录；旧默认 wan2.1-image 未收录会按文本派发）。 */
 const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0'
-/** Threerouter 图生图默认模型（千问图像 3.0 Pro，支持 image 参考图入参，文档快速上手示例同款）。 */
+/** Threevideo 图生图默认模型（千问图像 3.0 Pro，支持 image 参考图入参，文档快速上手示例同款）。 */
 const DEFAULT_IMAGE_EDIT_MODEL = 'qwen-image-3.0-pro'
-/** Threerouter 默认文生视频模型（MiniMax 系，支持 4-15 秒自定义时长）。账号可用模型见 threerouter.com 控制台。 */
+/** Threevideo 默认文生视频模型（MiniMax 系，支持 4-15 秒自定义时长）。账号可用模型见 threevideo.com 控制台。 */
 const DEFAULT_VIDEO_MODEL = 'minimax-h3'
 
-/** Threerouter /images/generations 响应：OpenAI 标准结构（data[0]），兼容统一入口顶层 url / urls 形态。 */
-interface ThreerouterImagesResponse {
+/** Threevideo /images/generations 响应：OpenAI 标准结构（data[0]），兼容统一入口顶层 url / urls 形态。 */
+interface ThreevideoImagesResponse {
   data?: Array<{ url?: string; b64_json?: string }>
   url?: string
   urls?: string[]
@@ -51,7 +51,7 @@ function isAliNativeImageModel(model: string): boolean {
  * 上游对未知顶层参数是严格拒绝的（`Unrecognized request argument`），
  * 只有异步端点会在下发前摘掉 `request_id`。
  */
-function threerouterHeaders(apiKey: string, requestId?: string): Record<string, string> {
+function threevideoHeaders(apiKey: string, requestId?: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`,
@@ -83,8 +83,8 @@ function effectiveImageModel(params: ImageGenParams): string {
   return params.model ?? (params.image ? DEFAULT_IMAGE_EDIT_MODEL : DEFAULT_IMAGE_MODEL)
 }
 
-/** Threerouter 异步图片任务响应（提交 202 与查询共用字段）。 */
-interface ThreerouterImageTaskResponse {
+/** Threevideo 异步图片任务响应（提交 202 与查询共用字段）。 */
+interface ThreevideoImageTaskResponse {
   id?: string
   task_id?: string
   object?: string
@@ -93,14 +93,14 @@ interface ThreerouterImageTaskResponse {
   http_status?: number
   image_url?: string
   request_id?: string
-  result?: ThreerouterImagesResponse
+  result?: ThreevideoImagesResponse
   error?: unknown
   created_at?: number
   expires_at?: number
 }
 
 /** 从任务响应里取图片 URL：优先顶层 image_url，再回退 result.data[0].url。 */
-function imageTaskMediaUrl(data: ThreerouterImageTaskResponse | undefined): string | undefined {
+function imageTaskMediaUrl(data: ThreevideoImageTaskResponse | undefined): string | undefined {
   const top = typeof data?.image_url === 'string' && data.image_url !== '' ? data.image_url : undefined
   if (top !== undefined) return top
   const first = data?.result?.data?.[0]?.url
@@ -111,7 +111,7 @@ function imageTaskMediaUrl(data: ThreerouterImageTaskResponse | undefined): stri
  * 把网关返回的失败对象拼成可读错误：`{type, code, message}` 三件套按有的拼，
  * 并带上 http_status（异步任务失败时上游状态码在这里，不在任务状态里）。
  */
-function extractImageTaskError(data: ThreerouterImageTaskResponse | undefined): string {
+function extractImageTaskError(data: ThreevideoImageTaskResponse | undefined): string {
   const error = data?.error
   let detail = ''
   if (typeof error === 'string') {
@@ -122,7 +122,7 @@ function extractImageTaskError(data: ThreerouterImageTaskResponse | undefined): 
     const message = typeof obj.message === 'string' ? obj.message : ''
     detail = [code, message].filter((part) => part !== '').join(': ')
   }
-  if (detail === '') detail = 'Threerouter 图片任务执行失败'
+  if (detail === '') detail = 'Threevideo 图片任务执行失败'
   return data?.http_status ? `${detail}（上游 HTTP ${data.http_status}）` : detail
 }
 
@@ -143,9 +143,9 @@ function extractImageTaskError(data: ThreerouterImageTaskResponse | undefined): 
 async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<SubmitResult> {
   const url = `${opts.baseURL}/images/generations`
   const effectiveModel = effectiveImageModel(params)
-  const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey, params.requestId), imageRequestBody(params, effectiveModel), { ...opts, retryTimes: 0 })
+  const reqOpts = toRequestOpts('POST', url, threevideoHeaders(opts.apiKey, params.requestId), imageRequestBody(params, effectiveModel), { ...opts, retryTimes: 0 })
   reqOpts.timeoutMs = Math.max(reqOpts.timeoutMs, 600_000)
-  const data = await request(reqOpts) as ThreerouterImagesResponse
+  const data = await request(reqOpts) as ThreevideoImagesResponse
   const first = data?.data?.[0]
   const topLevelUrl = data?.url ?? (Array.isArray(data?.urls) ? data.urls[0] : undefined)
   const mediaUrl = first?.url ?? (typeof topLevelUrl === 'string' && topLevelUrl !== '' ? topLevelUrl : undefined)
@@ -158,12 +158,12 @@ async function submitImage(params: ImageGenParams, opts: HttpOpts): Promise<Subm
       ? (data.error as { message: string }).message
       : ''
   // 统一入口失败形态（2026-09-14 实测）：{id, status:'failed', error:'minimax 1026: input new_sensitive'}
-  if (data?.status === 'failed') throw new Error(`Threerouter 生图：上游失败。${errMsg}`)
+  if (data?.status === 'failed') throw new Error(`Threevideo 生图：上游失败。${errMsg}`)
   // 异步任务形态：{id, status:'processing'} → 交由工具层轮询 GET /media/{id}
   if (data?.id && (!data.status || data.status === 'processing' || data.status === 'pending')) {
     return { taskId: data.id, async: true, mediaType: 'image', model: effectiveModel }
   }
-  throw new Error(params.image ? 'Threerouter 图生图：响应未包含图片数据' : 'Threerouter 文生图：响应未包含图片数据')
+  throw new Error(params.image ? 'Threevideo 图生图：响应未包含图片数据' : 'Threevideo 文生图：响应未包含图片数据')
 }
 
 /**
@@ -181,14 +181,14 @@ async function submitImageAsync(params: ImageGenParams, opts: HttpOpts): Promise
   const url = `${opts.baseURL}/images/generations/async`
   const effectiveModel = effectiveImageModel(params)
   // 异步提交只做「接受任务」一件事，网关立即返回 202，不需要抬到同步路径的 600s。
-  const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey, params.requestId), imageRequestBody(params, effectiveModel), { ...opts, retryTimes: 0 })
+  const reqOpts = toRequestOpts('POST', url, threevideoHeaders(opts.apiKey, params.requestId), imageRequestBody(params, effectiveModel), { ...opts, retryTimes: 0 })
   const res: RequestResult = await requestFull(reqOpts)
-  const data = res.data as ThreerouterImageTaskResponse | null
+  const data = res.data as ThreevideoImageTaskResponse | null
   const taskId = typeof data?.task_id === 'string' && data.task_id !== ''
     ? data.task_id
     : typeof data?.id === 'string' ? data.id : ''
   if (taskId === '') {
-    throw new GenerationError('task', 'Threerouter 异步生图：202 响应未包含 task_id，无法轮询（服务端契约异常）', false, res.status)
+    throw new GenerationError('task', 'Threevideo 异步生图：202 响应未包含 task_id，无法轮询（服务端契约异常）', false, res.status)
   }
   const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'))
   return {
@@ -209,7 +209,7 @@ async function submitImageAsync(params: ImageGenParams, opts: HttpOpts): Promise
  */
 async function queryImageTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResult> {
   const url = `${opts.baseURL}/images/tasks/${encodeURIComponent(taskId)}`
-  const data = await request(toRequestOpts('GET', url, threerouterHeaders(opts.apiKey), undefined, opts)) as ThreerouterImageTaskResponse
+  const data = await request(toRequestOpts('GET', url, threevideoHeaders(opts.apiKey), undefined, opts)) as ThreevideoImageTaskResponse
   switch (data?.status) {
     case 'processing':
     case 'pending':
@@ -218,7 +218,7 @@ async function queryImageTask(taskId: string, opts: HttpOpts): Promise<TaskQuery
     case 'completed': {
       const mediaUrl = imageTaskMediaUrl(data)
       if (mediaUrl === undefined) {
-        return { status: 'failed', error: `Threerouter 图片任务已完成但未返回图片 URL（task ${taskId}）` }
+        return { status: 'failed', error: `Threevideo 图片任务已完成但未返回图片 URL（task ${taskId}）` }
       }
       return { status: 'succeeded', mediaUrl }
     }
@@ -226,7 +226,7 @@ async function queryImageTask(taskId: string, opts: HttpOpts): Promise<TaskQuery
     case 'cancelled':
       return { status: 'failed', error: extractImageTaskError(data) }
     default:
-      return { status: 'failed', error: `Threerouter 未知图片任务状态: ${data?.status ?? '空'}（task ${taskId}）` }
+      return { status: 'failed', error: `Threevideo 未知图片任务状态: ${data?.status ?? '空'}（task ${taskId}）` }
   }
 }
 
@@ -242,7 +242,7 @@ async function queryImageTask(taskId: string, opts: HttpOpts): Promise<TaskQuery
 async function findByRequestImageTask(requestId: string, opts: HttpOpts): Promise<{ taskId: string } | undefined> {
   const url = `${opts.baseURL}/images/generations/by-request/${encodeURIComponent(requestId)}`
   try {
-    const data = await request(toRequestOpts('GET', url, threerouterHeaders(opts.apiKey), undefined, opts)) as ThreerouterImageTaskResponse
+    const data = await request(toRequestOpts('GET', url, threevideoHeaders(opts.apiKey), undefined, opts)) as ThreevideoImageTaskResponse
     const taskId = typeof data?.task_id === 'string' && data.task_id !== ''
       ? data.task_id
       : typeof data?.id === 'string' ? data.id : ''
@@ -292,19 +292,19 @@ async function submitVideo(params: VideoGenParams, opts: HttpOpts): Promise<Subm
   if (resolution) {
     body.resolution = resolution
   }
-  const reqOpts = toRequestOpts('POST', url, threerouterHeaders(opts.apiKey), body, opts)
+  const reqOpts = toRequestOpts('POST', url, threevideoHeaders(opts.apiKey), body, opts)
   // 2026-09-14 实测：网关高峰期提交响应可超过 1 分钟（60s 超时连续两次），
   // 提交（非轮询）超时抬到 ≥300s，避免排队慢时误报失败。
   reqOpts.timeoutMs = Math.max(reqOpts.timeoutMs, 300_000)
-  const data = await request(reqOpts) as ThreerouterTaskResponse
-  if (!data?.id) throw new Error('Threerouter 文生视频：未返回任务 ID')
+  const data = await request(reqOpts) as ThreevideoTaskResponse
+  if (!data?.id) throw new Error('Threevideo 文生视频：未返回任务 ID')
   return { taskId: data.id, async: true, mediaType: 'video', model: effectiveModel, ...(droppedDuration ? { droppedDuration } : {}) }
 }
 
 /** 查询异步视频任务状态。完成后优先使用响应 url，缺失时回退 /content 302 端点。 */
 async function queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResult> {
   const url = `${opts.baseURL}/media/${taskId}`
-  const data = await request(toRequestOpts('GET', url, threerouterHeaders(opts.apiKey), undefined, opts)) as ThreerouterQueryResponse
+  const data = await request(toRequestOpts('GET', url, threevideoHeaders(opts.apiKey), undefined, opts)) as ThreevideoQueryResponse
   switch (data?.status) {
     case 'processing':
       return { status: 'running' }
@@ -317,9 +317,9 @@ async function queryTask(taskId: string, opts: HttpOpts): Promise<TaskQueryResul
     case 'failed':
       return { status: 'failed', error: extractVideoTaskError(data.error) }
     case 'cancelled':
-      return { status: 'failed', error: 'Threerouter 任务已取消' }
+      return { status: 'failed', error: 'Threevideo 任务已取消' }
     default:
-      return { status: 'failed', error: `Threerouter 未知任务状态: ${data?.status ?? '空'}` }
+      return { status: 'failed', error: `Threevideo 未知任务状态: ${data?.status ?? '空'}` }
   }
 }
 
@@ -330,19 +330,19 @@ function extractVideoTaskError(error: unknown): string {
     const obj = error as Record<string, unknown>
     if (typeof obj.message === 'string') return obj.message
   }
-  return 'Threerouter 任务执行失败'
+  return 'Threevideo 任务执行失败'
 }
 
-/** Threerouter 任务提交响应。 */
-interface ThreerouterTaskResponse {
+/** Threevideo 任务提交响应。 */
+interface ThreevideoTaskResponse {
   id?: string
   status?: string
   model?: string
   created_at?: string
 }
 
-/** Threerouter 任务查询响应。 */
-interface ThreerouterQueryResponse {
+/** Threevideo 任务查询响应。 */
+interface ThreevideoQueryResponse {
   id?: string
   status?: string
   url?: string
@@ -350,8 +350,8 @@ interface ThreerouterQueryResponse {
   error?: unknown
 }
 
-/** Threerouter 适配器实例：统一入口同时支持文生图与文生视频。 */
-export const threerouterAdapter: ProviderAdapter = {
+/** Threevideo 适配器实例：统一入口同时支持文生图与文生视频。 */
+export const threevideoAdapter: ProviderAdapter = {
   submitImage,
   submitVideo,
   queryTask,

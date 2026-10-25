@@ -59,7 +59,7 @@ describe('B1 unified polling', () => {
 
   it('polls at the 2s cadence (jittered) while a task is running', async () => {
     const running: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-run', kind: 'video', status: 'running', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-run', kind: 'video', status: 'running', provider: 'threevideo',
       model: 'minimax-h3', createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
     }
     const host = fakeApi({ tasks: [running] })

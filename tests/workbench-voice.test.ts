@@ -23,7 +23,7 @@ async function temp(prefix: string): Promise<string> {
 }
 
 const EMPTY_TTS = {
-  provider: 'threerouter' as const, apiKey: '', apiKeyEnv: 'THREEROUTER_TTS_API_KEY',
+  provider: 'threevideo' as const, apiKey: '', apiKeyEnv: 'THREEVIDEO_TTS_API_KEY',
   baseURL: '', model: '', defaultVoice: '', voices: [],
 }
 
@@ -96,13 +96,13 @@ describe('ttsAvailability', () => {
 describe('voice 端点', () => {
   function handler(store: WorkbenchStore, tts = EMPTY_TTS) {
     const deps = {
-      provider: 'threerouter',
+      provider: 'threevideo',
       outputsDir: '/tmp/outputs',
       store,
       registry: {} as never,
       runner: {} as never,
       renders: {} as never,
-      voice: { availability: () => ttsAvailability(tts), provider: { name: 'threerouter', listVoices: async () => [], synthesize: async () => { throw new Error('should not be called') } } },
+      voice: { availability: () => ttsAvailability(tts), provider: { name: 'threevideo', listVoices: async () => [], synthesize: async () => { throw new Error('should not be called') } } },
     }
     return createWorkbenchHandler(deps as never)
   }

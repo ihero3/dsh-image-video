@@ -14,7 +14,7 @@ import { registerWorkbenchRpc, workbenchRpcStatus } from '../src/host/rpc.ts'
 import { WORKBENCH_RPC_CHANNEL } from '../src/workbench-contract.ts'
 import { PLUGIN_VERSION } from '../src/version.ts'
 
-const DEPS = { provider: 'threerouter', outputsDir: '/tmp/outputs' }
+const DEPS = { provider: 'threevideo', outputsDir: '/tmp/outputs' }
 
 /** Capture one Node response without a socket. */
 function fakeResponse() {
@@ -48,7 +48,7 @@ describe('workbench status route', () => {
     expect(body.plugin).toBe('dsh-image-video')
     expect(body.version).toBe(PLUGIN_VERSION)
     expect(body.channel).toBe(WORKBENCH_RPC_CHANNEL)
-    expect(body.provider).toBe('threerouter')
+    expect(body.provider).toBe('threevideo')
     expect(body.outputsDir).toBe('/tmp/outputs')
     // 未注册时如实报告 false（现场排错靠这一行）
     expect(body.rpc.registered).toBe(false)

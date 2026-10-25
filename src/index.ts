@@ -96,7 +96,7 @@ export { formatPreflightNote, looksLikeVideoModel, resolveImagePreflight } from 
 export type { ImagePreflight } from './image-preflight.ts'
 export { wanxAdapter } from './providers/wanx.ts'
 export { seedanceAdapter } from './providers/seedance.ts'
-export { threerouterAdapter } from './providers/threerouter.ts'
+export { threevideoAdapter } from './providers/threevideo.ts'
 export type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, TaskQueryResult, AsyncImageSubmit, ImageAsyncCapability } from './providers/types.ts'
 export { createGenerateImageTool } from './tools/generate-image.ts'
 export { createGenerateVideoTool } from './tools/generate-video.ts'
@@ -182,7 +182,7 @@ export function apply(ctx: Context, config: Config): void {
     + ` imageUnknownStatePolicy=${config.imageUnknownStatePolicy}`
     + ` watermark=${config.watermark.enabled ? `${config.watermark.text}@${config.watermark.position}` : '关闭'}`
     + ` outputsDir=${outputsDir}`
-    + ` keys{threerouter=${keyState('threerouter')}, wanx=${keyState('wanx')}, minimax=${keyState('minimax')}, seedance=${keyState('seedance')}}`,
+    + ` keys{threevideo=${keyState('threevideo')}, wanx=${keyState('wanx')}, minimax=${keyState('minimax')}, seedance=${keyState('seedance')}}`,
   )
 
   // 任务管理器：构造时通过 ctx.effect() 注册卸载清理函数，

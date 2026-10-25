@@ -105,7 +105,7 @@ const IMPORTABLE_EXTENSIONS: Readonly<Record<string, 'image' | 'video'>> = {
 }
 
 export interface WorkbenchRpcDeps {
-  /** Configured provider name (`threerouter` | `wanx` | `minimax` | `seedance`). */
+  /** Configured provider name (`threevideo` | `wanx` | `minimax` | `seedance`). */
   provider: string
   /** Resolved absolute output directory. */
   outputsDir: string

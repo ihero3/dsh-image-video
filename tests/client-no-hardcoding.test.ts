@@ -19,7 +19,7 @@ describe('client bundle carries no deployment configuration', () => {
   })
 
   it('has no provider or model name baked in', () => {
-    for (const needle of ['threerouter', 'wanx', 'minimax', 'seedance', 'qwen-image']) {
+    for (const needle of ['threevideo', 'wanx', 'minimax', 'seedance', 'qwen-image']) {
       expect(source.toLowerCase()).not.toContain(needle)
     }
   })

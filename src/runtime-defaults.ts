@@ -40,7 +40,7 @@ export interface RuntimeDefaults {
    * 纯运行时概念：settings 没有对应持久字段。
    */
   mediaMode?: MediaMode
-  /** 图片服务商覆盖（'threerouter' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
+  /** 图片服务商覆盖（'threevideo' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
   imageProvider?: Provider
   /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
   imageSize?: string
@@ -146,7 +146,7 @@ export const MIN_VIDEO_DURATION = 1
 export const MAX_VIDEO_DURATION = 30
 
 /** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验（导出供 workbench 下拉选项复用）。 */
-export const PROVIDERS: ReadonlyArray<Provider> = ['threerouter', 'wanx', 'minimax', 'seedance'] as const
+export const PROVIDERS: ReadonlyArray<Provider> = ['threevideo', 'wanx', 'minimax', 'seedance'] as const
 
 /** 值是否为合法服务商（'' / 未知值均拒绝）。 */
 function isProvider(value: string): value is Provider {
@@ -158,7 +158,7 @@ function isProvider(value: string): value is Provider {
  * 候选服务商。维护点按「厂商」而非「模型 id」——新模型（wan3.0、qwen-video、
  * minimax 新版本等）自动命中家族规则，无需逐个登记。
  *
- * 家族事实（2026-09）：threerouter 是聚合器，出所有家族的模型（wan/minimax/seedance
+ * 家族事实（2026-09）：threevideo 是聚合器，出所有家族的模型（wan/minimax/seedance
  * 及文本/图片模型）；wanx（阿里百炼）、minimax（官方平台，仅视频）、seedance（火山方舟）
  * 是家族直连商。规则数组顺序即匹配优先级（更具体的家族在前）。
  */
@@ -172,10 +172,10 @@ export const MODEL_FAMILY_RULES: ReadonlyArray<{
   /** 适用生成类型；minimax 官方平台 image_generation 支持图片（t2i + 主体一致性 i2i）。 */
   kinds: ReadonlyArray<'image' | 'video'>
 }> = [
-  { family: 'minimax', keywords: ['minimax', 'hailuo'], providers: ['minimax', 'threerouter'], kinds: ['video', 'image'] },
-  { family: 'seedance', keywords: ['doubao', 'seedance', 'seedream'], providers: ['seedance', 'threerouter'], kinds: ['image', 'video'] },
+  { family: 'minimax', keywords: ['minimax', 'hailuo'], providers: ['minimax', 'threevideo'], kinds: ['video', 'image'] },
+  { family: 'seedance', keywords: ['doubao', 'seedance', 'seedream'], providers: ['seedance', 'threevideo'], kinds: ['image', 'video'] },
   // 一条 wan 规则覆盖 wan* 与 wanx*（"wanx2.1-t2i-turbo" 同样包含 "wan"）。
-  { family: 'wan', keywords: ['wan'], providers: ['wanx', 'threerouter'], kinds: ['image', 'video'] },
+  { family: 'wan', keywords: ['wan'], providers: ['wanx', 'threevideo'], kinds: ['image', 'video'] },
 ] as const
 
 /**
@@ -191,7 +191,7 @@ export const VIDEO_DURATION_UNSUPPORTED: ReadonlySet<string> = new Set([
 ])
 
 /**
- * 未显式指定 resolution 时的模型默认档位：Threerouter 的 MiniMax 系要求请求携带
+ * 未显式指定 resolution 时的模型默认档位：Threevideo 的 MiniMax 系要求请求携带
  * resolution（缺失时上游 400），注入默认档位避免默认路径失败；wan 系上游按模型
  * 默认处理，无需注入。
  */
@@ -219,7 +219,7 @@ export const REFERENCE_VIDEO_CAPABLE_MODELS: ReadonlyArray<string> = ['wan3.0-vi
  * 构建候选服务商序列（工具层按序尝试提交，回退语义见工具实现）：
  * ① 配置链服务商（会话选定 > settings 默认 > 激活服务商）——配置优先原则；
  * ② 显式 model 参数命中 {@link MODEL_FAMILY_RULES} 时的家族候选（直连商在前）；
- * ③ threerouter 聚合器兜底——其目录覆盖所有家族的模型，永远作为最后候选。
+ * ③ threevideo 聚合器兜底——其目录覆盖所有家族的模型，永远作为最后候选。
  * 未配置 key 的候选一律跳过（不会在提交阶段撞「未配置 API Key」）。
  * @param kind - 生成类型（minimax 家族仅参与视频候选）。
  * @param explicitModel - 工具显式 model 参数；undefined / 空串表示未指定（无家族匹配）。
@@ -233,10 +233,10 @@ export function resolveModelCandidates(
   configChain: Provider | undefined,
   hasKey: (provider: Provider) => boolean,
 ): Provider[] {
-  // 视频生成在本项目中固定走 ThreeRouter（用户明确要求，禁止 OpenArt 及
+  // 视频生成在本项目中固定走 Threevideo（用户明确要求，禁止 OpenArt 及
   // 其他直连服务商回退）。图片生成仍保留原有家族候选逻辑。
   if (kind === 'video') {
-    return hasKey('threerouter') ? ['threerouter'] : []
+    return hasKey('threevideo') ? ['threevideo'] : []
   }
   const candidates: Provider[] = []
   const push = (provider: Provider): void => {
@@ -253,7 +253,7 @@ export function resolveModelCandidates(
       }
     }
   }
-  push('threerouter')
+  push('threevideo')
   return candidates
 }
 

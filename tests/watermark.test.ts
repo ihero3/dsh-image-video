@@ -10,7 +10,7 @@ import type { WatermarkConfig } from '../src/config.ts'
 
 const baseConfig: WatermarkConfig = {
   enabled: true,
-  text: 'Threerouter',
+  text: 'Threevideo',
   opacity: 0.68,
   position: 'bottom-right',
   fontSizeRatio: 0.032,
@@ -32,7 +32,7 @@ async function makeImage(width = 1000, height = 750, format: 'png' | 'jpeg' = 'p
 
 describe('水印几何：位置 / 字号 / 留白', () => {
   it('右下角：锚点在右侧、基线在底部留白之上', () => {
-    const svg = buildWatermarkSvg(1000, 750, 'Threerouter', baseConfig)
+    const svg = buildWatermarkSvg(1000, 750, 'Threevideo', baseConfig)
     const marginX = Math.round(1000 * 0.028)
     const marginY = Math.round(750 * 0.012)
     const fontSize = Math.round(1000 * 0.032)
@@ -43,19 +43,19 @@ describe('水印几何：位置 / 字号 / 留白', () => {
   })
 
   it('左下角：锚点在左侧、x 等于左留白', () => {
-    const svg = buildWatermarkSvg(1000, 750, 'Threerouter', { ...baseConfig, position: 'bottom-left' })
+    const svg = buildWatermarkSvg(1000, 750, 'Threevideo', { ...baseConfig, position: 'bottom-left' })
     expect(svg).toContain('text-anchor="start"')
     expect(svg).toContain(`x="${Math.round(1000 * 0.028)}"`)
   })
 
   it('顶部位置：基线落在上留白之内（y = marginY + fontSize）', () => {
     const fontSize = Math.round(1000 * 0.032)
-    const svg = buildWatermarkSvg(1000, 750, 'Threerouter', { ...baseConfig, position: 'top-right' })
+    const svg = buildWatermarkSvg(1000, 750, 'Threevideo', { ...baseConfig, position: 'top-right' })
     expect(svg).toContain(`y="${Math.round(750 * 0.012) + fontSize}"`)
   })
 
   it('文字过长时自动缩号，保证不横向溢出', () => {
-    const long = 'Threerouter Powered By DeepSeek Harness Media Pipeline'
+    const long = 'Threevideo Powered By DeepSeek Harness Media Pipeline'
     const fontSize = fitFontSize(long, 600, 17, 0.032)
     const estimated = long.length * fontSize * 0.7
     expect(fontSize).toBeLessThan(Math.round(600 * 0.032))
@@ -64,7 +64,7 @@ describe('水印几何：位置 / 字号 / 留白', () => {
   })
 
   it('关闭发光时不注入 feGaussianBlur 滤镜', () => {
-    const svg = buildWatermarkSvg(1000, 750, 'Threerouter', { ...baseConfig, glowEnabled: false })
+    const svg = buildWatermarkSvg(1000, 750, 'Threevideo', { ...baseConfig, glowEnabled: false })
     expect(svg).not.toContain('feGaussianBlur')
     expect(svg).toContain('fill="#ffffff"')
   })

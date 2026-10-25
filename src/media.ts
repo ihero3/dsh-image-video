@@ -225,7 +225,7 @@ export async function compressVideoFirstFrame(ref: string): Promise<string> {
 
 /** 参考视频压缩阈值：本地视频超过该字节数时先经 ffmpeg 转码再编码为 data URL。 */
 const REFERENCE_VIDEO_COMPRESS_THRESHOLD = 2_000_000
-/** 参考视频原始字节上限：超出后不再提交（threerouter 无上传端点，巨型请求体会被网关拒绝）。 */
+/** 参考视频原始字节上限：超出后不再提交（threevideo 无上传端点，巨型请求体会被网关拒绝）。 */
 const REFERENCE_VIDEO_MAX_BYTES = 6_000_000
 /** 参考视频长边上限：产出最高 1080P，参考段压到 720p 档足够表达动作与构图。 */
 const REFERENCE_VIDEO_LONG_EDGE = 1280
@@ -273,7 +273,7 @@ async function compressReferenceVideo(bytes: Buffer, sourcePath: string): Promis
 
 /**
  * 解析参考视频为服务商可直接消费的引用：http(s) URL 原样透传；本地文件读取后按需
- * 转码并编码为 data URL。threerouter 没有上传端点（2026-09-22 探测 /v1/files 等全 404），
+ * 转码并编码为 data URL。threevideo 没有上传端点（2026-09-22 探测 /v1/files 等全 404），
  * 本地视频只能以 data URL 提交，而网关对超大请求体会拒绝，因此在客户端完成压缩。
  * @param input - http(s) URL、data URL 或本地文件路径。
  * @returns 适配器可直接消费的参考视频引用。
@@ -290,7 +290,7 @@ export async function resolveReferenceVideo(input: string): Promise<string> {
     const mb = (payload.byteLength / 1024 / 1024).toFixed(1)
     throw new Error(
       `参考视频体积 ${mb}MB 超过 ${REFERENCE_VIDEO_MAX_BYTES / 1024 / 1024}MB 上限：`
-      + 'threerouter 无上传端点，本地视频只能以 data URL 提交，过大的请求体会被网关拒绝。'
+      + 'threevideo 无上传端点，本地视频只能以 data URL 提交，过大的请求体会被网关拒绝。'
       + '请先裁短/压缩该视频（建议 ≤15 秒、720p 以内），或改传公网 http(s) URL。',
     )
   }
@@ -404,7 +404,7 @@ export interface ImageSummaryFields {
   model?: string
   /** 透明告知条目（路由回退、传输降级、找回等）；无则省略。 */
   notes?: string[]
-  /** 后处理链路（如 `品牌水印 Threerouter`）；无后处理时省略。 */
+  /** 后处理链路（如 `品牌水印 Threevideo`）；无后处理时省略。 */
   postprocess?: string[]
   /** 本次生成事务的物理提交次数：正常恒为 1，是「没有重复生成」的自证字段。 */
   submitAttempts?: number

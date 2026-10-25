@@ -2,14 +2,14 @@
  * 线上契约测试（默认跳过，需要显式开启）。
  *
  * 目的：单元测试用的是 fetch 桩，只能证明「客户端按契约发了请求」；本文件真的
- * 打 api.threerouter.com，证明**服务端确实按契约回应**——尤其是「同一幂等键
+ * 打 www.threevideo.com，证明**服务端确实按契约回应**——尤其是「同一幂等键
  * 重复提交只创建一个任务」这条不重复扣费的地基。
  *
  * 运行方式（会真实扣费，每次运行最多 1-2 张图）：
- *   DSH_IMAGE_VIDEO_LIVE=1 THREEROUTER_MEDIA_API_KEY=sk-… npx vitest run tests/live-image-contract.test.ts
+ *   DSH_IMAGE_VIDEO_LIVE=1 THREEVIDEO_MEDIA_API_KEY=sk-… npx vitest run tests/live-image-contract.test.ts
  *
  * 可选环境变量：
- *   DSH_IMAGE_VIDEO_LIVE_BASE      接口地址，默认 https://api.threerouter.com/v1
+ *   DSH_IMAGE_VIDEO_LIVE_BASE      接口地址，默认 https://www.threevideo.com/v1
  *   DSH_IMAGE_VIDEO_LIVE_MODEL     生图模型，默认 qwen-image-3.0
  *
  * 异步端点在「未开启对象存储」或「分组平台不支持」时返回 404：此时本文件会把
@@ -21,8 +21,8 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 
 const LIVE = process.env.DSH_IMAGE_VIDEO_LIVE === '1'
-const API_KEY = process.env.THREEROUTER_MEDIA_API_KEY ?? ''
-const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://api.threerouter.com/v1').replace(/\/$/, '')
+const API_KEY = process.env.THREEVIDEO_MEDIA_API_KEY ?? ''
+const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://www.threevideo.com/v1').replace(/\/$/, '')
 const MODEL = process.env.DSH_IMAGE_VIDEO_LIVE_MODEL ?? 'qwen-image-3.0'
 
 /** 线上出图可能耗时数分钟（千问图像思考模式实测约 5 分钟），轮询上限放宽。 */
@@ -106,7 +106,7 @@ async function downloadBytes(url: string): Promise<{ bytes: number; contentType:
   throw lastError instanceof Error ? lastError : new Error('下载失败')
 }
 
-describe.skipIf(!LIVE || API_KEY === '')('线上契约：threerouter 生图', () => {
+describe.skipIf(!LIVE || API_KEY === '')('线上契约：threevideo 生图', () => {
   beforeAll(async () => {
     // 零成本探测：空请求体在创建任务前就会被拒（400），而已关闭时是 404。
     const res = await fetch(`${BASE}/images/generations/async`, {

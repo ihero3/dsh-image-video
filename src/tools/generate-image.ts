@@ -49,7 +49,7 @@ import type { ImagePreflight } from '../image-preflight.ts'
 import type { TaskManager, TaskQueryFn } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
-import { threerouterAdapter } from '../providers/threerouter.ts'
+import { threevideoAdapter } from '../providers/threevideo.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, ImageGenParams, HttpOpts, SubmitResult } from '../providers/types.ts'
 import {
@@ -159,7 +159,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
    */
   const transportProbe = new Map<Provider, TransportProbeCache>()
 
-  const adapterFor = (p: Provider): ProviderAdapter => p === 'threerouter' ? threerouterAdapter
+  const adapterFor = (p: Provider): ProviderAdapter => p === 'threevideo' ? threevideoAdapter
     : p === 'wanx' ? wanxAdapter
     : p === 'minimax' ? minimaxAdapter
     : seedanceAdapter
@@ -302,12 +302,12 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
   return defineTool({
     name: 'generate_image',
     description:
-      '根据文本提示词生成图片；传入 image 参考图即为图生图（threerouter 统一生图端点按提示词编辑、'
+      '根据文本提示词生成图片；传入 image 参考图即为图生图（threevideo 统一生图端点按提示词编辑、'
       + 'Seedream 参考编辑、MiniMax 保留主体特征换场景——主体一致性）。服务商选择：配置链服务商优先'
-      + '（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
+      + '（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threevideo 聚合器）；'
       + '显式指定模型时按模型家族自动路由（wan/wanx→百炼直连，doubao/seedream/seedance→火山方舟，minimax→MiniMax 官方），'
-      + '候选仅在「服务端明确拒绝该模型且未创建任务」时按序回退，threerouter 永远兜底。'
-      + '一次调用只提交一次生成请求：默认走 threerouter 异步图片端点（携带幂等键），'
+      + '候选仅在「服务端明确拒绝该模型且未创建任务」时按序回退，threevideo 永远兜底。'
+      + '一次调用只提交一次生成请求：默认走 threevideo 异步图片端点（携带幂等键），'
       + '提交结果未知时凭同一 request_id 找回原任务，绝不自动重提、绝不自动换模型、不生成多张候选；'
       + '需要多个版本时请分别发起多次调用。'
       + '生成结果经品牌水印后处理（可配置）后保存到客户端统一 outputs 目录（对话内附最终图片附件）。'
@@ -508,7 +508,7 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
       const size = typedArgs.size ?? runtime.imageSize ?? config.defaultImageSize
 
       // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
-      // 服务商）→ 显式 model 命中家族规则的直连商 → threerouter 聚合器兜底；
+      // 服务商）→ 显式 model 命中家族规则的直连商 → threevideo 聚合器兜底；
       // 未配置 key 的候选自动跳过。
       const preferred: Provider | undefined = runtime.imageProvider
         ?? (config.defaultImageProvider === '' ? undefined : config.defaultImageProvider)
@@ -600,9 +600,9 @@ export function createGenerateImageTool(deps: GenerateImageDeps) {
        */
       async function recoverByRequestId(recoverRequestId: string): Promise<GenerateImageOutput> {
         const recoverNotes: string[] = []
-        const probeCandidates: Provider[] = candidates.includes('threerouter')
+        const probeCandidates: Provider[] = candidates.includes('threevideo')
           ? candidates
-          : [...candidates, 'threerouter']
+          : [...candidates, 'threevideo']
         let found: { provider: Provider; taskId: string; adapter: ProviderAdapter; httpOpts: HttpOpts } | undefined
         let lookupError: unknown
         for (const candidate of probeCandidates) {

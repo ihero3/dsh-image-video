@@ -9,7 +9,7 @@ import {
 } from '../src/host/rpc.ts'
 import { PLUGIN_VERSION } from '../src/version.ts'
 
-const DEPS = { provider: 'threerouter', outputsDir: '/tmp/outputs' }
+const DEPS = { provider: 'threevideo', outputsDir: '/tmp/outputs' }
 const SIGNAL = new AbortController().signal
 const PEER = {} as never
 
@@ -29,7 +29,7 @@ describe('workbench RPC channel', () => {
     expect(health.plugin).toBe('dsh-image-video')
     expect(health.version).toBe(PLUGIN_VERSION)
     expect(health.channel).toBe(WORKBENCH_RPC_CHANNEL)
-    expect(health.provider).toBe('threerouter')
+    expect(health.provider).toBe('threevideo')
     expect(health.outputsDir).toBe('/tmp/outputs')
     expect(Number.isNaN(Date.parse(health.at))).toBe(false)
     // 不泄漏凭证：健康检查只报事实，任何 key 字段都不该出现

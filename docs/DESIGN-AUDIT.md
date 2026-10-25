@@ -22,7 +22,7 @@
 - `dsh-image-video` 当前工作区干净，`main...origin/main`。
 - Harness 当前工作区干净，`master...origin/master`。
 - Harness 中 `plugins/dsh-image-video` 是指向独立产品仓库的 Git 子模块，产品源码事实源仍是 `/Users/guxiongjian/Documents/code/dsh-image-video`。
-- Harness 另有 `plugins/dsh-plugin-threerouter`，它承担当前桌面快速创作的输入框媒体 tab、参数传递和结果卡片，是 dsh-image-video 必须对接的相邻插件。
+- Harness 另有 `plugins/dsh-plugin-threevideo`，它承担当前桌面快速创作的输入框媒体 tab、参数传递和结果卡片，是 dsh-image-video 必须对接的相邻插件。
 
 ## 2. 参考文档提取出的视频能力
 
@@ -95,13 +95,13 @@
 |---|---|---|---|---|
 | L0 本地单人 | 本机项目目录、本地资源库 | 否 | 无 | 第一版必须完整可用 |
 | L1 文件交接 | 导出项目包、资源包、媒体包；复制到另一台电脑 | 否 | 覆盖、合并 | 第一版设计包格式，后续实现导入导出 |
-| L2 平台化团队协作 | 复用 Threerouter 账号、项目/资源服务、权限、同步与任务能力 | 是，由 Threerouter 服务端承载 | 实时一致性、权限、审计、平台适配 | 以后再说；若启动，优先复用 Threerouter，不由插件自建云 |
+| L2 平台化团队协作 | 复用 Threevideo 账号、项目/资源服务、权限、同步与任务能力 | 是，由 Threevideo 服务端承载 | 实时一致性、权限、审计、平台适配 | 以后再说；若启动，优先复用 Threevideo，不由插件自建云 |
 
 推荐顺序：
 
 1. 先把 L0 做扎实：项目、媒体素材、资源、任务、工作流、时间轴和导出全部本地可用。
 2. 再做 L1：定义可移植的项目包、资源包和媒体包格式，保证两台电脑之间可以复制和导入。
-3. L2 暂不排期。以后讨论团队能力时，只考虑复用 Threerouter 平台，不设计插件自建团队服务。
+3. L2 暂不排期。以后讨论团队能力时，只考虑复用 Threevideo 平台，不设计插件自建团队服务。
 
 ### 2.4 团队功能是否需要
 
@@ -109,9 +109,9 @@
 
 - 核心视频创作、媒体素材管理、资源库、工作流、时间轴和本地导出：**必须做**。
 - 项目包和资源包的复制、导入、导出：**应预留并优先考虑**。
-- 多人实时协作、云端媒体库、团队权限和账号体系：**后置，不进入第一版；若未来实现，优先由 Threerouter 平台承载**。
+- 多人实时协作、云端媒体库、团队权限和账号体系：**后置，不进入第一版；若未来实现，优先由 Threevideo 平台承载**。
 
-原因是当前产品边界是 DeepSeek Harness Desktop 的本地插件。若由插件自行建设云服务，会把项目存储、资源解析、任务队列、媒体访问和权限全部推倒重来，违背“最小化修改宿主、优先本地插件”的原则。Threerouter 已经有账号和模型服务入口，未来更适合承载团队身份、服务端资源和跨设备同步；本地插件只保留协议适配和本地缓存。
+原因是当前产品边界是 DeepSeek Harness Desktop 的本地插件。若由插件自行建设云服务，会把项目存储、资源解析、任务队列、媒体访问和权限全部推倒重来，违背“最小化修改宿主、优先本地插件”的原则。Threevideo 已经有账号和模型服务入口，未来更适合承载团队身份、服务端资源和跨设备同步；本地插件只保留协议适配和本地缓存。
 
 ## 3. 现有产品代码的真实调用链
 
@@ -128,7 +128,7 @@
 
 - 参数包含 `prompt`、`duration`、`model`、`aspectRatio`、`image`、`media`、`resolution`、`compare`。
 - `media[]` 支持 `first_frame`、`last_frame`、`reference_image`、`reference_video`，足以承载首尾帧和参考生视频的基础协议。
-- 提交后固定走 ThreeRouter；候选服务商逻辑在 `src/runtime-defaults.ts` 中固定为 `threerouter`。
+- 提交后固定走 Threevideo；候选服务商逻辑在 `src/runtime-defaults.ts` 中固定为 `threevideo`。
 - 任务通过 `TaskManager.pollUntilDone()` 异步轮询，完成后下载到 `outputsDir`。
 - 产出是本地 `.mp4` 路径，参考视频编辑时还可额外生成一条对比片。
 - 工具输出含 `provider`、`model`、`mode`、`duration`、`resolution`、`localPath`、`sourceUrl`、`bytes`、`elapsedMs`、`notes`、可选 `comparePath`。
@@ -153,8 +153,8 @@
 | `src/media.ts` | 统一下载与写入；本地参考图/视频经 ffmpeg 预处理；媒体文件名以内容或请求生成 |
 | `src/media-route.ts` | 仅在 `webServer.host === 127.0.0.1` 时注册 `/outputs` 只读路由 |
 | `src/runtime-defaults.ts` | 注册 `/image-video/defaults` 回环路由，保存内存态 provider、比例、尺寸、风格、时长、媒体模式 |
-| `dsh-plugin-threerouter/src/client/media-toolview.tsx` | 通过 `/outputs/<basename>` 渲染本地图片和视频，并提供复制路径、打开所在目录、用系统应用打开 |
-| `dsh-plugin-threerouter/src/client/composer-media-tabs.tsx` | 提供文本/图片/视频模式切换和参数下拉，向 `/image-video/defaults` 写入运行时值 |
+| `dsh-plugin-threevideo/src/client/media-toolview.tsx` | 通过 `/outputs/<basename>` 渲染本地图片和视频，并提供复制路径、打开所在目录、用系统应用打开 |
+| `dsh-plugin-threevideo/src/client/composer-media-tabs.tsx` | 提供文本/图片/视频模式切换和参数下拉，向 `/image-video/defaults` 写入运行时值 |
 
 这里已经有一条完整但窄的“输入框 → 模型 → 工具 → 本地文件 → 对话卡片 → 系统播放”链路。dsh-image-video 应把这条链路作为模式 A 保留，而不是替换。
 
@@ -230,14 +230,14 @@ Harness 通过 `dsh.client` 扫描已启用 Loader 条目并提供 `/plugins` bu
 }
 ```
 
-构建产物必须是客户端模块系统能加载的 bundle。Harness 仓库内部的 `clientBundle` tsdown preset 可用于本仓库工作区包；发布到独立仓库的插件需要像 `dsh-plugin-threerouter` 一样自行声明 bundle 包装格式。
+构建产物必须是客户端模块系统能加载的 bundle。Harness 仓库内部的 `clientBundle` tsdown preset 可用于本仓库工作区包；发布到独立仓库的插件需要像 `dsh-plugin-threevideo` 一样自行声明 bundle 包装格式。
 
 ### 4.3 宿主业务能力通过 RPC 暴露
 
-`dsh-plugin-threerouter` 已经提供可直接复用的范例：
+`dsh-plugin-threevideo` 已经提供可直接复用的范例：
 
-- 宿主：`connection.rpc.handle('/threerouter-auth', handler)`。
-- 客户端：`connection.rpc.call('/threerouter-auth', 'getProfile', {})`。
+- 宿主：`connection.rpc.handle('/threevideo-auth', handler)`。
+- 客户端：`connection.rpc.call('/threevideo-auth', 'getProfile', {})`。
 - 注册返回 disposer，并放在 `ctx.effect()` 中，插件卸载时撤销。
 
 推荐的 dsh-image-video 结构：
@@ -464,11 +464,11 @@ interface MotionTrackResource {
 
 ```text
 composer 图片/视频 tab
-  → dsh-plugin-threerouter 写 /image-video/defaults
+  → dsh-plugin-threevideo 写 /image-video/defaults
   → agent/pre-step 注入生成指令
   → 模型调用 generate_image / generate_video
   → dsh-image-video 轮询和下载
-  → dsh-plugin-threerouter 对话卡片播放
+  → dsh-plugin-threevideo 对话卡片播放
 ```
 
 新增适配层：
@@ -559,7 +559,7 @@ React Flow 负责交互，节点执行器负责真实调用：
 
 当前 Harness desktop 不是只通过 profile patch 加载这两个插件，而是有明确的私有插件复制名单：
 
-- `apps/desktop/src/project-manager.ts` 的 `LOCAL_PLUGIN_BUNDLES` 包含 `dsh-image-video` 和 `dsh-plugin-threerouter`。
+- `apps/desktop/src/project-manager.ts` 的 `LOCAL_PLUGIN_BUNDLES` 包含 `dsh-image-video` 和 `dsh-plugin-threevideo`。
 - `apps/desktop/src/private-plugins.ts` 的 `PRIVATE_PLUGIN_NAMES` 同样列出这两个包。
 - `apps/desktop/tests/private-plugins.spec.ts` 已测试 host entry、`cordis.patch.yml` 和 client entry 的安装校验。
 - 复制逻辑读取包自身的 `exports["."].default` 作为 host entry，并在 `exports["./client"].default` 存在时自动复制 client entry。当前 `dsh-image-video` 没有 client export，因此 desktop 当前只验证 host entry。

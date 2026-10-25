@@ -1,20 +1,20 @@
 /**
- * 线上契约测试：wan3.0-video「参考视频（视频编辑）」是否被 threerouter 接受。
+ * 线上契约测试：wan3.0-video「参考视频（视频编辑）」是否被 threevideo 接受。
  *
  * 目的：单元测试只能证明「客户端拼出了预期的请求体」；本文件真的打
- * api.threerouter.com/v1/media/generations，证明**服务端确实按该契约服务**——
+ * www.threevideo.com/v1/media/generations，证明**服务端确实按该契约服务**——
  * 参考视频走 `media[].type=reference_video`，配合参考图与编辑意图提示词，
  * 保留原片构图与动作、只改写指定主体。
  *
  * 运行方式（会真实扣费，一次运行 = 一个视频任务）：
  *   DSH_IMAGE_VIDEO_LIVE=1 \
- *   THREEROUTER_MEDIA_API_KEY=sk-… \
+ *   THREEVIDEO_MEDIA_API_KEY=sk-… \
  *   DSH_IMAGE_VIDEO_LIVE_REF_VIDEO=/path/source.mp4 \
  *   DSH_IMAGE_VIDEO_LIVE_REF_IMAGES=/path/a.png,/path/b.png \
  *   npx vitest run tests/live-video-edit-contract.test.ts
  *
  * 可选环境变量：
- *   DSH_IMAGE_VIDEO_LIVE_BASE   接口地址，默认 https://api.threerouter.com/v1
+ *   DSH_IMAGE_VIDEO_LIVE_BASE   接口地址，默认 https://www.threevideo.com/v1
  *   DSH_IMAGE_VIDEO_LIVE_MODEL  模型，默认 wan3.0-video
  *   DSH_IMAGE_VIDEO_LIVE_PROMPT 编辑提示词（缺省用「替换人物」的示例指令）
  *   DSH_IMAGE_VIDEO_LIVE_OUT    产物保存目录（缺省写到系统临时目录）
@@ -25,12 +25,12 @@ import { mkdir, writeFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveVideoMedia } from '../src/media.ts'
-import { threerouterAdapter } from '../src/providers/threerouter.ts'
+import { threevideoAdapter } from '../src/providers/threevideo.ts'
 import type { HttpOpts } from '../src/providers/types.ts'
 
 const LIVE = process.env.DSH_IMAGE_VIDEO_LIVE === '1'
-const API_KEY = process.env.THREEROUTER_MEDIA_API_KEY ?? ''
-const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://api.threerouter.com/v1').replace(/\/$/, '')
+const API_KEY = process.env.THREEVIDEO_MEDIA_API_KEY ?? ''
+const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://www.threevideo.com/v1').replace(/\/$/, '')
 const MODEL = process.env.DSH_IMAGE_VIDEO_LIVE_MODEL ?? 'wan3.0-video'
 const REF_VIDEO = process.env.DSH_IMAGE_VIDEO_LIVE_REF_VIDEO ?? ''
 const REF_IMAGES = (process.env.DSH_IMAGE_VIDEO_LIVE_REF_IMAGES ?? '')
@@ -58,12 +58,12 @@ describe.skipIf(!LIVE || API_KEY === '' || REF_VIDEO === '')('wan3.0-video 参�
       { video: REF_VIDEO, type: 'reference_video' },
       ...REF_IMAGES.map((image) => ({ image, type: 'reference_image' })),
     ])
-    // 体积快照：threerouter 无上传端点，本地素材只能以 data URL 提交，先记录实际载荷量
+    // 体积快照：threevideo 无上传端点，本地素材只能以 data URL 提交，先记录实际载荷量
     const payloadBytes = media.reduce((sum, m) => sum + m.url.length, 0)
     console.log(`[live] media 条目 ${media.length} 个，base64 载荷合计 ${(payloadBytes / 1024 / 1024).toFixed(2)}MB`)
     console.log(`[live] 类型序列：${media.map((m) => m.type).join(', ')}`)
 
-    const submit = await threerouterAdapter.submitVideo({
+    const submit = await threevideoAdapter.submitVideo({
       prompt: PROMPT,
       duration: -1,
       model: MODEL,
@@ -76,7 +76,7 @@ describe.skipIf(!LIVE || API_KEY === '' || REF_VIDEO === '')('wan3.0-video 参�
     const deadline = Date.now() + POLL_TIMEOUT_MS
     let mediaUrl: string | undefined
     while (Date.now() < deadline) {
-      const q = await threerouterAdapter.queryTask(submit.taskId, opts)
+      const q = await threevideoAdapter.queryTask(submit.taskId, opts)
       if (q.status === 'succeeded') { mediaUrl = q.mediaUrl; break }
       if (q.status === 'failed') throw new Error(`任务失败：${q.error}`)
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))

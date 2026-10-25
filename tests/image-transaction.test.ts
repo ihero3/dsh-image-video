@@ -77,7 +77,7 @@ function harness(opts: {
   const poll = vi.fn(opts.poll ?? (async () => ({ mediaUrl: 'https://cdn.example.com/task.png' })))
   const tx = createImageTransaction({
     requestId: 'req-1',
-    provider: 'threerouter',
+    provider: 'threevideo',
     model: 'qwen-image-3.0',
     transport: opts.transport ?? 'async',
   })
@@ -108,14 +108,14 @@ describe('图片生成事务：提交预算（绝不重复生成）', () => {
   })
 
   it('同一事务内第二次提交被预算拒绝（硬闸门）', () => {
-    const tx = createImageTransaction({ requestId: 'req', provider: 'threerouter', model: undefined, transport: 'async' })
+    const tx = createImageTransaction({ requestId: 'req', provider: 'threevideo', model: undefined, transport: 'async' })
     consumeSubmitBudget(tx)
     expect(() => { consumeSubmitBudget(tx) }).toThrow(/拒绝重复提交/)
     expect(tx.submitAttempts).toBe(1)
   })
 
   it('同键重提策略下预算放宽到 2，第三次仍拒绝', () => {
-    const tx = createImageTransaction({ requestId: 'req', provider: 'threerouter', model: undefined, transport: 'async' })
+    const tx = createImageTransaction({ requestId: 'req', provider: 'threevideo', model: undefined, transport: 'async' })
     consumeSubmitBudget(tx)
     consumeSubmitBudget(tx, { allowSameKeyRetry: true })
     expect(tx.submitAttempts).toBe(2)
@@ -276,7 +276,7 @@ describe('图片生成事务：409 与端点能力的语义', () => {
   })
 
   it('已提交过两次（同键重提）后不再允许换家', () => {
-    const tx = createImageTransaction({ requestId: 'r', provider: 'threerouter', model: undefined, transport: 'async' })
+    const tx = createImageTransaction({ requestId: 'r', provider: 'threevideo', model: undefined, transport: 'async' })
     consumeSubmitBudget(tx)
     consumeSubmitBudget(tx, { allowSameKeyRetry: true })
     tx.status = 'failed'
@@ -285,7 +285,7 @@ describe('图片生成事务：409 与端点能力的语义', () => {
   })
 
   it('503 无可用渠道（capacity_error）→ 允许换家（渠道查找先于上游调用）', () => {
-    const tx = createImageTransaction({ requestId: 'r', provider: 'threerouter', model: undefined, transport: 'sync' })
+    const tx = createImageTransaction({ requestId: 'r', provider: 'threevideo', model: undefined, transport: 'sync' })
     consumeSubmitBudget(tx)
     tx.status = 'failed'
     const noChannel = new GenerationError('network', '服务端错误（HTTP 503），将重试。No available media generation channels', true, 503)

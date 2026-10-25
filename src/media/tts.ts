@@ -1,7 +1,7 @@
 /**
  * TTS 接入点（`P0-1` 应用层）：**契约先定、实现等接口**。
  *
- * owner 口径（2026-10-23）：Threerouter 后续会提供 TTS 服务，调用方式与生图/生视频一致；
+ * owner 口径（2026-10-23）：Threevideo 后续会提供 TTS 服务，调用方式与生图/生视频一致；
  * 接口联调通过前，先把应用层做完 —— 也就是"谁能念、念什么、多久、错了怎么说"。
  *
  * 因此本模块只做三件事：
@@ -23,7 +23,7 @@ export interface TtsVoice {
 
 /** 插件配置里的 `tts` 段（字段与 schema 输出一一对应；空值 = 没接 TTS）。 */
 export interface TtsSettings {
-  readonly provider: 'threerouter'
+  readonly provider: 'threevideo'
   readonly apiKey: string
   readonly apiKeyEnv: string
   readonly baseURL: string
@@ -64,7 +64,7 @@ export class TtsNotReadyError extends Error {
 /** 服务层向界面暴露的可用性视图。 */
 export interface TtsAvailability {
   readonly available: boolean
-  readonly provider: 'threerouter'
+  readonly provider: 'threevideo'
   /** 不可用时的原因（可直接展示给用户）。 */
   readonly reason?: string
   readonly voices: readonly TtsVoice[]
@@ -83,7 +83,7 @@ export function ttsAvailability(settings: TtsSettings | undefined): TtsAvailabil
   if (unconfigured) {
     return {
       available: false,
-      provider: 'threerouter',
+      provider: 'threevideo',
       reason: '未配置 TTS 服务：接口联调通过后填入服务商与音色即可（当前配音计划仍可预览）',
       voices: [],
     }
@@ -91,7 +91,7 @@ export function ttsAvailability(settings: TtsSettings | undefined): TtsAvailabil
   return {
     available: false,
     provider: settings.provider,
-    reason: 'TTS 接口尚未接入：等待 Threerouter TTS API 联调通过（配音计划/时长估算已可用）',
+    reason: 'TTS 接口尚未接入：等待 Threevideo TTS API 联调通过（配音计划/时长估算已可用）',
     voices: settings.voices,
     ...settings.defaultVoice === '' ? {} : { defaultVoice: settings.defaultVoice },
     ...settings.model === '' ? {} : { model: settings.model },
@@ -118,7 +118,7 @@ export interface TtsProvider {
 export function createTtsProvider(settings: TtsSettings | undefined): TtsProvider {
   const availability = ttsAvailability(settings)
   return {
-    name: 'threerouter',
+    name: 'threevideo',
     listVoices: async () => availability.voices,
     synthesize: async () => {
       throw new TtsNotReadyError(availability.reason ?? 'TTS 服务未配置')

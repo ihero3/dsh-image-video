@@ -333,7 +333,7 @@ project-root/
 |---|---|---|
 | L0 本地单人 | 项目根目录 + 本地资源库 | 必须实现 |
 | L1 文件交接 | 项目包、资源包、媒体包复制 | 预留格式，后续实现 |
-| L2 平台化团队协作 | 复用 Threerouter 账号、项目/资源服务、权限、实时同步 | 以后再说；未来优先复用 Threerouter 平台能力 |
+| L2 平台化团队协作 | 复用 Threevideo 账号、项目/资源服务、权限、实时同步 | 以后再说；未来优先复用 Threevideo 平台能力 |
 
 L1 的推荐格式：
 
@@ -359,7 +359,7 @@ exports/
 - 媒体文件按内容摘要去重，不按文件名去重。
 - 导入失败时回滚到导入前状态，不留下半成品项目。
 
-L2 暂不纳入阶段计划。以后若讨论团队功能，前提是 Threerouter 服务端提供团队账号、项目/资源服务、权限模型和跨设备同步能力，本地插件只做客户端协议适配和本地缓存。
+L2 暂不纳入阶段计划。以后若讨论团队功能，前提是 Threevideo 服务端提供团队账号、项目/资源服务、权限模型和跨设备同步能力，本地插件只做客户端协议适配和本地缓存。
 
 ## 6. 专业工作流设计
 
@@ -837,7 +837,7 @@ MVP：
 - 隐藏导入导出入口。
 - 保留项目本体和原有本地项目文件。
 
-团队能力当前不排期。以后讨论时，不再评估插件自建服务或局域网方案，只考虑 Threerouter 平台是否提供可复用的团队接口。
+团队能力当前不排期。以后讨论时，不再评估插件自建服务或局域网方案，只考虑 Threevideo 平台是否提供可复用的团队接口。
 
 ## 10. 测试矩阵
 
@@ -897,7 +897,7 @@ pnpm dsh --profile desktop --dump-config
 
 ## 12. 桌面安装验证
 
-当前 desktop 已把 `dsh-image-video` 和 `dsh-plugin-threerouter` 作为私有本地插件复制。阶段 1 继续使用 `dsh-image-video` 包名时，必须验证：
+当前 desktop 已把 `dsh-image-video` 和 `dsh-plugin-threevideo` 作为私有本地插件复制。阶段 1 继续使用 `dsh-image-video` 包名时，必须验证：
 
 1. `pnpm run build:plugins` 同时生成宿主和客户端产物。
 2. `package.json` 的 `exports["."].default` 指向已构建 host entry，`exports["./client"].default` 指向已构建 client entry。
@@ -929,7 +929,7 @@ pnpm dsh --profile desktop --dump-config
 | 大媒体内存压力 | 文件引用为主，避免把 MP4 放进 JSON/KV 或 data URL 持久化 |
 | UI 与 Agent 冲突 | 项目 revision 和拒绝覆盖策略 |
 | 团队协作过早复杂化 | 第一版冻结为本地单人闭环；共享与团队服务后置 |
-| 自建团队服务成本失控 | 未来团队能力优先复用 Threerouter 平台，插件只做协议适配 |
+| 自建团队服务成本失控 | 未来团队能力优先复用 Threevideo 平台，插件只做协议适配 |
 | 项目包与当前本地格式漂移 | 包格式和项目格式都带独立版本，导入时先迁移校验 |
 
 ## 15. 阶段 1 的最小可验收切片

@@ -90,7 +90,7 @@ describe('project package import (T8-2)', () => {
       tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c1', assetPath: clip, startMs: 0, durationMs: 1000 }] }],
     })
     // 账本里留一条"看起来还在跑"的任务，导入后必须变成 imported-idle
-    await sourceStore.recordTask({ projectId: project.id, kind: 'video', status: 'running', model: 'minimax-h3', prompt: '齿轮', provider: 'threerouter' })
+    await sourceStore.recordTask({ projectId: project.id, kind: 'video', status: 'running', model: 'minimax-h3', prompt: '齿轮', provider: 'threevideo' })
     await exportProjectPackage({ store: sourceStore, projectId: project.id, targetDir: pack })
 
     const targetStore = new WorkbenchStore({ directory: await temp('dsh-imp-target-') })

@@ -6,8 +6,8 @@
 
 import z from '@deepseek-ai/schemastery'
 
-/** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threerouter 为聚合器（所有模型）。 */
-export type Provider = 'threerouter' | 'wanx' | 'minimax' | 'seedance'
+/** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threevideo 为聚合器（所有模型）。 */
+export type Provider = 'threevideo' | 'wanx' | 'minimax' | 'seedance'
 
 /** 单个服务商的凭证与自定义接口地址。 */
 export interface ProviderCredentials {
@@ -65,8 +65,8 @@ import type { TtsSettings } from './media/tts.ts'
 export interface Config {
   /** 当前激活的服务商，切换后立即生效（HMR）。 */
   provider: Provider
-  /** Threerouter 凭证；provider=threerouter 时使用（支持图片+视频）。 */
-  threerouter: ProviderCredentials
+  /** Threevideo 凭证；provider=threevideo 时使用（支持图片+视频）。 */
+  threevideo: ProviderCredentials
   /** 万象（wanx）凭证；provider=wanx 时使用。 */
   wanx: ProviderCredentials
   /** MiniMax 官方平台凭证；provider=minimax 时使用（图片与视频）。 */
@@ -117,25 +117,25 @@ export interface Config {
   tts: TtsSettings
 }
 
-/** 服务商凭证 schema，复用于 threerouter/wanx/minimax/seedance。apiKey 可空（未激活的 provider 留空）。 */
+/** 服务商凭证 schema，复用于 threevideo/wanx/minimax/seedance。apiKey 可空（未激活的 provider 留空）。 */
 const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
   apiKey: z.string().default('').description('服务商 API Key；未激活的 provider 可留空'),
   apiKeyEnv: z.string().role('credential-ref').default('').description('API Key 的凭证引用名；apiKey 留空时按此引用解析，留空表示不使用引用'),
   baseURL: z.string().default('').description('自定义接口地址，留空使用默认端点'),
 })
 
-/** 插件配置 schema，默认服务商为 threerouter（图片+视频统一入口），wanx/seedance 可选。 */
+/** 插件配置 schema，默认服务商为 threevideo（图片+视频统一入口），wanx/seedance 可选。 */
 export const Config: z<Config> = z.object({
-  provider: z.union(['threerouter', 'wanx', 'minimax', 'seedance']).default('threerouter').description('激活的生成服务商'),
-  threerouter: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threerouter 凭证（默认服务商，聚合器）'),
+  provider: z.union(['threevideo', 'wanx', 'minimax', 'seedance']).default('threevideo').description('激活的生成服务商'),
+  threevideo: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threevideo 凭证（默认服务商，聚合器）'),
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   minimax: ProviderCredentialsSchema.default({ apiKey: '' }).description('MiniMax 官方平台凭证（仅视频）'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
-  defaultImageProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
-  defaultVideoProvider: z.union(['', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
+  defaultImageProvider: z.union(['', 'threevideo', 'wanx', 'minimax', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
+  defaultVideoProvider: z.union(['', 'threevideo', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
   defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
-  defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threerouter/方舟换算为宽x高）'),
+  defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threevideo/方舟换算为宽x高）'),
   defaultVideoDuration: z.number().default(5).min(1).max(30).description('默认视频时长（秒），上限 30，由上游模型校验具体能力'),
   imageTransport: z.union(['auto', 'async', 'sync']).default('auto').description('图片提交传输：auto 优先异步（幂等+超时找回）并按需降级，async 强制异步，sync 强制同步单次提交'),
   imageUnknownStatePolicy: z.union(['fail', 'resubmit-same-key']).default('fail').description('提交状态未知时的策略：fail 不重提（默认），resubmit-same-key 用同一幂等键重提一次（服务端按键去重）'),
@@ -146,7 +146,7 @@ export const Config: z<Config> = z.object({
   outputsDir: z.string().default('./outputs').description('生成媒体落地目录（插件唯一解析点，启动时打绝对路径日志）'),
   watermark: z.object({
     enabled: z.boolean().default(true).description('是否对最终图片合成品牌水印'),
-    text: z.string().default('Threerouter').description('水印文字'),
+    text: z.string().default('Threevideo').description('水印文字'),
     opacity: z.number().default(0.68).min(0).max(1).description('主文字不透明度'),
     position: z.union(['bottom-right', 'bottom-left', 'top-right', 'top-left']).default('bottom-right').description('水印位置'),
     fontSizeRatio: z.number().default(0.032).min(0.005).max(0.2).description('字号占图片宽度比例'),
@@ -157,7 +157,7 @@ export const Config: z<Config> = z.object({
     glowBlurRatio: z.number().default(0.18).min(0).max(1).description('柔光半径占字号比例'),
   }).default({
     enabled: true,
-    text: 'Threerouter',
+    text: 'Threevideo',
     opacity: 0.68,
     position: 'bottom-right',
     fontSizeRatio: 0.032,
@@ -168,9 +168,9 @@ export const Config: z<Config> = z.object({
     glowBlurRatio: 0.18,
   }).description('图片最终结果的品牌水印后处理（内存内合成，只落盘最终图）'),
   tts: z.object({
-    provider: z.union(['threerouter']).default('threerouter').description('TTS 服务商（当前仅 threerouter，接口待联调）'),
+    provider: z.union(['threevideo']).default('threevideo').description('TTS 服务商（当前仅 threevideo，接口待联调）'),
     apiKey: z.string().default('').description('TTS 服务的 API Key；留空走凭证引用或环境变量'),
-    apiKeyEnv: z.string().role('credential-ref').default('THREEROUTER_TTS_API_KEY').description('TTS API Key 的凭证引用名'),
+    apiKeyEnv: z.string().role('credential-ref').default('THREEVIDEO_TTS_API_KEY').description('TTS API Key 的凭证引用名'),
     baseURL: z.string().default('').description('TTS 接口地址，留空使用服务商默认'),
     model: z.string().default('').description('TTS 模型名，留空使用服务商默认'),
     defaultVoice: z.string().default('').description('默认音色 id'),
@@ -181,7 +181,7 @@ export const Config: z<Config> = z.object({
       gender: z.union(['female', 'male', 'neutral']).default('neutral'),
     })).default([]).description('可选音色清单（接口上线前由配置提供）'),
   }).default({
-    provider: 'threerouter', apiKey: '', apiKeyEnv: 'THREEROUTER_TTS_API_KEY',
+    provider: 'threevideo', apiKey: '', apiKeyEnv: 'THREEVIDEO_TTS_API_KEY',
     baseURL: '', model: '', defaultVoice: '', voices: [],
   }).description('TTS 配音（P0-1）：空配置表示未接入；填入音色/模型后可预览配音计划'),
 })
@@ -191,7 +191,7 @@ export const Config: z<Config> = z.object({
  * （resolveModelCandidates 用它跳过未配置 key 的候选），不抛错。
  */
 export function peekProviderCredentials(config: Config, provider: Provider): ProviderCredentials {
-  return provider === 'threerouter' ? config.threerouter
+  return provider === 'threevideo' ? config.threevideo
     : provider === 'wanx' ? config.wanx
     : provider === 'minimax' ? config.minimax
     : config.seedance
@@ -263,7 +263,7 @@ export async function resolveActiveProvider(
 /** 服务商默认接口地址。 */
 function defaultBaseURL(provider: Provider): string {
   switch (provider) {
-    case 'threerouter': return 'https://api.threerouter.com/v1'
+    case 'threevideo': return 'https://www.threevideo.com/v1'
     case 'wanx': return 'https://dashscope.aliyuncs.com/api/v1'
     case 'minimax': return 'https://api.minimaxi.com/v1'
     case 'seedance': return 'https://ark.cn-beijing.volces.com/api/v3'

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { wanxAdapter } from '../src/providers/wanx.ts'
 import { seedanceAdapter } from '../src/providers/seedance.ts'
-import { threerouterAdapter } from '../src/providers/threerouter.ts'
+import { threevideoAdapter } from '../src/providers/threevideo.ts'
 import { minimaxAdapter } from '../src/providers/minimax.ts'
 import type { ImageGenParams, VideoGenParams, HttpOpts } from '../src/providers/types.ts'
 
@@ -370,17 +370,17 @@ describe('Seedance adapter', () => {
 })
 
 // ============================
-// threerouter 适配器测试
+// threevideo 适配器测试
 // ============================
 
-const threerouterOpts = (): HttpOpts => ({
-  apiKey: 'sk-threerouter-test',
-  baseURL: 'https://api.threerouter.com/v1',
+const threevideoOpts = (): HttpOpts => ({
+  apiKey: 'sk-threevideo-test',
+  baseURL: 'https://www.threevideo.com/v1',
   timeoutMs: 60000,
   retryTimes: 0,
 })
 
-describe('threerouter 适配器', () => {
+describe('threevideo 适配器', () => {
   beforeEach(() => { vi.stubGlobal('fetch', vi.fn()) })
   afterEach(() => { vi.unstubAllGlobals() })
 
@@ -390,7 +390,7 @@ describe('threerouter 适配器', () => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    const r = await threevideoAdapter.submitImage(imageParams, threevideoOpts())
     const call = fetchMock.mock.calls[0]
     expect(String(call[0])).toContain('/images/generations')
     const body = JSON.parse((call[1] as RequestInit).body as string)
@@ -411,14 +411,14 @@ describe('threerouter 适配器', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
     const params: ImageGenParams = { ...imageParams, image: 'data:image/png;base64,QUJD', size: '1024*1024' }
-    const r = await threerouterAdapter.submitImage(params, threerouterOpts())
+    const r = await threevideoAdapter.submitImage(params, threevideoOpts())
     const call = fetchMock.mock.calls[0]
     expect(String(call[0])).toContain('/images/generations')
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.model).toBe('qwen-image-3.0-pro')
     expect(body.prompt).toBe('赛博朋克猫')
     expect(body.image).toBe('data:image/png;base64,QUJD')
-    // qwen 系按上游要求归一化为 `宽*高`（threerouter 原样透传 size，实测 `3:4` 会被 400）
+    // qwen 系按上游要求归一化为 `宽*高`（threevideo 原样透传 size，实测 `3:4` 会被 400）
     expect(body.size).toBe('1024*1024')
     expect(body.response_format).toBe('url')
     // 同步返回：mediaUrl 直取，无 taskId
@@ -433,18 +433,18 @@ describe('threerouter 适配器', () => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    await threerouterAdapter.submitImage({ ...imageParams, size: '3:4' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, size: '3:4' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string).size).toBe('1152*1536')
-    await threerouterAdapter.submitImage({ ...imageParams, size: '1:1' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, size: '1:1' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).size).toBe('1024*1024')
-    await threerouterAdapter.submitImage({ ...imageParams, size: '16:9' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, size: '16:9' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[2][1] as RequestInit).body as string).size).toBe('1536*864')
-    await threerouterAdapter.submitImage({ ...imageParams, model: 'gpt-image-2', size: '1024*1024' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, model: 'gpt-image-2', size: '1024*1024' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[3][1] as RequestInit).body as string).size).toBe('1024x1024')
     // wan 系同样命中阿里原生 宽*高 格式
-    await threerouterAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '3:4' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '3:4' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[4][1] as RequestInit).body as string).size).toBe('1152*1536')
-    await threerouterAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '9:16' }, threerouterOpts())
+    await threevideoAdapter.submitImage({ ...imageParams, model: 'wan2.1-image', size: '9:16' }, threevideoOpts())
     expect(JSON.parse((fetchMock.mock.calls[5][1] as RequestInit).body as string).size).toBe('864*1536')
   })
 
@@ -455,7 +455,7 @@ describe('threerouter 适配器', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
     const params: ImageGenParams = { ...imageParams, model: 'minimax-image-01', image: 'data:image/png;base64,QUJD' }
-    await expect(() => threerouterAdapter.submitImage(params, threerouterOpts())).rejects
+    await expect(() => threevideoAdapter.submitImage(params, threevideoOpts())).rejects
       .toSatisfy((e: { message: string }) => e.message.includes('上游失败') && e.message.includes('1026'))
   })
 
@@ -465,7 +465,7 @@ describe('threerouter 适配器', () => {
       { status: 202, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    const r = await threevideoAdapter.submitImage(imageParams, threevideoOpts())
     expect(r.async).toBe(true)
     expect(r.taskId).toBe('img_123')
   })
@@ -477,7 +477,7 @@ describe('threerouter 适配器', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
     const params: ImageGenParams = { ...imageParams, image: 'https://example.com/ref.png' }
-    const r = await threerouterAdapter.submitImage(params, threerouterOpts())
+    const r = await threevideoAdapter.submitImage(params, threevideoOpts())
     expect(r.mediaUrl).toBeUndefined()
     expect(r.mediaBase64?.data).toBe('aGVsbG8=')
     expect(r.mediaBase64?.mediaType).toBe('image/png')
@@ -489,7 +489,7 @@ describe('threerouter 适配器', () => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    const r = await threerouterAdapter.submitImage(imageParams, threerouterOpts())
+    const r = await threevideoAdapter.submitImage(imageParams, threevideoOpts())
     expect(r.mediaUrl).toBe('https://cdn.example.com/top-level.png')
   })
 
@@ -499,7 +499,7 @@ describe('threerouter 适配器', () => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
     vi.stubGlobal('fetch', fetchMock)
-    const r = await threerouterAdapter.submitVideo(videoParams, threerouterOpts())
+    const r = await threevideoAdapter.submitVideo(videoParams, threevideoOpts())
     expect(r.taskId).toBe('mt-vid-1')
     expect(r.async).toBe(true)
     expect(r.mediaType).toBe('video')
@@ -514,7 +514,7 @@ describe('threerouter 适配器', () => {
     // minimax-h3 支持自定义时长，duration 正常携带
     expect(body.duration).toBe(5)
     expect(body.ratio).toBe('16:9')
-    // model 未显式传入时使用 threerouter 默认视频模型（minimax-h3，支持 4-15 秒）
+    // model 未显式传入时使用 threevideo 默认视频模型（minimax-h3，支持 4-15 秒）
     expect(body.model).toBe('minimax-h3')
     // MiniMax 系要求显式 resolution：未指定时注入模型默认档位 768P
     expect(body.resolution).toBe('768P')
@@ -530,7 +530,7 @@ describe('threerouter 适配器', () => {
     ))
     vi.stubGlobal('fetch', fetchMock)
     const params: VideoGenParams = { ...videoParams, model: 'wan2.7-t2v', resolution: undefined }
-    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    const r = await threevideoAdapter.submitVideo(params, threevideoOpts())
     expect(r.droppedDuration).toBe(true)
     expect(r.model).toBe('wan2.7-t2v')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
@@ -550,7 +550,7 @@ describe('threerouter 适配器', () => {
       prompt: '让画面动起来', duration: 5, aspectRatio: undefined,
       model: undefined, image: 'data:image/png;base64,QUJD', resolution: '768P',
     }
-    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    const r = await threevideoAdapter.submitVideo(params, threevideoOpts())
     expect(r.taskId).toBe('mt-vid-2')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
     expect(body.model).toBe('minimax-h3')
@@ -575,7 +575,7 @@ describe('threerouter 适配器', () => {
         { url: 'data:image/png;base64,RUVZRW9Z', position: '2s' },
       ],
     }
-    const r = await threerouterAdapter.submitVideo(params, threerouterOpts())
+    const r = await threevideoAdapter.submitVideo(params, threevideoOpts())
     expect(r.taskId).toBe('mt-vid-multi')
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
     expect(body.model).toBe('wan3.0-video')
@@ -593,7 +593,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'processing' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('running')
   })
 
@@ -602,7 +602,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'succeeded', url: 'https://cdn/result.mp4' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('succeeded')
     if (r.status === 'succeeded') expect(r.mediaUrl).toBe('https://cdn/result.mp4')
   })
@@ -612,7 +612,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'succeeded' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('succeeded')
     if (r.status === 'succeeded') expect(r.mediaUrl).toContain('/media/mt_t/content')
   })
@@ -622,7 +622,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'failed', error: { message: '上游超时' } }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('failed')
     if (r.status === 'failed') expect(r.error).toContain('上游超时')
   })
@@ -632,7 +632,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'failed', error: '内容审核未通过' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('failed')
     if (r.status === 'failed') expect(r.error).toContain('内容审核未通过')
   })
@@ -642,7 +642,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ id: 'mt_t', status: 'cancelled' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ))
-    const r = await threerouterAdapter.queryTask('mt_t', threerouterOpts())
+    const r = await threevideoAdapter.queryTask('mt_t', threevideoOpts())
     expect(r.status).toBe('failed')
   })
 
@@ -651,7 +651,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ code: 'API_KEY_REQUIRED', message: 'API key is required' }),
       { status: 401, headers: { 'content-type': 'application/json' } },
     ))
-    await expect(() => threerouterAdapter.submitVideo(videoParams, threerouterOpts())).rejects
+    await expect(() => threevideoAdapter.submitVideo(videoParams, threevideoOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'auth' && e.retryable === false)
   })
@@ -661,7 +661,7 @@ describe('threerouter 适配器', () => {
       JSON.stringify({ message: 'boom' }),
       { status: 500, headers: { 'content-type': 'application/json' } },
     ))
-    await expect(() => threerouterAdapter.submitVideo(videoParams, threerouterOpts())).rejects
+    await expect(() => threevideoAdapter.submitVideo(videoParams, threevideoOpts())).rejects
       .toSatisfy((e: { kind: string; retryable: boolean }) =>
         e.kind === 'network' && e.retryable === true)
   })

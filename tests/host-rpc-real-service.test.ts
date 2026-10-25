@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { registerWorkbenchRpc, workbenchRpcStatus } from '../src/host/rpc.ts'
 import { WORKBENCH_RPC_CHANNEL } from '../src/workbench-contract.ts'
 
-const DEPS = { provider: 'threerouter', outputsDir: '/tmp/outputs' }
+const DEPS = { provider: 'threevideo', outputsDir: '/tmp/outputs' }
 
 /** Minimal browser-auth seam: this test never admits a request. */
 const AUTH = {

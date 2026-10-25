@@ -7,7 +7,7 @@
  *
  * 运行方式（会真实扣费：一次运行 = 段数 × 一个视频任务）：
  *   DSH_IMAGE_VIDEO_LIVE=1 \
- *   THREEROUTER_MEDIA_API_KEY=sk-… \
+ *   THREEVIDEO_MEDIA_API_KEY=sk-… \
  *   DSH_IMAGE_VIDEO_LIVE_REF_SEGMENTS=/tmp/seg1.mp4,/tmp/seg2.mp4 \
  *   DSH_IMAGE_VIDEO_LIVE_REF_IMAGES=/path/a.png,/path/b.png \
  *   npx vitest run tests/live-video-edit-segments.test.ts
@@ -18,12 +18,12 @@ import { mkdir, writeFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveVideoMedia } from '../src/media.ts'
-import { threerouterAdapter } from '../src/providers/threerouter.ts'
+import { threevideoAdapter } from '../src/providers/threevideo.ts'
 import type { HttpOpts } from '../src/providers/types.ts'
 
 const LIVE = process.env.DSH_IMAGE_VIDEO_LIVE === '1'
-const API_KEY = process.env.THREEROUTER_MEDIA_API_KEY ?? ''
-const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://api.threerouter.com/v1').replace(/\/$/, '')
+const API_KEY = process.env.THREEVIDEO_MEDIA_API_KEY ?? ''
+const BASE = (process.env.DSH_IMAGE_VIDEO_LIVE_BASE ?? 'https://www.threevideo.com/v1').replace(/\/$/, '')
 const MODEL = process.env.DSH_IMAGE_VIDEO_LIVE_MODEL ?? 'wan3.0-video'
 const SEGMENTS = (process.env.DSH_IMAGE_VIDEO_LIVE_REF_SEGMENTS ?? '')
   .split(',').map((s) => s.trim()).filter((s) => s !== '')
@@ -48,7 +48,7 @@ describe.skipIf(!LIVE || API_KEY === '' || SEGMENTS.length === 0)('wan3.0-video 
         ...REF_IMAGES.map((image) => ({ image, type: 'reference_image' })),
       ])
       const payload = media.reduce((sum, m) => sum + m.url.length, 0)
-      const submit = await threerouterAdapter.submitVideo({
+      const submit = await threevideoAdapter.submitVideo({
         prompt: PROMPT, duration: -1, model: MODEL, aspectRatio: 'adaptive', media,
       }, opts)
       console.log(`[${label}] 提交 taskId=${submit.taskId} 载荷=${(payload / 1024 / 1024).toFixed(2)}MB`)
@@ -58,7 +58,7 @@ describe.skipIf(!LIVE || API_KEY === '' || SEGMENTS.length === 0)('wan3.0-video 
       let failure: string | undefined
       while (Date.now() < deadline) {
         try {
-          const q = await threerouterAdapter.queryTask(submit.taskId, opts)
+          const q = await threevideoAdapter.queryTask(submit.taskId, opts)
           if (q.status === 'succeeded') { mediaUrl = q.mediaUrl; break }
           if (q.status === 'failed') { failure = q.error; break }
         } catch (err) {

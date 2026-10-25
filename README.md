@@ -9,7 +9,7 @@
 - **图片单次提交与幂等找回** — `imageTransport: auto` 优先使用异步任务；提交超时/5xx 时只按 `request_id` 反查原任务，默认不盲目重提、不换模型、不生成候选，异步端点未启用时安全降级同步单次提交
 - **统一品牌水印后处理** — 图片在写入 `outputsDir` 和附件前以内存方式叠加可配置水印，桌面交互流直接展示最终水印图，并透出传输方式、提交次数与后处理元数据
 - **两个工具，自然语言触发** — 模型在对话中自主决策何时调用 `generate_image` / `generate_video`，无需手动指令
-- **四家服务商 + 按模型家族自动路由** — Threerouter（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threerouter 永远兜底，回退链透明写入 notes
+- **四家服务商 + 按模型家族自动路由** — Threevideo（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threevideo 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
 - **图片内嵌渲染** — 图片字节经 attachment 服务持久化，附件引用走 `presentationMeta` UI-only 通道，模型只见文本摘要，纯文本模型照常工作
 - **参考图自动瘦身** — 本地参考图大于 4MB 时先等比缩到长边 2560、转 JPEG(q88) 再提交，避免手机原图的 data URL 撞网关体积上限/超时；小图与远程 URL 原样透传
@@ -22,14 +22,14 @@
 
 | 工具 | 能力 | 服务商 | 异步轮询 | 对话渲染 |
 |---|---|---|---|---|
-| `generate_image` | 文生图 + **图生图**（可选 `image` 参考图入参） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
-| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 30s）+ **视频编辑**（`media[].video` 参考视频 + 编辑意图提示词，保留原片动作换主体） | **Threerouter**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_image` | 文生图 + **图生图**（可选 `image` 参考图入参） | **Threevideo**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
+| `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 30s）+ **视频编辑**（`media[].video` 参考视频 + 编辑意图提示词，保留原片动作换主体） | **Threevideo**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
 
 ## Provider 矩阵
 
 | 服务商 | 渠道 | 文生图 | 图生图 | 文生视频 | 备注 |
 |---|---|---|---|---|---|
-| **Threerouter**（默认，聚合器） | threerouter.com Bearer Key | ✅ `/images/generations` 同步（默认 `qwen-image-3.0`） | ✅ 同端点 `image` 参考图字段（默认 `qwen-image-3.0-pro`；2026-09 文档：/images/edits 已移除） | ✅ 已验证（MiniMax-H3 / wan 系） | 生图走 OpenAI Images 标准结构（url/b64_json 双形态 + 顶层 url 兼容）；视频走 `/v1/media/generations` + 轮询 |
+| **Threevideo**（默认，聚合器） | threevideo.com Bearer Key | ✅ `/images/generations` 同步（默认 `qwen-image-3.0`） | ✅ 同端点 `image` 参考图字段（默认 `qwen-image-3.0-pro`；2026-09 文档：/images/edits 已移除） | ✅ 已验证（MiniMax-H3 / wan 系） | 生图走 OpenAI Images 标准结构（url/b64_json 双形态 + 顶层 url 兼容）；视频走 `/v1/media/generations` + 轮询 |
 | **万象 wanx**（阿里云百炼） | DashScope `sk-` Key | ✅ 已验证（wanx2.1-t2i-turbo） | ✅ **已实测**（wanx2.1-imageedit，`base_image_url` 字段，参考图宽度须 512–4096px） | ✅ 已验证（wan2.2-t2v-plus） | i2i 为 description_edit 异步任务；图片同步/异步自适应；视频始终异步 |
 | **MiniMax 官方平台** | platform.minimaxi.com Key | ✅ `image-01`（待 key 实测） | ✅ `subject_reference` 主体一致性（待 key 实测） | ✅ 适配器已实现（video-generation v2，待 key 实测） | 图片同步返回 **base64**（无 URL），插件直接落盘；i2i 语义为「保留主体换场景」，每次仅 1 张参考图；Hailuo 系视频；缺省注入 `768P` |
 | **Seedance2.5**（火山引擎 Ark） | ARK API Key | ✅ 适配器已实现（即梦 3.0） | ✅ Seedream 4.0 `image` 入参（待 key 实测） | ✅ 适配器已实现 | 图片同步返回 URL（24h 有效立即下载）；i2i 默认模型自动切换 Seedream 4.0（3.0 不支持参考图）；显式关组图与水印；视频走异步任务 |
@@ -40,15 +40,15 @@
 
 | model 含关键词 | 家族 | 候选服务商（有序） |
 |---|---|---|
-| `minimax` / `hailuo` | MiniMax | `minimax`（官方直连）→ `threerouter`（图片+视频） |
-| `doubao` / `seedance` / `seedream` | 火山方舟 | `seedance`（直连）→ `threerouter` |
-| `wan`（覆盖 `wan*` 与 `wanx*`） | 通义万相 | `wanx`（百炼直连）→ `threerouter` |
-| 无命中（自定义模型） | 未知 | 仅配置链 + `threerouter` |
+| `minimax` / `hailuo` | MiniMax | `minimax`（官方直连）→ `threevideo`（图片+视频） |
+| `doubao` / `seedance` / `seedream` | 火山方舟 | `seedance`（直连）→ `threevideo` |
+| `wan`（覆盖 `wan*` 与 `wanx*`） | 通义万相 | `wanx`（百炼直连）→ `threevideo` |
+| 无命中（自定义模型） | 未知 | 仅配置链 + `threevideo` |
 
-候选序列 = **配置链服务商**（composer 会话选定 > 配置默认 > 激活服务商，配置优先）→ 家族直连商 → **threerouter 聚合器兜底**（其目录覆盖所有家族的模型）。回退规则：
+候选序列 = **配置链服务商**（composer 会话选定 > 配置默认 > 激活服务商，配置优先）→ 家族直连商 → **threevideo 聚合器兜底**（其目录覆盖所有家族的模型）。回退规则：
 
 - 仅在提交阶段的「模型不被该服务商接受」类错误（模型不存在 / 能力缺失，判定见 `isModelNotAcceptedError`）时回退下一候选；
-- 403 **分组/模型未开通该能力**（threerouter 实测：`permission_error`「Image generation is not enabled for this group」，文档语义 403=无该分组/模型权限或未开通生图 `allow_image_generation`）视为「该候选无法服务此请求」，同样回退下一候选；
+- 403 **分组/模型未开通该能力**（threevideo 实测：`permission_error`「Image generation is not enabled for this group」，文档语义 403=无该分组/模型权限或未开通生图 `allow_image_generation`）视为「该候选无法服务此请求」，同样回退下一候选；
 - 鉴权 Key 无效（401）、无权限语义的 403、配额（429）、网络/超时错误**响亮失败不回退**，不掩盖配置错误；
 - 拿到任务 ID 之后的任何失败**不回退**，绝不重复生成、双重扣费；
 - 回退链写入结果 `notes` 透明告知。
@@ -78,9 +78,9 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 ```yaml
 - id: image-video
   config:
-    provider: threerouter             # threerouter（默认，聚合器） | wanx | minimax | seedance
-    threerouter:
-      apiKey: !!js process.env.THREEROUTER_API_KEY
+    provider: threevideo             # threevideo（默认，聚合器） | wanx | minimax | seedance
+    threevideo:
+      apiKey: !!js process.env.THREEVIDEO_API_KEY
       baseURL: ''
     wanx:
       apiKey: !!js process.env.DASHSCOPE_API_KEY
@@ -102,7 +102,7 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
     imageUnknownStatePolicy: fail     # fail（默认）| resubmit-same-key
     watermark:
       enabled: true
-      text: 'Threerouter'
+      text: 'Threevideo'
       position: bottom-right
       opacity: 0.68
       fontSizeRatio: 0.032
@@ -168,7 +168,7 @@ dsh --profile <profile>
 → 完成后视频首帧即该图片
 ```
 
-`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threerouter `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
+`resolution` 为可选分辨率档位，取值由服务商与模型决定（如 MiniMax-H3：`480P/768P/2K`；wan 图生视频：`480P/1080P`），留空使用服务商默认（MiniMax 系要求显式携带，未指定时插件自动注入 `768P`），不支持的值由上游响亮报错。图生视频的字段映射：threevideo `image`、wanx `input.img_url`、Seedance content 数组 `image_url` 块、MiniMax 官方 `first_frame_image`（MiniMax/Seedance 分支按官方协议实现，未在真实账号验证）。
 
 **视频编辑（参考视频换主体 / 改元素）：**
 
@@ -195,9 +195,9 @@ dsh --profile <profile>
 
 **视频编辑的能力与边界**：`wan3.0-video` 是 All-in-One 视频模型，按 `input.media[].type` 与提示词意图自动路由任务类型——`reference_video` + 含编辑意图的提示词（"替换""改成""去掉"等）即「保留原片构图与动作、只改写指定元素」，**不需要额外的控制参数**（该模型没有 depth/pose 控制入参，深度等信息由服务端自原片自行提取）。上游文档声明：参考视频单段 ≤15 秒、最多 5 段、总时长 ≤15 秒、单文件 ≤100MB；**插件本地只强制**「单段 ≤15 秒」与「压缩后 ≤6MB」（`REFERENCE_VIDEO_MAX_BYTES`），其余不做事前拦截；参考图最多 10 张、单张 ≤20MB；`reference_*` 与 `first_frame`/`last_frame` 不可混用。
 
-**本地素材为何要压缩**：threerouter **没有文件上传端点**（2026-09-22 探测 `/v1/files`、`/v1/uploads`、`/v1/assets` 全 404），本地视频/图片只能以 data URL 提交，而过大的请求体会被网关拒绝（生图端点实测 2.4MB 载荷连续 502、≤1MB 稳定通过）。因此插件在客户端完成压缩，并对压缩后仍超过 6MB 的参考视频**响亮报错**（提示改用公网 URL 或裁短），而不是提交一个必然失败的巨型请求体。
+**本地素材为何要压缩**：threevideo **没有文件上传端点**（2026-09-22 探测 `/v1/files`、`/v1/uploads`、`/v1/assets` 全 404），本地视频/图片只能以 data URL 提交，而过大的请求体会被网关拒绝（生图端点实测 2.4MB 载荷连续 502、≤1MB 稳定通过）。因此插件在客户端完成压缩，并对压缩后仍超过 6MB 的参考视频**响亮报错**（提示改用公网 URL 或裁短），而不是提交一个必然失败的巨型请求体。
 
-**图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threerouter `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸默认 **3:4**（`config.defaultImageSize`，接受比例写法 `3:4`/`16:9`/`1:1`）：qwen/wan 系自动换算为上游要求的 `宽*高`（长边 1536、32 对齐，如 3:4→1152*1536，实测 `3:4` 原样透传会被千问 400）；threerouter（OpenAI 系）/ 方舟系换算为 `宽x高`；MiniMax 比例写法原样透传。**实测约束**：百炼 `wanx2.1-imageedit` 参考图宽度须 512–4096px（过小先放大再调用）；其文字渲染弱（拼写易错），需要精准文字时建议生成后本地合成（如 ffmpeg drawtext）；千问图像默认开启 prompt_extend+思考模式，出图约 1–5 分钟，超时已按官方建议抬到 600s。
+**图生图（参考图）语义差异**：`image` 入参各家模型行为不同——threevideo `/images/edits`（gpt-image-2 等）按提示词自由编辑；方舟 Seedream 4.0+ 按参考图编辑/组图（默认模型自动切换为 Seedream 4.0，3.0 不支持参考图）；MiniMax `subject_reference` 是**主体一致性**（保留人物/主体特征换场景换动作），且每次仅支持 1 张参考图、官方示例仅网络 URL（本地图转 data URL 传入待实测）。尺寸默认 **3:4**（`config.defaultImageSize`，接受比例写法 `3:4`/`16:9`/`1:1`）：qwen/wan 系自动换算为上游要求的 `宽*高`（长边 1536、32 对齐，如 3:4→1152*1536，实测 `3:4` 原样透传会被千问 400）；threevideo（OpenAI 系）/ 方舟系换算为 `宽x高`；MiniMax 比例写法原样透传。**实测约束**：百炼 `wanx2.1-imageedit` 参考图宽度须 512–4096px（过小先放大再调用）；其文字渲染弱（拼写易错），需要精准文字时建议生成后本地合成（如 ffmpeg drawtext）；千问图像默认开启 prompt_extend+思考模式，出图约 1–5 分钟，超时已按官方建议抬到 600s。
 
 **时长与模型能力**：wan 系模型（`wan2.2-t2v-plus`、`wan2.7-t2v`）不支持自定义时长——调用时传入 `duration` 会被插件丢弃（不发给上游，避免 `duration customization is not supported` 报错），并在结果 `notes` 中透明注明，实际时长由上游模型默认决定；MiniMax 系（`minimax-h3`）支持 4–15 秒。能力表见 `src/runtime-defaults.ts` 的 `VIDEO_DURATION_UNSUPPORTED`，按上游实测维护。
 
@@ -219,7 +219,7 @@ dsh-image-video/
     ├── media.ts              # 媒体下载 / 落地 / 摘要文本 / presentationMeta
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
-    │   ├── threerouter.ts    # Threerouter API 适配器（默认服务商，聚合器：图片+视频）
+    │   ├── threevideo.ts    # Threevideo API 适配器（默认服务商，聚合器：图片+视频）
     │   ├── wanx.ts           # 万象（wanx）API 适配器
     │   ├── minimax.ts        # MiniMax 官方平台适配器（video-generation v2 + image_generation）
     │   └── seedance.ts       # Seedance2.5 API 适配器
@@ -234,19 +234,19 @@ dsh-image-video/
 
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `provider` | `'threerouter' \| 'wanx' \| 'minimax' \| 'seedance'` | `threerouter` | 激活的服务商，切换后立即生效（HMR） |
-| `threerouter.apiKey` | `string` | `''` | Threerouter API Key；`provider=threerouter` 时必填（也可只填 `apiKeyEnv`） |
-| `threerouter.apiKeyEnv` | `string` | `''` | 凭证引用名；`apiKey` 留空时经 `ctx.credentials` 解析（如桌面端登录写入的 `THREEROUTER_API_KEY`），留空表示不使用引用 |
-| `threerouter.baseURL` | `string` | `''` | Threerouter 自定义接口地址，留空用默认端点 |
+| `provider` | `'threevideo' \| 'wanx' \| 'minimax' \| 'seedance'` | `threevideo` | 激活的服务商，切换后立即生效（HMR） |
+| `threevideo.apiKey` | `string` | `''` | Threevideo API Key；`provider=threevideo` 时必填（也可只填 `apiKeyEnv`） |
+| `threevideo.apiKeyEnv` | `string` | `''` | 凭证引用名；`apiKey` 留空时经 `ctx.credentials` 解析（如桌面端登录写入的 `THREEVIDEO_API_KEY`），留空表示不使用引用 |
+| `threevideo.baseURL` | `string` | `''` | Threevideo 自定义接口地址，留空用默认端点 |
 | `wanx.apiKey` | `string` | `''` | 万象 API Key；`provider=wanx` 时必填 |
 | `minimax.apiKey` | `string` | `''` | MiniMax 官方平台 API Key；`provider=minimax` 或模型家族路由命中时使用，留空自动跳过该候选 |
 | `wanx.baseURL` | `string` | `''` | 万象自定义接口地址，留空用默认端点 |
 | `seedance.apiKey` | `string` | `''` | Seedance2.5 API Key；`provider=seedance` 时必填 |
 | `seedance.baseURL` | `string` | `''` | Seedance2.5 自定义接口地址，留空用默认端点 |
-| `defaultImageProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认图片服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
-| `defaultVideoProvider` | `'' \| 'threerouter' \| 'wanx' \| 'seedance'` | `''` | 默认视频服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
+| `defaultImageProvider` | `'' \| 'threevideo' \| 'wanx' \| 'seedance'` | `''` | 默认图片服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
+| `defaultVideoProvider` | `'' \| 'threevideo' \| 'wanx' \| 'seedance'` | `''` | 默认视频服务商，留空跟随激活服务商，adapter 用其内置默认模型 |
 | `defaultImageModel` | `string` | `''` | 默认图片模型，留空用服务商内置默认（模型取值链：调用参数 > 此配置 > 内置默认） |
-| `defaultVideoModel` | `string` | `''` | 默认视频模型，留空用服务商内置默认（threerouter 内置 `minimax-h3`） |
+| `defaultVideoModel` | `string` | `''` | 默认视频模型，留空用服务商内置默认（threevideo 内置 `minimax-h3`） |
 | `defaultImageSize` | `string` | `'1024*1024'` | 默认图片尺寸，形如 `宽*高`（百炼接口要求 `*` 分隔） |
 | `defaultVideoDuration` | `number` | `5` | 默认视频时长（秒），范围 1–30（上限由上游模型校验） |
 | `timeoutMs` | `number` | `60000` | 单次 HTTP 请求超时（毫秒） |
@@ -257,21 +257,21 @@ dsh-image-video/
 | `imageTransport` | `'auto' \| 'async' \| 'sync'` | `'auto'` | 图片传输；auto 优先异步，异步端点未启用时降级同步 |
 | `imageUnknownStatePolicy` | `'fail' \| 'resubmit-same-key'` | `'fail'` | 提交超时/5xx 状态未知时的策略；默认只反查、不重提 |
 | `watermark.enabled` | `boolean` | `true` | 是否在落盘/附件前叠加品牌水印 |
-| `watermark.text` | `string` | `'Threerouter'` | 水印文字；空文本跳过后处理并保留原图 |
+| `watermark.text` | `string` | `'Threevideo'` | 水印文字；空文本跳过后处理并保留原图 |
 | `watermark.position` | `'top-left' \| 'top-right' \| 'bottom-left' \| 'bottom-right'` | `'bottom-right'` | 水印锚点 |
 | `watermark.opacity` | `number` | `0.68` | 水印透明度，0–1 |
 | `watermark.fontSizeRatio` | `number` | `0.032` | 字号相对图片宽度比例 |
 
 ### 凭证缝引用（`apiKeyEnv`）
 
-每个服务商的凭证块都支持 `apiKeyEnv`：`apiKey` 留空时按该引用经宿主的 `credentials` 服务解析（`ctx.credentials.resolve(credentialRef(ref))`）。取值优先级为「明文 `apiKey` > 引用解析值」，两者都取不到时按未配置响亮报错。用途是让部署只在配置里声明引用名，把明文留给宿主凭证存储——桌面端登录 Threerouter 后写入的 `THREEROUTER_API_KEY` 因此可直接复用：
+每个服务商的凭证块都支持 `apiKeyEnv`：`apiKey` 留空时按该引用经宿主的 `credentials` 服务解析（`ctx.credentials.resolve(credentialRef(ref))`）。取值优先级为「明文 `apiKey` > 引用解析值」，两者都取不到时按未配置响亮报错。用途是让部署只在配置里声明引用名，把明文留给宿主凭证存储——桌面端登录 Threevideo 后写入的 `THREEVIDEO_API_KEY` 因此可直接复用：
 
 ```yaml
 - id: image-video
   config:
-    provider: threerouter
-    threerouter:
-      apiKeyEnv: THREEROUTER_API_KEY   # 不内联明文
+    provider: threevideo
+    threevideo:
+      apiKeyEnv: THREEVIDEO_API_KEY   # 不内联明文
 ```
 
 候选服务商过滤按「明文或引用任一非空」判定，只声明引用的服务商不会被跳过。
@@ -375,7 +375,7 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 
 ## 服务商 API 参考
 
-- **Threerouter**：[统一媒体生成 API](https://threerouter.com/)（`/v1/media/generations` 创建 → `/v1/media/{id}` 轮询 → `/v1/media/{id}/content` 下载）
+- **Threevideo**：[统一媒体生成 API](https://threevideo.com/)（`/v1/media/generations` 创建 → `/v1/media/{id}` 轮询 → `/v1/media/{id}/content` 下载）
 - **万象 wanx（阿里云百炼 DashScope）**：[文生图](https://help.aliyun.com/zh/model-studio/text-to-image-guide) / [文生视频](https://help.aliyun.com/zh/model-studio/video-generation)
 - **Seedance2.5（火山引擎 Ark）**：[文生图](https://docs.volcengine.com/docs/85621/1616429) / [文生视频](https://docs.volcengine.com/docs/82379/1520757)
 

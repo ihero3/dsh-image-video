@@ -37,10 +37,10 @@ async function harness() {
     },
   })
   const handler = createWorkbenchHandler({
-    provider: 'threerouter', outputsDir, store, registry, runner, renders,
+    provider: 'threevideo', outputsDir, store, registry, runner, renders,
     defaults: () => ({
-      mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
-      videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+      mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
+      videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
     }),
   })
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {

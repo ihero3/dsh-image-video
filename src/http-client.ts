@@ -80,8 +80,8 @@ export function isCancelledError(err: unknown): boolean {
 }
 
 /**
- * 判定错误是否由服务端**在创建任务之前**返回——按 threerouter 的 HTTP 契约
- * （docs/threerouter-async-image-contract.md「HTTP status code contract」），400/401/403/404/413/429
+ * 判定错误是否由服务端**在创建任务之前**返回——按 threevideo 的 HTTP 契约
+ * （docs/threevideo-async-image-contract.md「HTTP status code contract」），400/401/403/404/413/429
  * 都在落库之前拦截，因此这类错误可以安全地回退到下一候选服务商或降级传输；
  * 409 例外（IN_PROGRESS 时任务已存在），5xx/超时同样例外。
  */
@@ -94,9 +94,9 @@ export function isDefinitelyNoTaskError(err: unknown): boolean {
 /**
  * 判定错误是否为「模型不被该服务商接受」类，供工具层在候选服务商间回退。
  * 实测形态（2026-09）：
- * - threerouter：目录中无可用渠道的模型 → HTTP 503 capacity_error
+ * - threevideo：目录中无可用渠道的模型 → HTTP 503 capacity_error
  *   "No available media generation channels"（网关按模型找渠道，未知模型即无渠道）；
- * - threerouter：分组未开通生图 → HTTP 403 permission_error
+ * - threevideo：分组未开通生图 → HTTP 403 permission_error
  *   "Image generation is not enabled for this group"（文档语义：401=Key 无效，
  *   403=无该分组/模型权限或未开通生图 allow_image_generation——属于「该候选
  *   无法服务此请求」，应换下一候选，而非响亮终止）；
@@ -113,7 +113,7 @@ export function isModelNotAcceptedError(err: unknown): boolean {
   const modelMissing = /not\s*found|not\s*exist|does\s*not\s*exist|unknown\s*model|invalid\s*model|不存在|未找到|未开通|无效的?模型/i.test(message)
   const capabilityMissing = message.includes('不支持')
   if (err.kind === 'task') return modelMissing || capabilityMissing
-  // threerouter 网关的「无可用渠道」503 同样意味着无法为此模型服务，纳入回退；
+  // threevideo 网关的「无可用渠道」503 同样意味着无法为此模型服务，纳入回退；
   // 其余 network/timeout 错误（瞬时故障）不回退。
   if (err.kind === 'network') return /no available media generation channels|capacity_error/i.test(message)
   // 403 权限类：仅当消息明确为「分组/模型未开通该能力」时回退（试下一候选）；
@@ -221,7 +221,7 @@ function classifyHttpError(status: number, data: unknown, url: string, retryAfte
     return new GenerationError('auth', `鉴权失败（HTTP 401）：API Key 无效。${errMsg}`, false, status, undefined, code)
   }
   if (status === 403) {
-    // threerouter 文档语义：403=分组未开通该能力（permission_error），401 才是 Key 无效
+    // threevideo 文档语义：403=分组未开通该能力（permission_error），401 才是 Key 无效
     return new GenerationError('auth', `权限失败（HTTP 403）：分组/模型未开通该能力，请联系服务方开通。${errMsg}`, false, status, undefined, code)
   }
   if (status === 429) {
@@ -241,7 +241,7 @@ function classifyHttpError(status: number, data: unknown, url: string, retryAfte
 
 /**
  * 从响应体提取机器可读错误码，兼容 `{"error":{"code":…}}`、`{"error":{"type":…}}`
- * 与顶层 `code` / `type`。threerouter 网关的异步图片契约用的是
+ * 与顶层 `code` / `type`。threevideo 网关的异步图片契约用的是
  * `{"error":{"type":code,"code":code,"message":msg}}`。
  */
 function extractErrorCode(data: unknown): string | undefined {

@@ -43,7 +43,7 @@ describe('workbench skeleton', () => {
     for (const pane of ['paneAssets', 'paneResources', 'panePreview', 'paneTasks']) {
       expect(view.container.querySelector(`[data-workbench-pane=${pane}]`)?.getAttribute('data-workbench-planned')).toBe('false')
     }
-    expect(await screen.findByText('0.3.1 · threerouter')).toBeTruthy()
+    expect(await screen.findByText('0.3.1 · threevideo')).toBeTruthy()
   })
 
   it('switches the current mode without losing the panes', () => {
@@ -124,7 +124,7 @@ describe('workbench project and asset flow', () => {
 
   it('lists recorded generations and files one into the active project', async () => {
     const task: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-1', kind: 'video', status: 'succeeded', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-1', kind: 'video', status: 'succeeded', provider: 'threevideo',
       model: 'minimax-h3', outputPath: '/tmp/outputs/clip.mp4', bytes: 4_096_000,
       createdAt: '2026-10-14T10:30:00.000Z', updatedAt: '2026-10-14T10:30:00.000Z',
     }
@@ -340,8 +340,8 @@ describe('workbench project and asset flow', () => {
   it('shows the seven effective defaults from the host (T2-11)', async () => {
     const host = fakeApi({
       defaults: {
-        mediaMode: 'video', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
-        videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+        mediaMode: 'video', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
+        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
       },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
@@ -359,8 +359,8 @@ describe('workbench project and asset flow', () => {
   it('edits the effective defaults from the workbench (R-CFG-2)', async () => {
     const host = fakeApi({
       defaults: {
-        mediaMode: 'image', imageProvider: 'threerouter', imageSize: '1024*1024', imageStyle: null,
-        videoProvider: 'threerouter', videoAspectRatio: '16:9', videoDuration: 5,
+        mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
+        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
       },
     })
       const view = render(<Workbench {...clientProps({ api: host.api })} />)
@@ -630,7 +630,7 @@ describe('workbench project and asset flow', () => {
   it('is idempotent when the same output is registered twice', async () => {
     const path = '/tmp/outputs/from-task.png'
     const finished: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-dup', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-dup', kind: 'image', status: 'succeeded', provider: 'threevideo',
       model: 'minimax-image-01', outputPath: path, bytes: 512,
       createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
     }
@@ -655,7 +655,7 @@ describe('workbench project and asset flow', () => {
   it('previews a task output registered in another project by path', async () => {
     const path = '/tmp/outputs/other-project.png'
     const finished: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-other', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-other', kind: 'image', status: 'succeeded', provider: 'threevideo',
       model: 'minimax-image-01', outputPath: path, bytes: 512,
       createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
     }
@@ -675,7 +675,7 @@ describe('workbench project and asset flow', () => {
 
   it('previews a task output straight from the task row', async () => {
     const finished: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-out', kind: 'image', status: 'succeeded', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-out', kind: 'image', status: 'succeeded', provider: 'threevideo',
       model: 'minimax-image-01', outputPath: '/tmp/outputs/from-task.png', bytes: 512,
       createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
     }
@@ -691,7 +691,7 @@ describe('workbench project and asset flow', () => {
 
   it('offers cancel only for a running generation and files the result', async () => {
     const running: TaskRecord = {
-      schemaVersion: 1, id: 'tsk-run', kind: 'video', status: 'running', provider: 'threerouter',
+      schemaVersion: 1, id: 'tsk-run', kind: 'video', status: 'running', provider: 'threevideo',
       model: 'minimax-h3', createdAt: '2026-10-14T11:00:00.000Z', updatedAt: '2026-10-14T11:00:00.000Z',
     }
     const host = fakeApi({ tasks: [running] })

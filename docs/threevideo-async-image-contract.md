@@ -1,7 +1,7 @@
-# Threerouter 异步图片契约（客户端视角）
+# Threevideo 异步图片契约（客户端视角）
 
-> 本文是 `dsh-image-video` 对 **threerouter 网关异步图片能力**的客户端实现记录：
-> 契约原文见服务端仓库 `threerouter-sub2api/docs/ASYNC_IMAGE_TASKS.md`；
+> 本文是 `dsh-image-video` 对 **threevideo 网关异步图片能力**的客户端实现记录：
+> 契约原文见服务端仓库 `threevideo-sub2api/docs/ASYNC_IMAGE_TASKS.md`；
 > 本文回答三个问题——客户端按什么契约发请求、哪些保证只靠客户端做不到、
 > 服务端上线前/后分别会发生什么。
 
@@ -14,9 +14,9 @@
 | `/v1/images/generations/by-request/{request_id}` | GET | **提交响应丢失后凭幂等键找回原任务**（唯一自救通道） |
 | `/v1/images/generations` | POST | 同步降级路径（异步端点不可用时），单次提交、永不自动重试 |
 
-客户端实现位于 `src/providers/threerouter.ts`（`imageAsync` 能力）与
+客户端实现位于 `src/providers/threevideo.ts`（`imageAsync` 能力）与
 `src/image-transaction.ts`（事务层），协议测试在
-`tests/threerouter-async.test.ts` / `tests/image-transaction.test.ts`，
+`tests/threevideo-async.test.ts` / `tests/image-transaction.test.ts`，
 线上验证脚本在 `tests/live-image-contract.test.ts`（env 门控）。
 
 ### 1.1 幂等键
@@ -55,7 +55,7 @@
 
 ## 3. 上线检查清单（服务端）
 
-服务端代码已改完（`threerouter-sub2api`，见其 `docs/ASYNC_IMAGE_TASKS.md`），**尚未部署**。
+服务端代码已改完（`threevideo-sub2api`，见其 `docs/ASYNC_IMAGE_TASKS.md`），**尚未部署**。
 2026-09-18 实测线上状态：
 
 ```text
@@ -92,7 +92,7 @@ imageTransport: auto                  # auto（默认）| async（强制，上�
 imageUnknownStatePolicy: fail         # fail（默认，不重提）| resubmit-same-key（同键重提一次，服务端按键去重）
 watermark:
   enabled: true
-  text: Threerouter
+  text: Threevideo
   position: bottom-right              # 四角之一
   opacity: 0.68
   fontSizeRatio: 0.032                # 相对图片宽度
@@ -107,7 +107,7 @@ watermark:
 
 ```bash
 # 真实打线上（最多消耗 1-2 张图的额度）
-DSH_IMAGE_VIDEO_LIVE=1 THREEROUTER_MEDIA_API_KEY=sk-… \
+DSH_IMAGE_VIDEO_LIVE=1 THREEVIDEO_MEDIA_API_KEY=sk-… \
   npx vitest run tests/live-image-contract.test.ts
 ```
 

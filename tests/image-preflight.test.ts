@@ -15,7 +15,7 @@ function defaultConfig(patch: Partial<Config> = {}): Config {
 }
 
 const baseInput = {
-  provider: 'threerouter' as const,
+  provider: 'threevideo' as const,
   model: 'qwen-image-3.0' as const,
   size: '3:4',
   hasReferenceImage: false,
@@ -92,13 +92,13 @@ describe('预检查：结论快照与透明告知', () => {
     })
     expect(preflight.mode).toBe('image-to-image')
     expect(preflight.transport).toBe('async')
-    expect(preflight.watermark).toEqual({ enabled: true, text: 'Threerouter' })
+    expect(preflight.watermark).toEqual({ enabled: true, text: 'Threevideo' })
     const note = formatPreflightNote(preflight)
     expect(note).toContain('预检查通过')
     expect(note).toContain('模型=qwen-image-3.0')
     expect(note).toContain('模式=图生图')
     expect(note).toContain('传输=async')
-    expect(note).toContain('品牌水印=开（Threerouter）')
+    expect(note).toContain('品牌水印=开（Threevideo）')
   })
 
   it('关闭水印时告知里如实写「关」', () => {

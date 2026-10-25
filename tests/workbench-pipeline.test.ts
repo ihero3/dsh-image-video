@@ -94,7 +94,7 @@ describe('planPipeline（纯编排）', () => {
 describe('pipelines/compose + pipelines/run（RPC 装配）', () => {
   function handler(store: WorkbenchStore, started: string[] = []) {
     const deps = {
-      provider: 'threerouter',
+      provider: 'threevideo',
       outputsDir: '/tmp/outputs',
       store,
       registry: {} as never,

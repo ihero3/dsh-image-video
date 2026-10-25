@@ -19,8 +19,8 @@
  *   4. **同步传输没有找回通道**：因此同步路径遇到未知状态直接失败，
  *      永远不自动重提（这是 async 传输存在的根本理由）。
  *
- * 依据：threerouter 网关异步图片契约的 HTTP 状态码表
- * （见 docs/threerouter-async-image-contract.md）。
+ * 依据：threevideo 网关异步图片契约的 HTTP 状态码表
+ * （见 docs/threevideo-async-image-contract.md）。
  * @module dsh-image-video/image-transaction
  */
 

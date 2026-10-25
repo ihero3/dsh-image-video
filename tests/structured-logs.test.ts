@@ -30,7 +30,7 @@ describe('structured logs (T7-3)', () => {
     const tool = {
       name: 'generate_video',
       // 服务商/模型由工具的返回值带出来（账本与日志都用这份 outcome）
-      execute: async () => ({ provider: 'threerouter', model: 'minimax-h3', prompt: '齿轮', videoPath: '/tmp/out/clip.mp4', bytes: 100 }),
+      execute: async () => ({ provider: 'threevideo', model: 'minimax-h3', prompt: '齿轮', videoPath: '/tmp/out/clip.mp4', bytes: 100 }),
     }
     const wrapped = withTaskLedger(tool as never, {
       store: workbench, registry: new GenerationRegistry(), kind: 'video',
@@ -40,7 +40,7 @@ describe('structured logs (T7-3)', () => {
     await wrapped.execute({ prompt: '齿轮', model: 'minimax-h3' }, { signal: undefined })
     expect(entries).toHaveLength(1)
     const entry = entries[0]!
-    expect(entry).toMatchObject({ event: 'generation', kind: 'video', status: 'succeeded', provider: 'threerouter', model: 'minimax-h3' })
+    expect(entry).toMatchObject({ event: 'generation', kind: 'video', status: 'succeeded', provider: 'threevideo', model: 'minimax-h3' })
     expect(typeof entry.taskId).toBe('string')
     expect(entry.durationMs).toBeGreaterThanOrEqual(0)
     // 账本把各种路径键归一成 outputPath

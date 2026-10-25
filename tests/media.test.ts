@@ -98,26 +98,26 @@ describe('media 扩展名与类型推断', () => {
 
     it('回报实际模型与透明告知（模型不再靠配置推断）', () => {
       const blocks = createImageSummaryText({
-        provider: 'threerouter',
+        provider: 'threevideo',
         localPath: '/ws/outputs/c.png',
         bytes: 1024,
         model: 'wan2.1-image',
-        notes: ['模型自动路由回退：seedance 不接受该模型；最终由 threerouter 提交'],
+        notes: ['模型自动路由回退：seedance 不接受该模型；最终由 threevideo 提交'],
       })
       const text = (blocks[0] as { text: string }).text
       expect(text).toContain('模型：wan2.1-image')
       expect(text).toContain('透明告知')
-      expect(text).toContain('最终由 threerouter 提交')
+      expect(text).toContain('最终由 threevideo 提交')
     })
 
     it('未指定模型时显示服务商内置默认', () => {
-      const blocks = createImageSummaryText({ provider: 'threerouter', localPath: '/x.png', bytes: 1 })
+      const blocks = createImageSummaryText({ provider: 'threevideo', localPath: '/x.png', bytes: 1 })
       expect((blocks[0] as { text: string }).text).toContain('模型：服务商内置默认')
     })
 
     it('标准输出含提示词（结果自证「这张图是怎么来的」）', () => {
       const blocks = createImageSummaryText({
-        provider: 'threerouter',
+        provider: 'threevideo',
         localPath: '/ws/outputs/d.png',
         bytes: 1024,
         prompt: '夕阳下的帆船，水彩风格',
@@ -165,7 +165,7 @@ describe('media 扩展名与类型推断', () => {
         'https://cdn.example.com/v.mp4',
         {
           prompt: '女子腾空飞向高空，穿越蓝天白云',
-          provider: 'threerouter',
+          provider: 'threevideo',
           model: 'wan2.7-t2v',
           mode: 'image-to-video',
           duration: 5,
@@ -176,7 +176,7 @@ describe('media 扩展名与类型推断', () => {
       expect(blocks).toHaveLength(1)
       const text = (blocks[0] as { text: string }).text
       expect(text).toContain('- 提示词：女子腾空飞向高空，穿越蓝天白云')
-      expect(text).toContain('- 服务商：threerouter')
+      expect(text).toContain('- 服务商：threevideo')
       expect(text).toContain('- 模型：wan2.7-t2v')
       expect(text).toContain('- 生成模式：image-to-video')
       expect(text).toContain('- 时长参数：5 秒')

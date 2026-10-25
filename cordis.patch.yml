@@ -16,10 +16,10 @@
     - id: image-video
       name: 'dsh-image-video'
       config:
-        # 激活的生成服务商，threerouter（默认，图片+视频） | wanx | seedance
-        provider: threerouter
-        # Threerouter 凭证；provider=threerouter 时使用（图片+视频统一入口）
-        threerouter:
+        # 激活的生成服务商，threevideo（默认，图片+视频） | wanx | seedance
+        provider: threevideo
+        # Threevideo 凭证；provider=threevideo 时使用（图片+视频统一入口）
+        threevideo:
           apiKey: ''
           baseURL: ''
         # 万象（阿里云百炼）凭证；provider=wanx 时使用
@@ -34,9 +34,9 @@
         seedance:
           apiKey: ''
           baseURL: ''
-        # 默认图片服务商；留空跟随激活服务商（threerouter | wanx | seedance）
+        # 默认图片服务商；留空跟随激活服务商（threevideo | wanx | seedance）
         defaultImageProvider: ''
-        # 默认视频服务商；留空跟随激活服务商（threerouter | wanx | seedance）
+        # 默认视频服务商；留空跟随激活服务商（threevideo | wanx | seedance）
         defaultVideoProvider: ''
         # 默认图片尺寸（百炼接口要求 * 分隔，如 1024*1024）
         defaultImageSize: '1024*1024'
@@ -59,7 +59,7 @@
         # 最终图片水印：与模型结果使用同一 outputsDir 和 attachment 流程
         watermark:
           enabled: true
-          text: 'Threerouter'
+          text: 'Threevideo'
           opacity: 0.68
           position: bottom-right
           fontSizeRatio: 0.032

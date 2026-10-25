@@ -1,5 +1,5 @@
 /**
- * generate_video 工具：文生视频 + 图生视频（image 首帧驱动），支持 threerouter（聚合器）/
+ * generate_video 工具：文生视频 + 图生视频（image 首帧驱动），支持 threevideo（聚合器）/
  * 万象（wanx，百炼直连）/ MiniMax 官方平台 / Seedance（火山方舟），按模型家族自动路由。
  * 提交任务后后台轮询直到完成，下载视频到 outputs/ 目录。
  * 视频生成耗时较长（1-5 分钟），轮询过程不产生中间输出，仅最终结果返回模型，
@@ -17,7 +17,7 @@ import { isModelNotAcceptedError } from '../http-client.ts'
 import type { TaskManager } from '../task-manager.ts'
 import { wanxAdapter } from '../providers/wanx.ts'
 import { seedanceAdapter } from '../providers/seedance.ts'
-import { threerouterAdapter } from '../providers/threerouter.ts'
+import { threevideoAdapter } from '../providers/threevideo.ts'
 import { minimaxAdapter } from '../providers/minimax.ts'
 import type { ProviderAdapter, VideoGenParams, SubmitResult, HttpOpts } from '../providers/types.ts'
 import type { VideoMediaInput } from '../media.ts'
@@ -56,10 +56,10 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
     name: 'generate_video',
     description:
       '根据文本提示词生成短视频；传入 image（首帧图片）时为图生视频，让图片动起来。'
-      + '服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threerouter 聚合器）；'
-      + '视频生成固定通过 ThreeRouter 提交（项目约定，禁止切换到 OpenArt 或其他直连服务商），'
+      + '服务商选择：配置链服务商优先（composer 会话选定 > 配置默认服务商 > 激活服务商，默认 threevideo 聚合器）；'
+      + '视频生成固定通过 Threevideo 提交（项目约定，禁止切换到 OpenArt 或其他直连服务商），'
       + '不使用任何其他服务商回退。'
-      + '模型取值：调用参数 model > 配置 defaultVideoModel > 多关键帧自动路由 > 服务商内置默认模型（threerouter 默认 minimax-h3）。'
+      + '模型取值：调用参数 model > 配置 defaultVideoModel > 多关键帧自动路由 > 服务商内置默认模型（threevideo 默认 minimax-h3）。'
       + '不要自行编写脚本或直接调用服务商 API。'
       + `视频时长上限 ${MAX_VIDEO_DURATION} 秒；具体模型能力由上游校验，wan 系模型不支持自定义时长时会在结果 notes 注明。`
       + '生成完成后视频保存到本地 outputs/ 目录。'
@@ -208,7 +208,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       }
 
       // 服务商选择：构建候选序列——配置链优先（composer 覆盖 > settings 默认 > 激活
-      // 服务商）→ 显式 model 命中家族规则的直连商 → threerouter 聚合器兜底；
+      // 服务商）→ 显式 model 命中家族规则的直连商 → threevideo 聚合器兜底；
       // 未配置 key 的候选自动跳过，全部候选均无凭证时响亮报错。
       const preferred: Provider | undefined = runtime.videoProvider
         ?? (config.defaultVideoProvider === '' ? undefined : config.defaultVideoProvider)
@@ -221,7 +221,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       if (candidates.length === 0) {
         throw new Error('dsh-image-video：没有任何已配置 API Key 的服务商，请至少为一个服务商配置 apiKey 或 apiKeyEnv')
       }
-      const adapterFor = (p: Provider): ProviderAdapter => p === 'threerouter' ? threerouterAdapter
+      const adapterFor = (p: Provider): ProviderAdapter => p === 'threevideo' ? threevideoAdapter
         : p === 'wanx' ? wanxAdapter
         : p === 'minimax' ? minimaxAdapter
         : seedanceAdapter

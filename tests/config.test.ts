@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { Config, hasConfiguredCredentials, resolveActiveProvider } from '../src/config.ts'
 
 describe('Config Schema', () => {
-  it('空对象 → 全部使用默认值（默认 provider=threerouter）', () => {
+  it('空对象 → 全部使用默认值（默认 provider=threevideo）', () => {
     const cfg = Config({})
-    expect(cfg.provider).toBe('threerouter')
+    expect(cfg.provider).toBe('threevideo')
     expect(cfg.defaultImageSize).toBe('3:4')
     expect(cfg.defaultVideoDuration).toBe(5)
     expect(cfg.timeoutMs).toBe(60_000)
@@ -12,7 +12,7 @@ describe('Config Schema', () => {
     expect(cfg.pollTimeoutMs).toBe(600_000)
     expect(cfg.retryTimes).toBe(3)
     expect(cfg.outputsDir).toBe('./outputs')
-    expect(cfg.threerouter.apiKey).toBe('')
+    expect(cfg.threevideo.apiKey).toBe('')
     expect(cfg.wanx.apiKey).toBe('')
     expect(cfg.seedance.apiKey).toBe('')
   })
@@ -25,7 +25,7 @@ describe('Config Schema', () => {
     expect(cfg.imageUnknownStatePolicy).toBe('fail')
     expect(cfg.watermark).toEqual({
       enabled: true,
-      text: 'Threerouter',
+      text: 'Threevideo',
       opacity: 0.68,
       position: 'bottom-right',
       fontSizeRatio: 0.032,
@@ -44,14 +44,14 @@ describe('Config Schema', () => {
     expect(Config({ imageUnknownStatePolicy: 'resubmit-same-key' }).imageUnknownStatePolicy).toBe('resubmit-same-key')
     expect(() => Config({ imageUnknownStatePolicy: 'retry' })).toThrow()
     expect(Config({ watermark: { position: 'top-left' } }).watermark.position).toBe('top-left')
-    expect(Config({ watermark: { position: 'top-left' } }).watermark.text).toBe('Threerouter')
+    expect(Config({ watermark: { position: 'top-left' } }).watermark.text).toBe('Threevideo')
     expect(() => Config({ watermark: { position: 'center' } })).toThrow()
     expect(() => Config({ watermark: { opacity: 1.5 } })).toThrow()
     expect(Config({ watermark: { enabled: false } }).watermark.enabled).toBe(false)
   })
 
   it('provider 接受四家服务商，非法值报错', () => {
-    expect(() => Config({ provider: 'threerouter' })).not.toThrow()
+    expect(() => Config({ provider: 'threevideo' })).not.toThrow()
     expect(() => Config({ provider: 'wanx' })).not.toThrow()
     expect(() => Config({ provider: 'seedance' })).not.toThrow()
     expect(() => Config({ provider: 'minimax' })).not.toThrow()
@@ -94,12 +94,12 @@ describe('resolveActiveProvider 凭证解析', () => {
   /** 不解析任何引用的解析器：引用用例各测各的。 */
   const noRef = async (): Promise<string | undefined> => undefined
 
-  it('provider=threerouter → 使用 threerouter 凭证 + 默认 baseURL', async () => {
-    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-threerouter' } })
+  it('provider=threevideo → 使用 threevideo 凭证 + 默认 baseURL', async () => {
+    const cfg = Config({ provider: 'threevideo', threevideo: { apiKey: 'sk-threevideo' } })
     const r = await resolveActiveProvider(cfg, noRef)
-    expect(r.provider).toBe('threerouter')
-    expect(r.apiKey).toBe('sk-threerouter')
-    expect(r.baseURL).toBe('https://api.threerouter.com/v1')
+    expect(r.provider).toBe('threevideo')
+    expect(r.apiKey).toBe('sk-threevideo')
+    expect(r.baseURL).toBe('https://www.threevideo.com/v1')
   })
 
   it('provider=wanx → 使用 wanx 凭证 + 默认 baseURL', async () => {
@@ -133,8 +133,8 @@ describe('resolveActiveProvider 凭证解析', () => {
   })
 
   it('未配置 API Key 时抛错，含中文友好提示', async () => {
-    const cfgT = Config({ provider: 'threerouter', threerouter: { apiKey: '' } })
-    await expect(resolveActiveProvider(cfgT, noRef)).rejects.toThrow(/threerouter.*未配置 API Key/)
+    const cfgT = Config({ provider: 'threevideo', threevideo: { apiKey: '' } })
+    await expect(resolveActiveProvider(cfgT, noRef)).rejects.toThrow(/threevideo.*未配置 API Key/)
     const cfgW = Config({ provider: 'wanx', wanx: { apiKey: '' } })
     await expect(resolveActiveProvider(cfgW, noRef)).rejects.toThrow(/wanx.*未配置 API Key/)
     const cfgS = Config({ provider: 'seedance', seedance: { apiKey: '   ' } })
@@ -142,18 +142,18 @@ describe('resolveActiveProvider 凭证解析', () => {
   })
 
   it('apiKeyEnv 引用：明文留空时经凭证缝解析，且解析值两端空白被裁掉', async () => {
-    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: '', apiKeyEnv: 'THREEROUTER_API_KEY' } })
+    const cfg = Config({ provider: 'threevideo', threevideo: { apiKey: '', apiKeyEnv: 'THREEVIDEO_API_KEY' } })
     const seen: string[] = []
     const r = await resolveActiveProvider(cfg, async (ref) => {
       seen.push(ref)
       return '  sk-from-seam  '
     })
-    expect(seen).toEqual(['THREEROUTER_API_KEY'])
+    expect(seen).toEqual(['THREEVIDEO_API_KEY'])
     expect(r.apiKey).toBe('sk-from-seam')
   })
 
   it('apiKeyEnv 引用：明文优先，不查凭证缝', async () => {
-    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-literal', apiKeyEnv: 'THREEROUTER_API_KEY' } })
+    const cfg = Config({ provider: 'threevideo', threevideo: { apiKey: 'sk-literal', apiKeyEnv: 'THREEVIDEO_API_KEY' } })
     let called = 0
     const r = await resolveActiveProvider(cfg, async () => {
       called += 1
@@ -164,15 +164,15 @@ describe('resolveActiveProvider 凭证解析', () => {
   })
 
   it('apiKeyEnv 引用解析不到时按未配置报错', async () => {
-    const cfg = Config({ provider: 'threerouter', threerouter: { apiKey: '', apiKeyEnv: 'MISSING_KEY' } })
-    await expect(resolveActiveProvider(cfg, async () => undefined)).rejects.toThrow(/threerouter.*未配置 API Key/)
-    await expect(resolveActiveProvider(cfg, async () => '   ')).rejects.toThrow(/threerouter.*未配置 API Key/)
+    const cfg = Config({ provider: 'threevideo', threevideo: { apiKey: '', apiKeyEnv: 'MISSING_KEY' } })
+    await expect(resolveActiveProvider(cfg, async () => undefined)).rejects.toThrow(/threevideo.*未配置 API Key/)
+    await expect(resolveActiveProvider(cfg, async () => '   ')).rejects.toThrow(/threevideo.*未配置 API Key/)
   })
 
   it('hasConfiguredCredentials：明文或引用任一非空即为已配置', () => {
-    expect(hasConfiguredCredentials(Config({}), 'threerouter')).toBe(false)
-    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: 'sk' } }), 'threerouter')).toBe(true)
-    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: '', apiKeyEnv: 'THREEROUTER_API_KEY' } }), 'threerouter')).toBe(true)
-    expect(hasConfiguredCredentials(Config({ threerouter: { apiKey: '  ', apiKeyEnv: '  ' } }), 'threerouter')).toBe(false)
+    expect(hasConfiguredCredentials(Config({}), 'threevideo')).toBe(false)
+    expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: 'sk' } }), 'threevideo')).toBe(true)
+    expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: '', apiKeyEnv: 'THREEVIDEO_API_KEY' } }), 'threevideo')).toBe(true)
+    expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: '  ', apiKeyEnv: '  ' } }), 'threevideo')).toBe(false)
   })
 })

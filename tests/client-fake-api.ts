@@ -22,8 +22,8 @@ import type { OutputFile } from '../src/workbench/outputs.ts'
 
 /** Host-supplied dropdown values (the browser bundle carries none of these). */
 export const OPTIONS = {
-  imageProviders: ['threerouter', 'wanx', 'seedance'],
-  videoProviders: ['threerouter', 'wanx', 'minimax', 'seedance'],
+  imageProviders: ['threevideo', 'wanx', 'seedance'],
+  videoProviders: ['threevideo', 'wanx', 'minimax', 'seedance'],
   imageSizes: [
     { id: '1:1', label: '1:1', size: '1024*1024' },
     { id: '4:3', label: '4:3', size: '1152*864' },
@@ -35,7 +35,7 @@ export const OPTIONS = {
 
 export const HEALTH = {
   plugin: 'dsh-image-video' as const, version: '0.3.1', channel: '/image-video',
-  provider: 'threerouter', outputsDir: '/tmp/outputs', at: '2026-10-14T00:00:00.000Z',
+  provider: 'threevideo', outputsDir: '/tmp/outputs', at: '2026-10-14T00:00:00.000Z',
   options: OPTIONS,
 }
 
@@ -511,7 +511,7 @@ export function fakeApi(options: {
       calls.push('diagnostics')
       return {
         plugin: { name: 'dsh-image-video', version: '0.3.1' },
-        provider: 'threerouter', outputsDir: '/tmp/outputs',
+        provider: 'threevideo', outputsDir: '/tmp/outputs',
         data: { projects: 1, assets: 1, tasks: 0, resources: 0, runningRuns: 0, writeCount: 1, fileBytes: 2048 },
         renders: {
           running: 0, queued: 0,

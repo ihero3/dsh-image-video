@@ -72,7 +72,7 @@ describe('isModelNotAcceptedError（候选回退判定）', () => {
   })
 
   it('参数级 400（如 duration 档位问题）→ false，不触发换家', () => {
-    // threerouter 实测的时长拒绝报错：含 "invalid params" 与 "model"，但语义是参数不支持
+    // threevideo 实测的时长拒绝报错：含 "invalid params" 与 "model"，但语义是参数不支持
     const duration = classifyErrorForTest(400, {
       error: { message: 'invalid params, model MiniMax-H3 does not support duration 1s, supported durations: 4s...' },
     }, '/x')
@@ -87,7 +87,7 @@ describe('isModelNotAcceptedError（候选回退判定）', () => {
     expect(isModelNotAcceptedError(new GenerationError('timeout', '请求超时', true))).toBe(false)
   })
 
-  it('403 分组未开通生图 → true（2026-09 实测：threerouter permission_error，文档语义 403=无分组/模型权限）', () => {
+  it('403 分组未开通生图 → true（2026-09 实测：threevideo permission_error，文档语义 403=无分组/模型权限）', () => {
     // www/api 两 host 一致的真实响应形态
     const notEnabled = classifyErrorForTest(403, {
       error: { message: 'Image generation is not enabled for this group', type: 'permission_error' },
@@ -99,7 +99,7 @@ describe('isModelNotAcceptedError（候选回退判定）', () => {
     expect(isModelNotAcceptedError(chinese)).toBe(true)
   })
 
-  it('threerouter「无可用渠道」503 capacity_error → true（2026-09 实测：未知模型返回此形态）', () => {
+  it('threevideo「无可用渠道」503 capacity_error → true（2026-09 实测：未知模型返回此形态）', () => {
     const noChannel = classifyErrorForTest(503, {
       error: { message: 'No available media generation channels', type: 'capacity_error' },
     }, '/x')

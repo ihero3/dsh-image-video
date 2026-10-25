@@ -276,9 +276,9 @@
 | 1 | 视频时长上限 | schema/运行时是 **1–30 秒**（`config.ts` `max(30)`、`generate-video.ts` 的 `MAX_VIDEO_DURATION=30`）；README 与多处注释仍写"1–10" | 工作台参数面板必须按 1–30，且不得把上限写死在 UI |
 | 2 | `pollTimeoutMs` | 实际默认 **600000**（10 分钟）；README 写 300000 | 任务面板的超时文案/重试策略按实际值 |
 | 3 | 参考视频上限 | 客户端把本地参考视频压到 **≤15 秒 / ≤6MB**（`media.ts` `REFERENCE_VIDEO_MAX_BYTES`）；README 的"100MB / 5 段 / 总 15 秒"没有实现 | 时间轴的"参考视频"入口必须按 6MB 硬上限给出可操作提示 |
-| 4 | 视频多服务商回退 | 候选被写死 `threerouter`（`runtime-defaults.ts`），wanx/seedance/minimax 的 `submitVideo` **不可达** | 不要把"多服务商回退"写成既有能力；工作流只在 threerouter 上承诺 |
-| 5 | 异步图片服务商 | `image-preflight.ts` 的报错文案称 threerouter 是"唯一实现异步图片网关的服务商"，而 minimax 适配器也声明了 `imageAsync`（作者自述未实测） | 文案与能力表需收敛，不许据此承诺 minimax 异步 |
-| 6 | 悬空文档引用 | `src/http-client.ts` 指向不存在的 `docs/ASYNC_IMAGE_TASKS.md`（现存的是 `threerouter-async-image-contract.md`） | 任务里顺手修掉，避免后来者找不到契约 |
+| 4 | 视频多服务商回退 | 候选被写死 `threevideo`（`runtime-defaults.ts`），wanx/seedance/minimax 的 `submitVideo` **不可达** | 不要把"多服务商回退"写成既有能力；工作流只在 threevideo 上承诺 |
+| 5 | 异步图片服务商 | `image-preflight.ts` 的报错文案称 threevideo 是"唯一实现异步图片网关的服务商"，而 minimax 适配器也声明了 `imageAsync`（作者自述未实测） | 文案与能力表需收敛，不许据此承诺 minimax 异步 |
+| 6 | 悬空文档引用 | `src/http-client.ts` 指向不存在的 `docs/ASYNC_IMAGE_TASKS.md`（现存的是 `threevideo-async-image-contract.md`） | 任务里顺手修掉，避免后来者找不到契约 |
 | 7 | `lib/` 与 `files` 白名单 | `lib/` 是提交进仓库的产物（当前仍是 `478832a` 的构建），`package.json files` 只列 `lib/index.js`、`lib/index.d.ts`、`cordis.patch.yml`，而 tsdown 配了 `clean: true` | 新增客户端产物必须**同时**扩 `files` 并在构建后提交 `lib/client/**`，否则桌面私有插件复制会直接抛错（`private-plugins.ts:84`） |
 | 8 | 媒体路由前提 | `/outputs`、`/image-video/defaults` 只在 `webServer.host === '127.0.0.1'` 注册 | 见 `R-NFR-6`；工作台预览不得假设第二条通道 |
 | 9 | 右栏 tab 注册的作用域 | `sidebarRightTabs.register()` 内部已用 effect 托管；父包注释明确"从别的插件 apply 里、在活动 effect 作用域内注册会**无任何报错地卡住浏览器启动**" | 计划 §9／审计 §4.1 写的"注册必须放在 `ctx.effect()` 中"**表述不准**，照做会踩坑（T1-3） |
@@ -289,4 +289,4 @@
 | 14 | 私有插件复制的内容面 | `materializePrivatePlugins` 只复制 `package.json` / `cordis.patch.yml` / `lib` | 画布、ffmpeg 侧车等任何额外产物必须落在 `lib` 内或另立打包规则（T1-1、`R-TML-7`） |
 | 15 | 依赖重复（schemastery 两份） | 插件直接依赖 `^3.18.1`（解析到 3.18.1），而 dsh-0.2.1 devDeps 传递 `3.18.5-alpha.1`；两份并存 → `z<T>` 注解报类型冲突、去掉注解又报 TS2742（推断类型不可移植） | 必须统一到当前 DSH 线使用的版本（**已统一为 `^3.18.5-alpha.1`**），否则 typecheck 不能作为门禁（T0-6、`R-NFR-2`） |
 | 16 | 参考文档里的验证命令不可用 | `IMPLEMENTATION-PLAN` §11/§12 写的 `pnpm dsh --profile desktop --dump-config` 会被 CLI 拒绝（`profile "desktop" is managed exclusively by the Electron application`） | 用"把 profile 拷成别的名字再 dump"的绕法（T0-4、`EXECUTION.md` §5） |
-| 17 | 异步图片端点可用性（2026-10-14 现场实测） | **不可用**：`POST https://api.threerouter.com/v1/images/generations/async` → 404 `async image tasks are not enabled`；插件自动降级为同步单次提交并在结果里明确告知「无幂等键、不自动重试」 | 任务面（`R-TSK-*`）不能假设存在可轮询的异步任务；进度/取消语义必须同时覆盖同步提交，本地任务账本要自己记录提交与产物 |
+| 17 | 异步图片端点可用性（2026-10-14 现场实测） | **不可用**：`POST https://www.threevideo.com/v1/images/generations/async` → 404 `async image tasks are not enabled`；插件自动降级为同步单次提交并在结果里明确告知「无幂等键、不自动重试」 | 任务面（`R-TSK-*`）不能假设存在可轮询的异步任务；进度/取消语义必须同时覆盖同步提交，本地任务账本要自己记录提交与产物 |

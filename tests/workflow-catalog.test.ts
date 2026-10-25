@@ -54,7 +54,7 @@ describe('node catalog', () => {
 
   it('keeps deployment values out of the catalog', () => {
     const masthead = JSON.stringify(NODE_CATALOG)
-    for (const needle of ['threerouter', 'minimax', 'wanx', 'qwen']) expect(masthead).not.toContain(needle)
+    for (const needle of ['threevideo', 'minimax', 'wanx', 'qwen']) expect(masthead).not.toContain(needle)
   })
 
   it('rejects an unknown kind loudly', () => {

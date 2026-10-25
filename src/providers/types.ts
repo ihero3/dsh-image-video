@@ -19,13 +19,13 @@ export interface ImageGenParams {
   /**
    * 可选参考图，存在时走图生图：http(s) URL、data URL（本地路径已由调用方经
    * media.resolveImageReference 统一解析），适配器只负责放到各自协议字段。
-   * 各家语义不同：threerouter /images/edits 按提示词编辑、方舟 Seedream 参考编辑、
+   * 各家语义不同：threevideo /images/edits 按提示词编辑、方舟 Seedream 参考编辑、
    * MiniMax 主体一致性（保留主体换场景）。
    */
   image?: string
   /**
    * 多参考图（按调用方顺序）：首图通常是底图，其余图片是编辑/身份参考。
-   * threerouter 适配器会以 `image_urls` 发给服务端；不支持多图的直连适配器
+   * threevideo 适配器会以 `image_urls` 发给服务端；不支持多图的直连适配器
    * 至少使用第一张图，保持旧版单图协议兼容。
    */
   images?: string[]
@@ -167,7 +167,7 @@ export function parseSize(size: string): { width: number; height: number } {
 
 /**
  * 尺寸分隔符归一化：配置默认值沿用百炼风格 "1024*1024"（星号），
- * 而 threerouter（OpenAI 风格）与火山方舟均要求 "1024x1024"（字母 x）。
+ * 而 threevideo（OpenAI 风格）与火山方舟均要求 "1024x1024"（字母 x）。
  * 非 `宽x高` 形态（如 "1K"/"2K"/"auto"）原样返回。
  */
 export function normalizeImageSize(size: string): string {
@@ -175,7 +175,7 @@ export function normalizeImageSize(size: string): string {
 }
 
 /**
- * 阿里系（千问 qwen-image-* / 万相 wan*-image 等，DashScope 与经 threerouter 透传皆同）
+ * 阿里系（千问 qwen-image-* / 万相 wan*-image 等，DashScope 与经 threevideo 透传皆同）
  * 原生尺寸归一化：上游要求 `宽*高` 且不接受比例写法（2026-09-14 实测：`3:4` 原样
  * 透传被 400 "Expected format: '<width>*<height>'"）。比例写法按长边 1536、32 对齐
  * 换算（3:4 → 1152*1536；16:9 → 1536*864；1:1 → 1024*1024）；WxH / W*H 统一 `*` 分隔。

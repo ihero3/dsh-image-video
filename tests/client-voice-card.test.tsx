@@ -18,8 +18,8 @@ afterEach(() => { cleanup() })
 const t = (key: WorkbenchLocaleKey): string => en[key]
 
 const UNAVAILABLE = {
-  available: false, provider: 'threerouter',
-  reason: 'TTS 接口尚未接入：等待 Threerouter TTS API 联调通过（配音计划/时长估算已可用）',
+  available: false, provider: 'threevideo',
+  reason: 'TTS 接口尚未接入：等待 Threevideo TTS API 联调通过（配音计划/时长估算已可用）',
   voices: [],
 } as const
 

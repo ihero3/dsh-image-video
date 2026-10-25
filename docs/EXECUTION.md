@@ -15,7 +15,7 @@
 
 装载链事实（已核实）：
 
-- `apps/desktop/src/project-manager.ts:36` → `LOCAL_PLUGIN_BUNDLES = ['dsh-image-video', 'dsh-plugin-threerouter']`：dev/profile 的 bundle 列表，本方案**不新增包名**。
+- `apps/desktop/src/project-manager.ts:36` → `LOCAL_PLUGIN_BUNDLES = ['dsh-image-video', 'dsh-plugin-threevideo']`：dev/profile 的 bundle 列表，本方案**不新增包名**。
 - `apps/desktop/src/private-plugins.ts:16` → `PRIVATE_PLUGIN_NAMES` 同上；`:80` 起读取 `exports['./client'].default`，`:84` 在"声明了 client 出口但文件没构建出来"时**直接抛错**（`run the plugin bundle script first`）→ 新增 `./client` 出口与构建产物必须原子提交，否则桌面启动即失败。
 - `apps/desktop/.desktop-build/development/project/node_modules/dsh-image-video →` 子模块目录（软链，改子模块里的 `lib/` 即被加载）。
 - 新增客户端产物时必须**同时**改两处，否则桌面启动直接失败：`package.json` 的 `files` 白名单（现在只有 `lib/index.js`、`lib/index.d.ts`、`cordis.patch.yml`）要加入 `lib/client/**`；tsdown 配了 `clean: true`，构建会清空 `lib/`，所以 host+client 必须在**同一次构建**里产出并一起提交。
@@ -60,11 +60,11 @@ pnpm run typecheck && pnpm run test && pnpm run build
 
 # 3) 子模块与桌面 dev
 cd /Users/guxiongjian/Documents/code/deepseek-harness
-pnpm run build:plugins          # = 对 dsh-image-video / dsh-plugin-threerouter 跑 bundle
+pnpm run build:plugins          # = 对 dsh-image-video / dsh-plugin-threevideo 跑 bundle
 pnpm run dev:desktop            # 起桌面 dev（DSH_HOME=apps/desktop/.desktop-build/development/home）
 ```
 
-- 凭证：沿用现有缝，不在仓库内联明文。桌面登录后写入 `refs.THREEROUTER_API_KEY`（`DSH_HOME/.credentials.yaml`），生成/渲染走同一个 Key（`R-CFG-1`）。
+- 凭证：沿用现有缝，不在仓库内联明文。桌面登录后写入 `refs.THREEVIDEO_API_KEY`（`DSH_HOME/.credentials.yaml`），生成/渲染走同一个 Key（`R-CFG-1`）。
 - 真机契约测试开关：`DSH_IMAGE_VIDEO_LIVE=1`（每个用例 = 一次真实付费任务，跑之前确认）、`DSH_BROWSER_EXECUTABLE` 等按需。
 - 媒体输出目录：沿用插件 `outputsDir` 配置（默认 `./outputs`），工作台只登记引用，不复制字节（`R-TML-1`）。
 
@@ -298,7 +298,7 @@ ps aux | grep -c "Harness Dev.app"     # 是否被反复拉起
 **症状**：改了插件源码、重启桌面应用，界面上的版本/行为还是旧的。
 
 **根因**：`apps/desktop` 的 `dev:start`（`tsx scripts/dev.ts --skip-build`）**跳过了 `build:plugins`**，
-而私有插件（`dsh-image-video` / `threerouter`）的产物**不在整仓 build 里**。所以运行态加载的是上一次
+而私有插件（`dsh-image-video` / `threevideo`）的产物**不在整仓 build 里**。所以运行态加载的是上一次
 `build:plugins` 的产物。`dev.ts` 源码里对此有注释（"a pull that only touches plugins/ would
 otherwise launch against stale lib/"）。
 
@@ -311,7 +311,7 @@ sh scripts/refresh-plugin-dev.sh     # 仓库根目录
 它等于：
 
 ```sh
-pnpm build:plugins                   # pnpm --filter dsh-image-video --filter dsh-plugin-threerouter run bundle
+pnpm build:plugins                   # pnpm --filter dsh-image-video --filter dsh-plugin-threevideo run bundle
 pnpm -C apps/desktop run start       # 重新准备开发工程并启动
 ```
 
@@ -333,7 +333,7 @@ pnpm -C apps/desktop run start       # 重新准备开发工程并启动
 ```js
 // 在应用页面里执行（自带宿主 cookie）
 await (await fetch('/image-video/status')).json()
-// → {"version":"0.3.64","rpc":{"registered":true,"awaiting":false},"provider":"threerouter",…}
+// → {"version":"0.3.64","rpc":{"registered":true,"awaiting":false},"provider":"threevideo",…}
 ```
 
 2026-10-20 实测：`status` 报 **0.3.64**（宿主已新），但页面头部仍显示 **0.3.61** 且旧文案仍在

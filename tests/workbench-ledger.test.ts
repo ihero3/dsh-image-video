@@ -58,14 +58,14 @@ describe('withTaskLedger', () => {
     const { store, opened, updated } = fakeStore()
     const registry = new GenerationRegistry()
     const wrapped = withTaskLedger(tool(async () => ({
-      provider: 'threerouter', model: 'minimax-h3', localPath: '/tmp/outputs/clip.mp4', bytes: 4096,
+      provider: 'threevideo', model: 'minimax-h3', localPath: '/tmp/outputs/clip.mp4', bytes: 4096,
     })), { store, registry, kind: 'video' })
 
     const value = await wrapped.execute({} as never, {} as never)
     expect(value).toMatchObject({ model: 'minimax-h3' })
     expect(opened[0]).toMatchObject({ kind: 'video', status: 'running' })
     expect(updated[0]?.patch).toMatchObject({
-      status: 'succeeded', provider: 'threerouter', model: 'minimax-h3', outputPath: '/tmp/outputs/clip.mp4', bytes: 4096,
+      status: 'succeeded', provider: 'threevideo', model: 'minimax-h3', outputPath: '/tmp/outputs/clip.mp4', bytes: 4096,
     })
     expect(registry.size).toBe(0)
   })
@@ -100,16 +100,16 @@ describe('withTaskLedger', () => {
   it('never fails the generation when the ledger cannot be written', async () => {
     const { store, updated } = fakeStore({ failOpen: true })
     const onError = vi.fn()
-    const wrapped = withTaskLedger(tool(async () => ({ provider: 'threerouter' })),
+    const wrapped = withTaskLedger(tool(async () => ({ provider: 'threevideo' })),
       { store, registry: new GenerationRegistry(), kind: 'image', onError })
-    await expect(wrapped.execute({} as never, {} as never)).resolves.toEqual({ provider: 'threerouter' })
+    await expect(wrapped.execute({} as never, {} as never)).resolves.toEqual({ provider: 'threevideo' })
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('disk full'))
     expect(updated).toEqual([])
   })
 
   it('files the requested model and prompt while the call is still running', async () => {
     const { store, opened } = fakeStore()
-    const wrapped = withTaskLedger(tool(async () => ({ provider: 'threerouter' })),
+    const wrapped = withTaskLedger(tool(async () => ({ provider: 'threevideo' })),
       { store, registry: new GenerationRegistry(), kind: 'image' })
     await wrapped.execute({ model: 'minimax-image-01', prompt: '一张图' } as never, {} as never)
     expect(opened[0]).toMatchObject({ status: 'running', model: 'minimax-image-01', prompt: '一张图' })
