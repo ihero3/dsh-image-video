@@ -16,12 +16,15 @@
  * 2026-10-16 首次可发布 raw 548,282 / gzip 121,161；
  * 2026-10-19 B1–B13 界面工作 → 682,374 / 151,212；
  * 2026-10-22 A-7/A-8 生产线与分镜 → 834,204 / 180,161（这是"把 React Flow 内联进入口"时的值）；
+ * 2026-10-25 **wave 3 抬基线**：B-15/B-16/B-17 界面（分镜工坊/导出历史/发布前收尾）与
+ *   P0-1/P0-2 的客户端端点让入口 +7.9 KB、总量 +68 KB —— 属功能增长，不是打包失控；
+ *   入口 44,780 → 54,600，总量 837,920 → 905,920。
  * 2026-10-23 **A-6 修订**：入口拆成注册壳、界面（含 React Flow）进包内 chunk →
  *   入口 44,780 / 15,010，总量 837,920 / 181,780。**总量没变**（同一个库，只是改成按需下载），
  *   但初始加载从 834 KB 降到 45 KB；且不再依赖宿主平台词（装到任何 DSH 都有画布）。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 44_780, gzip: 15_010 })
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 837_920, gzip: 181_780 })
+export const BUNDLE_BASELINE = Object.freeze({ raw: 54_600, gzip: 17_900 })
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 905_920, gzip: 194_780 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

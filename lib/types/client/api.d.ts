@@ -135,6 +135,44 @@ export interface PromptRecord {
     readonly tags?: readonly string[];
     readonly createdAt?: string;
 }
+/** 分镜表的一个镜头（`A-7` `storyboard/plan` 返回的 `shots[]` 条目）。 */
+export interface StoryboardShot {
+    /** 1-based 镜头序号。 */
+    readonly index: number;
+    /** 镜头描述（该镜头第一句，截断展示）。 */
+    readonly shot: string;
+    /** 从创作资源里识别到的角色名。 */
+    readonly characters: readonly string[];
+    /** 识别到的场景名（可能没有）。 */
+    readonly scene?: string;
+    /** 图片提示词。 */
+    readonly imagePrompt: string;
+    /** 视频提示词。 */
+    readonly videoPrompt: string;
+}
+/** `storyboard/plan` 的返回（`A-7`）：镜头表 + 实际引用到的资源 id。 */
+export interface StoryboardPlan {
+    readonly shots: readonly StoryboardShot[];
+    readonly referencedResourceIds: readonly string[];
+}
+/** 导出历史状态（`A-11`）：与宿主 `exports.json` 的记录同构。 */
+export type ExportStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+/** 一条导出尝试（`A-11` `exports/list` 的条目；`exports/record|update` 的读写形状）。 */
+export interface ExportRecord {
+    readonly id: string;
+    readonly projectId: string;
+    readonly timelineId: string;
+    /** 成品文件路径（queued/running 时缺省）。 */
+    readonly outputPath?: string;
+    readonly bytes?: number;
+    readonly status: ExportStatus;
+    /** 失败原因（宿主原样返回，界面如实展示）。 */
+    readonly error?: string;
+    /** 实际耗时秒数（宿主知道时才给）。 */
+    readonly elapsedSeconds?: number;
+    readonly startedAt: string;
+    readonly updatedAt: string;
+}
 /** `assets/size-report` 返回的条目（`A116`/B-11）：`sizeReport` 的 Top 项。 */
 export interface AssetSizeEntry {
     readonly path: string;
@@ -386,17 +424,7 @@ export interface WorkbenchApi {
         projectId: string;
         script: string;
         shots?: number;
-    }) => Promise<{
-        shots: ReadonlyArray<{
-            index: number;
-            shot: string;
-            characters: readonly string[];
-            scene?: string;
-            imagePrompt: string;
-            videoPrompt: string;
-        }>;
-        referencedResourceIds: readonly string[];
-    }>;
+    }) => Promise<StoryboardPlan>;
     /** 提示词库列表（`A-5`）。 */
     listPrompts: () => Promise<PromptRecord[]>;
     /** 存入/更新一条提示词（`A-5`）。 */
@@ -408,6 +436,28 @@ export interface WorkbenchApi {
     }) => Promise<PromptRecord>;
     /** 删除一条提示词（`A-5`）。 */
     removePrompt: (id: string) => Promise<boolean>;
+    /**
+     * 导出历史（`A-11` `exports/list`）：按项目可查，新的在前。
+     * 宿主单次最多 200 条、缺省 50 条；`projectId` 缺省查全部项目。
+     */
+    listExports: (input?: {
+        readonly projectId?: string;
+        readonly limit?: number;
+    }) => Promise<ExportRecord[]>;
+    /** 记录一次导出尝试（`A-11` `exports/record`）：初始状态 `queued`。 */
+    recordExport: (input: {
+        readonly projectId: string;
+        readonly timelineId: string;
+    }) => Promise<ExportRecord>;
+    /** 更新导出尝试的状态/产物/失败原因/耗时（`A-11` `exports/update`）。 */
+    updateExport: (input: {
+        readonly id: string;
+        readonly status?: ExportStatus;
+        readonly outputPath?: string;
+        readonly bytes?: number;
+        readonly error?: string;
+        readonly elapsedSeconds?: number;
+    }) => Promise<ExportRecord>;
     /** Probe ffmpeg (availability, version, encoders); `path` checks a specific copy. */
     probeFfmpeg: (path?: string) => Promise<FfmpegProbe>;
     /** 写运行时默认值覆盖（`R-CFG-2`）：与 composer 的 settings 走同一条路（留空 = 清除覆盖）。 */
