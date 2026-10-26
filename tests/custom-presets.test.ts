@@ -43,7 +43,7 @@ describe('custom export presets (A48)', () => {
     expect((await workbench.listExportPresets())).toHaveLength(0)
   })
 
-  it('persists presets and survives a reopen at schema v4', async () => {
+  it('persists presets and survives a reopen at the current schema version', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-preset-persist-'))
     dirs.push(directory)
     const workbench = new WorkbenchStore({ directory })
@@ -52,6 +52,6 @@ describe('custom export presets (A48)', () => {
     const presets = await reopened.listExportPresets()
     expect(presets).toHaveLength(1)
     expect(presets[0]?.name).toBe('持久化')
-    expect(WORKBENCH_SCHEMA_VERSION).toBe(4)
+    expect(WORKBENCH_SCHEMA_VERSION).toBe(5)
   })
 })

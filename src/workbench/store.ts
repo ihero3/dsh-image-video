@@ -12,7 +12,7 @@ import { copyFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/prom
 import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
-  normalizeKeyframes, normalizeResourceKind, normalizeResourceName, normalizeResourceScope,
+  normalizeKeyframes, normalizeResourceFolder, normalizeResourceKind, normalizeResourceName, normalizeResourceScope,
   type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
@@ -266,10 +266,13 @@ export class WorkbenchStore {
    * @param kind - optional kind filter.
    * @returns the records.
    */
-  async listResources(projectId: string, kind?: ResourceKind): Promise<ResourceRecord[]> {
+  async listResources(projectId: string, kind?: ResourceKind, folder?: string): Promise<ResourceRecord[]> {
     const document = await this.load()
+    const folderFilter = folder === undefined || folder === '' ? undefined : folder
     return document.resources
-      .filter(resource => resource.projectId === projectId && (kind === undefined || resource.kind === kind))
+      .filter(resource => resource.projectId === projectId
+        && (kind === undefined || resource.kind === kind)
+        && (folderFilter === undefined || (resource.folder ?? '') === folderFilter))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
 
@@ -279,11 +282,23 @@ export class WorkbenchStore {
    * @returns the stored record.
    * @throws {Error} when the project is unknown.
    */
+  /**
+   * Find one resource by id（`B-7`：资源闭环端点按 id 直接取，不要求调用方先知道 projectId）。
+   * @param id - resource id.
+   * @returns the record, or `undefined` when unknown.
+   */
+  async findResource(id: string): Promise<ResourceRecord | undefined> {
+    const document = await this.load()
+    return document.resources.find(resource => resource.id === id)
+  }
+
   async createResource(input: {
     projectId: string
     kind: ResourceKind | string
     name: unknown
     note?: string
+    /** 分类（`B-7`）：扁平文件夹名；空 = 未分类。 */
+    folder?: string
     /** 参考图（`A153`）：定妆照 / 参考素材路径。 */
     assetPath?: string
     /** 多张参考图（`A-3`）：首图为底图。 */
@@ -309,6 +324,7 @@ export class WorkbenchStore {
       createdAt: stamp,
       updatedAt: stamp,
       ...input.note === undefined || input.note === '' ? {} : { note: input.note },
+      ...normalizeResourceFolder(input.folder) === undefined ? {} : { folder: normalizeResourceFolder(input.folder) },
       ...input.assetPath === undefined || input.assetPath === '' ? {} : { assetPath: input.assetPath },
       ...input.assetPaths === undefined || input.assetPaths.length === 0 ? {} : { assetPaths: [...input.assetPaths] },
     }
@@ -328,6 +344,8 @@ export class WorkbenchStore {
   async updateResource(id: string, patch: {
     name?: unknown
     note?: string
+    /** 分类：字符串设置、`null` 清除（回到未分类）、`undefined` 不改。 */
+    folder?: string | null
     assetPath?: string | null
     assetPaths?: readonly string[] | null
   }): Promise<ResourceRecord | undefined> {
@@ -340,6 +358,11 @@ export class WorkbenchStore {
       updatedAt: this.now().toISOString(),
       ...patch.name === undefined ? {} : { name: normalizeResourceName(patch.name) },
       ...patch.note === undefined ? {} : patch.note === '' ? { note: undefined as never } : { note: patch.note },
+      ...patch.folder === undefined
+        ? {}
+        : patch.folder === null ? { folder: undefined as never } : normalizeResourceFolder(patch.folder) === undefined
+          ? { folder: undefined as never }
+          : { folder: normalizeResourceFolder(patch.folder) as string },
       ...patch.assetPath === undefined ? {} : patch.assetPath === null ? { assetPath: undefined as never } : { assetPath: patch.assetPath },
       ...patch.assetPaths === undefined ? {} : patch.assetPaths === null ? { assetPaths: undefined as never } : { assetPaths: [...patch.assetPaths] },
     }
@@ -347,6 +370,7 @@ export class WorkbenchStore {
     const cleaned: ResourceRecord = { ...next }
     const mutable = cleaned as unknown as Record<string, unknown>
     if (mutable.note === undefined) delete mutable.note
+    if (mutable.folder === undefined) delete mutable.folder
     if (mutable.assetPath === undefined) delete mutable.assetPath
     if (mutable.assetPaths === undefined) delete mutable.assetPaths
     document.resources[index] = cleaned

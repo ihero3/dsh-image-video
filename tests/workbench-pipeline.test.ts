@@ -91,6 +91,37 @@ describe('planPipeline（纯编排）', () => {
   })
 })
 
+describe('物料手动挑选 + 回显（B-18 申请，A 认领）', () => {
+  it('显式 resourceIds：只用选中的物料参与编排，matchedResources 如实回显', () => {
+    const resources = [
+      { id: 'res-a', kind: 'role', name: '林夏', note: '短发风衣' },
+      { id: 'res-b', kind: 'role', name: '周野' },
+      { id: 'res-c', kind: 'scene', name: '雨夜街头' },
+    ]
+    const manual = planPipeline({
+      script: '雨夜街头，林夏撑伞走来。',
+      options: { shots: 1, resourceIds: ['res-a', 'res-c'] },
+      resources,
+    })
+    expect(manual.diagnostics.matchedResources.map(entry => entry.resourceId).sort()).toEqual(['res-a', 'res-c'])
+    expect(manual.shots[0]!.imagePrompt).toContain('林夏')
+
+    // 自动匹配：只回显剧本里真正命中的
+    const auto = planPipeline({ script: '雨夜街头，林夏撑伞走来。', options: { shots: 1 }, resources })
+    expect(auto.diagnostics.matchedResources.map(entry => entry.resourceId).sort()).toEqual(['res-a', 'res-c'])
+  })
+
+  it('未知资源 id 如实提醒（不静默忽略）', () => {
+    const draft = planPipeline({
+      script: '林夏走来。',
+      options: { shots: 1, resourceIds: ['res-a', 'res-missing'] },
+      resources: [{ id: 'res-a', kind: 'role', name: '林夏' }],
+    })
+    expect(draft.diagnostics.matchedResources.map(entry => entry.resourceId)).toEqual(['res-a'])
+    expect(draft.diagnostics.warnings.join('\n')).toContain('不存在')
+  })
+})
+
 describe('pipelines/compose + pipelines/run（RPC 装配）', () => {
   function handler(store: WorkbenchStore, started: string[] = []) {
     const deps = {
@@ -122,6 +153,8 @@ describe('pipelines/compose + pipelines/run（RPC 装配）', () => {
     expect(pipeline.pipeline.shots).toBe(2)
     expect(pipeline.pipeline.nodes).toBe(4)
 
+    const diagnostics = (pipeline.pipeline as { matchedResources?: Array<{ name: string; resourceId: string }> }).matchedResources ?? []
+    expect(diagnostics.map(entry => entry.name)).toContain('林夏')
     const stored = await store.findWorkflow(pipeline.pipeline.workflowId)
     expect(stored?.nodes).toHaveLength(4)
     expect(stored?.edges).toHaveLength(2)

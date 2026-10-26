@@ -2,6 +2,22 @@
 
 （下一轮的改动写这里）
 
+### 批次七十三（生图/生视频能力补齐：B-3 ~ B-7 + B-18）
+- **B-3 融合生图参数化**：8 种姿态预设 + 7 种镜头类别 + 场景裁剪（`cropScene` 归一化坐标，
+  sharp 真裁剪并替换场景参考图）；`media/compose` 回显 `composedPrompt`/`cropped`
+- **B-4 视频续写显式模式**：`generate_video` 新增 `continuation`；模式推导 续写>编辑>图生>文生；
+  缺参考视频**响亮拒绝**（不静默降级）；续写缺省时长 -1、提示词自动补一致性要求
+- **B-5 成片多比例切片**：`timelines/render-ratios` 一条成片按 9:16/1:1/4:3 各导出一次
+  （保持短边不变：720p → 720×1280 / 720×720 / 960×720；只编码不重新生成）
+- **B-6 模型能力卡 + 提示词风险校验**：`models/catalog`（5 张卡，与运行时能力常量自检）、
+  `prompts/check`（涉政/色情/违禁 block → 提交前拒绝且零调用；血腥/版权/真人换脸 warn → 随结果提醒）
+- **B-7 资源库闭环**：资源扁平分类 `folder`（schema **v5**，v4→v5 迁移不改写旧数据）、
+  列表按分类过滤并返回 `folders`、`resources/plan-redraw` 零花费重绘计划
+- **B-18 申请认领**：`pipelines/compose|run` 支持显式 `resourceIds`，回显 `matchedResources`
+  （未知 id 如实提醒）→ B 侧物料手动挑选有契约可接
+- 测试：compose 7 / video-intent 4 / derive-ratios 7 / model-catalog-safety 8 /
+  resource-folder 5 / pipeline +3 条（手动挑选与回显）
+
 ### 批次七十二（品牌更名：Threerouter → Threevideo）
 - **业务调整**：上游模型提供方由 Threerouter 更名为 **Threevideo**，域名 `threerouter.com` → `threevideo.com`。
 - **插件侧全量改名**：provider id `threerouter` → `threevideo`（配置/类型/适配器/工具/默认值/测试），

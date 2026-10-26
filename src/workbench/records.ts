@@ -7,7 +7,7 @@
  */
 
 /** Schema version stamped into every stored record, so later migrations have a hook. */
-export const WORKBENCH_SCHEMA_VERSION = 4
+export const WORKBENCH_SCHEMA_VERSION = 5
 
 /** One project: the container every asset, task and workflow belongs to. */
 export interface ProjectRecord {
@@ -149,6 +149,11 @@ export interface ResourceRecord {
    */
   readonly assetPaths?: readonly string[]
   /**
+   * 分类（`B-7`，schema v5 新增，可选）：资源库里的文件夹名，空 = 未分类。
+   * 只做**扁平分类**（不建树）：`角色/场景/物品` 三类已经够用，树形层级会把简单问题复杂化。
+   */
+  readonly folder?: string
+  /**
    * 资源作用域（`R-COL-1`，后置能力）：保留 `project`/`team`/`public` 字段，
    * **V1 一律写 `project`**，UI 不提供团队/公共入口。
    */
@@ -164,6 +169,9 @@ export const MAX_PROJECT_NAME_LENGTH = 60
 
 /** Longest resource name the workbench accepts. */
 export const MAX_RESOURCE_NAME_LENGTH = 80
+
+/** 资源文件夹名上限（扁平分类，过长说明用法不对）。 */
+export const MAX_RESOURCE_FOLDER_LENGTH = 40
 
 /**
  * Validate a resource name.
@@ -191,6 +199,23 @@ export function normalizeResourceName(value: unknown): string {
     throw new Error(`resource name must be at most ${MAX_RESOURCE_NAME_LENGTH} characters`)
   }
   return name
+}
+
+/**
+ * 规范化资源分类（`B-7`）：扁平文件夹名。
+ * @param value - 原始输入（`undefined`/`null` 表示未分类）。
+ * @returns 去空白后的分类名；空串返回 `undefined`（未分类）。
+ * @throws {Error} 非字符串或超长时。
+ */
+export function normalizeResourceFolder(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw new Error('资源分类必须是字符串')
+  const folder = value.trim()
+  if (folder === '') return undefined
+  if (folder.length > MAX_RESOURCE_FOLDER_LENGTH) {
+    throw new Error(`资源分类最多 ${MAX_RESOURCE_FOLDER_LENGTH} 个字符（收到 ${folder.length}）`)
+  }
+  return folder
 }
 
 /**

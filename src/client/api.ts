@@ -250,6 +250,53 @@ export interface DubPlanView {
   readonly warnings: readonly string[]
 }
 
+/** 模型能力卡（`B-6`，`models/catalog` 下发；字段只用于展示，不参与生成逻辑）。 */
+export interface ModelCardView {
+  readonly id: string
+  readonly name: string
+  readonly family: string
+  readonly kinds: readonly ('image' | 'video')[]
+  readonly strength: string
+  readonly costTier: 'low' | 'medium' | 'high'
+  readonly duration?: { readonly minSec: number; readonly maxSec: number; readonly customizable: boolean; readonly note?: string }
+  readonly aspectRatios: readonly string[]
+  readonly resolutions?: readonly string[]
+  readonly features: {
+    readonly imageToVideo: boolean
+    readonly firstLastFrame: { readonly supported: boolean; readonly note?: string }
+    readonly multiFrame: { readonly supported: boolean; readonly note?: string }
+    readonly referenceVideo: { readonly supported: boolean; readonly note?: string }
+    readonly audio: { readonly supported: boolean; readonly note?: string }
+  }
+  readonly promptTips: readonly string[]
+  readonly verified: boolean
+}
+
+/** 提示词风险报告（`B-6`，`prompts/check`）。 */
+export interface PromptRiskView {
+  readonly level: 'ok' | 'warn' | 'block'
+  readonly hits: ReadonlyArray<{ readonly category: string; readonly term: string; readonly severity: 'warn' | 'block'; readonly advice: string }>
+  readonly advice: readonly string[]
+}
+
+/** 资源重绘计划（`B-7`，`resources/plan-redraw`；零花费，不调模型）。 */
+export interface ResourceRedrawPlan {
+  readonly resource: ResourceRecord
+  readonly prompt: string
+  readonly images: readonly string[]
+  readonly referenceCount: number
+  readonly suggestions: { readonly aspectRatio: string; readonly count: number }
+  readonly warnings: readonly string[]
+}
+
+/** 融合生图裁剪框（归一化 0..1，`B-3`）。 */
+export interface ComposeCropView {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
 /** 一键流水线入参（`P0-2`）：剧本 + 可选编排参数。 */
 export interface PipelineRunInput {
   readonly projectId: string
@@ -310,12 +357,19 @@ export interface WorkbenchApi {
   renameProject: (id: string, name: string) => Promise<ProjectRecord>
   /** One project's resources, newest first (optionally one kind). */
   listResources: (projectId: string, kind?: ResourceKind) => Promise<ResourceRecord[]>
+  /** 资源 + 分类清单（`B-7`）：界面做分类侧栏时用；`folder` 过滤空=未分类。 */
+  listResourcesWithFolders: (projectId: string, kind?: ResourceKind, folder?: string) =>
+    Promise<{ readonly resources: readonly ResourceRecord[]; readonly folders: readonly string[] }>
+  /** 从参考图生成重绘计划（`B-7`，零花费）：不调模型，只给提示词/参考图/建议与提醒。 */
+  planResourceRedraw: (resourceId: string) => Promise<ResourceRedrawPlan>
   /** Create a resource inside a project. */
   createResource: (input: {
     projectId: string
     kind: ResourceKind
     name: string
     note?: string
+    /** 分类（`B-7`）：扁平文件夹名，空 = 未分类。 */
+    folder?: string
     assetPath?: string
     /** 多张参考图（`A-3`）：首图视为底图；与 `assetPath` 同时给时以本字段为准。 */
     assetPaths?: readonly string[]
@@ -331,6 +385,8 @@ export interface WorkbenchApi {
     id: string
     name?: string
     note?: string
+    /** 分类：字符串设置、`null` 清除、不传保留（`B-7`）。 */
+    folder?: string | null
     assetPath?: string | null
     assetPaths?: readonly string[] | null
   }) => Promise<ResourceRecord>
@@ -387,9 +443,31 @@ export interface WorkbenchApi {
     readonly prompt: string
     /** 选中创作资源的 id（角色/场景/物品混排，宿主按各自主键拼装参考图与描述）。 */
     readonly resourceIds: readonly string[]
+    /** 姿态预设 id（`B-3`，如 standing/sitting/walking/fighting/looking-up…）。 */
+    readonly pose?: string
+    /** 镜头类别 id（`B-3`，如 wide/medium/closeup/high-angle/low-angle/overhead…）。 */
+    readonly lens?: string
+    /** 追加风格约束（`B-3`）。 */
+    readonly styleNote?: string
+    /** 场景裁剪（`B-3`）：归一化坐标，裁的是选中的场景参考图（裁剪图会替换原图送模型）。 */
+    readonly cropScene?: ComposeCropView
     readonly size?: string
     readonly model?: string
   }) => Promise<ComposeMediaResult>
+  /** 模型能力卡（`B-6`）：选型建议 + 能力矩阵；`consistencyIssues` 非空说明卡片与运行时能力漂移。 */
+  modelsCatalog: () => Promise<{ readonly cards: readonly ModelCardView[]; readonly consistencyIssues: readonly string[] }>
+  /** 提示词风险校验（`B-6`）：`block` 不要提交，`warn` 可提交但要把提醒展示给用户。 */
+  checkPrompt: (text: string) => Promise<PromptRiskView>
+  /** 多比例切片（`B-5`）：一条成片按多种画幅各导出一次（只编码，不重新生成）。 */
+  renderRatioSlices: (input: {
+    readonly timelineId: string
+    readonly ratios: readonly string[]
+    readonly priority?: number
+  }) => Promise<{
+    readonly slices: ReadonlyArray<{ readonly ratio: string; readonly width: number; readonly height: number }>
+    readonly jobs: readonly RenderJob[]
+    readonly warnings: readonly string[]
+  }>
   /**
    * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
@@ -523,6 +601,20 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     renameProject: async (id, name) => (await call<{ project: ProjectRecord }>('projects/rename', { id, name })).project,
     listResources: async (projectId, kind) =>
       (await call<{ resources: ResourceRecord[] }>('resources/list', { projectId, kind })).resources,
+    listResourcesWithFolders: async (projectId, kind, folder) =>
+      call<{ resources: ResourceRecord[]; folders: string[] }>('resources/list', {
+        projectId,
+        ...kind === undefined ? {} : { kind },
+        ...folder === undefined || folder === '' ? {} : { folder },
+      }),
+    planResourceRedraw: resourceId => call<ResourceRedrawPlan>('resources/plan-redraw', { resourceId }),
+    modelsCatalog: async () => (await call<{ cards: ModelCardView[]; consistencyIssues: string[] }>('models/catalog', {})),
+    checkPrompt: async text => (await call<{ report: PromptRiskView }>('prompts/check', { text })).report,
+    renderRatioSlices: input => call<{
+      slices: Array<{ ratio: string; width: number; height: number }>
+      jobs: RenderJob[]
+      warnings: string[]
+    }>('timelines/render-ratios', input),
     createResource: async input => (await call<{ resource: ResourceRecord }>('resources/create', input)).resource,
     removeResource: async (id, force) => (await call<{ removed: boolean }>('resources/remove', force === true ? { id, force: true } : { id })).removed,
     listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,

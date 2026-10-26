@@ -193,6 +193,7 @@ async function composePipeline(
   nodes: number
   warnings: string[]
   missingResources: string[]
+  matchedResources: Array<{ name: string; resourceId: string; kind: string }>
 }> {
   const projectId = text(payload, 'projectId')
   const script = text(payload, 'script')
@@ -210,9 +211,14 @@ async function composePipeline(
       ? styleResource?.note === undefined ? {} : { styleNote: styleResource.note }
       : { styleNote: optionalText(payload, 'styleNote') as string },
   }
+  // `B-18`：显式挑选的物料 id（可选；不给就走剧本自动匹配）
+  const rawResourceIds = field(payload, 'resourceIds')
+  const resourceIds = Array.isArray(rawResourceIds)
+    ? rawResourceIds.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+    : undefined
   const draft = planPipeline({
     script,
-    options,
+    options: resourceIds === undefined ? options : { ...options, resourceIds },
     resources: resources.map(resource => ({
       id: resource.id, kind: resource.kind, name: resource.name,
       ...resource.note === undefined ? {} : { note: resource.note },
@@ -232,6 +238,7 @@ async function composePipeline(
     nodes: draft.diagnostics.nodes,
     warnings: [...draft.diagnostics.warnings],
     missingResources: [...draft.diagnostics.missingResources],
+    matchedResources: draft.diagnostics.matchedResources.map(entry => ({ ...entry })),
   }
 }
 
@@ -429,11 +436,16 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     // ---- 创作资源（阶段 2）------------------------------------------------------
     case 'resources/list': {
       const kind = optionalText(payload, 'kind')
+      const folder = optionalText(payload, 'folder')
       const resources = await deps.store.listResources(
         text(payload, 'projectId'),
         kind === undefined ? undefined : validated(() => normalizeResourceKind(kind)),
+        folder === undefined || folder === '' ? undefined : folder,
       )
-      return { resources }
+      // `B-7`：同时给出该项目的分类清单（扁平），界面不用自己聚合
+      const all = await deps.store.listResources(text(payload, 'projectId'))
+      const folders = [...new Set(all.map(resource => resource.folder).filter((entry): entry is string => entry !== undefined))].sort((left, right) => left.localeCompare(right, 'zh'))
+      return { resources, folders }
     }
     case 'resources/create':
       return {
@@ -442,6 +454,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           kind: validated(() => normalizeResourceKind(text(payload, 'kind'))),
           name: validated(() => normalizeResourceName(field(payload, 'name'))),
           note: optionalText(payload, 'note'),
+          ...optionalText(payload, 'folder') === undefined ? {} : { folder: optionalText(payload, 'folder') as string },
           ...field(payload, 'keyframes') === undefined ? {} : { keyframes: field(payload, 'keyframes') },
           ...optionalText(payload, 'assetPath') === undefined ? {} : { assetPath: optionalText(payload, 'assetPath') as string },
           ...Array.isArray(field(payload, 'assetPaths')) ? { assetPaths: (field(payload, 'assetPaths') as unknown[]).filter((entry): entry is string => typeof entry === 'string') } : {},
@@ -453,6 +466,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const resource = await deps.store.updateResource(id, {
         ...field(payload, 'name') === undefined ? {} : { name: field(payload, 'name') },
         ...optionalText(payload, 'note') === undefined ? {} : { note: optionalText(payload, 'note') as string },
+        ...field(payload, 'folder') === undefined
+          ? {}
+          : { folder: field(payload, 'folder') === null ? null : text(payload, 'folder') },
         ...field(payload, 'assetPath') === undefined
           ? {}
           : { assetPath: field(payload, 'assetPath') === null ? null : text(payload, 'assetPath') },
@@ -715,6 +731,26 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           },
         },
         errors: deps.diagnostics?.snapshot() ?? { errors: [], errorCount: 0 },
+      }
+    }
+    // ---- `B-7` 资源闭环：从「参考图」到「重绘」的零花费计划（不调模型）-------------------
+    case 'resources/plan-redraw': {
+      const id = text(payload, 'resourceId')
+      const resource = await deps.store.findResource(id)
+      if (resource === undefined) throw new Error(`unknown resource: ${id}`)
+      const images = resource.assetPaths ?? (resource.assetPath === undefined ? [] : [resource.assetPath])
+      const prompt = (resource.note ?? '').trim() !== '' ? (resource.note as string).trim() : `${resource.name}（${resource.kind}）`
+      const warnings: string[] = []
+      if (images.length === 0) warnings.push('这个资源还没有参考图：先给它挂一张定妆照/参考图，重绘才有视觉锚点')
+      if ((resource.note ?? '').trim() === '') warnings.push('这个资源没有备注/提示词：已用「名称（类型）」兜底，建议补一句外观描述')
+      return {
+        resource,
+        prompt,
+        images,
+        referenceCount: images.length,
+        // 建议参数（界面可直接带进生成表单；不替用户决定模型）
+        suggestions: { aspectRatio: '3:4', count: Math.max(1, images.length) },
+        warnings,
       }
     }
     // 资源使用记录（`R-QCK-3`）

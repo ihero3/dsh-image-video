@@ -50,6 +50,12 @@ export const WORKBENCH_MIGRATIONS: readonly WorkbenchMigration[] = [
     describe: 'v4：新增用户自定义导出预设库（初始为空，不影响既有数据）',
     migrate: document => ({ ...document, schemaVersion: 4, exportPresets: [] }),
   },
+  {
+    from: 4,
+    to: 5,
+    describe: 'v5：资源增加可选 folder（扁平分类）；旧资源不写该字段即"未分类"，无需改写',
+    migrate: document => ({ ...document, schemaVersion: 5 }),
+  },
 ]
 
 /** 迁移结果。 */

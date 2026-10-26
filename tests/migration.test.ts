@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { migrateDocument, type WorkbenchMigration } from '../src/workbench/migrate.ts'
+import { WORKBENCH_SCHEMA_VERSION } from '../src/workbench/records.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 
 const dirs: string[] = []
@@ -35,11 +36,16 @@ const v3ToV4: WorkbenchMigration = {
   from: 3, to: 4, describe: '测试迁移：v3→v4 标记', migrate: document => ({ ...document, schemaVersion: 4 }),
 }
 
+const v4ToV5: WorkbenchMigration = {
+  from: 4, to: 5, describe: '测试迁移：v4→v5 标记', migrate: document => ({ ...document, schemaVersion: 5 }),
+}
+
 describe('migrateDocument (A7)', () => {
   it('applies the chain step by step', () => {
-    const result = migrateDocument({ schemaVersion: 1, projects: [{ id: 'p1' }] }, [v1ToV2, v2ToV3, v3ToV4])
+    const result = migrateDocument({ schemaVersion: 1, projects: [{ id: 'p1' }] }, [v1ToV2, v2ToV3, v3ToV4, v4ToV5])
     expect(result.fromVersion).toBe(1)
-    expect(result.applied).toHaveLength(3) // 1→2→3→4 三步
+    expect(result.applied).toHaveLength(4) // 1→2→3→4→5 四步
+    expect(result.toVersion).toBe(WORKBENCH_SCHEMA_VERSION)
     expect((result.document.projects as Array<Record<string, unknown>>)[0]).toMatchObject({ id: 'p1', color: '#4176e6' })
   })
 
@@ -64,7 +70,7 @@ describe('store migration integration (A7)', () => {
     await writeFile(join(directory, 'workbench.json'), JSON.stringify(legacy), 'utf8')
 
     // 注入链：验证"迁移前备份 + 自动落盘"的机制（真实链 1→2 见 setup 里的默认迁移）
-    const store = new WorkbenchStore({ directory, migrations: [v1ToV2, v2ToV3, v3ToV4] })
+    const store = new WorkbenchStore({ directory, migrations: [v1ToV2, v2ToV3, v3ToV4, v4ToV5] })
     const projects = await store.listProjects()
     expect(projects[0]).toMatchObject({ id: 'prj-legacy', name: '老项目' })
 
@@ -75,7 +81,7 @@ describe('store migration integration (A7)', () => {
     const onDisk = JSON.parse(await readFile(join(directory, 'workbench.json'), 'utf8')) as {
       schemaVersion: number; projects: Array<{ color?: string }>
     }
-    expect(onDisk.schemaVersion).toBe(4)
+    expect(onDisk.schemaVersion).toBe(WORKBENCH_SCHEMA_VERSION)
     expect(onDisk.projects[0]?.color).toBe('#4176e6')
   })
 })

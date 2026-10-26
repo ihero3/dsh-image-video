@@ -1,8 +1,8 @@
-# 工作台数据迁移说明（`schemaVersion` v1 → v4）
+# 工作台数据迁移说明（`schemaVersion` v1 → v5）
 
 > 适用：dsh-image-video 1.0.0（工作台迭代 78）
 > 代码事实源：[`src/workbench/migrate.ts`](../src/workbench/migrate.ts)、
-> [`src/workbench/records.ts`](../src/workbench/records.ts)（`WORKBENCH_SCHEMA_VERSION = 4`）
+> [`src/workbench/records.ts`](../src/workbench/records.ts)（`WORKBENCH_SCHEMA_VERSION = 5`）
 
 ## 一句话
 
@@ -26,10 +26,11 @@ tasks / runs / exportPresets），由 `WorkbenchStore` 读写。相对路径取�
 | v1 → v2 | 资源补 `scope`（默认 `project`）、时间轴补 `exportFormat` 缺省、文档补 `resourceUsage` 列表 | 补字段；已有值不覆盖（`{ scope: 'project', ...resource }` 顺序保证不覆盖） |
 | v2 → v3 | 片段支持特效（`speed` / `fade` / `crop`）与跨段转场（`transition`） | **不改写**：新字段全部可选，旧片段照常播放 |
 | v3 → v4 | 新增用户自定义导出预设库 `exportPresets` | 初始化为空数组，不影响既有数据 |
+| v4 → v5 | 资源增加可选 `folder`（扁平分类，`B-7`） | **不改写**：旧资源没有该字段即「未分类」，无需迁移数据 |
 
 三条纪律（来自实现，不是承诺）：
 
-1. **只升不降**：`schemaVersion > 4` 时直接报错并停止，绝不"当作 v4 打开"；
+1. **只升不降**：`schemaVersion > 5` 时直接报错并停止，绝不「当作最新版打开」；
 2. **找不到路径就拒绝**：迁移链缺环时报错，不猜字段；
 3. **迁移前备份**：发生迁移时原文件先落一份 `<file>.pre-migrate-v<N>`，可回滚。
 
@@ -73,7 +74,7 @@ tasks / runs / exportPresets），由 `WorkbenchStore` 读写。相对路径取�
 
 | 版本号 | 位置 | 范围 |
 | --- | --- | --- |
-| `schemaVersion` | 工作台数据文档 | 1..4，本版自动迁移 |
+| `schemaVersion` | 工作台数据文档 | 1..5，本版自动迁移 |
 | `formatVersion` | 项目包 `manifest.json` | 1..3，本版导出 3、可导入 1..3 |
 | 插件版本 | `package.json` / `src/version.ts` / `GET /image-video/status` | 本版 `1.0.0` |
 

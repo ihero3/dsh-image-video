@@ -31,6 +31,8 @@
 | `prompts/save` | `{id?,name,text,source?}` | `{prompt}` | **`A-5`** 新增/更新提示词（名称/内容不能为空）|
 | `prompts/remove` | `{id}` | `{removed}` | **`A-5`** 删除 |
 | `prompts/extract` | `{path}` | `{text}` | **`A-5`** 图片→提示词；**宿主未注入视觉模型时如实报错**（`R-BND-4` 不伪造）|
+| `prompts/check` | `{text}` | `{report:{level:ok|warn|block,hits[],advice[]}}` | **`B-6`** 提示词风险校验 |
+| `models/catalog` | — | `{cards[],consistencyIssues[],generatedAt}` | **`B-6`** 模型能力卡（与运行时能力常量自检） |
 | `media/compose` | `{projectId,prompt,resourceIds[],size?,model?}` | `{path,asset,referencedImages,resourceIds}` | **`A-4`** 融合生图：按创作资源收集参考图（`assetPaths` 优先，回退 `assetPath`）与描述，一次生成并登记素材；**无生成适配器时如实报错** |
 | `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）|
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
@@ -75,10 +77,10 @@
 | `media/generate` 转发 `media[]`（每项 `{image?,video?,type?,position?}`）与 `realPerson`（布尔）到 `generate_video` 工具 | 「尾帧图 / 参考视频」槽生效（B-3 客户端已接线，请求体已按 `media:[{image,type:'last_frame'},{video,type:'reference_video'}]` 发送） | 入参在现有 `media/generate` 上加两个字段；宿主原样拼进 `generate_video` 的 `media` 参数即可（工具侧 `last_frame`/`reference_video` 已实现，见 `src/tools/generate-video.ts`） | **已认领**（2026-10-25，宿主已转发；`tests/host-media-generate.test.ts` 钉住 `media[]`/`realPerson` 原样透传） |
 | `media/compose`（A-4） | 融合生图：选角色+场景+物品 → 一次拼装生成（B-9 客户端已接线，见 `src/client/api.ts` 的 `composeMedia`） | 入：`{projectId, prompt, roles?: string[], scenes?: string[], props?: string[]}`（**资源 id**；宿主按 id 解析各自参考图、缺图降级为纯文生）；出：`{mediaMode?, path?, bytes?, asset?, taskId?, referencePaths?}`（与 `media/generate` 同构；`referencePaths` 可选回显真正用到的参考图） | **已认领**（2026-10-25，`media/compose` 已上线：按资源 id 解析参考图 + 缺图降级纯文生） |
 | `prompts/extract` + `prompts/list` / `prompts/save` / `prompts/remove`（A-5） | 提示词工坊：从素材提取结构化提示词 → 编辑 → 入库 → 一键带入（B-10 客户端已接线，见 `src/client/api.ts` 的 `extractPrompt`/`listPrompts`/`savePrompt`/`removePrompt`） | `extract` 入：`{projectId?, assetId?, path?}`；出：`{style?, subject?, material?, details?, text?}`（客户端缺字段容忍；模型不可用时给清晰错误、**不伪造结果**）。`list` 出 `{prompts: PromptRecord[]}`；`save` 入 `{id?, name, text, tags?}` 出 `{prompt: PromptRecord}`；`remove` 入 `{id}` 出 `{removed: boolean}`。`PromptRecord = {id, name, text, tags?, createdAt?}` | **已认领**（2026-10-25，`prompts/extract` + 提示词库 CRUD 已上线；模型不可用时不伪造结果） |
-| `pipelines/compose`（与 `pipelines/run`）支持显式 `resourceIds?: string[]`；编排结果回显 `matchedResources?: {name,resourceId,kind}[]` | 「一键成片」物料**手动挑选** + 自动匹配结果可见（B-18 已交付缺失清单 `missingResources` 与快速登记；手动指派与 matched 回显缺契约） | 入参在现有 `pipelines/compose|run` 上加一个可选字段：给了就按指定资源编排（缺 id 仍走剧本自动匹配）；出参在 `PipelineDiagnostics` 加一个可选数组（**加法字段**，旧宿主不返回时客户端不渲染该区） | **待认领**（2026-10-25 B 登记） |
+| `pipelines/compose`（与 `pipelines/run`）支持显式 `resourceIds?: string[]`；编排结果回显 `matchedResources?: {name,resourceId,kind}[]` | 「一键成片」物料**手动挑选** + 自动匹配结果可见（B-18 已交付缺失清单 `missingResources` 与快速登记；手动指派与 matched 回显缺契约） | 入参在现有 `pipelines/compose|run` 上加一个可选字段：给了就按指定资源编排（缺 id 仍走剧本自动匹配）；出参在 `PipelineDiagnostics` 加一个可选数组（**加法字段**，旧宿主不返回时客户端不渲染该区） | **已认领**（2026-10-26：`pipelines/compose|run` 支持 `resourceIds`，编排结果回显 `matchedResources`；未知 id 如实提醒） |
 | | | | |
 
-**当前待认领：1 条**（2026-10-25：① `pipelines/compose|run` 显式 `resourceIds` + `matchedResources` 回显——物料手动挑选，B-18 配套。其余三条已认领：`media/generate` 转发 `media[]` + `realPerson`；A-4 `media/compose`；A-5 `prompts/extract` + 提示词库 CRUD。B 侧的「契约先行」接线现在都有宿主端点兜住）。
+**当前待认领：0 条**（2026-10-26 全部认领：`media/generate` 转发 `media[]`/`realPerson`；A-4 `media/compose`（含 B-3 姿态/镜头/裁剪）；A-5 提示词库；B-18 `pipelines/*` 的 `resourceIds` + `matchedResources`）。
 已就绪、无需申请的新契约（直接接）：`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
 `timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
@@ -109,9 +111,12 @@
 
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
-| `resources/list` | `{projectId?}` | `{resources}` |
+| `resources/list` | `{projectId, kind?, folder?}` | `{resources, folders}`（`folders` = 该项目已用分类；`folder` 过滤，空=未分类） |
 | `resources/update` | `{id,name?,note?,assetPath?,assetPaths?}` | `{resource}` | **`A153`** 改资源：改名/备注/参考图；`assetPath: null` 清除，**不传则保留** |
-| `resources/create` | `{projectId,kind,name?}` | `{resource}` |
+| `resources/create` | `{projectId, kind, name, note?, folder?, assetPath?, assetPaths?}` | `{resource}` |
+| `resources/update` | `{id, name?, note?, folder?, assetPath?, assetPaths?}`（`folder: null` 清除） | `{resource}`（**`B-7`** 扁平分类） |
+| `resources/plan-redraw` | `{resourceId}` | `{resource, prompt, images, referenceCount, suggestions, warnings}` —— **零花费**重绘计划（不调模型） |
+ `{projectId,kind,name?}` | `{resource}` |
 | `resources/remove` | `{resourceId}` | `{removed}` |
 | `resources/usage` | `{resourceId?}` | `{usage}` |
 
@@ -126,7 +131,7 @@
 | `workflows/runs` | `{projectId,workflowId?}` | `{runs}` |
 | `workflows/run-cancel` | `{runId}` | `{cancelled}` |
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
-| `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources}}` —— **只编排不跑**（零花费；`P0-2`） |
+| `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?, resourceIds?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources, matchedResources}}` —— **只编排不跑**（零花费；`P0-2`） |
 | `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
 | `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?}}` —— 配音可用性（TTS 未接入时 `available:false` + 原因；`P0-1`） |
 | `voice/plan` | `{timelineId}` | `{plan: {lines:[{clipId,text,chars,slotMs,estimatedMs,warning?}], totalChars, estimatedMs, warnings}, voice}` —— 字幕→配音计划（零花费、只读） |
@@ -137,6 +142,7 @@
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
 | `timelines/list` | `{projectId}` | `{timelines}` |
+| `timelines/render-ratios` | `{timelineId, ratios: string[], priority?, thumbnailAtMs?}` | `{timelineId, slices:[{ratio,width,height}], jobs[], warnings[]}` | **`B-5`** 多比例切片：9:16/1:1/4:3 各导出一次（只编码，不重新生成）|
 | `timelines/save` | `{projectId,id?,tracks,frameRate?,burnSubtitles?,exportFormat?,normalizeLoudness?,burnLanguage?}` | `{timeline}` |
 | `subtitles/export` | `{timelineId,trackId?,format?}` | `{srt,cues}`（`A118` 导出标准 SRT）|
 | `subtitles/import` | `{timelineId,srt,format?,trackId?,offsetMs?,replace?}` | `{timeline,imported,skipped}`（`A118` 导入 SRT 为字幕片段）|

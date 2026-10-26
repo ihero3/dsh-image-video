@@ -35,6 +35,11 @@ export interface PipelineOptions {
   readonly strictResources?: boolean
   /** 追加到每条生图/生视频提示词后的风格约束（可来自 style 资源）。 */
   readonly styleNote?: string
+  /**
+   * 显式挑选的物料（资源 id，`B-18`）：给了就只用这些资源参与编排；
+   * 不给则沿用"剧本里命中哪些名字就用哪些"的自动匹配。
+   */
+  readonly resourceIds?: readonly string[]
 }
 
 /** 编排诊断：既有"非阻断提醒"，也有"严格模式会拒绝"的缺物料清单。 */
@@ -47,6 +52,12 @@ export interface PipelineDiagnostics {
   readonly warnings: readonly string[]
   /** 剧本提到但资源库里找不到的物料名（严格模式下拒绝执行）。 */
   readonly missingResources: readonly string[]
+  /**
+   * 本次编排**真正用到**的资源（`B-18` / 显式挑选回显）：
+   * 手动挑选时 = 选中的资源；自动匹配时 = 剧本里命中的资源。
+   * 旧宿主不返回该字段，客户端按"没有就不渲染"处理。
+   */
+  readonly matchedResources: readonly { readonly name: string; readonly resourceId: string; readonly kind: string }[]
 }
 
 /** 一条分镜的编排结果（与工作流节点一一对应，便于 UI 展开预览）。 */
@@ -83,7 +94,15 @@ export function planPipeline(input: {
 }): PipelineDraft {
   const options = input.options ?? {}
   const mode = options.mode ?? 'image-to-video'
-  const resources = input.resources ?? []
+  const allResources = input.resources ?? []
+  // `B-18`：显式挑选优先（只用指定资源）；未知 id 如实提醒，不静默忽略
+  const selectedIds = options.resourceIds === undefined || options.resourceIds.length === 0
+    ? undefined
+    : [...new Set(options.resourceIds)]
+  const resources = selectedIds === undefined
+    ? allResources
+    : allResources.filter(resource => selectedIds.includes(resource.id))
+  const unknownSelected = selectedIds === undefined ? [] : selectedIds.filter(id => !allResources.some(resource => resource.id === id))
   const ratio = options.ratio ?? '16:9'
   const duration = Number.isFinite(options.duration) && (options.duration ?? 0) > 0 ? Math.round(options.duration as number) : 5
   const style = options.styleNote === undefined || options.styleNote.trim() === '' ? '' : `，${options.styleNote.trim()}`
@@ -95,6 +114,11 @@ export function planPipeline(input: {
     ...shotCount === undefined ? {} : { shots: shotCount },
     resources,
   })
+  // 手动挑选 = 选中的都算"用到"；自动匹配 = 只算剧本里真正命中的
+  const matchedResources = (selectedIds === undefined
+    ? resources.filter(resource => plan.referencedResourceIds.includes(resource.id))
+    : resources
+  ).map(resource => ({ name: resource.name, resourceId: resource.id, kind: resource.kind }))
   if (plan.shots.length === 0) throw new Error('剧本拆不出分镜：请至少写一句可拍摄的描述')
 
   // 物料体检：剧本提到的角色/场景是否都登记了
@@ -112,6 +136,9 @@ export function planPipeline(input: {
   if (options.videoModel === undefined) warnings.push('未指定生视频模型：将使用宿主默认模型')
   if (shotCount !== undefined && plan.shots.length < shotCount) {
     warnings.push(`剧本只够拆 ${plan.shots.length} 个分镜（要求 ${shotCount}）：已按句子数封顶`)
+  }
+  if (unknownSelected.length > 0) {
+    warnings.push(`手动挑选里有 ${unknownSelected.length} 个资源 id 不存在（已忽略）：${unknownSelected.join('、')}`)
   }
   if (options.strictResources === true) {
     // 严格模式的可判定口径：**必须**已有角色/场景资源可用，且剧本里识别到的物料都能对上。
@@ -182,6 +209,7 @@ export function planPipeline(input: {
       nodes: nodes.length,
       warnings,
       missingResources,
+      matchedResources,
     },
   }
 }
