@@ -14,6 +14,8 @@ import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
 import { planDub } from '../workbench/voice.ts'
 import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
 import { cropImage } from '../media/image-crop.ts'
+import { catalogConsistencyIssues, modelCards } from '../media/model-catalog.ts'
+import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
@@ -775,6 +777,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'media/compose': {
       const projectId = text(payload, 'projectId')
       const prompt = text(payload, 'prompt')
+      // `B-6`：block 级风险在提交前就拒绝（不花钱）；warn 级随结果回传提醒
+      const promptRisk = scanPrompt(prompt)
+      assertPromptAllowed(promptRisk, '融合生图提示词')
       const tool = deps.generate?.image
       if (tool === undefined) throw new Error('生成能力未装配：此宿主没有注入图片生成适配器')
       // Track B 的界面按角色/场景/物品分组传参；两套入参都接受，统一成 id 列表
@@ -843,6 +848,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         ...pose === undefined || pose === '' ? {} : { pose },
         ...lens === undefined || lens === '' ? {} : { lens },
         ...cropped === undefined ? {} : { cropped },
+        ...promptRisk.hits.length === 0 ? {} : { promptWarnings: promptRisk.advice },
       }
     }
     case 'media/generate': {
@@ -850,6 +856,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const tool = mediaMode === 'video' ? deps.generate?.video : deps.generate?.image
       if (tool === undefined) throw new Error(`生成能力未装配：此宿主没有注入 ${mediaMode} 生成适配器`)
       const prompt = text(payload, 'prompt')
+      // `B-6`：block 级风险在提交前就拒绝（不花钱）；warn 级随结果回传提醒
+      const promptRisk = scanPrompt(prompt)
+      assertPromptAllowed(promptRisk, mediaMode === 'video' ? '视频提示词' : '图片提示词')
       const model = optionalText(payload, 'model')
       const image = optionalText(payload, 'image')
       const args = mediaMode === 'video'
@@ -915,6 +924,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
           ...asset === undefined ? {} : { asset },
           ...task === undefined ? {} : { taskId: task.id },
+          ...promptRisk.hits.length === 0 ? {} : { promptWarnings: promptRisk.advice },
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -1022,6 +1032,20 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         ...strategy === 'rename' || strategy === 'replace' || strategy === 'skip' ? { strategy } : {},
       })
       return { imported: result }
+    }
+    // ---- `B-6`：模型能力卡 + 提示词风险校验 -------------------------------------------
+    case 'models/catalog': {
+      const cards = modelCards()
+      return {
+        cards,
+        consistencyIssues: catalogConsistencyIssues(),
+        generatedAt: new Date().toISOString(),
+      }
+    }
+    case 'prompts/check': {
+      const raw = field(payload, 'text')
+      const text = typeof raw === 'string' ? raw : ''
+      return { report: scanPrompt(text) }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
     // `A-7`：剧本 → 结构化分镜表（确定性拆解；接入 LLM 后可替换同一契约）
