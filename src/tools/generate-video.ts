@@ -24,6 +24,7 @@ import type { VideoMediaInput } from '../media.ts'
 import { downloadAndSave, createVideoContent, resolveImageReference, compressVideoFirstFrame, resolveVideoMedia, writeOutputFile } from '../media.ts'
 import type { CompareLayout } from '../compare.ts'
 import { renderComparison } from '../compare.ts'
+import { assertContinuation, composeVideoPrompt, resolveVideoDuration, videoMode, type VideoMode } from '../media/video-intent.ts'
 
 /** 视频时长上限（秒），强制规范。 */
 const MAX_VIDEO_DURATION = 30
@@ -67,7 +68,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       + 'aspectRatio（宽高比，可选，留空 16:9；图生视频时忽略，多关键帧时也忽略，参考视频时默认 adaptive 保持原片比例）、image（首帧图片：本地路径/URL，可选，单图时用）、'
       + 'media（参考素材序列：数组，每项含 image 路径/URL 或 video 路径/URL，可带 type 与 position；'
       + '传 video 即「视频编辑」——把参考视频交给 wan3.0-video，配合提示词里的编辑意图（如"替换""改成""去掉"）改内容而保留原片动作，'
-      + '此时 model 缺省为 wan3.0-video、ratio 缺省 adaptive、duration 缺省 -1；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、resolution（分辨率档位，可选，取值随模型）、'
+      + '此时 model 缺省为 wan3.0-video、ratio 缺省 adaptive、duration 缺省 -1；适用于 MiniMax-H3 / wan3.0-video，此时 image 字段忽略）、continuation（续写模式：把参考视频往后接）、resolution（分辨率档位，可选，取值随模型）、'
       + 'compare（是否额外产出「原片 / 复刻」对比片，可选，存在参考视频时缺省 true；拼接方向按原片画幅自动选择——竖屏（3:4、9:16）左右并排，横屏（4:3、16:9）上下堆叠）。',
 
     parameters: {
@@ -116,6 +117,12 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         type: 'boolean',
         description: '是否额外产出一条「原片 / 复刻」对比片（左原片右复刻，或上原片下复刻）。'
           + '存在参考视频时缺省开启；拼接方向按原片画幅自动选择：竖屏（3:4、9:16）左右并排，横屏（4:3、16:9）上下堆叠。',
+      },
+      continuation: {
+        type: 'boolean',
+        description: '**续写模式**：把参考视频往后接（保持人物/场景/镜头/画风一致），而不是改原片内容。'
+          + '需要 media 里传 {video, type:"reference_video"}；缺省时长 -1 = 按原片时长续写。'
+          + '与「视频编辑」的区别：续写是"接着往下拍"，编辑是"改这一条已有画面"。',
       },
     },
 
@@ -185,6 +192,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
         media?: VideoMediaInput[]
         resolution?: string
         compare?: boolean
+        continuation?: boolean
       }
 
       // 参考视频的**原始**输入（本地路径或 http URL）：素材经 resolveVideoMedia 后会变成
@@ -198,11 +206,19 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       const hasMedia = !!mediaRef
       const hasRefVideo = mediaRef?.some((m) => m.type === 'reference_video') ?? false
 
+      // `B-4`：续写是显式意图（不靠参数猜）。缺参考视频时立刻响亮报错，绝不静默降级成普通生成。
+      const continuation = typedArgs.continuation === true
+      assertContinuation({ continuation, hasRefVideo })
+
       // 参数兜底优先级：工具显式参数 > composer 运行时覆盖值 > settings 持久值。
-      // 参考视频缺省 duration=-1：由服务端保持原片时长（官方视频编辑建议值）。
+      // 参考视频/续写缺省 duration=-1：由服务端保持原片时长（官方视频编辑建议值）。
       // 运行时双重校验时长上限（schema 已约束，此处防御性检查）；-1 是「保持原片时长」哨兵值。
       const runtime = runtimeDefaults.get()
-      const duration = typedArgs.duration ?? (hasRefVideo ? -1 : runtime.videoDuration ?? config.defaultVideoDuration)
+      const duration = resolveVideoDuration({
+        continuation,
+        ...typedArgs.duration === undefined ? {} : { explicit: typedArgs.duration },
+        fallback: hasRefVideo ? -1 : runtime.videoDuration ?? config.defaultVideoDuration,
+      })
       if (duration !== -1 && (duration < 1 || duration > MAX_VIDEO_DURATION)) {
         throw new Error(`视频时长必须在 1-${MAX_VIDEO_DURATION} 秒之间（-1 表示保持参考视频原时长），当前为 ${duration}`)
       }
@@ -250,8 +266,9 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
           model = MULTI_FRAME_CAPABLE_MODELS[0]
         }
       }
+      const effectivePrompt = composeVideoPrompt({ prompt: typedArgs.prompt, continuation })
       const videoParams: VideoGenParams = {
-        prompt: typedArgs.prompt,
+        prompt: effectivePrompt,
         duration,
         model,
         // 文档承诺「留空使用 16:9」在此落地：MiniMax 等上游纯文生场景要求显式 ratio；
@@ -307,6 +324,7 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
       // 实际模型以适配器回报为准（含服务商内置默认兜底），避免用配置推断模型。
       const actualModel = submitResult.model ?? model ?? ''
       const notes: string[] = []
+      if (continuation) notes.push('续写：基于参考视频继续生成，保持人物/场景/镜头/画风一致（时长 -1 = 沿用原片时长）')
       if (hasRefVideo) {
         const videoCount = mediaRef?.filter((m) => m.type === 'reference_video').length ?? 0
         const assetCount = (mediaRef?.length ?? 0) - videoCount
@@ -359,9 +377,9 @@ export function createGenerateVideoTool(deps: GenerateVideoDeps) {
 
       const output: GenerateVideoOutput = {
         provider,
-        prompt: typedArgs.prompt,
+        prompt: effectivePrompt,
         duration,
-        mode: hasRefVideo ? 'video-edit' : imageRef ? 'image-to-video' : 'text-to-video',
+        mode: videoMode({ continuation, hasRefVideo, hasImage: imageRef !== undefined }),
         resolution: typedArgs.resolution ?? '',
         model: actualModel,
         localPath: saved.localPath,
@@ -392,8 +410,8 @@ interface GenerateVideoOutput {
   provider: string
   prompt: string
   duration: number
-  /** 生成模式：text-to-video（文生视频）/ image-to-video（图生视频）/ video-edit（参考视频编辑）。 */
-  mode: 'image-to-video' | 'text-to-video' | 'video-edit'
+  /** 生成模式：text-to-video / image-to-video / video-edit（编辑原片）/ video-continue（续写原片）。 */
+  mode: VideoMode
   /** 请求携带的分辨率档位；未指定为空字符串。 */
   resolution: string
   /** 实际发给上游的模型名（含服务商内置默认），逐次调用如实回报。 */

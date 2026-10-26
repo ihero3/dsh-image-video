@@ -114,6 +114,21 @@ describe('media/generate (A145)', () => {
     })
   })
 
+  it('forwards the explicit continuation intent (B-4 续写)', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const { ok, outputsDir } = await harness({
+      video: { async execute(args) { calls.push(args as Record<string, unknown>); return { videoPath: join(outputsDir, 'continued.mp4'), bytes: 3 } } },
+    })
+    await ok('media/generate', {
+      mediaMode: 'video',
+      prompt: '镜头拉远，雨势变大',
+      continuation: true,
+      media: [{ video: 'source.mp4', type: 'reference_video' }],
+    })
+    // 宿主的职责只是原样透传；"必须有参考视频"的校验由工具负责
+    expect(calls[0]).toMatchObject({ continuation: true })
+  })
+
   it('refuses clearly when no generation adapter is wired', async () => {
     const { call } = await harness()
     const result = await call('media/generate', { prompt: '随便' })

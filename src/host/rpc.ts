@@ -12,6 +12,8 @@
 import { planStoryboard } from '../workbench/storyboard.ts'
 import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
 import { planDub } from '../workbench/voice.ts'
+import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
+import { cropImage } from '../media/image-crop.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
@@ -785,14 +787,40 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const resourceIds = [...new Set(collected)]
       const resources = (await deps.store.listResources(projectId)).filter(resource => resourceIds.includes(resource.id))
       const images: string[] = []
-      const parts: string[] = []
+      /** 场景图（kind=scene）的第一个参考图：cropScene 优先裁它。 */
+      let sceneImage: string | undefined
       for (const resource of resources) {
         const extra = resource as unknown as { assetPaths?: readonly string[]; assetPath?: string }
         const paths = extra.assetPaths ?? (extra.assetPath === undefined ? [] : [extra.assetPath])
+        if (resource.kind === 'scene' && sceneImage === undefined) sceneImage = paths[0]
         images.push(...paths)
-        parts.push(`${resource.kind}「${resource.name}」${resource.note === undefined ? '' : `：${resource.note}`}`)
       }
-      const composedPrompt = [prompt, ...parts].filter(part => part.trim() !== '').join('\n')
+      // `B-3`：姿态 / 镜头 / 裁剪（纯函数拼词；未知 id 会响亮报错而不是被静默丢弃）
+      const pose = optionalText(payload, 'pose')
+      const lens = optionalText(payload, 'lens')
+      const styleNote = optionalText(payload, 'styleNote')
+      const composedPrompt = buildComposePrompt({
+        prompt,
+        ...pose === undefined || pose === '' ? {} : { pose },
+        ...lens === undefined || lens === '' ? {} : { lens },
+        ...styleNote === undefined || styleNote === '' ? {} : { styleNote },
+        subjects: resources.map(resource => ({
+          kind: resource.kind, name: resource.name,
+          ...resource.note === undefined ? {} : { note: resource.note },
+        })),
+      })
+      const crop = normalizeComposeCrop(field(payload, 'cropScene'))
+      let cropped: { path: string; bytes: number; width: number; height: number } | undefined
+      if (crop !== undefined) {
+        const targetPath = sceneImage ?? images[0]
+        if (targetPath === undefined) {
+          throw new Error('cropScene 需要至少一张场景/参考图：先给选中的场景资源挂参考图')
+        }
+        cropped = await cropImage({ sourcePath: targetPath, crop, outputsDir: deps.outputsDir })
+        const index = images.indexOf(targetPath)
+        if (index >= 0) images[index] = cropped.path
+        else images.unshift(cropped.path)
+      }
       const args: Record<string, unknown> = { prompt: composedPrompt }
       if (images.length > 0) args.images = images
       const size = optionalText(payload, 'size')
@@ -811,6 +839,10 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return {
         path: outcome.outputPath, asset: attached.asset,
         referencedImages: images.length, resourceIds: resources.map(resource => resource.id),
+        composedPrompt,
+        ...pose === undefined || pose === '' ? {} : { pose },
+        ...lens === undefined || lens === '' ? {} : { lens },
+        ...cropped === undefined ? {} : { cropped },
       }
     }
     case 'media/generate': {
@@ -839,6 +871,8 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       // Track B 申请（B-3）：视频编辑的多素材序列与"含真人"开关原样透传给工具
       if (Array.isArray(field(payload, 'media'))) (args as Record<string, unknown>).media = field(payload, 'media')
       if (field(payload, 'realPerson') === true) (args as Record<string, unknown>).realPerson = true
+      // `B-4`：续写是显式意图，原样透传给工具（由工具做「必须有参考视频」的校验）
+      if (field(payload, 'continuation') === true) (args as Record<string, unknown>).continuation = true
       const projectId = optionalText(payload, 'projectId')
       const tracked = projectId !== undefined && projectId !== ''
       // `A147`：`wait:false` 时立即返回 taskId，前端轮询 `tasks/running` / `tasks/list` 拿结果。
