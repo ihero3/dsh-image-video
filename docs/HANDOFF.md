@@ -34,7 +34,7 @@
 | 事项 | 说明 |
 | --- | --- |
 | **数据 schema v4** | 自定义预设是 v4 新增；旧版本宿主**读不了** v4 文件 → 升级后必须重启到 0.3.44+ |
-| **lib 先构建再提交** | `lib/` 是入库产物；改动源码后必须 `pnpm run build` 再提交，否则 tag 里是旧代码（`EXECUTION.md` 有完整事故链） |
+| **lib 由构建生成** | 2026-10-25 起 `lib/` 不再入库；改完源码必须 `pnpm run build`（宿主加载的是它，热更新也看它的 mtime），门禁已改为先构建再测试 |
 | **端点/动作必须写文档** | 加端点忘了写 `API-SURFACE.md`、加动作忘了写工具描述 → **漂移测试直接红**（`rpc-contract-drift` / `tool-actions-drift`） |
 | **推送前五道门** | `bash scripts/gate.sh`（typecheck / 测试 / 构建 / 体积 / 覆盖率）；日常可用 `--fast`（15s），**但不能作为推送依据** |
 | **`projectId` 不再全局必填** | `timeline`/`workflow` 工具只对 `list`/`save`/`runs` 必填（`A67`），别按老文档硬传 |

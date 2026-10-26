@@ -24,6 +24,17 @@ fail() { echo "FAILED: $1 (log: ${2:-none})"; exit 1; }
 step "typecheck"
 pnpm run typecheck || fail "typecheck"
 
+step "build (lib 由构建生成，不再入库)"
+# 2026-10-25 起 lib/ 不再入库（.gitignore 忽略，由 `pnpm run build`/`build:plugins` 生成）。
+# 因此**必须先构建再跑测试**：产物契约测试（client-bundle / client-no-hardcoding）读的就是 lib/。
+BUILD_LOG="/tmp/dsh-build-$(date +%s).log"
+if ! pnpm run build > "$BUILD_LOG" 2>&1; then
+  tail -20 "$BUILD_LOG"
+  fail "build" "$BUILD_LOG"
+fi
+grep -E "Build complete" "$BUILD_LOG" | tail -2 || echo "(build finished; no 'Build complete' marker found)"
+test -f lib/client/plugin.js || fail "build 没有产出 lib/client/plugin.js（构建配置漂了？）"
+
 step "tests (full suite)"
 TEST_LOG="/tmp/dsh-test-$(date +%s).log"
 # Bound worker count: on a loaded machine vitest can fail to START workers
@@ -45,27 +56,9 @@ grep -E "Test Files|Tests  " "$TEST_LOG" | tail -2
 
 if [ "$FAST" -eq 1 ]; then
   echo
-  echo "Fast gate passed (typecheck + tests)."
-  echo "WARNING: build / bundle / coverage were NOT run. Before pushing run the full gate: bash scripts/gate.sh"
+  echo "Fast gate passed (typecheck + build + tests)."
+  echo "WARNING: bundle / coverage were NOT run. Before pushing run the full gate: bash scripts/gate.sh"
   exit 0
-fi
-
-step "build (lib is committed)"
-BUILD_LOG="/tmp/dsh-build-$(date +%s).log"
-if ! pnpm run build > "$BUILD_LOG" 2>&1; then
-  tail -20 "$BUILD_LOG"
-  fail "build" "$BUILD_LOG"
-fi
-grep -E "Build complete" "$BUILD_LOG" | tail -2 || echo "(build finished; no 'Build complete' marker found)"
-
-# A78: lib/ is a COMMITTED artifact. If the build changed it, it must be committed
-# before the submodule pointer moves -- otherwise the pushed release/pointer carries stale lib.
-if [ -n "$(git status --porcelain lib/ 2>/dev/null)" ]; then
-  echo
-  echo "WARNING: lib/ was rebuilt and differs from the committed version."
-  echo "         lib is a committed artifact: run 'git add -A && git commit' for it"
-  echo "         BEFORE bumping the submodule pointer (otherwise releases carry stale lib)."
-  git status --porcelain lib/ | head -5
 fi
 
 step "client bundle budget"

@@ -134,5 +134,5 @@ curl -s http://127.0.0.1:54274/image-video/status   # 重启后 version 应为 1
 npx tsx scripts/smoke-export.ts                     # 零花费导出冒烟（不调用模型）
 ```
 
-> 注：`lib/` 是入库产物。若本机工具链版本与锁文件不一致，`pnpm run build` 可能只产生
+> 注：`lib/` 自 2026-10-25 起不再入库（由构建生成）。若本机工具链版本与锁文件不一致，`pnpm run build` 可能只产生
 > 空行/注释缩进级差异——用 `git diff lib` 确认无语义变化即可，不必惊慌。
