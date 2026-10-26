@@ -14,6 +14,7 @@ import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
 import { planDub } from '../workbench/voice.ts'
 import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
 import { cropImage } from '../media/image-crop.ts'
+import { planRatioSlices } from '../workbench/derive-ratios.ts'
 import { catalogConsistencyIssues, modelCards } from '../media/model-catalog.ts'
 import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
@@ -1271,6 +1272,29 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         const renders = deps.renders.list(projectId)
         return { renders, sets: groupRenderSets(renders) }
       }
+    // ---- `B-5` 多比例切片：一条时间轴 → 多种画幅各自导出（只编码，不重新生成）---------
+    case 'timelines/render-ratios': {
+      const timelineId = text(payload, 'timelineId')
+      const timeline = await deps.store.findTimeline(timelineId)
+      if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      const rawRatios = field(payload, 'ratios')
+      if (!Array.isArray(rawRatios)) throw new Error('ratios 必须是字符串数组（如 ["9:16","1:1"]）')
+      const ratios = rawRatios.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+      const { slices, warnings } = planRatioSlices({ timeline, ratios })
+      const priority = optionalNumber(payload, 'priority')
+      const thumbnailAtMs = optionalNumber(payload, 'thumbnailAtMs')
+      const jobs = slices.map(slice => deps.renders.start(slice.timeline, {
+        ...priority === undefined ? {} : { priority },
+        ...thumbnailAtMs === undefined ? {} : { thumbnailAtMs },
+      }))
+      return {
+        timelineId,
+        slices: slices.map(slice => ({ ratio: slice.ratio, width: slice.width, height: slice.height })),
+        jobs,
+        warnings,
+      }
+    }
+
     // `A59` 一键重试：用原时间轴与原优先级重跑（适合瞬时失败：机器忙/超时；必然失败会再报同样的错）
     case 'timelines/render-retry': {
       const renderId = text(payload, 'renderId')
