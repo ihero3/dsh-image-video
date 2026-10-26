@@ -21,7 +21,7 @@ import {
   type Connection, type Edge, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, WORKFLOW_TEMPLATES, defaultParams, nodeSpec, validateWorkflow,
+  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, nodeSpec, validateWorkflow,
   type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
@@ -144,7 +144,14 @@ function toCanvasNodes(record: WorkflowRecord): CanvasNode[] {
 }
 
 function toCanvasEdges(record: WorkflowRecord): Edge[] {
-  return record.edges.map(edge => ({ id: edge.id, source: edge.source, target: edge.target }))
+  // 端口 id 必须显式带上：缺省的边在 React Flow v12 里 `undefined !== null`，会被静默丢弃
+  return record.edges.map(edge => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle ?? WORKFLOW_SOURCE_HANDLE,
+    targetHandle: edge.targetHandle ?? WORKFLOW_TARGET_HANDLE,
+  }))
 }
 
 /** 把画布状态合并回文档（只带持久字段，不带选择）。 */
@@ -156,7 +163,12 @@ function merge(record: WorkflowRecord, nodes: readonly CanvasNode[], edges: read
       position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
       params: node.data.params,
     })),
-    edges: edges.map(edge => ({ id: edge.id, source: edge.source, target: edge.target })),
+    edges: edges.map(edge => ({
+      id: edge.id, source: edge.source, target: edge.target,
+      // 持久化端口 id：否则存盘再加载后边会丢（真机回归修复）
+      sourceHandle: edge.sourceHandle ?? WORKFLOW_SOURCE_HANDLE,
+      targetHandle: edge.targetHandle ?? WORKFLOW_TARGET_HANDLE,
+    })),
     updatedAt: new Date().toISOString(),
   }
 }
@@ -198,7 +210,7 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
       tabIndex={0}
       aria-label={`${t(spec.labelKey as WorkbenchLocaleKey)}${runStatus === undefined ? '' : ` · ${t(nodeStatusKey(runStatus))}`}`}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle id={WORKFLOW_TARGET_HANDLE} type="target" position={Position.Left} />
       <div className="iv-node-head">
         <Icon name={NODE_ICONS[data.kind]} size={13} />
         <span className="iv-node-title">{t(spec.labelKey as WorkbenchLocaleKey)}</span>
@@ -233,7 +245,7 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
           {data.runError ?? t('statusFailed')}
         </div>
       ) : null}
-      <Handle type="source" position={Position.Right} />
+      <Handle id={WORKFLOW_SOURCE_HANDLE} type="source" position={Position.Right} />
     </div>
   )
 }

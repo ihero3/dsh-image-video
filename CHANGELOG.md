@@ -2,6 +2,18 @@
 
 （下一轮的改动写这里）
 
+### 批次七十四（真机核对 + 画布"有节点没连线"修复）
+- **真机核对（2026-10-26 17:26，通过）**：`/image-video/status` v1.0.0 · provider threevideo；
+  工作台数据自动迁移到 **schemaVersion 5**（备份 `workbench.json.pre-migrate-v4` 已生成）；
+  插件产物 rev 更新、8 个停靠面板正常、专业工作流画布可渲染。
+- **修复：持久化的边加载后被静默丢弃**（画布"有节点没连线"）：
+  根因是节点 handle 无 id + React Flow v12 对 `undefined`/`null` handle 严格匹配，
+  **存盘再加载**的边解析不到端点被丢掉（会话内新建的边不丢，所以只有重启后才暴露）。
+  修复：边持久化 `sourceHandle: 'out'` / `targetHandle: 'in'`；旧数据读取时补默认值
+  （`normalizeGraph`），handle 加稳定 id。回归测试：`workflow-edge-handles` 3 条 +
+  画布 1 条（断言 onChange 落盘的边带端口 id）。
+- 真机复核：重建产物后画布 **6 节点 / 3 边**，与数据完全一致。
+
 ### 批次七十三（生图/生视频能力补齐：B-3 ~ B-7 + B-18）
 - **B-3 融合生图参数化**：8 种姿态预设 + 7 种镜头类别 + 场景裁剪（`cropScene` 归一化坐标，
   sharp 真裁剪并替换场景参考图）；`media/compose` 回显 `composedPrompt`/`cropped`

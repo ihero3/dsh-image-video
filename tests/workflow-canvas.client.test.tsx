@@ -38,6 +38,25 @@ const canvas = (view: ReturnType<typeof render>): HTMLElement => {
 }
 
 describe('workflow canvas', () => {
+  it('持久化的边带上端口 id（否则重启后画布"有节点没连线"）', async () => {
+    let latest: WorkflowRecord | undefined
+    const record: WorkflowRecord = {
+      ...makeRecord(),
+      nodes: [
+        { id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: {} },
+        { id: 'n2', kind: 'video-generate', position: { x: 220, y: 0 }, params: {} },
+      ],
+      // 旧数据：边没有 handle 字段
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+    }
+    const view = render(<WorkflowCanvas record={record} onChange={next => { latest = next }} t={t} />)
+    await waitFor(() => { expect(latest).toBeDefined() })
+    const edge = (latest as WorkflowRecord).edges[0]!
+    expect(edge.sourceHandle).toBe('out')
+    expect(edge.targetHandle).toBe('in')
+    expect(canvas(view).getAttribute('data-workflow-edges')).toBe('1')
+  })
+
   it('lists every catalog node and marks the planned ones', () => {
     const { view } = renderCanvas()
     const items = view.container.querySelectorAll('[data-workflow-palette-item]')

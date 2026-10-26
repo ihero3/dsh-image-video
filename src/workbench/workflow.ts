@@ -58,10 +58,24 @@ export interface WorkflowNode {
 }
 
 /** 画布上的一条连线。 */
+/** 节点输出端口的稳定 id（画布节点只有一个输出 handle）。 */
+export const WORKFLOW_SOURCE_HANDLE = 'out'
+/** 节点输入端口的稳定 id。 */
+export const WORKFLOW_TARGET_HANDLE = 'in'
+
 export interface WorkflowEdge {
   readonly id: string
   readonly source: string
   readonly target: string
+  /**
+   * 源节点输出端口 id（`B` 侧真机回归修复）：**必须持久化**。
+   * React Flow v12 对 `undefined` 与 `null` 的 handle 匹配是严格的——边若不带 handle id，
+   * 存盘再加载后解析不到端点，会被**静默丢弃**（画布上"有节点没连线"就是这个 bug）。
+   * 旧数据缺字段时读取端补默认值（见 `normalizeWorkflowGraph`），不要求迁移。
+   */
+  readonly sourceHandle?: string
+  /** 目标节点输入端口 id，同上。 */
+  readonly targetHandle?: string
 }
 
 /**
@@ -262,7 +276,10 @@ export function normalizeGraph(
     if (!seen.has(source) || !seen.has(target)) throw new Error('workflow edge must connect two nodes in the graph')
     if (source === target) throw new Error(`workflow edge ${source} loops onto itself`)
     const id = typeof edge.id === 'string' && edge.id !== '' ? edge.id : `${source}->${target}`
-    return { id, source, target }
+    // 端口 id 缺省补默认值（旧数据兼容）；非法值一律丢弃回默认，避免把脏值送进画布
+    const sourceHandle = typeof edge.sourceHandle === 'string' && edge.sourceHandle !== '' ? edge.sourceHandle : WORKFLOW_SOURCE_HANDLE
+    const targetHandle = typeof edge.targetHandle === 'string' && edge.targetHandle !== '' ? edge.targetHandle : WORKFLOW_TARGET_HANDLE
+    return { id, source, target, sourceHandle, targetHandle }
   })
   return { nodes: cleanNodes, edges: cleanEdges }
 }
