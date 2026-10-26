@@ -2,6 +2,20 @@
 
 （下一轮的改动写这里）
 
+### 批次七十二（品牌更名：Threerouter → Threevideo）
+- **业务调整**：上游模型提供方由 Threerouter 更名为 **Threevideo**，域名 `threerouter.com` → `threevideo.com`。
+- **插件侧全量改名**：provider id `threerouter` → `threevideo`（配置/类型/适配器/工具/默认值/测试），
+  默认 baseURL → `https://www.threevideo.com/v1`，水印与显示名 → `Threevideo`，
+  环境变量 `THREEROUTER_*` → `THREEVIDEO_*`；`src/providers/threevideo.ts` 等 3 个文件改名。
+- **门禁适配（重要）**：`lib/` 已改成不入库，`scripts/gate.sh` 顺序改为
+  `typecheck → build → tests → bundle → coverage`——否则干净检出时产物契约测试必红。
+- **真机核对（2026-10-26 09:27，通过）**：`/image-video/status` 的 `provider` = **threevideo**；
+  启动图含 `dsh-plugin-threevideo` 且**不含**旧名；侧边栏品牌 = **ThreevideoHARNESS**；
+  工作台 7 面板 + 一键成片卡片正常；控制台无 provider/baseURL 配置错误。
+- **⚠️ 运行态 baseURL 暂回落**：新域名 443 尚未提供服务（TLS 被 reset），
+  运行时 profile 暂用旧域名并在配置里留 `TODO(threevideo)` 标记（LLM provider `threevideo` 与
+  image-video 各一处）；接口上线后改回 `https://www.threevideo.com/v1` 即可，代码零改动。
+
 ### 批次七十一（wave 3 体积基线）
 - **抬体积基线（功能性增长，有据）**：B-15/B-16/B-17 界面（分镜工坊 / 导出历史面板 / 发布前收尾）
   与 P0-1/P0-2 的客户端端点让客户端产物增长 —— 入口 44,780 → **54,600 B**（+7.9 KB）、
