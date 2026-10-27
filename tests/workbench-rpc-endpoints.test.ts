@@ -351,7 +351,8 @@ describe('workbench channel endpoints', () => {
     const { ok } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '安全边界' })
     const inside = await ok<{ package: { manifestPath: string } }>('packages/export', { projectId: created.project.id })
-    expect(inside.package.manifestPath).toContain('packages/')
+    // 跨平台路径分隔符归一：Windows 为反斜杠，POSIX 为正斜杠
+    expect(inside.package.manifestPath).toContain(join('packages', ''))
     // 任意路径必须被拒（写盘动作的安全边界）
     await expect(ok('packages/export', { projectId: created.project.id, targetDir: '/tmp/evil-export' }))
       .rejects.toThrow(/安全边界/)

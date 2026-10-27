@@ -27,6 +27,7 @@ import {
 import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
 import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
+import { LENS_PRESETS, normalizeComposeCrop, POSE_PRESETS } from '../workbench/compose.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
@@ -38,13 +39,16 @@ import {
   LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { NS, type WorkbenchLocaleKey } from './locales.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
 import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
+import { ModelCardsPanel } from './panels/ModelCardsPanel.tsx'
+import { RatioSlicesPanel } from './panels/RatioSlicesPanel.tsx'
+import { ResourceFoldersPanel } from './panels/ResourceFoldersPanel.tsx'
 import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
 import { TaskCard } from './panels/TaskCard.tsx'
 import { ExportHistoryPanel } from './panels/ExportHistoryPanel.tsx'
@@ -430,6 +434,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateLastFrame, setGenerateLastFrame] = useState<string | undefined>(undefined)
   const [generateRefVideo, setGenerateRefVideo] = useState<string | undefined>(undefined)
   const [generateRealPerson, setGenerateRealPerson] = useState(false)
+  // `B-4`：视频续写显式模式——开启后必须有参考视频，缺则拒绝（不静默降级）。
+  const [generateContinuation, setGenerateContinuation] = useState(false)
   // `F3`：生成进度的起点——本地点击时间兜底；视频用 `tasks/running` 的 startedAt 校正。
   const [generateStartedAt, setGenerateStartedAt] = useState<number | undefined>(undefined)
   const [runningGenerations, setRunningGenerations] = useState<readonly RunningGeneration[]>([])
@@ -443,6 +449,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [composeRoles, setComposeRoles] = useState<readonly string[]>([])
   const [composeScenes, setComposeScenes] = useState<readonly string[]>([])
   const [composeProps, setComposeProps] = useState<readonly string[]>([])
+  // `B-3`：融合生图参数化——姿态 / 镜头 / 风格备注 / 场景裁剪（归一化坐标）。
+  const [composePose, setComposePose] = useState('')
+  const [composeLens, setComposeLens] = useState('')
+  const [composeStyleNote, setComposeStyleNote] = useState('')
+  const [composeCropEnabled, setComposeCropEnabled] = useState(false)
+  const [composeCrop, setComposeCrop] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 })
+  const [composeCropError, setComposeCropError] = useState<string | undefined>(undefined)
+  // `B-6`：提示词风控——提交前先查，block 直接拒绝（零调用），warn 随结果提醒。
+  const [composeRisk, setComposeRisk] = useState<PromptRiskView | undefined>(undefined)
+  const [composeRiskBusy, setComposeRiskBusy] = useState(false)
   const [composing, setComposing] = useState(false)
   // `B-10` 提示词工坊（`A-5` `prompts/*`）：提取结果 / 名称 / 库 / 运行态。
   const [promptDraft, setPromptDraft] = useState('')
@@ -517,6 +533,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setGenerating(mediaMode)
     // `F3`：进度条起点（本地点击时间）；视频随后被 tasks/running 的 startedAt 校正
     setGenerateStartedAt(Date.now())
+    // `B-4`：续写显式模式——必须有参考视频；缺则响亮拒绝，绝不静默降级成普通生视频。
+    if (mediaMode === 'video' && generateContinuation && generateRefVideo === undefined) {
+      setGenerating(undefined)
+      setNotice({ text: t('videoContinuationNeedsRefVideo'), tone: 'error' })
+      return
+    }
     try {
       const references = generateImages
       const first = references[0]
@@ -535,6 +557,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         // `G4`：视频槽（尾帧/参考视频/真人勾选）随请求透传
         ...videoMedia.length > 0 ? { media: videoMedia } : {},
         ...mediaMode === 'video' && generateRealPerson ? { realPerson: true } : {},
+        // `B-4`：续写显式模式——宿主要按"紧接参考视频往后拍"处理（缺参考视频已在上面拦截）。
+        ...mediaMode === 'video' && generateContinuation && generateRefVideo !== undefined ? { continuation: true } : {},
         ...mediaMode === 'image'
           ? generateSize.trim() === '' ? {} : { size: generateSize.trim() }
           : {
@@ -1228,14 +1252,50 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const composeResourcesOf = (kind: ResourceKind): readonly ResourceRecord[] =>
     resources.filter(resource => resource.kind === kind)
 
+  /** `B-6`：提示词风控——手动触发一次 `prompts/check`，结果用于提交前拦截与提醒。 */
+  const checkComposePrompt = async (): Promise<void> => {
+    const prompt = composePrompt.trim()
+    if (prompt === '') { setNotice({ text: t('fusionNeedsPrompt'), tone: 'error' }); return }
+    setComposeRiskBusy(true); setComposeRisk(undefined)
+    try {
+      setComposeRisk(await apiRef.current.checkPrompt(prompt))
+    } catch (error) {
+      setNotice({ text: `${t('promptRiskFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'info' })
+    } finally {
+      setComposeRiskBusy(false)
+    }
+  }
+
   /** `B-9`：融合生图——资源 id 交宿主解析参考图并生成（A-4 未落地时如实报错）。 */
   const runCompose = async (): Promise<void> => {
     const prompt = composePrompt.trim()
     if (prompt === '') { setNotice({ text: t('fusionNeedsPrompt'), tone: 'error' }); return }
     if (activeId === undefined) { setNotice({ text: t('generateNeedsProject'), tone: 'error' }); return }
+    // `B-6`：上次风控结果是 block 就直接拒绝，零调用。
+    if (composeRisk?.level === 'block') { setNotice({ text: t('promptRiskBlocked'), tone: 'error' }); return }
     setComposing(true)
+    // `B-3`：场景裁剪——开启后用宿主规范校验（越界/过小都响亮报错，不静默丢参数）。
+    let cropScene: { x: number; y: number; width: number; height: number } | undefined
+    if (composeCropEnabled) {
+      try {
+        cropScene = normalizeComposeCrop(composeCrop)
+      } catch (error) {
+        setComposing(false)
+        setComposeCropError(error instanceof Error ? error.message : String(error))
+        setNotice({ text: `${t('fusionCropInvalid')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+        return
+      }
+    }
     try {
-      const result = await apiRef.current.composeMedia({ projectId: activeId, prompt, resourceIds: composeSelection })
+      const result = await apiRef.current.composeMedia({
+        projectId: activeId,
+        prompt,
+        resourceIds: composeSelection,
+        ...composePose === '' ? {} : { pose: composePose },
+        ...composeLens === '' ? {} : { lens: composeLens },
+        ...composeStyleNote.trim() === '' ? {} : { styleNote: composeStyleNote.trim() },
+        ...cropScene === undefined ? {} : { cropScene },
+      })
       await refreshAssetsAfterGenerate()
       setComposePrompt('')
       const suffix = result.path === undefined ? '' : `：${baseName(result.path)}`
@@ -2356,7 +2416,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                 <button
                                   type="button"
                                   className="iv-btn iv-btn--ghost iv-btn--sm"
-                                  onClick={() => { setGenerateRefVideo(undefined); setGenerateRealPerson(false) }}
+                                  onClick={() => { setGenerateRefVideo(undefined); setGenerateRealPerson(false); setGenerateContinuation(false) }}
                                 >
                                   {t('resourceClear')}
                                 </button>
@@ -2379,6 +2439,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               onChange={event => { setGenerateRealPerson(event.target.checked) }}
                             />
                             <span>{t('videoRealPerson')}</span>
+                          </label>
+                          <label className="iv-check" title={t('videoContinuationHint')}>
+                            <input
+                              type="checkbox"
+                              checked={generateContinuation}
+                              data-video-continuation="true"
+                              onChange={event => { setGenerateContinuation(event.target.checked) }}
+                            />
+                            <span>{t('videoContinuation')}</span>
                           </label>
                         </div>
                         <span className="iv-meta">{t('videoEditHint')}</span>
@@ -2506,6 +2575,97 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         emptyHint={t('fusionNoResources')}
                         onToggle={id => setComposeProps(current => toggleSelection(current, id))}
                       />
+                      {/* `B-3` 融合生图参数化：姿态 × 镜头 × 风格备注 × 场景裁剪 */}
+                      <div className="iv-compose-params" data-compose-params="true">
+                        <div className="iv-param-row" data-param="pose">
+                          <span className="iv-meta">{t('fusionPoseLabel')}：</span>
+                          <button
+                            type="button"
+                            className={`iv-chip iv-chip--toggle${composePose === '' ? ' on' : ''}`}
+                            data-pose="none"
+                            onClick={() => { setComposePose('') }}
+                          >{t('fusionPoseNone')}</button>
+                          {POSE_PRESETS.map(preset => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              className={`iv-chip iv-chip--toggle${composePose === preset.id ? ' on' : ''}`}
+                              data-pose={preset.id}
+                              onClick={() => { setComposePose(current => (current === preset.id ? '' : preset.id)) }}
+                            >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
+                          ))}
+                        </div>
+                        <div className="iv-param-row" data-param="lens">
+                          <span className="iv-meta">{t('fusionLensLabel')}：</span>
+                          <button
+                            type="button"
+                            className={`iv-chip iv-chip--toggle${composeLens === '' ? ' on' : ''}`}
+                            data-lens="none"
+                            onClick={() => { setComposeLens('') }}
+                          >{t('fusionLensNone')}</button>
+                          {LENS_PRESETS.map(preset => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              className={`iv-chip iv-chip--toggle${composeLens === preset.id ? ' on' : ''}`}
+                              data-lens={preset.id}
+                              onClick={() => { setComposeLens(current => (current === preset.id ? '' : preset.id)) }}
+                            >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
+                          ))}
+                        </div>
+                        <textarea
+                          className="iv-input"
+                          rows={1}
+                          value={composeStyleNote}
+                          placeholder={t('fusionStyleNotePlaceholder')}
+                          data-compose-style="true"
+                          disabled={composing}
+                          onChange={event => { setComposeStyleNote(event.target.value) }}
+                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                        />
+                        <div className="iv-crop" data-crop="true">
+                          <label className="iv-check">
+                            <input
+                              type="checkbox"
+                              checked={composeCropEnabled}
+                              data-crop-enable="true"
+                              onChange={event => { setComposeCropEnabled(event.target.checked); setComposeCropError(undefined) }}
+                            />
+                            <span>{t('fusionCropLabel')}</span>
+                          </label>
+                          {composeCropEnabled
+                            ? (
+                              <div className="iv-crop-fields" data-crop-fields="true">
+                                {(['x', 'y', 'width', 'height'] as const).map(field => (
+                                  <label key={field} className="iv-crop-field">
+                                    <span>{t(`fusionCrop${field.charAt(0).toUpperCase()}${field.slice(1)}` as WorkbenchLocaleKey)}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={1}
+                                      step={0.01}
+                                      className="iv-input"
+                                      style={{ width: '64px' }}
+                                      value={composeCrop[field]}
+                                      data-crop-field={field}
+                                      disabled={composing}
+                                      onChange={event => {
+                                        const next = Number(event.target.value)
+                                        setComposeCrop(current => ({ ...current, [field]: Number.isFinite(next) ? next : 0 }))
+                                        setComposeCropError(undefined)
+                                      }}
+                                    />
+                                  </label>
+                                ))}
+                                <span className="iv-meta">{t('fusionCropHint')}</span>
+                                {composeCropError === undefined ? null : (
+                                  <span className="iv-meta iv-meta--warn" data-crop-error="true">{t('fusionCropInvalid')}：{composeCropError}</span>
+                                )}
+                              </div>
+                            )
+                            : <span className="iv-meta">{t('fusionCropHint')}</span>}
+                        </div>
+                      </div>
                       <span className="iv-meta" data-fusion-preview="true">
                         {composePreviewRefs.length === 0
                           ? t('fusionPreviewNone')
@@ -2521,12 +2681,37 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         onChange={event => setComposePrompt(event.target.value)}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
+                      {/* `B-6` 提示词风控条：block 提交前拦截，warn 随结果提醒 */}
+                      <div className="iv-risk" data-risk="true">
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          data-risk-check="true"
+                          disabled={composeRiskBusy || composePrompt.trim() === ''}
+                          onClick={() => { void checkComposePrompt() }}
+                        >
+                          {composeRiskBusy ? t('promptRiskChecking') : t('promptRiskTitle')}
+                        </button>
+                        {composeRisk === undefined
+                          ? null
+                          : (
+                            <span
+                              className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : 'warn'}`}
+                              data-risk-level={composeRisk.level}
+                            >
+                              {composeRisk.level === 'block' ? t('promptRiskBlock') : composeRisk.level === 'warn' ? t('promptRiskWarn') : t('promptRiskOk')}
+                            </span>
+                          )}
+                        {composeRisk === undefined || composeRisk.hits.length === 0
+                          ? null
+                          : <span className="iv-meta iv-meta--warn" data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
+                      </div>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
                           type="button"
                           className="iv-btn iv-btn--acc iv-btn--sm"
                           data-fusion-run="true"
-                          disabled={composing || activeId === undefined || composePrompt.trim() === ''}
+                          disabled={composing || activeId === undefined || composePrompt.trim() === '' || composeRisk?.level === 'block'}
                           onClick={() => { void runCompose() }}
                         >
                           {composing ? t('fusionRunning') : t('fusionRun')}
@@ -2815,6 +3000,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-stat"><b>{resources.length}</b><span>{t('statResources')}</span></span>
                     </div>
                     {outputs.length === 0 ? <p className="iv-meta">{t('noOutputs')}</p> : null}
+                    {/* `B-6` 模型能力卡：选型参考（只展示，不参与生成逻辑） */}
+                    <ModelCardsPanel api={apiRef.current} t={t} />
                   </div>
                   </PaneBoundary>
                 </section>
@@ -2972,6 +3159,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <section className="iv-pane" data-workbench-pane="paneTimeline" data-workbench-planned="false">
                   <PaneBoundary label={t('timelineTitle')} t={t}>
                   <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
+                  {/* `B-5` 成片多比例切片：一条成片按多种画幅各导出一次 */}
+                  <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="film" size={13} /></span>
                     <h3 className="iv-pane-title">{t('timelineTitle')}</h3>
@@ -3872,6 +4061,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
             <section className="iv-pane" data-workbench-pane="paneResources" data-workbench-planned="false">
               <PaneBoundary label={t('paneResources')} t={t}>
+              {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补） */}
+              <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneResources')}</h3>

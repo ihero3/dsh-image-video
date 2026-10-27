@@ -7,9 +7,9 @@
  * 成功后面板会切到「专业工作流」模式：新工作流是该项目的**最新一份**，画布会自动选中它，
  * 用户能立刻看到节点、运行记录与每镜产物。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { PipelineResult, PipelineRunInput, WorkbenchApi } from './api.ts'
-import type { ResourceKind } from '../workbench/records.ts'
+import type { ResourceKind, ResourceRecord } from '../workbench/records.ts'
 import { Icon } from './icons.tsx'
 import type { WorkbenchLocaleKey } from './locales.ts'
 
@@ -40,11 +40,35 @@ export function PipelineCard(props: PipelineCardProps) {
   const [shots, setShots] = useState(DEFAULT_SHOTS)
   const [duration, setDuration] = useState(DEFAULT_DURATION)
   const [strict, setStrict] = useState(false)
+  // `B-18`：手动挑选物料——把指定资源 id 强制塞进流水线（留空则剧本自动匹配）。
+  const [manualPick, setManualPick] = useState<readonly string[]>([])
+  const [resources, setResources] = useState<readonly ResourceRecord[]>([])
+  useEffect(() => {
+    let stale = false
+    if (projectId === undefined || projectId === '') { setResources([]); return }
+    void (async () => {
+      try {
+        const rows = await api.listResources(projectId)
+        if (!stale) setResources(rows)
+      } catch {
+        // 拉不到资源只是没法手动挑，不影响剧本自动匹配
+      }
+    })()
+    return () => { stale = true }
+  }, [api, projectId])
   const [running, setRunning] = useState(false)
   /** 只编排不跑：零花费预览分镜与提示词，确认后再点「一键生成」。 */
   const composeOnly = async (): Promise<void> => {
     if (projectId === undefined || projectId === '' || script.trim() === '') return
-    const input: PipelineRunInput = { projectId, script, mode, shots, duration, strictResources: strict }
+    const input: PipelineRunInput = {
+      projectId,
+      script,
+      mode,
+      shots,
+      duration,
+      strictResources: strict,
+      ...manualPick.length === 0 ? {} : { resourceIds: manualPick },
+    }
     setRunning(true); setError(undefined); setResult(undefined)
     try {
       setResult(await api.composePipeline(input))
@@ -67,7 +91,15 @@ export function PipelineCard(props: PipelineCardProps) {
 
   async function run(): Promise<void> {
     if (!canRun) return
-    const input: PipelineRunInput = { projectId: projectId as string, script, mode, shots, duration, strictResources: strict }
+    const input: PipelineRunInput = {
+      projectId: projectId as string,
+      script,
+      mode,
+      shots,
+      duration,
+      strictResources: strict,
+      ...manualPick.length === 0 ? {} : { resourceIds: manualPick },
+    }
     setRunning(true)
     setError(undefined)
     setResult(undefined)
@@ -209,6 +241,50 @@ export function PipelineCard(props: PipelineCardProps) {
                 : null}
             </div>
 
+            {/* `B-18` 手动挑选物料：把指定资源 id 强制塞进流水线 */}
+            <div className="iv-pipeline-pick" data-pipeline-pick="true">
+              <span className="iv-meta">{t('pipelineManualPick')}</span>
+              <span className="iv-meta">{t('pipelineManualPickHint')}</span>
+              {resources.length === 0
+                ? <span className="iv-meta">{t('pipelineManualPickEmpty')}</span>
+                : (
+                  <div className="iv-pick-list" data-pipeline-pick-list="true">
+                    {resources.map(resource => (
+                      <label key={resource.id} className="iv-check">
+                        <input
+                          type="checkbox"
+                          data-pipeline-pick-item={resource.id}
+                          checked={manualPick.includes(resource.id)}
+                          disabled={running}
+                          onChange={event => {
+                            const next = event.target.checked
+                              ? [...manualPick, resource.id]
+                              : manualPick.filter(id => id !== resource.id)
+                            setManualPick(next)
+                          }}
+                        />
+                        <span>{resource.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              {manualPick.length > 0
+                ? (
+                  <span className="iv-meta" data-pipeline-pick-count="true">
+                    {t('pipelineManualPickCount').replace('{n}', String(manualPick.length))}
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      data-pipeline-pick-clear="true"
+                      onClick={() => { setManualPick([]) }}
+                    >
+                      {t('pipelineManualPickClear')}
+                    </button>
+                  </span>
+                )
+                : null}
+            </div>
+
             {error === undefined ? null : <p className="iv-err" data-pipeline-error="true">{error}</p>}
 
             {result === undefined
@@ -253,6 +329,21 @@ export function PipelineCard(props: PipelineCardProps) {
                                   {t(kind === 'role' ? 'pipelineRegisterRole' : kind === 'scene' ? 'pipelineRegisterScene' : 'pipelineRegisterProp')}
                                 </button>
                               ))}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  {/* `B-18` 匹配到的物料回显（手动挑的 + 剧本自动匹配的都在这） */}
+                  {result.matchedResources === undefined || result.matchedResources.length === 0
+                    ? null
+                    : (
+                      <div data-pipeline-matched="true" style={{ display: 'grid', gap: '4px' }}>
+                        <span className="iv-meta"><Icon name="layers" size={11} /> {t('pipelineMatchedTitle')}</span>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {result.matchedResources.map(item => (
+                            <span key={item.resourceId} className="iv-chip" data-pipeline-matched-item={item.resourceId}>
+                              {t('pipelineMatchedItem').replace('{name}', item.name).replace('{kind}', item.kind)}
                             </span>
                           ))}
                         </div>

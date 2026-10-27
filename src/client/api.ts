@@ -289,6 +289,27 @@ export interface ResourceRedrawPlan {
   readonly warnings: readonly string[]
 }
 
+/** 多比例切片的一条结果（`B-5`，`timelines/render-ratios`）：比例与实导尺寸。 */
+export interface RatioSlice {
+  readonly ratio: string
+  readonly width: number
+  readonly height: number
+}
+
+/** 多比例切片的整体返回（`B-5`）：各比例一次导出（只编码，不重新生成）。 */
+export interface RenderRatioResult {
+  readonly slices: readonly RatioSlice[]
+  readonly jobs: readonly RenderJob[]
+  readonly warnings: readonly string[]
+}
+
+/** 一键流水线里被显式匹配上的物料（`B-18`，`matchedResources` 回显）。 */
+export interface PipelineMatchedResource {
+  readonly name: string
+  readonly resourceId: string
+  readonly kind: string
+}
+
 /** 融合生图裁剪框（归一化 0..1，`B-3`）。 */
 export interface ComposeCropView {
   readonly x: number
@@ -309,6 +330,8 @@ export interface PipelineRunInput {
   readonly duration?: number
   readonly strictResources?: boolean
   readonly styleNote?: string
+  /** 显式指定物料资源 id（`B-18`）：给了就按指定资源编排，缺 id 仍走剧本自动匹配。 */
+  readonly resourceIds?: readonly string[]
 }
 
 /** 一键流水线编排结果（已落库的工作流 + 诊断）。 */
@@ -320,6 +343,8 @@ export interface PipelineResult {
   readonly nodes: number
   readonly warnings: readonly string[]
   readonly missingResources: readonly string[]
+  /** 实际匹配上的物料（`B-18` 回显；旧宿主不返回时客户端不渲染该区）。 */
+  readonly matchedResources?: readonly PipelineMatchedResource[]
 }
 
 export interface WorkbenchApi {
@@ -417,6 +442,7 @@ export interface WorkbenchApi {
    * `F2`：`images` 为**按序**多参考图（首图=底图，其余=风格/脸部参考）；
    * 传了 `images` 就**不要**再传 `image`（工具侧 `image` 优先，会盖掉整组）。
    * `G4`：`media` 为视频参考素材序列（尾帧/参考视频），`realPerson` 为真人勾选透传。
+   * `B-4`：`continuation: true` 为显式「续写」意图（必须有参考视频，宿主校验，不静默降级）。
    */
   generateMedia: (input: {
     readonly mediaMode: 'image' | 'video'
@@ -432,6 +458,8 @@ export interface WorkbenchApi {
     readonly aspectRatio?: string
     readonly resolution?: string
     readonly wait?: boolean
+    /** 显式续写（`B-4`）：紧接参考视频往后拍；缺参考视频时宿主响亮报错。 */
+    readonly continuation?: boolean
   }) => Promise<MediaGenerateResult>
   /**
    * 融合生图（`G3`/`A-4`）：把选中的角色/场景/物品**资源 id**连同提示词交宿主，
@@ -463,11 +491,7 @@ export interface WorkbenchApi {
     readonly timelineId: string
     readonly ratios: readonly string[]
     readonly priority?: number
-  }) => Promise<{
-    readonly slices: ReadonlyArray<{ readonly ratio: string; readonly width: number; readonly height: number }>
-    readonly jobs: readonly RenderJob[]
-    readonly warnings: readonly string[]
-  }>
+  }) => Promise<RenderRatioResult>
   /**
    * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。

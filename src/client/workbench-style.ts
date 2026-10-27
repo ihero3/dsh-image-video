@@ -604,6 +604,57 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-help-list li{display:flex;gap:10px;justify-content:space-between;font-size:11px;color:var(--iv-tx2)}
 .iv-help-list b{color:var(--iv-tx);font-weight:600;text-align:right}
 .iv-help-actions{display:flex;justify-content:flex-end}
+
+/* ============ B-3 融合生图参数化 ============ */
+.iv-compose-params{display:grid;gap:6px;padding:7px 8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-param-row{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.iv-param-row .iv-meta{flex:none}
+.iv-chip--toggle{cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.iv-chip--toggle:hover{border-color:var(--iv-acc);color:var(--iv-tx)}
+.iv-chip--toggle.on{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);background:var(--iv-acc-soft)}
+.iv-crop{display:grid;gap:4px}
+.iv-crop-fields{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.iv-crop-field{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--iv-tx2)}
+.iv-crop-field input{font:inherit}
+.iv-meta--warn{color:var(--iv-warn)}
+
+/* ============ B-4 续写开关 ============ */
+.iv-check label{display:inline-flex;align-items:center;gap:5px}
+
+/* ============ B-5 多比例切片 ============ */
+.iv-ratio-slices{display:grid;gap:6px;padding:8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-ratio-picks{display:flex;gap:10px;flex-wrap:wrap}
+.iv-ratio-result{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+/* ============ B-6 模型能力卡 ============ */
+.iv-model-cards{display:grid;gap:6px}
+.iv-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.iv-model-card{display:grid;gap:5px;padding:9px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2)}
+.iv-model-card-head{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.iv-model-card-name{font-weight:600;font-size:12px;color:var(--iv-tx)}
+.iv-model-card-kinds{display:flex;gap:4px;flex-wrap:wrap}
+.iv-model-card-row{display:flex;gap:5px;font-size:11px;color:var(--iv-tx2);align-items:baseline}
+.iv-model-card-features{display:flex;gap:6px;flex-wrap:wrap}
+.iv-feature{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--iv-tx3);border:1px solid var(--iv-line-2);border-radius:999px;padding:1px 6px}
+.iv-feature.on{color:var(--iv-ok);border-color:color-mix(in srgb,var(--iv-ok) 35%,transparent);background:var(--iv-ok-soft)}
+.iv-model-card-tips{font-size:10.5px;color:var(--iv-tx2)}
+.iv-model-card-tips ul{margin:2px 0 0;padding-left:16px}
+
+/* ============ B-7 资源分类 + 重绘 ============ */
+.iv-res-folders{display:grid;gap:6px;padding:8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-folder-bar{display:flex;gap:5px;flex-wrap:wrap}
+.iv-folder-list{display:grid;gap:6px}
+.iv-folder-row{display:grid;gap:4px;padding:6px;border:1px solid var(--iv-line-2);border-radius:6px;background:var(--iv-panel-2)}
+.iv-folder-row-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.iv-folder-name{font-size:12px;color:var(--iv-tx);font-weight:600}
+.iv-redraw-plan{display:grid;gap:3px;font-size:11px;color:var(--iv-tx2);padding-top:4px;border-top:1px dashed var(--iv-line-2)}
+
+/* ============ B-18 手动挑选物料 ============ */
+.iv-pipeline-pick{display:grid;gap:5px;padding:7px 8px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+.iv-pick-list{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ============ B-6 风控条 ============ */
+.iv-risk{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 `
 
 /**

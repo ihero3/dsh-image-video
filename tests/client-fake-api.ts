@@ -88,12 +88,27 @@ export function fakeApi(options: {
   const referencedAssetIds = new Set<string>(options.referencedAssetIds ?? [])
   /** `workflows/run` 收到的入参（B4 单节点运行断言用）。 */
   const runPayloads: Array<{ workflowId: string; only?: readonly string[] }> = []
-  /** `B-9`：`composeMedia` 收到的入参（测试断言用）。 */
-  const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[] }> = []
+  /** `B-9`：`composeMedia` 收到的入参（测试断言用，含 B-3 参数化字段）。 */
+  const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[]; pose?: string; lens?: string; styleNote?: string; cropScene?: unknown }> = []
   /** `B-10`：`extractPrompt` 收到的入参（测试断言用）。 */
   const extractInputs: Array<{ path?: string }> = []
   /** `B-15`：`planStoryboard` 收到的入参（测试断言用）。 */
   const storyboardPayloads: Array<{ projectId: string; script: string; shots?: number }> = []
+  /** `B-4`：`generateMedia` 收到的入参（含续写意图，测试断言用）。 */
+  const generatePayloads: Array<{ mediaMode: 'image' | 'video'; prompt: string; continuation?: boolean }> = []
+  /** `B-6`：`modelsCatalog` 返回的卡片（测试替身，固定两份）。 */
+  const modelCards: Array<{ id: string; name: string }> = [
+    { id: 'm1', name: 'Model One' },
+    { id: 'm2', name: 'Model Two' },
+  ]
+  /** `B-5`：`renderRatioSlices` 收到的入参（测试断言用）。 */
+  const ratioPayloads: Array<{ timelineId: string; ratios: readonly string[] }> = []
+  /** `B-7`：`planResourceRedraw` 收到的入参（测试断言用）。 */
+  const redrawPayloads: Array<{ resourceId: string }> = []
+  /** `B-6`：`checkPrompt` 收到的入参（测试断言用）。 */
+  const riskPayloads: Array<{ text: string }> = []
+  /** `B-18`：`composePipeline`/`runPipeline` 收到的入参（测试断言用）。 */
+  const pipelinePayloads: Array<{ projectId: string; script: string; resourceIds?: readonly string[] }> = []
   /** `B-10`：提示词库（内存态，`savePrompt`/`removePrompt` 会改它）。 */
   const prompts: PromptRecord[] = [...(options.prompts ?? [])]
   let promptSequence = prompts.length
@@ -107,6 +122,7 @@ export function fakeApi(options: {
   importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),
   // `A149`：工作台内生成（测试替身）。图片立即"登记"一张素材；视频返回 pending + taskId。
   generateMedia: async input => {
+    generatePayloads.push({ mediaMode: input.mediaMode, prompt: input.prompt, ...input.continuation === true ? { continuation: true } : {} })
     if (input.mediaMode === 'video') {
       const task = {
         schemaVersion: 4, id: 'tsk-generate-video', kind: 'video', status: 'running',
@@ -524,8 +540,99 @@ export function fakeApi(options: {
         errors: { errors: [], errorCount: 0 },
       }
     },
+    // `B-6`：模型能力卡（测试替身，固定两份）。
+    modelsCatalog: async () => {
+      calls.push('models/catalog')
+      return {
+        cards: modelCards.map(card => ({
+          id: card.id, name: card.name, family: 'test', kinds: ['image', 'video'] as const,
+          strength: 'balanced', costTier: 'medium', aspectRatios: ['16:9', '9:16', '1:1'],
+          features: {
+            imageToVideo: true,
+            firstLastFrame: { supported: false },
+            multiFrame: { supported: false },
+            referenceVideo: { supported: true },
+            audio: { supported: false },
+          },
+          promptTips: ['keep prompts short'], verified: true,
+        })),
+        consistencyIssues: [],
+      }
+    },
+    // `B-6`：提示词风控（测试替身）：含 'block' 判拦截，含 'warn' 判提醒，否则 ok。
+    checkPrompt: async text => {
+      calls.push('prompts/check')
+      riskPayloads.push({ text })
+      if (text.includes('block')) {
+        return { level: 'block', hits: [{ category: 'politics', term: 'x', severity: 'block', advice: 'remove blocked content' }], advice: ['remove blocked content'] }
+      }
+      if (text.includes('warn')) {
+        return { level: 'warn', hits: [{ category: 'copyright', term: 'y', severity: 'warn', advice: 'verify ownership' }], advice: ['verify ownership'] }
+      }
+      return { level: 'ok', hits: [], advice: [] }
+    },
+    // `B-5`：多比例切片（测试替身）。短边不变：9:16=720×1280、1:1=720×720、4:3=960×720。
+    renderRatioSlices: async input => {
+      calls.push('timelines/render-ratios')
+      ratioPayloads.push({ timelineId: input.timelineId, ratios: input.ratios })
+      const dims: Record<string, [number, number]> = { '9:16': [720, 1280], '1:1': [720, 720], '4:3': [960, 720] }
+      return {
+        slices: input.ratios.map(ratio => {
+          const [width, height] = dims[ratio] ?? [720, 1280]
+          return { ratio, width, height }
+        }),
+        jobs: input.ratios.map((ratio, index) => ({
+          id: `rj-${index}`, timelineId: input.timelineId, projectId: 'prj-1',
+          status: 'queued', percent: 0, startedAt: '2026-10-16T00:00:00.000Z',
+        })),
+        warnings: [],
+      }
+    },
+    // `B-7`：资源 + 分类（`listResourcesWithFolders` 测试替身）。
+    listResourcesWithFolders: async (projectId, kind) => {
+      calls.push('resources/list')
+      const filtered = resources.filter(resource => resource.projectId === projectId && (kind === undefined || resource.kind === kind))
+      const folders = Array.from(new Set(filtered.map(resource => resource.folder).filter((folder): folder is string => folder !== undefined && folder !== '')))
+      return { resources: filtered, folders }
+    },
+    // `B-7`：零花费重绘计划（测试替身）。
+    planResourceRedraw: async resourceId => {
+      calls.push('resources/plan-redraw')
+      redrawPayloads.push({ resourceId })
+      const found = resources.find(resource => resource.id === resourceId)
+      return {
+        resource: found ?? { schemaVersion: 1, id: resourceId, projectId: 'prj-1', kind: 'role', name: 'r', createdAt: '', updatedAt: '' },
+        prompt: 'redraw prompt', images: [], referenceCount: 0,
+        suggestions: { aspectRatio: '1:1', count: 1 }, warnings: [],
+      }
+    },
+    // `P0-2`/`B-18`：一键流水线编排与起跑（测试替身）。记录入参（含手动挑的 resourceIds）。
+    composePipeline: async input => {
+      calls.push('pipelines/compose')
+      pipelinePayloads.push({ projectId: input.projectId, script: input.script, ...input.resourceIds === undefined ? {} : { resourceIds: input.resourceIds } })
+      return {
+        workflowId: 'wfl-1', name: 'pipeline', mode: input.mode ?? 'image-to-video', shots: input.shots ?? 4, nodes: 3,
+        warnings: [], missingResources: [],
+        ...input.resourceIds === undefined ? {} : { matchedResources: input.resourceIds.map(id => ({ name: id, resourceId: id, kind: 'role' })) },
+      }
+    },
+    runPipeline: async input => {
+      calls.push('pipelines/run')
+      pipelinePayloads.push({ projectId: input.projectId, script: input.script, ...input.resourceIds === undefined ? {} : { resourceIds: input.resourceIds } })
+      return {
+        pipeline: {
+          workflowId: 'wfl-1', name: 'pipeline', mode: input.mode ?? 'image-to-video', shots: input.shots ?? 4, nodes: 3,
+          warnings: [], missingResources: [],
+          ...input.resourceIds === undefined ? {} : { matchedResources: input.resourceIds.map(id => ({ name: id, resourceId: id, kind: 'role' })) },
+        },
+        run: {
+          schemaVersion: 1, id: 'run-1', workflowId: 'wfl-1', projectId: input.projectId, status: 'succeeded',
+          graph: { nodes: [], edges: [] }, nodeRuns: [], startedAt: '2026-10-15T00:00:00.000Z', finishedAt: '2026-10-15T00:00:00.000Z',
+        },
+      }
+    },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords, generatePayloads, modelCards, ratioPayloads, redrawPayloads, riskPayloads, pipelinePayloads }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */

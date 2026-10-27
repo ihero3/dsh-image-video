@@ -129,4 +129,55 @@
   `pipelineRegisterRole/Scene/Prop` 七个键，en/zh）。测试：`tests/client-pipeline-materials.test.tsx`
   （5 项：缺失清单渲染 / 登记后自动重编且入参正确 / 失败不伪造 / 空缺失无假阳性 / 进行中禁用）。
 - 配套契约申请（见 `docs/API-SURFACE.md`「B 申请区」）：`pipelines/compose|run` 显式 `resourceIds`
-  （物料手动挑选）+ `matchedResources` 回显——**待 A 认领**；契约未落地前客户端不做无契约功能。
+  （物料手动挑选）+ `matchedResources` 回显——**已于 2026-10-26 被 A 认领并上线**（`pipelines/compose|run`
+  支持 `resourceIds`、编排结果回显 `matchedResources`，未知 id 如实提醒）；UI 接驳见下方 Round 5。
+
+## Round 5（2026-10-26，UI 接驳 A 已交付的 6 项宿主能力）
+
+> 前置：同事 A（Track A）于 2026-10-25~26 把 `docs/API-SURFACE.md`「B 申请区」全部 6 条清空（宿主侧均已上线），
+> 但**界面一直没接**，留给 Track B 在「快速创作」优化里落地。本回合把 A 在 B 申请区用的编号
+> （B-3/B-4/B-5/B-6/B-7/B-18）一次性接完。**注意编号撞车**：下表 B-3~B-7、B-18 是 A 对*B 申请区宿主能力*的编号，
+> 与 Wave 1/2/Round 4 历史同号任务（B-3 尾帧/参考视频、B-4 物料分栏、B-5 片段手柄、B-6 模板市场、B-7 批量操作、B-18 缺失清单）**不是同一件事**，勿混。
+
+- [x] **B-3（融合生图参数化 · 姿态/镜头/裁剪）**：在 A-4 `media/compose` 上扩参（`API-SURFACE` 第 78 行「含 B-3 姿态/镜头/裁剪」）。
+  `Workbench` 融合区新增：姿态/镜头两组 chip（复用宿主 `POSE_PRESETS`/`LENS_PRESETS`，`t(preset.labelKey)` 直接渲染，零手写映射）、
+  风格备注 `textarea`、裁剪开关 + 四个数字字段（宿主 `normalizeComposeCrop` 校验 0..1、每边 ≥5%，越界/过小在状态栏报错且**不透传**）。
+  `runCompose` 透传 `pose`/`lens`/`styleNote`/`cropScene`（裁剪关闭时不带 `cropScene`）。`src/client/api.ts` 的 `ComposeMediaInput` 与 fake 同步扩字段。
+  测试：`tests/client-fusion-params.test.tsx`（2 项：pose/lens/styleNote/合法 cropScene 透传；非法裁剪被 `normalizeComposeCrop` 拒透传）。
+- [x] **B-4（视频续写显式模式）**：`media/generate` 增 `continuation: true` 显式续写意图（宿主校验必须有参考视频、不静默降级；`tests/host-media-generate.test.ts:117` 钉住）。
+  G4 视频生成表单加「续写」勾选；`runGenerate` 在视频模式 + 已勾选 + 有参考视频时透传 `continuation: true`，
+  缺参考视频时弹错误提示并**早退零调用**；清空参考视频同步清续写勾选。`docs/API-SURFACE.md` 的 `media/generate` 行补记 `continuation?` 字段。
+  测试：`tests/client-video-continuation.test.tsx`（2 项：有参考视频时 `continuation:true` 透传；缺参考视频时守卫拦截、零 `generatePayloads`）。
+- [x] **B-5（成片多比例切片）**：`timelines/render-ratios`（`API-SURFACE` 第 145 行，B-5）。时间轴模式 `VoiceCard` 后新增
+  `RatioSlicesPanel`：勾选 9:16 / 1:1 / 4:3（默认勾 9:16）→ `renderRatioSlices({timelineId,ratios,priority?})` →
+  展示各比例 `ratio · width×height`（短边不变：9:16=720×1280、1:1=720×720、4:3=960×720）；无时间轴时如实提示、按钮禁用、不假装能导出。
+  测试：`tests/client-ratio-slices.test.tsx`（3 项：无时间轴提示 / 导出尺寸断言 / 无勾选拒绝运行）。
+- [x] **B-6（模型能力卡 + 提示词风控）**：`models/catalog` + `prompts/check`（`API-SURFACE` 第 34/35 行，B-6）。
+  *能力卡*：快速创作区（outputs 统计后）新增 `ModelCardsPanel`，加载 `modelsCatalog()` 渲染卡片——名称/校验芯片/类型/成本/时长/画幅/能力矩阵（`FeatureRow`：图生视频/首末帧/多帧/参考视频/音频）/提示词技巧；`consistencyIssues` 非空照实提示（卡片与运行时能力漂移不粉饰）。
+  *风控*：`Workbench` 融合区新增风控条——「检查提示词」按钮调 `checkPrompt`，`composeRisk.level==='block'` 时 `runCompose` **直接拒绝零调用**并展示命中建议；`warn`/`ok` 仅状态提示。
+  测试：`tests/client-models-catalog.test.tsx`（3 项：卡片渲染 / drift 警告 / 空提示）；风控 `checkPrompt` 走 fake 断言（block/warn/ok 判定已固化于 `client-fake-api.ts`）。
+- [x] **B-7（资源库扁平分类闭环）**：`resources/update` 支持 `folder`（`API-SURFACE` 第 117 行，B-7）。资源 pane 顶部新增
+  `ResourceFoldersPanel`：`listResourcesWithFolders` 加载 + 分类侧栏（`__all__` / `__none__` / 各 `folder`）本地过滤、零请求零闪烁；
+  每个资源行「重绘计划」按钮调 `planResourceRedraw` 展开（prompt / 参考数 / 建议 / 警告）+ 「发送融合」按钮（`onSendToCompose(plan.prompt)` 回填融合提示词）。
+  测试：`tests/client-resource-folders.test.tsx`（3 项：分类条渲染与过滤 / `planResourceRedraw` 记录 `redrawPayloads` / `onSendToCompose` 回调带回提示词）。
+- [x] **B-18（流水线手动挑选物料）**：`pipelines/compose|run` 显式 `resourceIds` + `matchedResources` 回显（A 2026-10-26 认领，`API-SURFACE` 第 80/83 行）。
+  `PipelineCard` 手写编排/运行控制区后新增手动挑选块：加载 `listResources` 勾选（计数 + 清空），给了 `resourceIds` 就按指定资源编排（缺 id 仍走剧本自动匹配）；
+  结果区回显 `matchedResources`（`{name}/{kind}` 芯片）。与 Round 4 的 B-18（缺失清单自动匹配闭环）**互补**，非同一交付。
+  测试：`tests/client-pipeline-manual-pick.test.tsx`（2 项：① 勾选后 `composePipeline`/`runPipeline` 透传 `resourceIds=['res-1']` 且结果区回显 `matchedResources`；② 未挑时不带 `resourceIds`、无 `matched` 回显，走剧本自动匹配）。
+
+**Round 5 门禁**：
+- 新增 6 个测试文件、共 **15 项**（B-3 2 + B-4 2 + B-5 3 + B-6 3 + B-7 3 + B-18 2）；既有 `client-*.test.*` 全绿、无回归（分批跑：结构类 `no-hardcoding`/`i18n`/`a11y`/`theme`/`style-injection`、相邻 `fusion-compose`/`pipeline-card`/`quick-generate`/`resource-columns`/`resource-references`/`pipeline-materials`/`multi-reference`/`voice-card` 等 28 个文件均 PASS）。
+- `pnpm run typecheck` 通过（exit 0，双 tsconfig）。
+- `pnpm run check:bundle` 通过：入口 55,361 B（占预算 84%）· 总产物 909,044 B（占预算 84%），仍留约 16% 余量。
+- 契约漂移类测试全绿（`rpc-new-endpoints` 10、`rpc-contract-drift` 1、`tool-actions-drift` 1）。
+
+**Round 5 环境备注（非本次改动引起）**：
+1. `tests/workbench-rpc-endpoints.test.ts` 此前 1 项失败——`refuses package exports outside the packages directory` 断言
+   `manifestPath.toContain('packages/')`，Windows 实际路径为 `packages\`（反斜杠）；已修为跨平台归一
+   `toContain(join('packages', ''))`（`join` 在 Windows 出反斜杠、POSIX 出正斜杠），该文件 26 passed｜1 skipped 全绿
+   （同事 A 的"门禁全绿"是在 Linux/macOS CI 跑的，此断言在 Windows 沙箱才暴露）。
+2. 本地 `pnpm run build` 仍受 pnpm store 缺 `@jridgewell/sourcemap-codec` 影响在 tsdown 处失败（Round 3 已记录）；
+   体积门禁用 `pnpm run check:bundle` 兜底确认。
+3. 宿主未运行（54274 无监听）——交接核对四项中 `workbench.json` 仍为 `schemaVersion=4`、无 `.pre-migrate-v4` 备份、
+   `lib/index.js` 为 10-25 旧产物、插件 rev 未变；属**交接环境态**，UI 接驳不依赖宿主运行（fake 宿主已闭环验证）。
+

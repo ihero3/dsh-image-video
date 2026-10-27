@@ -523,6 +523,114 @@ export type WorkbenchLocaleKey =
   | 'helpDeleteShortcut'
   | 'exampleProject'
   | 'exampleProjectDone'
+  // ---- B-3 融合生图参数化（姿态 / 镜头 / 风格 / 场景裁剪） ----
+  | 'fusionPoseLabel'
+  | 'fusionPoseNone'
+  | 'poseStanding'
+  | 'poseSitting'
+  | 'poseWalking'
+  | 'poseRunning'
+  | 'poseFighting'
+  | 'poseCasting'
+  | 'poseLookingUp'
+  | 'poseBackView'
+  | 'fusionLensLabel'
+  | 'fusionLensNone'
+  | 'lensWide'
+  | 'lensMedium'
+  | 'lensCloseup'
+  | 'lensExtremeCloseup'
+  | 'lensHighAngle'
+  | 'lensLowAngle'
+  | 'lensOverhead'
+  | 'fusionStyleNoteLabel'
+  | 'fusionStyleNotePlaceholder'
+  | 'fusionCropLabel'
+  | 'fusionCropEnable'
+  | 'fusionCropX'
+  | 'fusionCropY'
+  | 'fusionCropWidth'
+  | 'fusionCropHeight'
+  | 'fusionCropHint'
+  | 'fusionCropActive'
+  | 'fusionCropInvalid'
+  // ---- B-4 视频续写显式模式 ----
+  | 'videoContinuation'
+  | 'videoContinuationHint'
+  | 'videoContinuationNeedsRefVideo'
+  | 'videoContinuationPending'
+  // ---- B-5 成片多比例切片 ----
+  | 'ratioSlicesTitle'
+  | 'ratioSlicesHint'
+  | 'ratioSlicesRun'
+  | 'ratioSlicesBusy'
+  | 'ratioSlicesNone'
+  | 'ratioSlicesDone'
+  | 'ratioSlicesFailed'
+  | 'ratioSlicesNeedsTimeline'
+  | 'ratioPortrait9x16'
+  | 'ratioSquare1x1'
+  | 'ratioClassic4x3'
+  // ---- B-6 模型能力卡 + 提示词风控 ----
+  | 'modelCardsTitle'
+  | 'modelCardsHint'
+  | 'modelCardsEmpty'
+  | 'modelCardsLoadFailed'
+  | 'modelCardsDrift'
+  | 'modelCardKindsImage'
+  | 'modelCardKindsVideo'
+  | 'modelCardDuration'
+  | 'modelCardDurationCustom'
+  | 'modelCardDurationFixed'
+  | 'modelCardRatios'
+  | 'modelCardCostLow'
+  | 'modelCardCostMedium'
+  | 'modelCardCostHigh'
+  | 'modelCardVerified'
+  | 'modelCardUnverified'
+  | 'modelFeatureOn'
+  | 'modelFeatureOff'
+  | 'modelCardImageToVideo'
+  | 'modelCardFirstLastFrame'
+  | 'modelCardMultiFrame'
+  | 'modelCardReferenceVideo'
+  | 'modelCardAudio'
+  | 'modelCardTips'
+  | 'promptRiskTitle'
+  | 'promptRiskChecking'
+  | 'promptRiskOk'
+  | 'promptRiskWarn'
+  | 'promptRiskBlock'
+  | 'promptRiskBlocked'
+  | 'promptRiskAdvice'
+  | 'promptRiskFailed'
+  // ---- B-7 资源分类 + 重绘计划 ----
+  | 'resourceFoldersTitle'
+  | 'resourceFolderAll'
+  | 'resourceFolderUncategorized'
+  | 'resourceFolderLabel'
+  | 'resourceFolderPlaceholder'
+  | 'resourceFolderNone'
+  | 'redrawPlanTitle'
+  | 'redrawPlanRun'
+  | 'redrawPlanBusy'
+  | 'redrawPlanPromptLabel'
+  | 'redrawPlanRefs'
+  | 'redrawPlanSuggestions'
+  | 'redrawPlanWarnings'
+  | 'redrawPlanNone'
+  | 'redrawPlanFailed'
+  | 'redrawPlanToForm'
+  | 'redrawPlanApplied'
+  // ---- B-18 物料手动挑选 + 匹配回显 ----
+  | 'pipelineManualPick'
+  | 'pipelineManualPickHint'
+  | 'pipelineManualPickEmpty'
+  | 'pipelineManualPickClear'
+  | 'pipelineManualPickCount'
+  | 'pipelineMatchedTitle'
+  | 'pipelineMatchedNone'
+  | 'pipelineMatchedItem'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export const NS = 'image-video-workbench'
@@ -1052,12 +1160,239 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   helpUndoShortcut: 'Ctrl/⌘ + Z / Shift+Z — undo / redo',
   helpPlayShortcut: 'Space — play or pause the timeline',
   helpDeleteShortcut: 'Delete — remove the selected clip or node',
+  // ---- B-3 融合生图参数化（姿态 / 镜头 / 风格 / 场景裁剪） ----
+  fusionPoseLabel: 'Pose',
+  fusionPoseNone: 'No pose (free)',
+  poseStanding: 'Standing',
+  poseSitting: 'Sitting',
+  poseWalking: 'Walking',
+  poseRunning: 'Running',
+  poseFighting: 'Fighting',
+  poseCasting: 'Casting',
+  poseLookingUp: 'Looking up',
+  poseBackView: 'Back view',
+  fusionLensLabel: 'Camera',
+  fusionLensNone: 'No camera (free)',
+  lensWide: 'Wide shot',
+  lensMedium: 'Medium shot',
+  lensCloseup: 'Close-up',
+  lensExtremeCloseup: 'Extreme close-up',
+  lensHighAngle: 'High angle',
+  lensLowAngle: 'Low angle',
+  lensOverhead: 'Overhead',
+  fusionStyleNoteLabel: 'Style note',
+  fusionStyleNotePlaceholder: 'e.g. cinematic lighting, soft palette…',
+  fusionCropLabel: 'Crop scene',
+  fusionCropEnable: 'Crop the selected scene image first',
+  fusionCropX: 'X',
+  fusionCropY: 'Y',
+  fusionCropWidth: 'Width',
+  fusionCropHeight: 'Height',
+  fusionCropHint: 'Normalized 0–1 coordinates; the cropped scene replaces the original before the model sees it.',
+  fusionCropActive: 'Cropping',
+  fusionCropInvalid: 'Invalid crop: keep within 0–1 and at least 5% on each side.',
+
+  // ---- B-4 视频续写显式模式 ----
+  videoContinuation: 'Continuation (extend)',
+  videoContinuationHint: 'Keep shooting right after the reference video. A reference video is required; missing it is rejected, not silently downgraded.',
+  videoContinuationNeedsRefVideo: 'Continuation needs a reference video — pick one first.',
+  videoContinuationPending: 'Extending…',
+
+  // ---- B-5 成片多比例切片 ----
+  ratioSlicesTitle: 'Multi-ratio export',
+  ratioSlicesHint: 'Export one film in several aspect ratios. Each ratio is encoded once — nothing is regenerated.',
+  ratioSlicesRun: 'Export all ratios',
+  ratioSlicesBusy: 'Exporting…',
+  ratioSlicesNone: 'Pick at least one ratio.',
+  ratioSlicesDone: 'Queued {n} ratio exports.',
+  ratioSlicesFailed: 'Some ratio exports failed — see warnings.',
+  ratioSlicesNeedsTimeline: 'Open a timeline first.',
+  ratioPortrait9x16: 'Portrait 9:16',
+  ratioSquare1x1: 'Square 1:1',
+  ratioClassic4x3: 'Classic 4:3',
+
+  // ---- B-6 模型能力卡 + 提示词风控 ----
+  modelCardsTitle: 'Model capability cards',
+  modelCardsHint: 'Pick a model by strength and supported features. A drift warning means the card no longer matches runtime.',
+  modelCardsEmpty: 'No model cards available.',
+  modelCardsLoadFailed: 'Failed to load model cards.',
+  modelCardsDrift: 'Card drifted from runtime capabilities — verify before relying on it.',
+  modelCardKindsImage: 'Image',
+  modelCardKindsVideo: 'Video',
+  modelCardDuration: 'Duration',
+  modelCardDurationCustom: 'Custom',
+  modelCardDurationFixed: 'Fixed',
+  modelCardRatios: 'Aspect ratios',
+  modelCardCostLow: 'Low cost',
+  modelCardCostMedium: 'Medium cost',
+  modelCardCostHigh: 'High cost',
+  modelCardVerified: 'Verified',
+  modelCardUnverified: 'Unverified',
+  modelFeatureOn: 'Supported',
+  modelFeatureOff: 'Not supported',
+  modelCardImageToVideo: 'Image → video',
+  modelCardFirstLastFrame: 'First/last frame',
+  modelCardMultiFrame: 'Multi-frame',
+  modelCardReferenceVideo: 'Reference video',
+  modelCardAudio: 'Audio',
+  modelCardTips: 'Prompt tips',
+  promptRiskTitle: 'Prompt safety check',
+  promptRiskChecking: 'Checking…',
+  promptRiskOk: 'Looks safe',
+  promptRiskWarn: 'Caution',
+  promptRiskBlock: 'Blocked',
+  promptRiskBlocked: 'This prompt is blocked — it will not be submitted.',
+  promptRiskAdvice: 'Advice',
+  promptRiskFailed: 'Safety check failed; submit at your own risk.',
+
+  // ---- B-7 资源分类 + 重绘计划 ----
+  resourceFoldersTitle: 'Folders',
+  resourceFolderAll: 'All',
+  resourceFolderUncategorized: 'Uncategorized',
+  resourceFolderLabel: 'Folder',
+  resourceFolderPlaceholder: 'Set a folder for this resource',
+  resourceFolderNone: 'No folder',
+  redrawPlanTitle: 'Redraw plan',
+  redrawPlanRun: 'Plan redraw',
+  redrawPlanBusy: 'Planning…',
+  redrawPlanPromptLabel: 'Suggested prompt',
+  redrawPlanRefs: 'Reference images',
+  redrawPlanSuggestions: 'Suggestions',
+  redrawPlanWarnings: 'Warnings',
+  redrawPlanNone: 'No plan yet.',
+  redrawPlanFailed: 'Failed to plan redraw.',
+  redrawPlanToForm: 'Send to compose',
+  redrawPlanApplied: 'Applied to compose form.',
+
+  // ---- B-18 物料手动挑选 + 匹配回显 ----
+  pipelineManualPick: 'Pick materials manually',
+  pipelineManualPickHint: 'Force specific resources into the pipeline. Leave empty to let the script auto-match.',
+  pipelineManualPickEmpty: 'No materials picked.',
+  pipelineManualPickClear: 'Clear',
+  pipelineManualPickCount: '{n} picked',
+  pipelineMatchedTitle: 'Matched materials',
+  pipelineMatchedNone: 'No materials matched.',
+  pipelineMatchedItem: '{name} · {kind}',
   exampleProject: 'Example project',
   exampleProjectDone: 'Example project created — try the Quick image template on the canvas.',
 }
 
 /** Simplified Chinese copy. */
 export const zh: Record<WorkbenchLocaleKey, string> = {
+  // ---- B-3 融合生图参数化（姿态 / 镜头 / 风格 / 场景裁剪） ----
+  fusionPoseLabel: '姿态',
+  fusionPoseNone: '不指定（自由）',
+  poseStanding: '站立',
+  poseSitting: '坐姿',
+  poseWalking: '行走',
+  poseRunning: '奔跑',
+  poseFighting: '打斗',
+  poseCasting: '施法',
+  poseLookingUp: '抬头',
+  poseBackView: '背影',
+  fusionLensLabel: '镜头',
+  fusionLensNone: '不指定（自由）',
+  lensWide: '全景',
+  lensMedium: '中景',
+  lensCloseup: '近景',
+  lensExtremeCloseup: '特写',
+  lensHighAngle: '俯拍',
+  lensLowAngle: '仰拍',
+  lensOverhead: '顶拍',
+  fusionStyleNoteLabel: '风格备注',
+  fusionStyleNotePlaceholder: '例如：电影感光影、柔和色调…',
+  fusionCropLabel: '场景裁剪',
+  fusionCropEnable: '先裁剪选中的场景图再送模型',
+  fusionCropX: 'X',
+  fusionCropY: 'Y',
+  fusionCropWidth: '宽',
+  fusionCropHeight: '高',
+  fusionCropHint: '归一化 0–1 坐标；裁剪后的场景图会替换原图送模型。',
+  fusionCropActive: '裁剪中',
+  fusionCropInvalid: '裁剪无效：必须在 0–1 内，且每边至少保留 5%。',
+
+  // ---- B-4 视频续写显式模式 ----
+  videoContinuation: '续写（延续视频）',
+  videoContinuationHint: '紧接参考视频往后拍。必须有参考视频，缺参考视频直接拒绝，不静默降级。',
+  videoContinuationNeedsRefVideo: '续写需要参考视频——先选一条。',
+  videoContinuationPending: '续写中…',
+
+  // ---- B-5 成片多比例切片 ----
+  ratioSlicesTitle: '多比例导出',
+  ratioSlicesHint: '一条成片按多种画幅各导出一次。各比例只编码一次——不重新生成。',
+  ratioSlicesRun: '导出全部比例',
+  ratioSlicesBusy: '导出中…',
+  ratioSlicesNone: '至少选一个比例。',
+  ratioSlicesDone: '已排队 {n} 个比例导出。',
+  ratioSlicesFailed: '部分比例导出失败——看警告。',
+  ratioSlicesNeedsTimeline: '先打开一条时间轴。',
+  ratioPortrait9x16: '竖屏 9:16',
+  ratioSquare1x1: '方形 1:1',
+  ratioClassic4x3: '经典 4:3',
+
+  // ---- B-6 模型能力卡 + 提示词风控 ----
+  modelCardsTitle: '模型能力卡',
+  modelCardsHint: '按优势与能力矩阵选模型。出现漂移提示说明卡片与运行时能力不一致，使用前请核对。',
+  modelCardsEmpty: '暂无可用的模型卡。',
+  modelCardsLoadFailed: '模型卡加载失败。',
+  modelCardsDrift: '卡片与运行时能力漂移——依赖前请先核对。',
+  modelCardKindsImage: '图',
+  modelCardKindsVideo: '视频',
+  modelCardDuration: '时长',
+  modelCardDurationCustom: '可自定义',
+  modelCardDurationFixed: '固定',
+  modelCardRatios: '支持画幅',
+  modelCardCostLow: '低成本',
+  modelCardCostMedium: '中成本',
+  modelCardCostHigh: '高成本',
+  modelCardVerified: '已校验',
+  modelCardUnverified: '未校验',
+  modelFeatureOn: '支持',
+  modelFeatureOff: '不支持',
+  modelCardImageToVideo: '图生视频',
+  modelCardFirstLastFrame: '首尾帧',
+  modelCardMultiFrame: '多帧',
+  modelCardReferenceVideo: '参考视频',
+  modelCardAudio: '音频',
+  modelCardTips: '提示词技巧',
+  promptRiskTitle: '提示词风控',
+  promptRiskChecking: '检测中…',
+  promptRiskOk: '看起来安全',
+  promptRiskWarn: '需注意',
+  promptRiskBlock: '已拦截',
+  promptRiskBlocked: '该提示词被拦截——不会提交。',
+  promptRiskAdvice: '建议',
+  promptRiskFailed: '风控检测失败；自行承担风险提交。',
+
+  // ---- B-7 资源分类 + 重绘计划 ----
+  resourceFoldersTitle: '分类',
+  resourceFolderAll: '全部',
+  resourceFolderUncategorized: '未分类',
+  resourceFolderLabel: '分类',
+  resourceFolderPlaceholder: '给资源设置分类',
+  resourceFolderNone: '无分类',
+  redrawPlanTitle: '重绘计划',
+  redrawPlanRun: '生成重绘计划',
+  redrawPlanBusy: '生成中…',
+  redrawPlanPromptLabel: '建议提示词',
+  redrawPlanRefs: '参考图',
+  redrawPlanSuggestions: '建议',
+  redrawPlanWarnings: '提醒',
+  redrawPlanNone: '还没有计划。',
+  redrawPlanFailed: '重绘计划生成失败。',
+  redrawPlanToForm: '填入融合表单',
+  redrawPlanApplied: '已填入融合表单。',
+
+  // ---- B-18 物料手动挑选 + 匹配回显 ----
+  pipelineManualPick: '手动挑选物料',
+  pipelineManualPickHint: '强制把指定资源塞进流水线。留空则让剧本自动匹配。',
+  pipelineManualPickEmpty: '还没挑任何物料。',
+  pipelineManualPickClear: '清空',
+  pipelineManualPickCount: '已挑 {n} 个',
+  pipelineMatchedTitle: '匹配到的物料',
+  pipelineMatchedNone: '没有匹配到物料。',
+  pipelineMatchedItem: '{name} · {kind}',
+
   tabTitle: 'dsh-image-video 工作台',
   guideDescription: '图片与视频创作的项目、媒体素材与生成任务。',
   sectionProject: '项目',

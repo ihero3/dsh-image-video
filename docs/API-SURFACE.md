@@ -34,7 +34,7 @@
 | `prompts/check` | `{text}` | `{report:{level:ok|warn|block,hits[],advice[]}}` | **`B-6`** 提示词风险校验 |
 | `models/catalog` | — | `{cards[],consistencyIssues[],generatedAt}` | **`B-6`** 模型能力卡（与运行时能力常量自检） |
 | `media/compose` | `{projectId,prompt,resourceIds[],size?,model?}` | `{path,asset,referencedImages,resourceIds}` | **`A-4`** 融合生图：按创作资源收集参考图（`assetPaths` 优先，回退 `assetPath`）与描述，一次生成并登记素材；**无生成适配器时如实报错** |
-| `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）|
+| `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?,continuation?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）；**`continuation:true` 为显式「续写」意图（`B-4`，视频模式必须有参考视频，宿主校验，不静默降级）** |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界）；`A53` 起包格式 **v3**（含自定义预设，导入按名称去重），v1/v2 仍可导入 |
 | `maintenance/integrity` | — | `{integrity}`（`A104` 完整性巡检：悬空素材引用/孤儿记录/悬空资源使用，只报告不修复）|
