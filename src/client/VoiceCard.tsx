@@ -74,10 +74,10 @@ export function VoiceCard(props: VoiceCardProps) {
           {available ? (status?.provider ?? 'tts') : t('voiceNotReady')}
         </span>
       </div>
-      <div className="iv-card-body" style={{ display: 'grid', gap: '8px' }}>
+      <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
         <span className="iv-meta">{t('voiceHint')}</span>
         {available ? null : <span className="iv-meta" data-voice-reason={status?.reason ?? ''}>{status?.reason ?? ''}</span>}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--iv-sp-4)', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
             className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -103,7 +103,7 @@ export function VoiceCard(props: VoiceCardProps) {
         {plan === undefined
           ? null
           : (
-            <div data-voice-plan-result="true" style={{ display: 'grid', gap: '4px' }}>
+            <div data-voice-plan-result="true" style={{ display: 'grid', gap: 'var(--iv-sp-2)' }}>
               <span className="iv-chip">
                 {plan.lines.length} {t('voiceLines')} · {plan.totalChars} {t('voiceChars')} · {t('voiceEstimate')} {(plan.estimatedMs / 1000).toFixed(1)}s
               </span>

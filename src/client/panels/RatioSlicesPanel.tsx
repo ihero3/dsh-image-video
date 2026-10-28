@@ -3,11 +3,15 @@
  *
  * 只编码不重新生成（宿主 `timelines/render-ratios` 保证短边不变）。
  * 没有时间轴时如实提示，不假装能导出。
+ *
+ * `R6-3b`：无时间轴 / 运行出错 两种状态交给 `PanelState`——之前它们是被塞进
+ * `<span class="iv-meta">` 的一行小字，视觉上与普通说明文字没有区别。
  */
 import { useState } from 'react'
 import { Icon } from '../icons.tsx'
 import type { RenderRatioResult, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
+import { PanelState } from './PanelState.tsx'
 
 interface RatioSlicesPanelProps {
   readonly api: WorkbenchApi
@@ -49,13 +53,14 @@ export function RatioSlicesPanel({ api, t, timelineId, projectId }: RatioSlicesP
   }
 
   return (
-    <div className="iv-ratio-slices" data-ratio-slices="true">
-      <div className="iv-fusion-head">
-        <span className="iv-chip"><Icon name="film" size={11} />{t('ratioSlicesTitle')}</span>
+    <div className="iv-sub" data-ratio-slices="true">
+      <div className="iv-sub-head">
+        <span className="iv-sub-title"><Icon name="film" size={11} />{t('ratioSlicesTitle')}</span>
       </div>
       <span className="iv-meta">{t('ratioSlicesHint')}</span>
+
       {timelineId === undefined
-        ? <span className="iv-meta iv-meta--warn" data-ratio-needs-timeline="true">{t('ratioSlicesNeedsTimeline')}</span>
+        ? <PanelState view={{ kind: 'empty', icon: 'film', title: t('ratioSlicesNeedsTimeline') }} />
         : (
           <div className="iv-ratio-picks" data-ratio-picks="true">
             {RATIOS.map(ratio => (
@@ -71,6 +76,9 @@ export function RatioSlicesPanel({ api, t, timelineId, projectId }: RatioSlicesP
             ))}
           </div>
         )}
+
+      {busy ? <PanelState view={{ kind: 'refreshing' }} /> : null}
+
       <button
         type="button"
         className="iv-btn iv-btn--acc iv-btn--sm"
@@ -80,9 +88,20 @@ export function RatioSlicesPanel({ api, t, timelineId, projectId }: RatioSlicesP
       >
         {busy ? t('ratioSlicesBusy') : t('ratioSlicesRun')}
       </button>
+
       {error !== undefined
-        ? <span className="iv-meta iv-meta--warn" data-ratio-error="true">{error}</span>
+        ? (
+          <PanelState
+            view={{
+              kind: 'error',
+              message: error,
+              retryLabel: t('paneErrorRetry'),
+              onRetry: () => { void run() },
+            }}
+          />
+        )
         : null}
+
       {result === undefined
         ? null
         : (

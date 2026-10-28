@@ -50,4 +50,45 @@ describe('B8 accessibility', () => {
     expect((view.container.querySelector('[data-timeline-export-fps]') as HTMLSelectElement).getAttribute('aria-label')).toBe(en.fps)
     expect((view.container.querySelector('[data-timeline-export-aspect]') as HTMLSelectElement).getAttribute('aria-label')).toBe(en.paramRatio)
   })
+
+  it('moves focus into the help dialog, traps Tab, closes on Esc and returns focus', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const trigger = await screen.findByRole('button', { name: en.railHelp })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const dialog = await waitFor(() => {
+      const node = view.container.querySelector('.iv-help') as HTMLElement | null
+      expect(node).not.toBeNull()
+      return node!
+    })
+
+    // 打开即移入：焦点落在浮层内部，而不是继续留在背后的界面上
+    await waitFor(() => { expect(dialog.contains(document.activeElement)).toBe(true) })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('tabindex')).toBe('-1')
+
+    // Tab 在末尾回环到第一个（不逃出浮层）
+    const items = [...dialog.querySelectorAll<HTMLElement>('button')]
+    expect(items.length).toBeGreaterThan(0)
+    items[items.length - 1]!.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(items[0])
+
+    // Esc 关闭，并把焦点归还给触发按钮
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(view.container.querySelector('.iv-help')).toBeNull() })
+    await waitFor(() => { expect(document.activeElement).toBe(trigger) })
+
+    // 同一次渲染里顺手验播报区：常驻节点（无消息时也在），且可见提示条不带 role
+    const region = view.container.querySelector('[data-live-region]') as HTMLElement
+    expect(region).not.toBeNull()
+    expect(region.getAttribute('role')).toBe('status')
+    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(region.getAttribute('aria-atomic')).toBe('true')
+    const notice = view.container.querySelector('.iv-notice')
+    if (notice !== null) expect(notice.getAttribute('role')).toBeNull()
+  })
 })

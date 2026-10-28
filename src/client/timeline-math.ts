@@ -80,3 +80,65 @@ export function nextVideoClipStart(
     .sort((left, right) => left.startMs - right.startMs)
     .find(clip => clip.startMs >= afterMs)?.startMs
 }
+
+/** 键盘微调步长（ms）：方向键。 */
+export const KEYBOARD_NUDGE_MS = 100
+/** 键盘微调步长（ms）：按住 Shift（整秒，时间轴上更常用）。 */
+export const KEYBOARD_NUDGE_MS_FAST = 1000
+
+/**
+ * 毫秒 → `m:ss.d` 时间码。
+ *
+ * 专门给 `aria-valuetext` 用：读屏念"1:05.4"比念"65432 毫秒"有用得多，
+ * 而画面上的时间码走 `.iv-mono` 显示，两者不该互相替代。
+ * @param ms - 毫秒（负数按 0 处理）。
+ * @returns 形如 `0:01.2` 的字符串。
+ */
+export function formatTimecode(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms)) / 1000
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds - minutes * 60
+  return `${minutes}:${seconds.toFixed(1).padStart(4, '0')}`
+}
+
+/**
+ * 把一次按键换算成手柄的毫秒增量（键盘与拖拽共用同一套边界规则）。
+ *
+ * 为什么用毫秒而不是"帧"：时间轴内部只以毫秒为单位，**没有帧率基准**
+ * （导出 fps 是导出设置，与编辑粒度不是一回事）。凭空假设 25fps 会让
+ * "1 帧"变成一个说不出依据的数字；等时间轴真引入帧率再切。
+ *
+ * @param key - `KeyboardEvent.key`。
+ * @param fast - 是否按住 Shift。
+ * @param clip - 手柄所属片段的 `{startMs, durationMs}`。
+ * @param totalMs - 时间轴总时长（右手柄的 End 不能拖出这条轨）。
+ * @param side - 哪一侧手柄。
+ * @returns 增量毫秒；按键不归这里管时返回 `undefined`（调用方不要 `preventDefault`）。
+ */
+export function nudgeDeltaForKey(
+  key: string,
+  fast: boolean,
+  clip: { readonly startMs: number; readonly durationMs: number },
+  totalMs: number,
+  side: 'left' | 'right',
+): number | undefined {
+  const step = fast ? KEYBOARD_NUDGE_MS_FAST : KEYBOARD_NUDGE_MS
+  switch (key) {
+    case 'ArrowLeft':
+    case 'ArrowDown':
+      return -step
+    case 'ArrowRight':
+    case 'ArrowUp':
+      return step
+    case 'Home':
+      // 左：回到 0；右：收到最短时长
+      return side === 'left' ? -clip.startMs : MIN_CLIP_MS - clip.durationMs
+    case 'End':
+      // 左：推到"再推就短于最短时长"的位置；右：拉到上限或轨道末端
+      return side === 'left'
+        ? clip.durationMs - MIN_CLIP_MS
+        : Math.max(MIN_CLIP_MS, Math.min(MAX_CLIP_DURATION_MS, totalMs - clip.startMs)) - clip.durationMs
+    default:
+      return undefined
+  }
+}

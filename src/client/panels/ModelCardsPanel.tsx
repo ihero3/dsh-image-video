@@ -3,11 +3,15 @@
  *
  * 只展示、不强制——卡片字段不参与生成逻辑（生成仍由宿主/表单决定）。
  * `consistencyIssues` 非空说明卡片与运行时能力漂移，照实提示，不粉饰。
+ *
+ * `R6-3b`：加载 / 空 / 错误 / 刷新中四种非内容态统一交给 `PanelState`；
+ * 出错时**保留已有卡片**（只在顶部挂告警），不再把内容整块顶掉。
  */
 import { useEffect, useState } from 'react'
 import { Icon } from '../icons.tsx'
 import type { ModelCardView, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
+import { PanelState } from './PanelState.tsx'
 
 interface ModelCardsPanelProps {
   readonly api: WorkbenchApi
@@ -53,29 +57,55 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
 
   useEffect(() => { void load() }, [])
 
+  const retry = () => { void load() }
+  const errorView = (
+    <PanelState
+      view={{
+        kind: 'error',
+        message: t('modelCardsLoadFailed'),
+        detail: error,
+        retryLabel: t('paneErrorRetry'),
+        onRetry: retry,
+      }}
+    />
+  )
+
   return (
-    <div className="iv-model-cards" data-model-cards="true">
-      <div className="iv-fusion-head">
-        <span className="iv-chip"><Icon name="sparkles" size={11} />{t('modelCardsTitle')}</span>
-        <button
-          type="button"
-          className="iv-btn iv-btn--ghost iv-btn--sm"
-          data-model-cards-reload="true"
-          disabled={loading}
-          onClick={() => { void load() }}
-        >
-          {loading ? t('modelCardsLoadFailed') : '↻'}
-        </button>
+    <div className="iv-sub" data-model-cards="true">
+      <div className="iv-sub-head">
+        <span className="iv-sub-title"><Icon name="sparkles" size={11} />{t('modelCardsTitle')}</span>
+        <div className="iv-sub-actions">
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-model-cards-reload="true"
+            disabled={loading}
+            onClick={retry}
+          >
+            {/* 加载中显示省略号：此前这里误用了「加载失败」文案，看起来像刚失败过 */}
+            {loading ? '…' : '↻'}
+          </button>
+        </div>
       </div>
       <span className="iv-meta">{t('modelCardsHint')}</span>
-      {error !== undefined
-        ? <span className="iv-meta iv-meta--warn" data-model-cards-error="true">{t('modelCardsLoadFailed')}：{error}</span>
-        : null}
+
+      {/* 刷新中：保留旧卡片，只在顶部给一条细进度 */}
+      {loading && cards !== undefined ? <PanelState view={{ kind: 'refreshing' }} /> : null}
+
+      {/* 出错但有旧数据：告警挂在顶部，卡片不消失 */}
+      {error !== undefined && cards !== undefined ? errorView : null}
+
       {drift.length > 0
         ? <span className="iv-meta iv-meta--warn" data-model-cards-drift="true">{t('modelCardsDrift')}：{drift.join('；')}</span>
         : null}
-      {cards === undefined
-        ? <span className="iv-meta">{t('modelCardsEmpty')}</span>
+
+      {/* 空数组与"还没加载"都要给空态：此前返回 [] 时会渲染一个空白网格，看着像坏了 */}
+      {cards === undefined || cards.length === 0
+        ? (loading
+            ? <PanelState view={{ kind: 'loading' }} />
+            : error !== undefined
+              ? errorView
+              : <PanelState view={{ kind: 'empty', icon: 'sparkles', title: t('modelCardsEmpty'), hint: t('modelCardsHint') }} />)
         : (
           <div className="iv-card-grid" data-model-cards-grid="true">
             {cards.map(card => (

@@ -153,7 +153,7 @@ export function PipelineCard(props: PipelineCardProps) {
 
       {open
         ? (
-          <div className="iv-card-body" style={{ display: 'grid', gap: '8px' }}>
+          <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
             <span className="iv-meta">{t('pipelineHint')}</span>
             <span className="iv-meta">{t('pipelineScriptLabel')}</span>
             <textarea
@@ -166,7 +166,7 @@ export function PipelineCard(props: PipelineCardProps) {
               onChange={event => setScript(event.target.value)}
               style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
             />
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 'var(--iv-sp-5)', flexWrap: 'wrap', alignItems: 'center' }}>
               <label className="iv-check">
                 <select
                   className="iv-input"
@@ -290,7 +290,7 @@ export function PipelineCard(props: PipelineCardProps) {
             {result === undefined
               ? null
               : (
-                <div className="iv-card-note" data-pipeline-result="true" style={{ display: 'grid', gap: '4px' }}>
+                <div className="iv-card-note" data-pipeline-result="true" style={{ display: 'grid', gap: 'var(--iv-sp-2)' }}>
                   <span className="iv-chip iv-chip--ok">
                     <Icon name="check" size={11} />
                     {(started ? t('pipelineStarted') : t('pipelineComposed'))}：{result.name}
@@ -308,12 +308,12 @@ export function PipelineCard(props: PipelineCardProps) {
                   {(result.missingResources ?? []).length === 0
                     ? <span className="iv-meta" data-pipeline-missing-none="true">{t('pipelineMissingNone')}</span>
                     : (
-                      <div style={{ display: 'grid', gap: '4px' }} data-pipeline-missing="true">
+                      <div style={{ display: 'grid', gap: 'var(--iv-sp-2)' }} data-pipeline-missing="true">
                         <span className="iv-meta">
                           <Icon name="alert" size={11} /> {t('pipelineMissingTitle')}
                         </span>
                         <span className="iv-meta">{t('pipelineMissingHint')}</span>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                           {(result.missingResources ?? []).map(name => (
                             <span className="iv-chip iv-chip--warn" key={name} data-pipeline-missing-item={name}>
                               <span style={{ marginRight: '4px' }}>{name}</span>
@@ -338,9 +338,9 @@ export function PipelineCard(props: PipelineCardProps) {
                   {result.matchedResources === undefined || result.matchedResources.length === 0
                     ? null
                     : (
-                      <div data-pipeline-matched="true" style={{ display: 'grid', gap: '4px' }}>
+                      <div data-pipeline-matched="true" style={{ display: 'grid', gap: 'var(--iv-sp-2)' }}>
                         <span className="iv-meta"><Icon name="layers" size={11} /> {t('pipelineMatchedTitle')}</span>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                           {result.matchedResources.map(item => (
                             <span key={item.resourceId} className="iv-chip" data-pipeline-matched-item={item.resourceId}>
                               {t('pipelineMatchedItem').replace('{name}', item.name).replace('{kind}', item.kind)}

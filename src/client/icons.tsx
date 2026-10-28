@@ -1,9 +1,13 @@
 /**
- * 工作台图标集：16px 基准的描边图标（`currentColor` 继承文字颜色）。
+ * 工作台图标集：24 视窗、1.8 描边、圆角线帽的描边图标（`currentColor` 继承文字颜色）。
+ *
+ * 尺寸口径：默认渲染 14px，与 11–12px 正文搭配；同组图标共用同一尺寸阶梯
+ * （12 micro / 14 inline / 16 按钮内 / 22 pane-tile），见 `docs/UI-POLISH-PLAN.md` §3.2。
  *
  * 客户端产物由 `window.__ModuleLoader__` 以 JS 载入，不经过 Harness 的 CSS 打包链，
  * 所以图标与样式都走「内嵌 + 挂载时注入」的同一条路（见 `workbench-style.ts`）。
- * 全部图形为 24 视窗、1.8 描边、圆角线帽，保证与小字号（11–12px）搭配时清晰。
+ * 新增图标：单 path 进 {@link STROKE}、多元素进 {@link SHAPES}；**不要**外贴填充/异描边/
+ * 异网格的图标集，风格契约由 `tests/client-design-system.test.tsx` 守住。
  */
 import type { ReactNode } from 'react'
 
@@ -74,6 +78,17 @@ const SHAPES: Partial<Record<IconName, ReactNode>> = {
     </>
   ),
 }
+
+/**
+ * 全部图标名（`STROKE` 与 `SHAPES` 的键）。
+ *
+ * 由两张表派生而不是手工维护：新增图标只要进了表就自动纳入契约测试，
+ * 不会出现"加了 `IconName` 却忘了加图形"（渲染出空 svg）的漂移。
+ */
+export const ICON_NAMES: readonly IconName[] = [
+  ...(Object.keys(STROKE) as IconName[]),
+  ...(Object.keys(SHAPES) as IconName[]),
+]
 
 /** 图标组件的对外属性。 */
 export interface IconProps {

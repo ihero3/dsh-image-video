@@ -12,7 +12,7 @@
  * colours resolve through the Harness design tokens with currentColor-mix
  * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
-import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -21,7 +21,7 @@ import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchOptions } from '../workbench-contract.ts'
 import { defaultParams, WORKFLOW_TEMPLATES, type NodeParamValue, type WorkflowRunRecord, type WorkflowRecord } from '../workbench/workflow.ts'
 import {
-  activeClipAt, CLIP_SPEED_RANGE, effectiveDurationMs, MAX_CLIP_FADE_MS, MAX_CLIP_TRANSITION_MS, MAX_TRACK_FADE_MS,
+  activeClipAt, CLIP_SPEED_RANGE, effectiveDurationMs, MAX_CLIP_DURATION_MS, MAX_CLIP_FADE_MS, MAX_CLIP_TRANSITION_MS, MAX_TRACK_FADE_MS,
   timelineDurationMs, type ClipTransition, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind,
 } from '../workbench/timeline.ts'
 import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
@@ -33,10 +33,12 @@ import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import { VirtualList } from './VirtualList.tsx'
 import { PaneBoundary } from './PaneBoundary.tsx'
+import { useDialogFocus } from './use-dialog-focus.ts'
 import { PipelineCard } from './PipelineCard.tsx'
 import { VoiceCard } from './VoiceCard.tsx'
 import {
-  LANE_PADDING_PX, laneTimeFromClientX, MIN_TIMELINE_MS, nextVideoClipStart, resizeClipLeft, resizeClipRight,
+  formatTimecode, LANE_PADDING_PX, laneTimeFromClientX, MIN_CLIP_MS, MIN_TIMELINE_MS, nextVideoClipStart,
+  nudgeDeltaForKey, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
@@ -475,6 +477,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [exportsTick, setExportsTick] = useState(0)
   // `B-17` 帮助浮层（快捷键 + 模式说明）。
   const [helpOpen, setHelpOpen] = useState(false)
+
+  /**
+   * 两个阻断式浮层的焦点管理（R6-3）：打开移入、Tab 循环、Esc 关闭、关闭后归还。
+   *
+   * 它们的开合方式不一样（帮助是 boolean、默认值编辑器是"draft 是否存在"），
+   * 但焦点行为必须一致，否则用户在两个浮层里会得到两种 Tab 手感。
+   */
+  const helpPanelRef = useRef<HTMLDivElement>(null)
+  const defaultsPanelRef = useRef<HTMLDivElement>(null)
+  const closeHelp = useCallback(() => { setHelpOpen(false) }, [])
+  const closeDefaults = useCallback(() => { setDefaultsDraft(undefined) }, [])
+  useDialogFocus(helpOpen, helpPanelRef, closeHelp)
+  useDialogFocus(defaultsDraft !== undefined, defaultsPanelRef, closeDefaults)
 
   /** 生成后刷新当前项目的素材列表。 */
   const refreshAssetsAfterGenerate = async (): Promise<void> => {
@@ -1053,6 +1068,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     event.preventDefault()
     event.stopPropagation()
     setResizing({ trackId, clipId, side, startX: event.clientX })
+  }
+
+  /**
+   * 手柄键盘微调（`WCAG 2.1 SC 2.1.1`：指针操作必须有键盘等价）。
+   *
+   * 方向键 100ms、Shift + 方向键 1s、Home/End 到两端；边界规则直接复用拖拽那对
+   * `resizeClip*` 纯函数，所以"键盘能拖到哪"与"鼠标能拖到哪"完全一致。
+   */
+  const onHandleKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    trackId: string,
+    clipId: string,
+    side: 'left' | 'right',
+  ): void => {
+    const clip = timeline?.tracks.find(track => track.id === trackId)?.clips.find(item => item.id === clipId)
+    if (clip === undefined) return
+    const deltaMs = nudgeDeltaForKey(event.key, event.shiftKey, clip, timelineTotal, side)
+    if (deltaMs === undefined) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (deltaMs === 0) return
+    patchTrack(trackId, current => ({
+      ...current,
+      clips: current.clips.map(item => {
+        if (item.id !== clipId) return item
+        return side === 'left'
+          ? { ...item, ...resizeClipLeft(item, deltaMs) }
+          : { ...item, ...resizeClipRight(item, deltaMs) }
+      }),
+    }))
   }
 
   // 手柄拖动：像素差 → 毫秒差（按 lane 宽度比例），实时落库（去抖保存兜底）
@@ -2058,7 +2103,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <Icon name="sliders" />{t('defaultsEdit')}
               </button>
               {defaultsDraft === undefined ? null : (
-                <div className="iv-pop-panel" data-workbench-defaults-editor="true" role="dialog" aria-label={t('defaultsTitle')}>
+                <div
+                  className="iv-pop-panel"
+                  ref={defaultsPanelRef}
+                  tabIndex={-1}
+                  data-workbench-defaults-editor="true"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={t('defaultsTitle')}
+                >
                   <div className="iv-pop-head">
                     <Icon name="sliders" size={14} />
                     <span className="iv-pop-head-txt">
@@ -2145,7 +2198,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
       {/* ============ 提示条 ============ */}
       {notice === undefined ? null : (
-        <p className={`iv-notice${notice.tone === 'error' ? ' iv-notice--error' : ''}`} role="status">
+        <p className={`iv-notice${notice.tone === 'error' ? ' iv-notice--error' : ''}`}>
           <Icon name={notice.tone === 'error' ? 'alert' : 'check'} />
           <span>{notice.tone === 'error' ? `${t('failed')}: ` : ''}{notice.text}</span>
         </p>
@@ -2249,7 +2302,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <div className="iv-hero">
                     <div className="iv-hero-top">
                       <span className="iv-hero-ico"><Icon name="bolt" size={19} /></span>
-                      <div style={{ display: 'grid', gap: '1px' }}>
+                      <div style={{ display: 'grid', gap: 'var(--iv-sp-1)' }}>
                         <h3 className="iv-hero-title">{t('modeQuick')}</h3>
                         <span className="iv-meta">{busy ? t('busy') : t('emptyHint')}</span>
                       </div>
@@ -2262,7 +2315,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <Icon name="chevron" className="iv-step-arrow" size={12} />
                       <span className="iv-step"><span className="iv-step-n">3</span>{t('heroStepFile')}</span>
                     </div>
-                    <div style={{ display: 'grid', gap: '6px' }}>
+                    <div style={{ display: 'grid', gap: 'var(--iv-sp-3)' }}>
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
                       <textarea
                         className="iv-input"
@@ -2282,7 +2335,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-meta" data-generate-shortcut="true">{t('generateShortcutHint')}</span>
                       {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
                       <div className="iv-refs" data-generate-refs="true">
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className="iv-meta">{t('generateRefsLabel')}：</span>
                           {generateImages.length === 0
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
@@ -2380,7 +2433,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                       {/* `G4` 首尾帧 / 视频编辑槽：尾帧图 + 参考视频 + 真人勾选（仅视频生成生效） */}
                       <div className="iv-vslots" data-video-slots="true">
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className="iv-meta">{t('videoLastFrame')}：</span>
                           {generateLastFrame === undefined
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
@@ -2406,7 +2459,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             {t('generateUseSelected')}
                           </button>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className="iv-meta">{t('videoReferenceVideo')}：</span>
                           {generateRefVideo === undefined
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
@@ -2455,7 +2508,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : <span className="iv-meta" data-video-edit-pending="true">{t('videoEditPending')}</span>}
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="iv-meta">{t('defaultImageSize')}：</span>
                         <input
                           className="iv-input"
@@ -2484,7 +2537,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           onChange={event => setGenerateDuration(event.target.value)}
                         />
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="iv-btn iv-btn--acc iv-btn--sm"
@@ -2706,7 +2759,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : <span className="iv-meta iv-meta--warn" data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
                           type="button"
                           className="iv-btn iv-btn--acc iv-btn--sm"
@@ -2725,7 +2778,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <span className="iv-chip"><Icon name="sparkles" size={11} />{t('promptTitle')}</span>
                         <span className="iv-meta">{t('promptSavedCount').replace('{n}', String(prompts.length))}</span>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
                           type="button"
                           className="iv-btn iv-btn--sm"
@@ -2741,7 +2794,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             : baseName(selectedAsset.path)}
                         </span>
                       </div>
-                      <div style={{ display: 'grid', gap: '4px' }}>
+                      <div style={{ display: 'grid', gap: 'var(--iv-sp-2)' }}>
                         <span className="iv-meta">{t('promptDraftLabel')}</span>
                         <textarea
                           className="iv-input"
@@ -2752,7 +2805,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                         />
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
                         <input
                           className="iv-input"
                           style={{ width: '160px' }}
@@ -3158,9 +3211,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ? (
                 <section className="iv-pane" data-workbench-pane="paneTimeline" data-workbench-planned="false">
                   <PaneBoundary label={t('timelineTitle')} t={t}>
-                  <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
-                  {/* `B-5` 成片多比例切片：一条成片按多种画幅各导出一次 */}
-                  <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="film" size={13} /></span>
                     <h3 className="iv-pane-title">{t('timelineTitle')}</h3>
@@ -3454,7 +3504,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           role="separator"
                                           aria-orientation="vertical"
                                           aria-label={`${t('clipResizeStart')} ${clip.id}`}
+                                          tabIndex={0}
+                                          aria-valuemin={0}
+                                          aria-valuemax={Math.round(clip.startMs + clip.durationMs - MIN_CLIP_MS)}
+                                          aria-valuenow={Math.round(clip.startMs)}
+                                          aria-valuetext={formatTimecode(clip.startMs)}
                                           onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'left') }}
+                                          onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'left') }}
                                         />
                                         <div
                                           className="iv-clip-h iv-clip-h--r"
@@ -3462,7 +3518,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           role="separator"
                                           aria-orientation="vertical"
                                           aria-label={`${t('clipResizeEnd')} ${clip.id}`}
+                                          tabIndex={0}
+                                          aria-valuemin={Math.round(clip.startMs + MIN_CLIP_MS)}
+                                          aria-valuemax={Math.round(clip.startMs + Math.min(MAX_CLIP_DURATION_MS, Math.max(MIN_CLIP_MS, timelineTotal - clip.startMs)))}
+                                          aria-valuenow={Math.round(clip.startMs + clip.durationMs)}
+                                          aria-valuetext={formatTimecode(clip.startMs + clip.durationMs)}
                                           onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'right') }}
+                                          onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'right') }}
                                         />
                                         <div className="iv-clip-top">
                                           <Icon name={TRACK_ICONS[track.kind]} size={11} />
@@ -3687,6 +3749,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       ))}
                     </div>
                   </div>
+                  <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
+                  {/* `B-5：配音卡与多比例导出属辅助动作，放在主内容之后` 成片多比例切片：一条成片按多种画幅各导出一次 */}
+                  <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
                   <p className="iv-meta">{t('previewNote')}</p>
                   </PaneBoundary>
                 </section>
@@ -4020,7 +4085,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
                 <h3 className="iv-pane-title">{t('panePreview')}</h3>
               </div>
-              <div className="iv-pane-body">
+              <>
                 {hostIsLoopback
                   ? null
                   : (
@@ -4028,7 +4093,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       color: 'var(--iv-warn)', background: 'var(--iv-warn-soft)',
                       border: '1px solid color-mix(in srgb, var(--iv-warn) 32%, transparent)',
                       borderRadius: '5px', padding: '6px 9px', fontSize: '10.5px',
-                      display: 'flex', alignItems: 'flex-start', gap: '6px',
+                      display: 'flex', alignItems: 'flex-start', gap: 'var(--iv-sp-3)',
                     }}>
                       <Icon name="alert" size={12} />
                       <span>{t('hostHintRemote')}</span>
@@ -4055,14 +4120,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
                       />
                     )}
-              </div>
+              </>
               </PaneBoundary>
             </section>
 
             <section className="iv-pane" data-workbench-pane="paneResources" data-workbench-planned="false">
               <PaneBoundary label={t('paneResources')} t={t}>
-              {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补） */}
-              <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneResources')}</h3>
@@ -4078,7 +4141,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   />
                 </div>
               </div>
-              <div className="iv-pane-body">
+              <>
                 {/* `G2` 物料库分栏：角色/场景/物品三栏 + 「其他」下拉（其余 kind 各一栏） */}
                 <div className="iv-tabs" role="tablist" aria-label={t('resourceLibraries')}>
                   {(['role', 'scene', 'prop'] as const).map(kind => (
@@ -4369,7 +4432,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     )
                   }} />
                 )}
-              </div>
+              </>
+              {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补）
+                  —— 属辅助动作，放在三栏物料库之后，不再抢在面板标题前面 */}
+              <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
               </PaneBoundary>
             </section>
 
@@ -4379,7 +4445,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneTasks')}</h3>
               </div>
-              <div className="iv-pane-body">
+              <>
                 {tasks.length === 0
                   ? (
                     <div className="iv-empty">
@@ -4417,7 +4483,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     />
                   )} />
                 )}
-              </div>
+              </>
               </PaneBoundary>
             </section>
 
@@ -4485,11 +4551,30 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         </div>
       </footer>
 
+      {/*
+        常驻播报区：可见的提示条只负责"看得到"，读屏由这里统一播报（同一句话只播一次）。
+        必须**常驻**——`role="status"` 只有作用在已存在于 DOM 的元素上才可靠；
+        提示条是条件渲染的，节点随内容插入时很多读屏组合根本不播报。
+
+        为什么内联而不抽成组件：抽成独立函数组件后，在 jsdom 里渲染工作台会让测试进程
+        直接被内存杀掉（内联等价实现正常，原因未定位）。只此一处使用，内联即可；
+        真要在别处复用再抽，届时先跑通测试。
+      */}
+      <div
+        data-live-region="true"
+        role="status"
+        aria-live={notice?.tone === 'error' ? 'assertive' : 'polite'}
+        aria-atomic="true"
+        style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}
+      >
+        {notice?.text ?? ''}
+      </div>
+
       {/* ============ B-17 帮助浮层（快捷键 + 模式说明）============ */}
       {helpOpen
         ? (
           <div className="iv-help-mask" data-workbench-help="true" onClick={event => { if (event.target === event.currentTarget) setHelpOpen(false) }}>
-            <div className="iv-help" role="dialog" aria-label={t('helpTitle')}>
+            <div className="iv-help" ref={helpPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t('helpTitle')}>
               <h4>{t('helpTitle')}</h4>
               <h4>{t('helpModes')}</h4>
               <ul className="iv-help-list">
