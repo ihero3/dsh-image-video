@@ -21,7 +21,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const OUT_DIR = resolve(__dirname, '../docs/ui-baseline')
+// 产物目录可配：采基线写 docs/ui-baseline（入库），采新图写 docs/ui-baseline/current（不入库），
+// 否则一采集就把基线覆盖掉，diff 永远为 0。用 DSH_BASELINE_OUT 切换。
+const OUT_DIR = resolve(__dirname, '..', process.env.DSH_BASELINE_OUT || 'docs/ui-baseline')
 const BASE_URL = process.env.DSH_WEB_URL || 'http://localhost:5173'
 
 // 场景定义：name -> 操作函数（在已加载页面上执行）

@@ -6,3 +6,7 @@ lib/
 *.tgz
 
 _commit_msg.txt
+
+# 视觉回归：基线 PNG 入库，新采图与标红图不入库（每次改样式都变）
+docs/ui-baseline/current/
+docs/ui-baseline/diff/
