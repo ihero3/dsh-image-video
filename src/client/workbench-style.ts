@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-27.2'
+export const WORKBENCH_STYLE_VERSION = '2026-10-29.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -86,7 +86,11 @@ export const WORKBENCH_STYLE = `
   --iv-shadow-acc-hover:0 2px 6px color-mix(in srgb,var(--iv-acc) 45%,transparent);
   --iv-shadow-2:0 8px 24px color-mix(in srgb,#000 30%,transparent);
   --iv-shadow-3:0 18px 46px color-mix(in srgb,#000 30%,transparent),0 2px 8px color-mix(in srgb,#000 16%,transparent);
-  display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:hidden;
+  /* 根容器必须自己撑满：宿主把 tab 内容挂进 display:flex + flex-direction:column 的容器，
+     中间那层包装是 display:contents（不产生盒子），于是 .iv 直接成为 flex item；
+     只写 height:100% 时宽度会收缩到内容最小宽（实测 8px，整个工作台被压成一条竖线，
+     看起来就是"插件打不开"）。width:100% + min-width:0 让它在任何宿主布局下都撑满可用宽度。 */
+  display:flex;flex-direction:column;width:100%;min-width:0;height:100%;box-sizing:border-box;overflow:hidden;
   font:inherit;color:var(--iv-tx);font-size:var(--iv-fs-root);line-height:1.5;
 }
 .iv *,.iv *::before,.iv *::after{box-sizing:border-box}

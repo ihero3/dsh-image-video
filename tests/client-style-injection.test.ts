@@ -49,4 +49,16 @@ describe('workbench stylesheet injection', () => {
     expect(WORKBENCH_STYLE).toContain('--iv-surface:color-mix(in srgb,var(--iv-panel)')
     expect(WORKBENCH_STYLE).not.toContain('--dsw-alias-bg-l1')
   })
+
+  it('根容器 .iv 自己撑满宽度（否则宿主 flex 包装会把它收缩成一条竖线）', () => {
+    // 回归：宿主把 tab 内容挂进 display:flex;column 的容器，中间包装是 display:contents，
+    // 于是 .iv 成为 flex item。只写 height:100% 时宽度会被收缩到内容最小宽（实测 8px），
+    // 表现为"插件打不开/一片空白"。必须显式 width:100% + min-width:0。
+    const rootRule = WORKBENCH_STYLE.match(/\.iv\{([^}]*)\}/)
+    expect(rootRule).not.toBeNull()
+    const body = rootRule?.[1] ?? ''
+    expect(body).toContain('width:100%')
+    expect(body).toContain('min-width:0')
+    expect(body).toContain('height:100%')
+  })
 })
