@@ -2,6 +2,19 @@
 
 （下一轮的改动写这里）
 
+### 批次七十五（上游切新站 www.threevideo.com + key 统一 + 真机验收通过）
+- **上游**：生图/生视频 `baseURL` 由 `https://api.threerouter.com/v1` 切到 **`https://www.threevideo.com/v1`**
+  （2026-10-29 新站恢复该账号分组：`GET /v1/models` 200，8 个模型含 `qwen-image-3.0` / `minimax-h3` / `wan3.0-video`）。
+- **key 统一**：dev-home、`~/.dsh` 两个 profile 的 image-video `apiKey` 与 `THREEVIDEO_API_KEY` 统一为同一把；
+  对话模型仍留旧站（新站暂无 deepseek 对话模型），配置内已注明原因（不是笔误）。
+- **真机验收（付费，通过）**：`minimax-h3` 文生视频 10 秒、超宽画幅（实际出片 **1536×672 ≈ 2.29:1**、24fps、
+  10.125 秒、4.3 MB、h264）；任务走新站 `/v1/media/generations` 提交 + `/v1/media/{id}` 轮询 + content 下载，
+  产物落 `outputs/`。抽帧核对：暗紫水晶心→三次敲击裂纹→能量爆发→废墟变花园→弹幕四句→高潮定格，与脚本时间轴一致。
+- **接口兼容性备注**：新站 `/v1/images/generations/async` 返回 404 `async image tasks are not enabled`，
+  插件自动回落同步提交（与旧站一致，无需改代码）。
+- **TLS 备注**：新站为 TLS1.2 + ECDSA 证书，macOS 自带 `curl`（LibreSSL）握手被 reset，Node/Chrome 正常；
+  命令行调试请用 Node/Python，勿用系统 curl。
+
 ### 批次七十四（真机核对 + 画布"有节点没连线"修复）
 - **真机核对（2026-10-26 17:26，通过）**：`/image-video/status` v1.0.0 · provider threevideo；
   工作台数据自动迁移到 **schemaVersion 5**（备份 `workbench.json.pre-migrate-v4` 已生成）；
