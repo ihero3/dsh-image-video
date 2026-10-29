@@ -10,6 +10,8 @@
 - **真机验收（付费，通过）**：`minimax-h3` 文生视频 10 秒、超宽画幅（实际出片 **1536×672 ≈ 2.29:1**、24fps、
   10.125 秒、4.3 MB、h264）；任务走新站 `/v1/media/generations` 提交 + `/v1/media/{id}` 轮询 + content 下载，
   产物落 `outputs/`。抽帧核对：暗紫水晶心→三次敲击裂纹→能量爆发→废墟变花园→弹幕四句→高潮定格，与脚本时间轴一致。
+- **图片验收（付费，通过）**：`minimax-image-01` 文生图 1024×1024、229 KB、水印 `Threevideo`（bottom-right）；
+  调用日志显示「异步端点 404 → 降级为同步单次提交」的透明告知与预期一致（同步路径无幂等键，故不自动重试）。
 - **接口兼容性备注**：新站 `/v1/images/generations/async` 返回 404 `async image tasks are not enabled`，
   插件自动回落同步提交（与旧站一致，无需改代码）。
 - **TLS 备注**：新站为 TLS1.2 + ECDSA 证书，macOS 自带 `curl`（LibreSSL）握手被 reset，Node/Chrome 正常；
