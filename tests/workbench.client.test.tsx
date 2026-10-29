@@ -565,7 +565,7 @@ describe('workbench project and asset flow', () => {
     fireEvent.click(screen.getByRole('button', { name: en.compactAssets }))
     await waitFor(() => { expect(host.calls).toContain('maintenance/compact') })
     expect(host.assets).toHaveLength(1)
-    expect(await screen.findByText(new RegExp(en.compacted))).toBeTruthy()
+    expect(await screen.findByText(new RegExp(en.compacted), { selector: '.iv-notice span' })).toBeTruthy()
   })
 
   it('filters assets by media kind', async () => {
@@ -623,7 +623,7 @@ describe('workbench project and asset flow', () => {
     fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
     await waitFor(() => { expect(host.assets).toHaveLength(2) })
     fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
-    const info = await screen.findByText(new RegExp(en.alreadyRegistered))
+    const info = await screen.findByText(new RegExp(en.alreadyRegistered), { selector: '.iv-notice span' })
     expect(info.textContent).not.toContain(en.failed)
   })
 
@@ -647,7 +647,7 @@ describe('workbench project and asset flow', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: `${en.registerAsAsset} tsk-dup` }))
     // 同一路径第二次登记：不新增素材，并提示"已登记过"
-    expect(await screen.findByText(new RegExp(en.alreadyRegistered))).toBeTruthy()
+    expect(await screen.findByText(new RegExp(en.alreadyRegistered), { selector: '.iv-notice span' })).toBeTruthy()
     expect(host.assets).toHaveLength(1)
     expect(host.calls.filter(call => call === 'assets/attach')).toHaveLength(1)
   })
@@ -713,7 +713,7 @@ describe('workbench project and asset flow', () => {
     await screen.findByText(en.projectNone)
     fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: '坏项目' } })
     fireEvent.click(screen.getByRole('button', { name: en.create }))
-    const failure = await screen.findByText(new RegExp(`host said no`))
+    const failure = await screen.findByText(new RegExp(`host said no`), { selector: '.iv-notice span' })
     // 失败提示要带「操作失败」前缀（信息类提示不带，见下一条用例）
     expect(failure.textContent).toContain(en.failed)
   })

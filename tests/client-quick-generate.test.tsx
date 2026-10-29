@@ -37,7 +37,7 @@ describe('quick create generate (A149)', () => {
 
     await waitFor(() => { expect(spy).toHaveBeenCalledTimes(1) })
     expect(spy.mock.calls[0]![0]).toMatchObject({ mediaMode: 'image', prompt: '雨夜霓虹，特写', projectId: 'prj-1' })
-    await waitFor(() => { expect(screen.getByText(en.generateDone)).toBeTruthy() })
+    await waitFor(() => { expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.generateDone) })
   })
 
   it('runs video non-blocking and can cancel it', async () => {

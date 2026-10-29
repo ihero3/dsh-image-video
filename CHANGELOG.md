@@ -2,6 +2,25 @@
 
 （下一轮的改动写这里）
 
+### 批次七十七（右侧工作台「打不开」根因修复 + 门禁修绿）
+- **现象**：点右侧 `dsh-image-video 工作台` tab，内容被压成一条竖线（像"插件打不开"）。
+- **真因（CSS 分组选择器误伤根元素）**：
+  `.iv,.iv ::-webkit-scrollbar{width:8px;height:8px}` —— 分组里第一个 `.iv` 匹配的是
+  **元素本身**而不是滚动条伪元素，于是根容器被设成 **8×8px**（正好是滚动条尺寸）。
+  它与 `.iv{…}` 同特异性且规则在后，把撑满宽度覆盖掉；连锁表现：
+  `grid-template-columns` 变 `42px 0px`、停靠区退化到 `minmax(232px,1fr)` 下限、
+  `paneTasks` 被撑到 2208px 高、提示词框只剩 149px 宽。
+- **修复**：四条滚动条规则全部只命中伪元素（`.iv::-webkit-scrollbar, .iv ::-webkit-scrollbar …`）；
+  `.iv` 另加 `width:100%;min-width:0` 兜底，不再依赖宿主如何包裹。
+  样式版本 `2026-10-29.1 → 2026-10-29.2`。
+- **真机验证**：`.iv` **8×8px → 673×1017px**，提示词框 **149 → 581px**，面板列宽恢复 297px，
+  7 个停靠面板全部正常；一键成片 / 快速创作 / 融合生图（含姿态·镜头选择器）可见可用。
+- **门禁修绿**：Round 6 加了常驻 a11y live region（`data-live-region`）后，9 个 client 测试
+  因 `getByText` / `getByRole('status')` 同时命中「可见提示条 + live region」而红。
+  逐个限定到 `.iv-notice`（测的仍是用户可见那条），**全量 5/5 门禁恢复全绿**。
+- 回归测试：`client-style-injection` 增加两条硬断言——根规则必须含 `width:100%`/`min-width:0`，
+  且样式表**不得**把根选择器与滚动条伪元素写进同一分组。
+
 ### 批次七十六（工具超时 600s + station minimax 通道故障定位 + wan3 出粘土动画）
 - **工具超时来源查明**：agent 看到的 `tool call timed out after 300000ms` 是**插件自己声明的**
   `generate_video.timeoutMs = config.pollTimeoutMs`（harness 的 `timeout-policy` 按此计时，**无 300s 硬上限**）；

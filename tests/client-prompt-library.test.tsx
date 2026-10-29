@@ -98,7 +98,9 @@ describe('B-10 prompt studio (G1)', () => {
     fireEvent.click(view.container.querySelector('[data-prompt-extract="true"]') as HTMLElement)
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toContain('vision model unavailable')
+      // Round 6 之后有多个 role="status"（常驻 live region + 空态面板），
+      // 这里只关心**可见提示条**是否如实报错
+      expect((document.querySelector('.iv-notice')?.textContent ?? '')).toContain('vision model unavailable')
     })
     const draft = view.container.querySelector('[data-prompt-draft="true"]') as HTMLTextAreaElement
     expect(draft.value).toBe('')

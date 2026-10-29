@@ -50,6 +50,19 @@ async function addReference(view: ReturnType<typeof render>, index: number): Pro
   fireEvent.click(await screen.findByRole('button', { name: `${en.referenceAsset} ref-${index}.png` }))
 }
 
+
+/**
+ * 只在**可见提示条**里查文案。
+ *
+ * Round 6 加了常驻 live region（`data-live-region`）用于读屏播报，它渲染的文本与可见
+ * 提示条相同——`getByText` 会同时命中两处而抛 "Found multiple elements"。
+ * 这里用 CSS 限定到可见提示条，测的仍是用户能看到的那条。
+ */
+const noticeText = (): string => {
+  const node = document.querySelector('.iv-notice')
+  return node?.textContent ?? ''
+}
+
 describe('F2 multi-reference selector (B-1)', () => {
   it('sends several references as an ordered images array', async () => {
     const { view, spy } = renderWithImages(3)
@@ -138,7 +151,7 @@ describe('F2 multi-reference selector (B-1)', () => {
     }
     // 第 7 张被拒：仍然 6 枚 chip，并给出提示
     await waitFor(() => { expect(view.container.querySelectorAll('[data-generate-ref]')).toHaveLength(6) })
-    expect(screen.getByText(en.generateRefsFull)).toBeTruthy()
+    expect(noticeText()).toContain(en.generateRefsFull)
     expect(host.calls).toContain('assets/list')
   })
 })

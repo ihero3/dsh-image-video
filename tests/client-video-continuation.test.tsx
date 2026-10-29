@@ -40,7 +40,7 @@ describe('B-4 video continuation (A-4)', () => {
     fireEvent.click(screen.getByRole('button', { name: en.generateVideo }))
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toContain(en.videoContinuationNeedsRefVideo)
+      expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.videoContinuationNeedsRefVideo)
     })
     // 守卫在调用前拦截，绝不发出生成请求
     expect(host.generatePayloads).toHaveLength(0)

@@ -30,6 +30,19 @@ async function typePrompt(): Promise<void> {
   fireEvent.change(await screen.findByPlaceholderText(en.generatePromptPlaceholder), { target: { value: '海面日落' } })
 }
 
+
+/**
+ * 只在**可见提示条**里查文案。
+ *
+ * Round 6 加了常驻 live region（`data-live-region`）用于读屏播报，它渲染的文本与可见
+ * 提示条相同——`getByText` 会同时命中两处而抛 "Found multiple elements"。
+ * 这里用 CSS 限定到可见提示条，测的仍是用户能看到的那条。
+ */
+const noticeText = (): string => {
+  const node = document.querySelector('.iv-notice')
+  return node?.textContent ?? ''
+}
+
 describe('F3 generation progress (B-2)', () => {
   /** 视频非阻塞生成的替身：与真宿主一致——先落一条 running 任务账本，再返回 taskId。 */
   function pendingVideoSpy(host: ReturnType<typeof fakeApi>, taskId: string) {
@@ -91,7 +104,7 @@ describe('F3 generation progress (B-2)', () => {
     release()
     // 生成结束：进度条与秒表一起撤下
     await waitFor(() => { expect(screen.queryByRole('progressbar', { name: en.generateProgress })).toBeNull() })
-    expect(screen.getByText(en.generateDone)).toBeTruthy()
+    expect(noticeText()).toContain(en.generateDone)
   })
 
   it('asks the host for the running snapshot while generating', async () => {
