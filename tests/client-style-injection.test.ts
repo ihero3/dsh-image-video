@@ -54,6 +54,10 @@ describe('workbench stylesheet injection', () => {
     // 回归：宿主把 tab 内容挂进 display:flex;column 的容器，中间包装是 display:contents，
     // 于是 .iv 成为 flex item。只写 height:100% 时宽度会被收缩到内容最小宽（实测 8px），
     // 表现为"插件打不开/一片空白"。必须显式 width:100% + min-width:0。
+    // 另一种误伤：`.iv,.iv ::-webkit-scrollbar{width:8px}` 这种分组选择器会把根元素
+    // 也设成 8px（滚动条尺寸）。滚动条规则必须只命中伪元素（.iv::-webkit-scrollbar）。
+    expect(WORKBENCH_STYLE).not.toMatch(/\.iv\s*,\s*\.iv\s+::?-webkit-scrollbar/)
+    expect(WORKBENCH_STYLE).toContain('.iv::-webkit-scrollbar')
     const rootRule = WORKBENCH_STYLE.match(/\.iv\{([^}]*)\}/)
     expect(rootRule).not.toBeNull()
     const body = rootRule?.[1] ?? ''

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-29.1'
+export const WORKBENCH_STYLE_VERSION = '2026-10-29.2'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -95,10 +95,13 @@ export const WORKBENCH_STYLE = `
 }
 .iv *,.iv *::before,.iv *::after{box-sizing:border-box}
 .iv p{margin:0}.iv h3{margin:0}.iv ul{margin:0;padding:0;list-style:none}
-.iv,.iv ::-webkit-scrollbar{width:8px;height:8px}
-.iv,.iv ::-webkit-scrollbar-thumb{background:color-mix(in srgb,currentColor 22%,transparent);border-radius:var(--iv-r-sm);border:2px solid transparent;background-clip:content-box}
-.iv,.iv ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,currentColor 34%,transparent);background-clip:content-box}
-.iv,.iv ::-webkit-scrollbar-track{background:transparent}
+/* 滚动条样式必须只命中伪元素。此前把「根选择器」和「后代滚动条伪元素」写进同一个
+   分组选择器，结果第一个选择器命中的是**元素本身**——根容器被设成 width/height:8px
+   （滚动条尺寸），整个工作台塌缩成一条竖线（真机实测 8×8px，表现为"插件打不开"）。 */
+.iv::-webkit-scrollbar,.iv ::-webkit-scrollbar{width:8px;height:8px}
+.iv::-webkit-scrollbar-thumb,.iv ::-webkit-scrollbar-thumb{background:color-mix(in srgb,currentColor 22%,transparent);border-radius:var(--iv-r-sm);border:2px solid transparent;background-clip:content-box}
+.iv::-webkit-scrollbar-thumb:hover,.iv ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,currentColor 34%,transparent);background-clip:content-box}
+.iv::-webkit-scrollbar-track,.iv ::-webkit-scrollbar-track{background:transparent}
 .iv ::selection{background:color-mix(in srgb,var(--iv-acc) 30%,transparent)}
 .iv :focus-visible{outline:none;box-shadow:0 0 0 2px var(--iv-panel-2,#fff),0 0 0 4px color-mix(in srgb,var(--iv-acc) 55%,transparent)}
 .iv-ico{flex:none;display:block}
