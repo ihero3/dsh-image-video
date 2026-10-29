@@ -2,6 +2,25 @@
 
 （下一轮的改动写这里）
 
+### 批次七十六（工具超时 600s + station minimax 通道故障定位 + wan3 出粘土动画）
+- **工具超时来源查明**：agent 看到的 `tool call timed out after 300000ms` 是**插件自己声明的**
+  `generate_video.timeoutMs = config.pollTimeoutMs`（harness 的 `timeout-policy` 按此计时，**无 300s 硬上限**）；
+  插件默认值本就是 600_000，是 dev-home profile 里写了 `pollTimeoutMs: 300000` 才压到 5 分钟。
+  → 已改为 **600000**（两个 profile 同步），15 秒/图生视频不再被 5 分钟卡死。
+- **station minimax 通道故障（上游侧）**：同 key、同参数（2s / 480P）对照实验——
+  `minimax-h3` 与 `MiniMax-H3` 均**瞬时 failed**（`Upstream request failed`），
+  `wan3.0-video` 正常 `processing`，`wan2.2-t2v-plus` 报 `duration customization is not supported`（已知）。
+  任务 JSON 的 `model` 字段**忠实回显请求值**，证明插件确实传了 `minimax-h3`：
+  `{"status":"failed","model":"minimax-h3","error":"Upstream request failed"}`。
+  控制台「媒体生产资源」显示 wan3 的原因：station 把 `minimax-h3` 请求**路由到 wan3 后端**
+  （成功产物源地址为 `dashscope-*.oss-accelerate.aliyuncs.com`，即阿里百炼 wan 通道）。
+  → 临时把 `defaultVideoModel` 切 `wan3.0-video`（配置内注明 minimax 恢复后改回）。
+- **真机产出**：粘土定格动画 15 秒 —— 3 段各 5 秒（`wan3.0-video` image-to-video，
+  首帧取自 6 格分镜的第 1/3/5 格 4:3 裁切），ffmpeg concat 合并为
+  **15.137s / 1662×1246（4:3）/ 30fps / 带 AAC 音轨** 成片（`clay-arcade-15s-*.mp4`）。
+  抽帧核对：进店横移 → 抓娃娃机前驻足 → 贴玻璃星星眼 → 妈妈弟弟在旁 → 爸爸竖拇指 → 投币侧脸，
+  人物脸型/发型/服装全程一致，音轨无 BGM（仅环境声/脚步/硬币声）。
+
 ### 批次七十五（上游切新站 www.threevideo.com + key 统一 + 真机验收通过）
 - **上游**：生图/生视频 `baseURL` 由 `https://api.threerouter.com/v1` 切到 **`https://www.threevideo.com/v1`**
   （2026-10-29 新站恢复该账号分组：`GET /v1/models` 200，8 个模型含 `qwen-image-3.0` / `minimax-h3` / `wan3.0-video`）。
