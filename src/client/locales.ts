@@ -268,6 +268,10 @@ export type WorkbenchLocaleKey =
   | 'previewSentReferenceVideo'
   | 'advancedExpand'
   | 'advancedCollapse'
+  | 'storyboardToPipeline'
+  | 'storyboardToPipelineHint'
+  | 'storyboardSentToPipeline'
+  | 'storyboardNeedsShotsForPipeline'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -974,6 +978,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   previewSentReferenceVideo: 'Set as reference video',
   advancedExpand: 'More tools: fusion · prompt studio · storyboard · model cards',
   advancedCollapse: 'Collapse',
+  storyboardToPipeline: 'Build pipeline',
+  storyboardToPipelineHint: 'Turn the current storyboard into a script for One-click compose (no re-pasting)',
+  storyboardSentToPipeline: 'Storyboard script sent to One-click compose',
+  storyboardNeedsShotsForPipeline: 'No shots yet — plan the storyboard first, then build the pipeline',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1764,6 +1772,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   previewSentReferenceVideo: '已设为参考视频',
   advancedExpand: '展开高级（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡）',
   advancedCollapse: '收起高级',
+  storyboardToPipeline: '编排成流水线',
+  storyboardToPipelineHint: '把当前分镜表组装成剧本，交给「一键成片」编排（不用重新粘剧本）',
+  storyboardSentToPipeline: '已把分镜脚本送入一键成片',
+  storyboardNeedsShotsForPipeline: '还没有分镜：先用上面的脚本生成分镜表，再编排成流水线',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

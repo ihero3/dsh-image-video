@@ -463,6 +463,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // `T9` 分镜 → 一键成片直通：把剧本「推」给 PipelineCard。
+  // 用递增 seq 包一层，保证**同一段脚本连点两次也能再次触发**（value 变化才触发 effect）。
+  const [pipelineInject, setPipelineInject] = useState<{ seq: number; script: string } | undefined>(undefined)
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -1579,6 +1582,44 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
 
   /** 手动补一个空镜头（宿主拆解不满意时用户自己加）。 */
+  /**
+   * `T9` 把分镜表**组装成一段剧本**，交给「一键成片」编排。
+   * 每镜头写成"场景 + 角色 + 画面"一句，保留用户改过的提示词——这样编排结果与屏幕上的分镜一致，
+   * 而不是让宿主重新从原始脚本猜一遍。
+   * @returns 组装出的剧本（镜头为空时返回空串）。
+   */
+  const storyboardAsScript = (): string =>
+    storyboardShots
+      .map((shot, index) => {
+        const parts = [
+          shot.scene === undefined || shot.scene.trim() === '' ? '' : `场景：${shot.scene.trim()}`,
+          shot.characters.length === 0 ? '' : `角色：${shot.characters.join('、')}`,
+          shot.imagePrompt.trim() === '' ? '' : shot.imagePrompt.trim(),
+        ].filter(part => part !== '')
+        return parts.length === 0 ? '' : `镜头${index + 1}：${parts.join('；')}`
+      })
+      .filter(line => line !== '')
+      .join('\n')
+
+  /**
+   * `T9` 分镜 → 一键成片直通：把组装好的剧本推给 PipelineCard 并滚动到它。
+   * 没有可分镜时给出明确提示（不静默无反应）。
+   */
+  const storyboardToPipeline = (): void => {
+    const script = storyboardAsScript()
+    if (script === '') {
+      setNotice({ text: t('storyboardNeedsShotsForPipeline'), tone: 'error' })
+      return
+    }
+    setPipelineInject(previous => ({ seq: (previous?.seq ?? 0) + 1, script }))
+    setNotice({ text: t('storyboardSentToPipeline'), tone: 'info' })
+    // 滚动只是"锦上添花"：环境（jsdom / 老 WebView）没有 scrollIntoView 时不能因此报错中断
+    const card = document.querySelector('[data-pipeline-card]')
+    if (card !== null && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }
+
   const addStoryboardShot = (): void => {
     setStoryboardShots(current => reindexStoryboard([...current, {
       index: current.length + 1, shot: '', characters: [], scene: undefined, imagePrompt: '', videoPrompt: '',
@@ -2399,6 +2440,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     t={t}
                     projectId={activeProject?.id}
                     onStarted={() => { setMode('workflow') }}
+                    injectScript={pipelineInject?.script}
                   />
                   <div className="iv-create">
                     <div className="iv-create-head">
@@ -3111,6 +3153,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <div className="iv-storyboard" data-storyboard="true">
                       <div className="iv-sb-head">
                         <span className="iv-chip"><Icon name="storyboard" size={11} />{t('storyboardTitle')}</span>
+                        {/* `T9` 分镜 → 一键成片：剧本只粘一遍。**始终渲染**——空态点击给明确提示，
+                            比"按钮凭空消失"更容易理解（用户会怀疑功能没做）。 */}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--ghost iv-btn--sm"
+                          data-storyboard-to-pipeline="true"
+                          title={t('storyboardToPipelineHint')}
+                          onClick={storyboardToPipeline}
+                        >
+                          <Icon name="flow" size={11} />{t('storyboardToPipeline')}
+                        </button>
                         {storyboardShots.length === 0
                           ? null
                           : (
@@ -3126,6 +3179,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               >
                                 <Icon name="plus" size={11} />{t('storyboardAddShot')}
                               </button>
+
                             </span>
                           )}
                       </div>

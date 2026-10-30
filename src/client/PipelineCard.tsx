@@ -21,6 +21,11 @@ export interface PipelineCardProps {
   readonly projectId?: string
   /** 起跑成功后切到画布模式（由 Workbench 提供）。 */
   readonly onStarted: (workflowId: string) => void
+  /**
+   * `T9` 外部注入的剧本（来自「剧本分镜」脚本，或"分镜 → 一键成片"直通）。
+   * 变化时覆盖卡片内剧本（用户随后可继续编辑），实现"剧本只粘一遍"。
+   */
+  readonly injectScript?: string
 }
 
 /** 表单默认值：分镜 4、每镜 5 秒、图生视频（可控性最好）。 */
@@ -33,9 +38,14 @@ const DEFAULT_DURATION = 5
  * @returns 折叠式表单 + 结果/提醒。
  */
 export function PipelineCard(props: PipelineCardProps) {
-  const { api, t, projectId } = props
+  const { api, t, projectId, injectScript } = props
   const [open, setOpen] = useState(true)
   const [script, setScript] = useState('')
+  // `T9`：外部注入的剧本变化时覆盖（空串不覆盖，避免把用户正在写的内容清掉）
+  useEffect(() => {
+    if (injectScript === undefined || injectScript.trim() === '') return
+    setScript(injectScript)
+  }, [injectScript])
   const [mode, setMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [shots, setShots] = useState(DEFAULT_SHOTS)
   const [duration, setDuration] = useState(DEFAULT_DURATION)
