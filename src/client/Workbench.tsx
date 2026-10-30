@@ -1866,6 +1866,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }
 
+  /**
+   * 快速生成的参数候选（`T1`）：复用默认值那套宿主白名单，只把首项语义从「未设置」改成
+   * 「自动（跟随当前生效值）」——生成面板里空值是有含义的，不是"没配"。
+   */
+  const generateParameterOptions = (field: 'imageSize' | 'videoAspectRatio' | 'videoDuration') =>
+    defaultsOptions(field).map(option => option.value === ''
+      ? { value: '', label: t('generateParamAuto') }
+      : option)
+
   // 非本机宿主：`/outputs` 只在回环注册，预览会打不开——先告诉用户怎么办（`T2-9`）
   const hostIsLoopback = (() => {
     if (typeof window === 'undefined') return true
@@ -2510,32 +2519,46 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="iv-meta">{t('defaultImageSize')}：</span>
-                        <input
-                          className="iv-input"
-                          style={{ width: '96px' }}
+                        {/* `T1` 参数改成候选下拉：候选来自宿主 `health.options`（与协议层校验同源），
+                            浏览器包不内置服务商名单；空值 = 跟随「当前生效参数」。 */}
+                        <select
+                          className="iv-select iv-select--sm"
                           aria-label={t('defaultImageSize')}
+                          data-generate-size="true"
                           value={generateSize}
                           disabled={generating !== undefined}
                           onChange={event => setGenerateSize(event.target.value)}
-                        />
+                        >
+                          {generateParameterOptions('imageSize').map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                         <span className="iv-meta">{t('defaultVideoAspectRatio')}：</span>
-                        <input
-                          className="iv-input"
-                          style={{ width: '76px' }}
+                        <select
+                          className="iv-select iv-select--sm"
                           aria-label={t('defaultVideoAspectRatio')}
+                          data-generate-aspect="true"
                           value={generateAspect}
                           disabled={generating !== undefined}
                           onChange={event => setGenerateAspect(event.target.value)}
-                        />
+                        >
+                          {generateParameterOptions('videoAspectRatio').map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                         <span className="iv-meta">{t('defaultVideoDuration')}：</span>
-                        <input
-                          className="iv-input"
-                          style={{ width: '56px' }}
+                        <select
+                          className="iv-select iv-select--sm"
                           aria-label={t('defaultVideoDuration')}
+                          data-generate-duration="true"
                           value={generateDuration}
                           disabled={generating !== undefined}
                           onChange={event => setGenerateDuration(event.target.value)}
-                        />
+                        >
+                          {generateParameterOptions('videoDuration').map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                       </div>
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                         <button

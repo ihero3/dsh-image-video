@@ -234,6 +234,7 @@ export type WorkbenchLocaleKey =
   | 'createStepChat'
   | 'createStepOutputs'
   | 'createStepFile'
+  | 'generateParamAuto'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -906,6 +907,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   createStepChat: 'Generate in chat',
   createStepOutputs: 'Lands in outputs',
   createStepFile: 'File into project',
+  generateParamAuto: 'Auto (use current defaults)',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1662,6 +1664,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   createStepChat: '对话区生成',
   createStepOutputs: '落入输出目录',
   createStepFile: '登记进项目',
+  generateParamAuto: '自动（跟随当前生效值）',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',
