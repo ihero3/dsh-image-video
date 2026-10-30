@@ -3,6 +3,7 @@
  *
  * 状态文案/圆点/摘要由调用方算好传入，避免与 Workbench 里的同名辅助函数重复。
  */
+import { useState } from 'react'
 import { Icon } from '../icons.tsx'
 import type { WorkbenchApi } from '../api.ts'
 import type { MediaKind, TaskRecord } from '../../workbench/records.ts'
@@ -38,6 +39,8 @@ function outputUrl(path: string): string {
 }
 
 export function TaskCard(props: TaskCardProps) {
+  // `T10`：失败原因默认折叠——卡片很密，展开会挤掉其他行；但必须能一键看到原文
+  const [errorOpen, setErrorOpen] = useState(false)
   const {
     api, task, projectId, statusLabel, dotClass, metaText, onPreview, onUseAsReference,
     onAddToTimeline, onTasksChanged, onAssetsChanged, onNotice, run, t,
@@ -114,6 +117,20 @@ export function TaskCard(props: TaskCardProps) {
             {t('registerAsAsset')}
           </button>
         )}
+        {task.status === 'failed' && task.error !== undefined
+          ? (
+            <button
+              type="button"
+              className="iv-btn iv-btn--sm"
+              data-task-error-toggle={task.id}
+              aria-expanded={errorOpen}
+              title={t('taskErrorHint')}
+              onClick={() => { setErrorOpen(open => !open) }}
+            >
+              <Icon name="alert" size={11} />{errorOpen ? t('taskErrorHide') : t('taskErrorShow')}
+            </button>
+          )
+          : null}
         <button
           type="button"
           className="iv-btn iv-btn--sm"
@@ -144,6 +161,12 @@ export function TaskCard(props: TaskCardProps) {
           </button>
         )}
       </div>
+      {/* `T10` 失败原文：默认折叠（卡片很密），展开后完整显示上游返回，便于自救或报障 */}
+      {task.status === 'failed' && task.error !== undefined && errorOpen
+        ? (
+          <pre className="iv-task-error" data-task-error={task.id}>{task.error}</pre>
+        )
+        : null}
     </li>
   )
 }

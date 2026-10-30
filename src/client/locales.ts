@@ -272,6 +272,9 @@ export type WorkbenchLocaleKey =
   | 'storyboardToPipelineHint'
   | 'storyboardSentToPipeline'
   | 'storyboardNeedsShotsForPipeline'
+  | 'taskErrorShow'
+  | 'taskErrorHide'
+  | 'taskErrorHint'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -982,6 +985,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   storyboardToPipelineHint: 'Turn the current storyboard into a script for One-click compose (no re-pasting)',
   storyboardSentToPipeline: 'Storyboard script sent to One-click compose',
   storyboardNeedsShotsForPipeline: 'No shots yet — plan the storyboard first, then build the pipeline',
+  taskErrorShow: 'Why it failed',
+  taskErrorHide: 'Hide reason',
+  taskErrorHint: 'Show the upstream error for this failed task',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1776,6 +1782,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   storyboardToPipelineHint: '把当前分镜表组装成剧本，交给「一键成片」编排（不用重新粘剧本）',
   storyboardSentToPipeline: '已把分镜脚本送入一键成片',
   storyboardNeedsShotsForPipeline: '还没有分镜：先用上面的脚本生成分镜表，再编排成流水线',
+  taskErrorShow: '查看原因',
+  taskErrorHide: '收起原因',
+  taskErrorHint: '展开这条任务失败的上游原文',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

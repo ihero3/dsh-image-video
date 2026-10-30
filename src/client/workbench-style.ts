@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-31.1'
+export const WORKBENCH_STYLE_VERSION = '2026-10-31.2'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -376,6 +376,11 @@ export const WORKBENCH_STYLE = `
 .iv-create .iv-notice{margin:0}
 .iv-asset-search{min-width:120px;max-width:220px;flex:1}
 /* T8 高级抽屉：默认收起，展开后按原顺序排列（不改变块内部布局） */
+/* T10 任务失败原文：等宽、可换行、限高（长报错不撑爆面板） */
+.iv-task-error{margin:var(--iv-sp-3) 0 0;padding:var(--iv-sp-4);max-height:160px;overflow:auto;
+  border-radius:var(--iv-r-sm);border:1px solid var(--iv-line);background:var(--iv-panel-2);
+  font-family:var(--iv-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+  font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:pre-wrap;word-break:break-word;flex-basis:100%}
 .iv-advanced-toggle{align-self:flex-start;margin-top:var(--iv-sp-4)}
 .iv-advanced{display:flex;flex-direction:column;gap:var(--iv-sp-6);margin-top:var(--iv-sp-4);
   padding-top:var(--iv-sp-5);border-top:1px solid var(--iv-line)}
