@@ -396,6 +396,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
+  // `T6` 素材区搜索与排序：素材一多（实测 40+）就找不到东西
+  const [assetQuery, setAssetQuery] = useState('')
+  const [assetSort, setAssetSort] = useState<'newest' | 'oldest' | 'largest' | 'name'>('newest')
   // `B-7`：素材多选（批量删除 `assets/remove-many` / 批量引用到提示词）
   const [selectedAssetIds, setSelectedAssetIds] = useState<readonly string[]>([])
   // 批量删除被宿主拒（素材被引用）后，亮出"仍要删除"让用户明确承担后果
@@ -1326,7 +1329,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const previewTarget = selectedAsset === undefined
     ? previewPath
     : { path: selectedAsset.path, kind: selectedAsset.kind }
-  const visibleAssets = assetFilter === 'all' ? assets : assets.filter(asset => asset.kind === assetFilter)
+  /**
+   * 素材面板最终展示的列表（`T6`）：kind 过滤 → 关键词搜索 → 排序。
+   * 搜索匹配**文件名、生成提示词、模型名**三处——用户找素材时脑子里想的可能是任意一种。
+   * 排序默认「最新」，与刷新后的直觉一致；切换只重排本地数组，零请求。
+   */
+  const visibleAssets = (() => {
+    const byKind = assetFilter === 'all' ? assets : assets.filter(asset => asset.kind === assetFilter)
+    const query = assetQuery.trim().toLowerCase()
+    const searched = query === ''
+      ? byKind
+      : byKind.filter(asset =>
+        baseName(asset.path).toLowerCase().includes(query)
+        || (asset.prompt ?? '').toLowerCase().includes(query)
+        || (asset.model ?? '').toLowerCase().includes(query))
+    const sorted = [...searched]
+    switch (assetSort) {
+      case 'oldest': sorted.sort((left, right) => left.createdAt.localeCompare(right.createdAt)); break
+      case 'largest': sorted.sort((left, right) => right.bytes - left.bytes); break
+      case 'name': sorted.sort((left, right) => baseName(left.path).localeCompare(baseName(right.path), 'zh')); break
+      default: sorted.sort((left, right) => right.createdAt.localeCompare(left.createdAt)); break
+    }
+    return sorted
+  })()
 
   // `G2` 物料库分栏：当前栏位 kind + 名称筛选。`resources/list?kind=` 宿主是支持的，
   // 这里一次取全量再本地过滤——切栏/改筛选零请求、零闪烁，也不会把「其他」栏的
@@ -4020,6 +4045,28 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <option value="image">{t('filterImage')}</option>
                     <option value="video">{t('filterVideo')}</option>
                   </select>
+                  {/* `T6` 搜索：匹配文件名/提示词/模型名 */}
+                  <input
+                    className="iv-input iv-asset-search"
+                    type="search"
+                    placeholder={t('assetSearchPlaceholder')}
+                    aria-label={t('assetSearchPlaceholder')}
+                    data-asset-search="true"
+                    value={assetQuery}
+                    onChange={event => { setAssetQuery(event.target.value) }}
+                  />
+                  <select
+                    className="iv-select"
+                    aria-label={t('assetSortLabel')}
+                    data-asset-sort="true"
+                    value={assetSort}
+                    onChange={event => { setAssetSort(event.target.value as typeof assetSort) }}
+                  >
+                    <option value="newest">{t('assetSortNewest')}</option>
+                    <option value="oldest">{t('assetSortOldest')}</option>
+                    <option value="largest">{t('assetSortLargest')}</option>
+                    <option value="name">{t('assetSortName')}</option>
+                  </select>
                 </div>
               </div>
               <div className="iv-toolbar">
@@ -4176,10 +4223,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 )}
               {visibleAssets.length === 0
                 ? (
-                  <div className="iv-empty">
+                  <div className="iv-empty" data-asset-empty={assets.length === 0 ? 'none' : 'filtered'}>
                     <span className="iv-empty-tile"><Icon name="layers" size={17} /></span>
-                    <strong>{t('noAssets')}</strong>
-                    {outputs.length === 0 ? <span>{t('noOutputs')}</span> : null}
+                    {/* `T6`：区分「一个素材都没有」和「搜索/过滤没命中」——后者要提示清空搜索 */}
+                    {assets.length === 0
+                      ? <strong>{t('noAssets')}</strong>
+                      : <strong>{t('assetSearchEmpty')}</strong>}
+                    {assets.length === 0 && outputs.length === 0 ? <span>{t('noOutputs')}</span> : null}
                   </div>
                 )
                 : (
