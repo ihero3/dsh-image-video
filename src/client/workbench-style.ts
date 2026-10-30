@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-30.2'
+export const WORKBENCH_STYLE_VERSION = '2026-10-30.3'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -373,6 +373,12 @@ export const WORKBENCH_STYLE = `
 /* ============ 快速生成面板 ============ */
 .iv-model-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5)}
 .iv-model-pick{display:flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
+.iv-last-result{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5);
+  padding:var(--iv-sp-5);border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2)}
+.iv-last-result-label{font-weight:var(--iv-fw-medium)}
+.iv-last-result-media{width:96px;height:96px;object-fit:cover;border-radius:var(--iv-r-sm);
+  border:1px solid var(--iv-line);background:var(--iv-panel);flex:none}
+.iv-last-result-actions{display:flex;align-items:center;gap:var(--iv-sp-3);margin-left:auto}
 .iv-model-pick-note{display:inline-flex;align-items:center;gap:var(--iv-sp-2);color:var(--iv-tx2);
   font-size:var(--iv-fs-meta);min-width:0}
 

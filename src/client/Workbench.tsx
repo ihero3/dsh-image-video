@@ -449,6 +449,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `T2`：单次生成可指定模型（空 = 宿主默认）；图片/视频各记一份，互不覆盖。
   const [generateImageModel, setGenerateImageModel] = useState('')
   const [generateVideoModel, setGenerateVideoModel] = useState('')
+  // `T3`：本次生成结果——生成完就地展示，不用滚到底部停靠区找（结构与 previewPath 同构）。
+  const [lastResult, setLastResult] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
 
   // `B-9` 融合生图（`A-4` `media/compose`）：按资源 id 选角色/场景/物品 + 独立提示词。
   const [composePrompt, setComposePrompt] = useState('')
@@ -541,6 +543,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return entries
   }
 
+  /**
+   * 生成成功后的统一收尾（`T3`）：把产物挂到「本次结果」里就地展示，再刷新素材、清空提示词。
+   * 图片（同步返回）与视频（轮询回调）走同一条路径，避免两处逻辑漂移。
+   * @param kind - 产物类型（决定缩略图用 img 还是 video）。
+   * @param path - 产物路径。
+   */
+  const finishGenerate = (kind: 'image' | 'video', path: string): void => {
+    setLastResult({ path, kind })
+    void refreshAssetsAfterGenerate()
+    setGeneratePrompt('')
+    setNotice({ text: t('generateDone'), tone: 'info' })
+  }
+
   /** 发一次生成（图片同步等待；视频立刻拿 taskId 交给轮询）。 */
   const runGenerate = async (mediaMode: 'image' | 'video'): Promise<void> => {
     const prompt = generatePrompt.trim()
@@ -594,9 +609,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         setGenerateTaskId(result.taskId)
         return
       }
-      await refreshAssetsAfterGenerate()
-      setGeneratePrompt('')
-      setNotice({ text: t('generateDone'), tone: 'info' })
+      if (result.path === undefined) {
+        setNotice({ text: t('generateFailed'), tone: 'error' })
+      } else {
+        finishGenerate(mediaMode, result.path)
+      }
     } catch (error) {
       setNotice({ text: `${t('generateFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
     } finally {
@@ -612,9 +629,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setGenerateTaskId(undefined)
     setGenerating(undefined)
     if (row.status === 'succeeded') {
-      void refreshAssetsAfterGenerate()
-      setGeneratePrompt('')
-      setNotice({ text: t('generateDone'), tone: 'info' })
+      // `T3`：视频是非阻塞返回的，产物路径从任务账本拿，同样就地展示
+      if (row.outputPath !== undefined) {
+        finishGenerate(row.kind === 'video' ? 'video' : 'image', row.outputPath)
+      } else {
+        void refreshAssetsAfterGenerate()
+        setGeneratePrompt('')
+        setNotice({ text: t('generateDone'), tone: 'info' })
+      }
       return
     }
     if (row.status === 'cancelled') {
@@ -2611,6 +2633,48 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </button>
                           )}
                       </div>
+                      {/* `T3` 本次结果就地展示：不用再滚到最底部停靠区找产物 */}
+                      {lastResult === undefined
+                        ? null
+                        : (
+                          <div className="iv-last-result" data-generate-result={lastResult.path}>
+                            <span className="iv-meta iv-last-result-label">{t('generateResultTitle')}</span>
+                            {lastResult.kind === 'image'
+                              ? <img className="iv-last-result-media" src={`/outputs/${encodeURIComponent(baseName(lastResult.path))}`} alt="" data-generate-result-media="image" />
+                              : <video className="iv-last-result-media" src={`/outputs/${encodeURIComponent(baseName(lastResult.path))}`} muted controls data-generate-result-media="video" />}
+                            <div className="iv-last-result-actions">
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--ghost iv-btn--sm"
+                                data-generate-result-view="true"
+                                onClick={() => { setPreviewPath({ ...lastResult }); scrollToPane('panePreview') }}
+                              >
+                                {t('generateResultView')}
+                              </button>
+                              {lastResult.kind !== 'image'
+                                ? null
+                                : (
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--ghost iv-btn--sm"
+                                    data-generate-result-as-ref="true"
+                                    onClick={() => { addReferenceImage(lastResult.path) }}
+                                  >
+                                    {t('generateResultAsReference')}
+                                  </button>
+                                )}
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--icon iv-btn--sm"
+                                aria-label={t('generateResultDismiss')}
+                                title={t('generateResultDismiss')}
+                                onClick={() => { setLastResult(undefined) }}
+                              >
+                                <Icon name="x" size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       {/* `F3` 生成进度：服务商不给百分比，就显示已用时 + 不定进度条 */}
                       {generating === undefined
                         ? null

@@ -240,6 +240,10 @@ export type WorkbenchLocaleKey =
   | 'generateModelCatalogUnavailable'
   | 'modelLimitFixedDuration'
   | 'modelLimitNoRefVideo'
+  | 'generateResultTitle'
+  | 'generateResultView'
+  | 'generateResultAsReference'
+  | 'generateResultDismiss'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -918,6 +922,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateModelCatalogUnavailable: 'Model catalog unavailable — falling back to the host default',
   modelLimitFixedDuration: 'fixed duration only',
   modelLimitNoRefVideo: 'no reference video / continuation',
+  generateResultTitle: 'This result',
+  generateResultView: 'View',
+  generateResultAsReference: 'Use as reference',
+  generateResultDismiss: 'Dismiss result',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1680,6 +1688,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateModelCatalogUnavailable: '模型目录不可用，已回退到宿主默认模型',
   modelLimitFixedDuration: '不支持自定义时长',
   modelLimitNoRefVideo: '不支持参考视频/续写',
+  generateResultTitle: '本次结果',
+  generateResultView: '查看',
+  generateResultAsReference: '设为参考',
+  generateResultDismiss: '关闭结果',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',
