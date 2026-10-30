@@ -250,6 +250,8 @@ export type WorkbenchLocaleKey =
   | 'generateFailureClearRefs'
   | 'generateFailureDurationApplied'
   | 'generateFailureRefsCleared'
+  | 'generateRiskBlocked'
+  | 'generateRiskWarn'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -938,6 +940,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateFailureClearRefs: 'Clear references',
   generateFailureDurationApplied: 'Duration shortened — try again',
   generateFailureRefsCleared: 'References cleared — try again',
+  generateRiskBlocked: 'This prompt fails compliance checks — generation is disabled',
+  generateRiskWarn: 'Prompt flagged as risky — the provider may reject it',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1710,6 +1714,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateFailureClearRefs: '清空参考',
   generateFailureDurationApplied: '已把时长改成较短的档位，再试一次',
   generateFailureRefsCleared: '已清空参考图/参考视频，再试一次',
+  generateRiskBlocked: '这段提示词过不了合规校验，生成已停用',
+  generateRiskWarn: '提示词有风险，可能被上游拒绝',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

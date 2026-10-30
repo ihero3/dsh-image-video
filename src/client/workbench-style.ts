@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-30.4'
+export const WORKBENCH_STYLE_VERSION = '2026-10-30.5'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -373,6 +373,7 @@ export const WORKBENCH_STYLE = `
 /* ============ 快速生成面板 ============ */
 .iv-model-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5)}
 .iv-model-pick{display:flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
+.iv-create .iv-notice{margin:0}
 .iv-failure-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-4);
   margin-top:var(--iv-sp-4);padding:var(--iv-sp-4) var(--iv-sp-5);border-radius:var(--iv-r);
   border:1px solid var(--iv-line);background:var(--iv-panel-2)}

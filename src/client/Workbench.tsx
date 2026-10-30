@@ -453,6 +453,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [lastResult, setLastResult] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
   // `T4`：失败的「下一步」——错误条旁边直接给可点的补救动作，而不是只留一行报错。
   const [failureHint, setFailureHint] = useState<{ message: string } | undefined>(undefined)
+  // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
+  const [promptRisk, setPromptRisk] = useState<PromptRiskView | undefined>(undefined)
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -628,6 +630,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       if (mediaMode === 'image') setGenerating(undefined)
     }
   }
+
+  // `T5` 提示词风控预检：停止输入 400ms 后再问宿主（避免每个按键都发一次 RPC）。
+  // 失败时静默——预检不可用不能挡住正常生成。
+  useEffect(() => {
+    const text = generatePrompt.trim()
+    if (text === '') { setPromptRisk(undefined); return }
+    let alive = true
+    const timer = setTimeout(() => {
+      apiRef.current.checkPrompt(text)
+        .then(report => { if (alive) setPromptRisk(report) })
+        .catch(() => { if (alive) setPromptRisk(undefined) })
+    }, 400)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [generatePrompt])
 
   // `T4` 自动定位：结果卡或失败条一出现，就把它滚进视口（smooth；已在视口内则等同无操作）。
   useEffect(() => {
@@ -2387,6 +2403,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         }}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
+                      {/* `T5` 风控预检结果：block 会同时禁用生成按钮；warn 只提醒 */}
+                      {promptRisk === undefined || promptRisk.level === 'ok'
+                        ? null
+                        : (
+                          <p
+                            className={`iv-notice${promptRisk.level === 'block' ? ' iv-notice--error' : ''}`}
+                            data-generate-risk={promptRisk.level}
+                          >
+                            <Icon name={promptRisk.level === 'block' ? 'alert' : 'eye'} size={12} />
+                            <span>
+                              {promptRisk.level === 'block' ? t('generateRiskBlocked') : t('generateRiskWarn')}
+                              {promptRisk.advice.length === 0 ? '' : `：${promptRisk.advice.join('；')}`}
+                            </span>
+                          </p>
+                        )}
                       <span className="iv-meta" data-generate-shortcut="true">{t('generateShortcutHint')}</span>
                       {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
                       <div className="iv-refs" data-generate-refs="true">
@@ -2624,7 +2655,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <button
                           type="button"
                           className="iv-btn iv-btn--acc iv-btn--sm"
-                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === ''}
+                          data-generate-blocked={promptRisk?.level === 'block' ? 'true' : undefined}
+                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
                           onClick={() => { void runGenerate('image') }}
                         >
                           {generating === 'image' ? t('generating') : t('generateImage')}
@@ -2632,7 +2664,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <button
                           type="button"
                           className="iv-btn iv-btn--sm"
-                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === ''}
+                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
                           onClick={() => { void runGenerate('video') }}
                         >
                           {generating === 'video' ? t('generating') : t('generateVideo')}
