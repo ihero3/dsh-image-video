@@ -451,6 +451,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateVideoModel, setGenerateVideoModel] = useState('')
   // `T3`：本次生成结果——生成完就地展示，不用滚到底部停靠区找（结构与 previewPath 同构）。
   const [lastResult, setLastResult] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
+  // `T4`：失败的「下一步」——错误条旁边直接给可点的补救动作，而不是只留一行报错。
+  const [failureHint, setFailureHint] = useState<{ message: string } | undefined>(undefined)
+  /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
+  const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
   // `B-9` 融合生图（`A-4` `media/compose`）：按资源 id 选角色/场景/物品 + 独立提示词。
   const [composePrompt, setComposePrompt] = useState('')
@@ -551,6 +555,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    */
   const finishGenerate = (kind: 'image' | 'video', path: string): void => {
     setLastResult({ path, kind })
+    setFailureHint(undefined)
     void refreshAssetsAfterGenerate()
     setGeneratePrompt('')
     setNotice({ text: t('generateDone'), tone: 'info' })
@@ -615,11 +620,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         finishGenerate(mediaMode, result.path)
       }
     } catch (error) {
-      setNotice({ text: `${t('generateFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+      const message = error instanceof Error ? error.message : String(error)
+      setNotice({ text: `${t('generateFailed')}：${message}`, tone: 'error' })
+      // `T4`：失败不止报错——同时给出可点的补救动作
+      setFailureHint({ message })
     } finally {
       if (mediaMode === 'image') setGenerating(undefined)
     }
   }
+
+  // `T4` 自动定位：结果卡或失败条一出现，就把它滚进视口（smooth；已在视口内则等同无操作）。
+  useEffect(() => {
+    if (lastResult === undefined && failureHint === undefined) return
+    const node = generateOutcomeRef.current
+    if (node === null || typeof node.scrollIntoView !== 'function') return
+    node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [lastResult, failureHint])
 
   /** 追踪非阻塞视频生成：任务结束（成功/失败/取消）时收尾。 */
   useEffect(() => {
@@ -2633,7 +2649,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </button>
                           )}
                       </div>
-                      {/* `T3` 本次结果就地展示：不用再滚到最底部停靠区找产物 */}
+                      {/* `T3` 本次结果就地展示 + `T4` 自动定位锚点 */}
+                      <div ref={generateOutcomeRef} data-generate-outcome="true">
                       {lastResult === undefined
                         ? null
                         : (
@@ -2675,6 +2692,58 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </div>
                           </div>
                         )}
+                      {/* `T4` 失败下一步：把"怎么办"做成可点动作，而不是只留一行红字 */}
+                      {failureHint === undefined
+                        ? null
+                        : (
+                          <div className="iv-failure-actions" data-generate-failure-actions="true">
+                            <span className="iv-meta iv-failure-text">
+                              <Icon name="alert" size={11} />
+                              {t('generateFailureHint')}
+                            </span>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-failure-action="switch-model"
+                              onClick={() => {
+                                const picker = document.querySelector<HTMLSelectElement>('[data-generate-model]')
+                                if (picker !== null) { picker.focus(); picker.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }
+                              }}
+                            >
+                              {t('generateFailureSwitchModel')}
+                            </button>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-failure-action="shorter-duration"
+                              onClick={() => {
+                                const current = Number(generateDuration)
+                                const shorter = current > 5 ? 5 : current > 2 ? 2 : 2
+                                setGenerateDuration(String(shorter))
+                                setNotice({ text: t('generateFailureDurationApplied'), tone: 'info' })
+                              }}
+                            >
+                              {t('generateFailureShorter')}
+                            </button>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-failure-action="clear-references"
+                              disabled={generateImages.length === 0 && generateLastFrame === undefined && generateRefVideo === undefined}
+                              onClick={() => {
+                                setGenerateImages([])
+                                setGenerateLastFrame(undefined)
+                                setGenerateRefVideo(undefined)
+                                setGenerateContinuation(false)
+                                setGenerateRealPerson(false)
+                                setNotice({ text: t('generateFailureRefsCleared'), tone: 'info' })
+                              }}
+                            >
+                              {t('generateFailureClearRefs')}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       {/* `F3` 生成进度：服务商不给百分比，就显示已用时 + 不定进度条 */}
                       {generating === undefined
                         ? null
