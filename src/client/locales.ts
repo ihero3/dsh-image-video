@@ -259,6 +259,13 @@ export type WorkbenchLocaleKey =
   | 'assetSortLargest'
   | 'assetSortName'
   | 'assetSearchEmpty'
+  | 'previewActions'
+  | 'previewAsReference'
+  | 'previewAsLastFrame'
+  | 'previewAsReferenceVideo'
+  | 'previewSentReference'
+  | 'previewSentLastFrame'
+  | 'previewSentReferenceVideo'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -956,6 +963,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   assetSortLargest: 'Largest first',
   assetSortName: 'By name',
   assetSearchEmpty: 'No matching assets (try clearing the search)',
+  previewActions: 'Send to composer',
+  previewAsReference: 'Use as reference',
+  previewAsLastFrame: 'Use as last frame',
+  previewAsReferenceVideo: 'Use as reference video',
+  previewSentReference: 'Added to reference images',
+  previewSentLastFrame: 'Set as last frame',
+  previewSentReferenceVideo: 'Set as reference video',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1737,6 +1751,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   assetSortLargest: '体积最大',
   assetSortName: '按名称',
   assetSearchEmpty: '没有匹配的素材（试试清空搜索）',
+  previewActions: '送到生成位',
+  previewAsReference: '设为参考',
+  previewAsLastFrame: '设为尾帧',
+  previewAsReferenceVideo: '设为参考视频',
+  previewSentReference: '已加入参考图',
+  previewSentLastFrame: '已设为尾帧',
+  previewSentReferenceVideo: '已设为参考视频',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

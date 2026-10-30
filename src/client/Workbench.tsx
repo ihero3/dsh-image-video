@@ -4380,6 +4380,53 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
                       />
                     )}
+                {/* `T7` 从预览直接送往生成位：省掉「回素材区选中 → 回上方面板」的往返 */}
+                {previewTarget === undefined
+                  ? null
+                  : (
+                    <div className="iv-preview-actions" data-preview-actions={previewTarget.kind}>
+                      {previewTarget.kind === 'image'
+                        ? (
+                          <>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-preview-send="reference"
+                              onClick={() => {
+                                addReferenceImage(previewTarget.path)
+                                setNotice({ text: t('previewSentReference'), tone: 'info' })
+                              }}
+                            >
+                              {t('previewAsReference')}
+                            </button>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-preview-send="last-frame"
+                              onClick={() => {
+                                setGenerateLastFrame(previewTarget.path)
+                                setNotice({ text: t('previewSentLastFrame'), tone: 'info' })
+                              }}
+                            >
+                              {t('previewAsLastFrame')}
+                            </button>
+                          </>
+                        )
+                        : (
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--ghost iv-btn--sm"
+                            data-preview-send="reference-video"
+                            onClick={() => {
+                              setGenerateRefVideo(previewTarget.path)
+                              setNotice({ text: t('previewSentReferenceVideo'), tone: 'info' })
+                            }}
+                          >
+                            {t('previewAsReferenceVideo')}
+                          </button>
+                        )}
+                    </div>
+                  )}
               </>
               </PaneBoundary>
             </section>
