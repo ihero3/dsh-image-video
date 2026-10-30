@@ -15,10 +15,10 @@ describe('B10 empty states and onboarding', () => {
   it('shows the 3-step onboarding guide on first open (quick mode)', async () => {
     const host = fakeApi()
     render(<Workbench {...clientProps({ api: host.api })} />)
-    await waitFor(() => { expect(screen.getByText(en.heroStepChat)).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByText(en.createStepChat)).toBeTruthy() })
     // 选项目 → 快速创作 → 放时间轴：生成 / 落入输出目录 / 登记进项目
-    expect(screen.getByText(en.heroStepOutputs)).toBeTruthy()
-    expect(screen.getByText(en.heroStepFile)).toBeTruthy()
+    expect(screen.getByText(en.createStepOutputs)).toBeTruthy()
+    expect(screen.getByText(en.createStepFile)).toBeTruthy()
     expect(screen.getByText(en.modeQuickHint)).toBeTruthy()
   })
 

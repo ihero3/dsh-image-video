@@ -2299,21 +2299,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     projectId={activeProject?.id}
                     onStarted={() => { setMode('workflow') }}
                   />
-                  <div className="iv-hero">
-                    <div className="iv-hero-top">
-                      <span className="iv-hero-ico"><Icon name="bolt" size={19} /></span>
+                  <div className="iv-create">
+                    <div className="iv-create-head">
+                      <span className="iv-create-ico"><Icon name="bolt" size={19} /></span>
                       <div style={{ display: 'grid', gap: 'var(--iv-sp-1)' }}>
-                        <h3 className="iv-hero-title">{t('modeQuick')}</h3>
+                        <h3 className="iv-create-title">{t('modeQuick')}</h3>
                         <span className="iv-meta">{busy ? t('busy') : t('emptyHint')}</span>
                       </div>
                     </div>
-                    <p className="iv-hero-text">{t('modeQuickHint')}</p>
+                    <p className="iv-create-desc">{t('modeQuickHint')}</p>
                     <div className="iv-steps">
-                      <span className="iv-step"><span className="iv-step-n">1</span>{t('heroStepChat')}</span>
+                      <span className="iv-step"><span className="iv-step-n">1</span>{t('createStepChat')}</span>
                       <Icon name="chevron" className="iv-step-arrow" size={12} />
-                      <span className="iv-step"><span className="iv-step-n">2</span>{t('heroStepOutputs')}</span>
+                      <span className="iv-step"><span className="iv-step-n">2</span>{t('createStepOutputs')}</span>
                       <Icon name="chevron" className="iv-step-arrow" size={12} />
-                      <span className="iv-step"><span className="iv-step-n">3</span>{t('heroStepFile')}</span>
+                      <span className="iv-step"><span className="iv-step-n">3</span>{t('createStepFile')}</span>
                     </div>
                     <div style={{ display: 'grid', gap: 'var(--iv-sp-3)' }}>
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>

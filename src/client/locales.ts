@@ -231,9 +231,9 @@ export type WorkbenchLocaleKey =
   | 'statAssets'
   | 'statTasks'
   | 'statResources'
-  | 'heroStepChat'
-  | 'heroStepOutputs'
-  | 'heroStepFile'
+  | 'createStepChat'
+  | 'createStepOutputs'
+  | 'createStepFile'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -903,9 +903,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statAssets: 'Assets',
   statTasks: 'Tasks',
   statResources: 'Resources',
-  heroStepChat: 'Generate in chat',
-  heroStepOutputs: 'Lands in outputs',
-  heroStepFile: 'File into project',
+  createStepChat: 'Generate in chat',
+  createStepOutputs: 'Lands in outputs',
+  createStepFile: 'File into project',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1659,9 +1659,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statAssets: '媒体素材',
   statTasks: '生成任务',
   statResources: '创作资源',
-  heroStepChat: '对话区生成',
-  heroStepOutputs: '落入输出目录',
-  heroStepFile: '登记进项目',
+  createStepChat: '对话区生成',
+  createStepOutputs: '落入输出目录',
+  createStepFile: '登记进项目',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-29.2'
+export const WORKBENCH_STYLE_VERSION = '2026-10-30.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -370,13 +370,17 @@ export const WORKBENCH_STYLE = `
   .iv-refreshing>i{animation:none;width:100%;opacity:.6}
 }
 
-/* ============ 快速创作 Hero ============ */
-.iv-hero{display:flex;flex-direction:column;gap:var(--iv-sp-6)}
-.iv-hero-top{display:flex;align-items:center;gap:var(--iv-sp-6)}
-.iv-hero-ico{width:36px;height:36px;border-radius:var(--iv-r-lg);display:grid;place-items:center;flex:none;
+/* ============ 快速生成面板 ============ */
+/* 快速生成面板（原 iv-hero）。
+   改名原因：hero 是网页设计术语（hero section = 首屏主视觉/门面区），暗示"展示性"；
+   而这块装的是标题 + 三步说明 + 提示词 + 参考图 + 视频槽 + 参数 + 生成按钮，是**操作区**。
+   叫 hero 会让读代码的人误以为是营销首屏，也会让文档写成"提示词 Hero"这种看不懂的名字。 */
+.iv-create{display:flex;flex-direction:column;gap:var(--iv-sp-6)}
+.iv-create-head{display:flex;align-items:center;gap:var(--iv-sp-6)}
+.iv-create-ico{width:36px;height:36px;border-radius:var(--iv-r-lg);display:grid;place-items:center;flex:none;
   color:var(--iv-acc);background:var(--iv-acc-soft);border:1px solid color-mix(in srgb,var(--iv-acc) 26%,transparent)}
-.iv-hero-title{font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);letter-spacing:.01em}
-.iv-hero-text{font-size:var(--iv-fs-body);color:var(--iv-tx2);max-width:70ch}
+.iv-create-title{font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);letter-spacing:.01em}
+.iv-create-desc{font-size:var(--iv-fs-body);color:var(--iv-tx2);max-width:70ch}
 .iv-steps{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
 .iv-step{display:inline-flex;align-items:center;gap:var(--iv-sp-3);padding:2px 9px 2px 3px;border-radius:var(--iv-r-pill);
   border:1px solid var(--iv-line-2);background:var(--iv-panel-2);font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:nowrap}
@@ -606,7 +610,7 @@ export const WORKBENCH_STYLE = `
 .iv-rail-txt{display:none}
 .iv-dock{grid-template-columns:1fr;max-height:44vh;overflow:auto}
 .iv-pane-head{padding:6px 8px}
-.iv-hero{padding:10px}
+.iv-create{padding:10px}
 .iv-steps{flex-wrap:wrap}
 .iv-toolbar{flex-wrap:wrap}
 }
