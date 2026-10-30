@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-30.1'
+export const WORKBENCH_STYLE_VERSION = '2026-10-30.2'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -371,6 +371,11 @@ export const WORKBENCH_STYLE = `
 }
 
 /* ============ 快速生成面板 ============ */
+.iv-model-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5)}
+.iv-model-pick{display:flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
+.iv-model-pick-note{display:inline-flex;align-items:center;gap:var(--iv-sp-2);color:var(--iv-tx2);
+  font-size:var(--iv-fs-meta);min-width:0}
+
 /* 快速生成面板（原 iv-hero）。
    改名原因：hero 是网页设计术语（hero section = 首屏主视觉/门面区），暗示"展示性"；
    而这块装的是标题 + 三步说明 + 提示词 + 参考图 + 视频槽 + 参数 + 生成按钮，是**操作区**。

@@ -235,6 +235,11 @@ export type WorkbenchLocaleKey =
   | 'createStepOutputs'
   | 'createStepFile'
   | 'generateParamAuto'
+  | 'generateImageModel'
+  | 'generateVideoModel'
+  | 'generateModelCatalogUnavailable'
+  | 'modelLimitFixedDuration'
+  | 'modelLimitNoRefVideo'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -908,6 +913,11 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   createStepOutputs: 'Lands in outputs',
   createStepFile: 'File into project',
   generateParamAuto: 'Auto (use current defaults)',
+  generateImageModel: 'Image model',
+  generateVideoModel: 'Video model',
+  generateModelCatalogUnavailable: 'Model catalog unavailable — falling back to the host default',
+  modelLimitFixedDuration: 'fixed duration only',
+  modelLimitNoRefVideo: 'no reference video / continuation',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1665,6 +1675,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   createStepOutputs: '落入输出目录',
   createStepFile: '登记进项目',
   generateParamAuto: '自动（跟随当前生效值）',
+  generateImageModel: '图像模型',
+  generateVideoModel: '视频模型',
+  generateModelCatalogUnavailable: '模型目录不可用，已回退到宿主默认模型',
+  modelLimitFixedDuration: '不支持自定义时长',
+  modelLimitNoRefVideo: '不支持参考视频/续写',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',

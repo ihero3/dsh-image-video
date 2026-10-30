@@ -23,7 +23,16 @@
  *   入口 44,780 / 15,010，总量 837,920 / 181,780。**总量没变**（同一个库，只是改成按需下载），
  *   但初始加载从 834 KB 降到 45 KB；且不再依赖宿主平台词（装到任何 DSH 都有画布）。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 54_600, gzip: 17_900 })
+/**
+ * 入口基线（`T1`/`T2` 后从 54_600 抬到 55_000，+0.7%）。理由：
+ * 入口必须注册**完整** i18n 字典——`ctx.locale.register(NS, {zh,en})` 把 `t` 绑在入口的
+ * ctx 上，再通过 props 传给工作台；而 locale 服务对「同一 NS 同一 locale」重复注册是**抛错**的
+ * （`already has locale`），所以无法"入口只注册 tab 标题、其余等 chunk 加载再补"。
+ * 于是 T1/T2 新增的 5 个文案 key 会同时出现在入口与 chunk（~14.7 KB 中文文案已在入口，
+ * 占 22%）。真正的解法是让 locale 服务支持增量注册或把 i18n 下沉，属后续专项；
+ * 本次按约定抬基线并记账。实测入口 65,643 B / 预算 66,000 B。
+ */
+export const BUNDLE_BASELINE = Object.freeze({ raw: 55_000, gzip: 18_100 })
 export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 905_920, gzip: 194_780 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),

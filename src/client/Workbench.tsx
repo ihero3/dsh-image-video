@@ -49,6 +49,7 @@ import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
 import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
 import { ModelCardsPanel } from './panels/ModelCardsPanel.tsx'
+import { ModelPicker } from './panels/ModelPicker.tsx'
 import { RatioSlicesPanel } from './panels/RatioSlicesPanel.tsx'
 import { ResourceFoldersPanel } from './panels/ResourceFoldersPanel.tsx'
 import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
@@ -445,6 +446,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateSize, setGenerateSize] = useState('')
   const [generateAspect, setGenerateAspect] = useState('')
   const [generateDuration, setGenerateDuration] = useState('')
+  // `T2`：单次生成可指定模型（空 = 宿主默认）；图片/视频各记一份，互不覆盖。
+  const [generateImageModel, setGenerateImageModel] = useState('')
+  const [generateVideoModel, setGenerateVideoModel] = useState('')
 
   // `B-9` 融合生图（`A-4` `media/compose`）：按资源 id 选角色/场景/物品 + 独立提示词。
   const [composePrompt, setComposePrompt] = useState('')
@@ -574,6 +578,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         ...mediaMode === 'video' && generateRealPerson ? { realPerson: true } : {},
         // `B-4`：续写显式模式——宿主要按"紧接参考视频往后拍"处理（缺参考视频已在上面拦截）。
         ...mediaMode === 'video' && generateContinuation && generateRefVideo !== undefined ? { continuation: true } : {},
+        // `T2`：显式传模型（空则不传，走宿主默认链）
+        ...(mediaMode === 'video' ? generateVideoModel : generateImageModel).trim() === ''
+          ? {}
+          : { model: (mediaMode === 'video' ? generateVideoModel : generateImageModel).trim() },
         ...mediaMode === 'image'
           ? generateSize.trim() === '' ? {} : { size: generateSize.trim() }
           : {
@@ -2559,6 +2567,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
+                      </div>
+                      <div className="iv-model-row" data-generate-models="true">
+                        <span className="iv-meta">{t('generateImageModel')}：</span>
+                        <ModelPicker
+                          api={apiRef.current} t={t} mediaMode="image"
+                          value={generateImageModel} onChange={setGenerateImageModel}
+                          disabled={generating !== undefined}
+                        />
+                        <span className="iv-meta">{t('generateVideoModel')}：</span>
+                        <ModelPicker
+                          api={apiRef.current} t={t} mediaMode="video"
+                          value={generateVideoModel} onChange={setGenerateVideoModel}
+                          disabled={generating !== undefined}
+                        />
                       </div>
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                         <button
