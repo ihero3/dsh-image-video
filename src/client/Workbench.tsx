@@ -458,6 +458,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [failureHint, setFailureHint] = useState<{ message: string } | undefined>(undefined)
   // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
   const [promptRisk, setPromptRisk] = useState<PromptRiskView | undefined>(undefined)
+  // `T8` 高级抽屉：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起。
+  // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏**最大只有 575px**（实测），
+  // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
+  // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -2823,6 +2828,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         )}
                       <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
+                    {/* `T8` 高级抽屉开关：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起，
+                        让「提示词 → 参数 → 生成 → 结果」在主视线内闭环（右栏只有 575px 宽）。 */}
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm iv-advanced-toggle"
+                      data-advanced-toggle="true"
+                      aria-expanded={advancedOpen}
+                      onClick={() => { setAdvancedOpen(open => !open) }}
+                    >
+                      <Icon name='chevron' size={11} />
+                      {advancedOpen ? t('advancedCollapse') : t('advancedExpand')}
+                    </button>
+                    <div className="iv-advanced" data-advanced-open={advancedOpen ? 'true' : 'false'} hidden={!advancedOpen}>
                     {/* `B-9` 融合生图（G3）：选角色/场景/物品 → 参考图预览 → 调 media/compose */}
                     <div className="iv-fusion" data-fusion="true">
                       <div className="iv-fusion-head">
@@ -3290,6 +3308,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {outputs.length === 0 ? <p className="iv-meta">{t('noOutputs')}</p> : null}
                     {/* `B-6` 模型能力卡：选型参考（只展示，不参与生成逻辑） */}
                     <ModelCardsPanel api={apiRef.current} t={t} />
+                    </div>
                   </div>
                   </PaneBoundary>
                 </section>

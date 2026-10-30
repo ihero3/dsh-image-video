@@ -50,6 +50,13 @@ describe('workbench stylesheet injection', () => {
     expect(WORKBENCH_STYLE).not.toContain('--dsw-alias-bg-l1')
   })
 
+  it('样式表里不得出现反引号（会提前终止模板字符串，直接编译失败）', () => {
+    // 踩过三次：在 CSS 注释里写 Markdown 反引号（如 `T8`）会终止 WORKBENCH_STYLE 模板字符串，
+    // 报 "Expected ';' but found ..."，而且报错位置指向注释本身，很难一眼看出。
+    // 样式表是纯 CSS + 注释，本就不该出现反引号。
+    expect(WORKBENCH_STYLE).not.toContain('`')
+  })
+
   it('根容器 .iv 自己撑满宽度（否则宿主 flex 包装会把它收缩成一条竖线）', () => {
     // 回归：宿主把 tab 内容挂进 display:flex;column 的容器，中间包装是 display:contents，
     // 于是 .iv 成为 flex item。只写 height:100% 时宽度会被收缩到内容最小宽（实测 8px），

@@ -266,6 +266,8 @@ export type WorkbenchLocaleKey =
   | 'previewSentReference'
   | 'previewSentLastFrame'
   | 'previewSentReferenceVideo'
+  | 'advancedExpand'
+  | 'advancedCollapse'
   | 'railAssets'
   | 'railTasks'
   | 'railHealth'
@@ -970,6 +972,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   previewSentReference: 'Added to reference images',
   previewSentLastFrame: 'Set as last frame',
   previewSentReferenceVideo: 'Set as reference video',
+  advancedExpand: 'More tools: fusion · prompt studio · storyboard · model cards',
+  advancedCollapse: 'Collapse',
   railAssets: 'Media assets',
   railTasks: 'Tasks',
   railHealth: 'Library health',
@@ -1758,6 +1762,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   previewSentReference: '已加入参考图',
   previewSentLastFrame: '已设为尾帧',
   previewSentReferenceVideo: '已设为参考视频',
+  advancedExpand: '展开高级（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡）',
+  advancedCollapse: '收起高级',
   railAssets: '媒体素材',
   railTasks: '生成任务',
   railHealth: '素材库体检',
