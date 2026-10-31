@@ -47,7 +47,7 @@
 
 ## 3. 阶段 1：Harness 插件与右栏工作台（最小可验收切片，计划 §15）
 
-> 门禁证据（六条逐项判定 + 未满足项与解除动作）：`docs/GATE-1-EVIDENCE.md`。
+> 门禁证据（六条逐项判定 + 未满足项与解除动作）：`docs/archive/2026-10-31/GATE-1-EVIDENCE.md`。
 
 - [x] **T1-1** 客户端产物面：`package.json` 加 `exports["./client"]`、`dsh.client`（`platform: web` + 5 个 `inject`）、**扩 `files` 纳入 `lib/client/**` 与 `lib/types/client/**`**、补 `react`/`react-dom`/`@types/react`/`@types/react-dom` 与 6 个 `@deepseek-ai/dsh-client-*` devDeps（peer 同步 optional）｜插件｜`cmd:` `pnpm run typecheck` 双程序 exit 0；`pnpm install` 后 client 包解析到 0.2.1-alpha.2、react 18.3.1｜回滚：撤销这三处声明并删 `lib/client` 重新构建｜R-ENT-1、R-BND-1、R-NFR-2｜T0-4
 - [x] **T1-2** tsdown 增加 client face：CJS/browser + `window.__ModuleLoader__.load({id, factory})` banner/footer/intro + `neverBundle`（react/react-dom/cordis/client-* 包）；`clean` 只留在 `build` 脚本，两个 face 都不 clean（避免互删）｜插件｜`cmd:` `pnpm run build` exit 0 → `lib/client/plugin.js`（8.19 kB）包装头尾正确；`grep` 确认 `require("react")` / `require("react/jsx-runtime")` 外置、无 react-dom 内联；`lib/types/client/plugin.d.ts` 由 `tsc -p tsconfig.client.json` 产出｜回滚：删 client face 与 `tsconfig.client.json`｜R-NFR-1｜T1-1
@@ -116,7 +116,7 @@
 - [x] **T7-1** client bundle 体积门禁（阈值 = 首次构建值 +20%，记入 CHANGELOG）｜插件｜**已完成**：基线实测 **raw 548,282 B / gzip 121,161 B**（记入 CHANGELOG），预算 +20%；`scripts/bundle-budget.mjs`（纯函数，门禁与测试共用同一份实现）+ `scripts/check-bundle-size.mjs`（超预算列明细并非零退出）+ `pnpm run check:bundle`；**2026-10-22 A-6 外置后基线重置为 raw 427,503 / gzip 89,329**（见 §13），当前实测 83%（含 +20% 余量）｜R-NFR-3｜T2-11
 - [x] **T7-2** 错误可操作性覆盖：网络/服务商/ffmpeg/磁盘/迁移各一条断言｜插件｜**已完成**：`tests/error-actionability.test.ts` 三组断言——① 服务商/HTTP（401 Key 无效、403 未开通、429 配额含 Retry-After、409 幂等冲突、5xx 可重试且带原文）；② **数据迁移**：工作台 JSON 损坏时报"哪个文件 + 先备份再删 + 否则一直失败"（本轮补的实现）；③ ffmpeg 缺失/无权限/缺编码器的机器码与装法。磁盘满/编码器不支持在导出失败面测试里另有三例｜R-NFR-5｜T5-6
 - [x] **T7-3** 结构化日志：任务 ID / 节点 ID / 耗时 / 服务商可串联｜插件｜**已完成**：三类事件各一条 JSON——① `generation`（`taskId`/`kind`/`status`/`durationMs`/`model`/`prompt`/服务商与产物来自工具 outcome）；② `workflow-node`（`runId`/`nodeId`/`kind`/`attempt`/`status`/`durationMs`/产物或错误）；③ `render`（`renderId`/`timelineId`/`status`/`durationMs`/`bytes`/`outputPath`，失败带机器码）。三个钩子都是可选注入（账本/运行器/导出表），宿主接到 `ctx.logger.info` 输出单行 JSON；测试断言三类事件的字段齐全｜R-NFR-4｜T7-2
-- [x] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜**已完成**：`docs/GATE-1-EVIDENCE.md` 汇总——① 登记素材（幂等，重复登记 created=false）；② 画布真跑生成（图像任务与产物 `1792107894148-d2fd6aa6.png`）；③ 运行记录逐节点状态（`running → succeeded` + `attempts`）；④ 时间轴三轨拼片（`[1,0,0]`）；⑤ 顺序预览与字幕样式（预览切换点与导出切分点一致，阈值 1 帧）；⑥ ffmpeg 能力探测（`ok · 8.0`）；⑦ **导出成片**（render `render-mvaj8rwa-2ch5b` / `succeeded 100%` / 产物 `1792128846545-61h1j9.mp4`）；⑧ 产物自动登记成素材（`时间轴导出（tml-…）`）。全部为**零生成花费**路径（已有产物 + 本机 ffmpeg）｜R-NFR-5｜T5-6
+- [x] **T7-4** 真机证据：媒体流程 8 步 + 一次 MP4 导出（附任务 ID）｜插件｜**已完成**：`docs/archive/2026-10-31/GATE-1-EVIDENCE.md` 汇总——① 登记素材（幂等，重复登记 created=false）；② 画布真跑生成（图像任务与产物 `1792107894148-d2fd6aa6.png`）；③ 运行记录逐节点状态（`running → succeeded` + `attempts`）；④ 时间轴三轨拼片（`[1,0,0]`）；⑤ 顺序预览与字幕样式（预览切换点与导出切分点一致，阈值 1 帧）；⑥ ffmpeg 能力探测（`ok · 8.0`）；⑦ **导出成片**（render `render-mvaj8rwa-2ch5b` / `succeeded 100%` / 产物 `1792128846545-61h1j9.mp4`）；⑧ 产物自动登记成素材（`时间轴导出（tml-…）`）。全部为**零生成花费**路径（已有产物 + 本机 ffmpeg）｜R-NFR-5｜T5-6
 - [x] **T7-5** ffmpeg 交付口径结论（sidecar 打包 vs 安装检测）并回填需求 §14-D3｜插件｜**已完成**：结论 = **安装检测 + 允许覆盖路径**（`DSH_FFMPEG_PATH`），不打包 sidecar；理由（每平台 60–100 MB、私有插件只复制 `lib`、授权/更新成本）与代价（非开发机要用户自装，因此导出前必须探测并给装法）写进 REQUIREMENTS §14-D3；实现见 `T5-4`｜R-TML-6、R-TML-7｜T5-4
 - [x] **T7-6** 发布门禁清单 + 打 tag（`v0.x.y-workbench-N`）｜插件｜**已完成**：`docs/RELEASE.md` 给了四道门（typecheck / 全量测试 / 构建 / 体积门禁，一条命令 `bash scripts/gate.sh`）+ 真机证据要求 + 交付面检查 + tag 命名与流程 + 事后冒烟；**已按 owner 指令打 tag `v0.3.1-workbench-1`**（CHANGELOG 的 `[Unreleased]` 已定稿为该版本）｜R-NFR-2｜T7-4
 - [x] **T7-7** CI 补测试步骤：`.github/workflows/ci.yml` 增加 `pnpm run test`（当前只 typecheck+build），并接入体积门禁｜插件｜**已完成**：CI 在 Build 之前跑 `pnpm run test`，Build 之后跑 `pnpm run check:bundle`（体积门禁）｜R-NFR-2｜T7-1
@@ -171,15 +171,15 @@
 - [x] **A-6 体积改造定稿：自包含 + 按需加载**｜插件｜**已完成**：入口拆成注册壳（44,782 B）
   + 界面 chunk（793,139 B，含 React Flow 连 d3 闭包，首次打开工作台才下载）；入口 **−94.6%**、
   总产物仅 +0.4%；**宿主零改动**（不再要求 `@xyflow/react` 平台词，装到任意 DSH 都有画布）。
-  否决方案与根因记录见 `docs/A6-BUNDLE-EXTERNALIZE.md`｜R-NFR-1、R-NFR-3
+  否决方案与根因记录见 `docs/archive/2026-10-31/A6-BUNDLE-EXTERNALIZE.md`｜R-NFR-1、R-NFR-3
 - [x] **A-10 模型流重试恢复**｜宿主 profile（用户态配置）｜**已完成**：真问题不是插件没挂
   （`@deepseek-ai/dsh-llm-retry` 早在 base bundle 且未禁用），而是 profile 的 `retryPolicy` 段丢失
   → 回落到框架默认（5 次/500ms）。按 fork 台账 **R26** 恢复 `normal` + 8 次 + 退避 1s→20s；
   宿主侧加回归守卫（`packages/bundle/base/tests/base.spec.ts`）｜R-NFR-5
 - [x] **P1 发布 v1.0.0**｜插件｜**已完成**：版本三处同步 `1.0.0`；发布说明
-  `docs/RELEASE-NOTES-v1.0.0.md`、数据迁移说明 `docs/MIGRATION-SCHEMA-V4.md`、3 分钟演示脚本
-  `docs/DEMO-3MIN.md`、示例项目包 `examples/hello-workbench/`（真实导出实现生成 + 导入验收测试
-  `tests/example-package.test.ts`）、界面交接 `docs/HANDOFF-UI-DETAILS.md`；tag
+  `docs/archive/2026-10-31/RELEASE-NOTES-v1.0.0.md`、数据迁移说明 `docs/MIGRATION-SCHEMA-V4.md`、3 分钟演示脚本
+  `docs/archive/2026-10-31/DEMO-3MIN.md`、示例项目包 `examples/hello-workbench/`（真实导出实现生成 + 导入验收测试
+  `tests/example-package.test.ts`）、界面交接 `docs/archive/2026-10-31/HANDOFF-UI-DETAILS.md`；tag
   `v1.0.0-workbench-78`
 - [x] **发布门禁补齐**｜插件｜**已完成**：`@vitest/coverage-v8` 未声明导致 `gate.sh` 第 5 步
   `MISSING DEPENDENCY` → 声明后 **5/5 全绿**（822 passed / 5 skipped；覆盖度 83.83·72.46·83.2·86.81）
@@ -190,3 +190,17 @@
   chunk 200/778,226 B 注册为 `client.Workbench.js`；画布 **5 节点 / 2 边 / 1 viewport** 渲染正常
   → 「装到任何 DSH 都有画布」在真实 Electron 宿主上成立
 - [ ] **真实生成验收（owner）**：图片 1 次 + 视频 1 次（产生费用），留任务 id 与产物路径
+
+## 14. 收口轮（2026-10-31，`v1.0.1-workbench-79`）
+
+> 目的：为「快速创作页面重做」腾出干净基线。本轮**不改任何功能行为**，只做清场 + 进度整理 + 收口。
+> 权威现状快照见 `STATUS-2026-10-31.md`，新路线见 `ROADMAP.md`。
+
+- [x] **收口快照落库**：`docs/STATUS-2026-10-31.md`——能力现状 / 12 条硬约束（每条带证据）/ 未做清单 / 下一轮规划输入
+- [x] **死代码清场**：删 25 个未使用 locale key（zh/en 同步；`fusionCrop{X,Y,Width,Height}` 由模板字符串动态拼接，保留）+ 5 条无引用 `.iv-*` 样式规则；**无文件级死代码**（103 个源文件逐个反查引用，零孤儿）
+- [x] **文档归档**：20 份一次性过程文档 → `docs/archive/2026-10-31/`；活文档收敛到 11 份并逐个改好引用（含 `REQUIREMENTS` / `RELEASE` / `UI-POLISH-PLAN` 与两处代码注释）
+- [x] **过时脚本删除**：`check-scope.mjs`（双轨越界自检，双轨已结束）、`agent-restart.sh` / `agent-stop.sh`（一次性运维脚本）
+- [x] **路线图重排**：`ROADMAP.md` 以「快速创作页面重做」为主线；其余能力转冻结；模块级删减清单交由 owner 拍板
+- [x] **账本回填**：上一版 `ROADMAP` 里 10-21 的过期 ❌ 项（参数下拉 / 多参考图 / 进度 / 导出历史 / 模板 / 批量操作 / 片段手柄）真实状态写入快照第 2 节
+- [x] **版本与 tag**：`package.json` / `src/version.ts` 同步 `1.0.1`；tag `v1.0.1-workbench-79`；Harness 子模块指针同步
+- 说明：本轮不动领域层（`src/workbench/*`）、宿主 RPC、测试护栏；五道门全绿后提交

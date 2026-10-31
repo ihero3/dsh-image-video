@@ -16,7 +16,6 @@ export type WorkbenchLocaleKey =
   | 'importFiles'
   | 'importDone'
   | 'importUnsupported'
-  | 'generateReferenceLabel'
   | 'generateReferenceNone'
   | 'generateUseSelected'
   | 'generateClearReference'
@@ -259,7 +258,6 @@ export type WorkbenchLocaleKey =
   | 'assetSortLargest'
   | 'assetSortName'
   | 'assetSearchEmpty'
-  | 'previewActions'
   | 'previewAsReference'
   | 'previewAsLastFrame'
   | 'previewAsReferenceVideo'
@@ -426,15 +424,6 @@ export type WorkbenchLocaleKey =
   | 'promptApplyDone'
   | 'promptRemove'
   | 'promptSavedCount'
-  | 'composeNeedsPrompt'
-  | 'composeEmptyHint'
-  | 'composeSelected'
-  | 'composeSelectHint'
-  | 'composePromptPlaceholder'
-  | 'composeDone'
-  | 'composeAssetCreated'
-  | 'composeBusy'
-  | 'composeRun'
   | 'promptExtractEmpty'
   | 'promptNamePlaceholder'
   | 'promptSave'
@@ -544,9 +533,7 @@ export type WorkbenchLocaleKey =
   | 'exportsRetry'
   | 'exportsRetryDone'
   | 'exportsRetryFailed'
-  | 'exportsTimelineMissing'
   | 'exportsCount'
-  | 'exportsOpen'
   | 'exportsFailedNote'
   | 'exportsCancelledNote'
   | 'railExports'
@@ -584,22 +571,18 @@ export type WorkbenchLocaleKey =
   | 'lensHighAngle'
   | 'lensLowAngle'
   | 'lensOverhead'
-  | 'fusionStyleNoteLabel'
   | 'fusionStyleNotePlaceholder'
   | 'fusionCropLabel'
-  | 'fusionCropEnable'
   | 'fusionCropX'
   | 'fusionCropY'
   | 'fusionCropWidth'
   | 'fusionCropHeight'
   | 'fusionCropHint'
-  | 'fusionCropActive'
   | 'fusionCropInvalid'
   // ---- B-4 视频续写显式模式 ----
   | 'videoContinuation'
   | 'videoContinuationHint'
   | 'videoContinuationNeedsRefVideo'
-  | 'videoContinuationPending'
   // ---- B-5 成片多比例切片 ----
   | 'ratioSlicesTitle'
   | 'ratioSlicesHint'
@@ -643,24 +626,17 @@ export type WorkbenchLocaleKey =
   | 'promptRiskWarn'
   | 'promptRiskBlock'
   | 'promptRiskBlocked'
-  | 'promptRiskAdvice'
   | 'promptRiskFailed'
   // ---- B-7 资源分类 + 重绘计划 ----
   | 'resourceFoldersTitle'
   | 'resourceFolderAll'
   | 'resourceFolderUncategorized'
-  | 'resourceFolderLabel'
-  | 'resourceFolderPlaceholder'
   | 'resourceFolderNone'
-  | 'redrawPlanTitle'
   | 'redrawPlanRun'
-  | 'redrawPlanBusy'
   | 'redrawPlanPromptLabel'
   | 'redrawPlanRefs'
   | 'redrawPlanSuggestions'
   | 'redrawPlanWarnings'
-  | 'redrawPlanNone'
-  | 'redrawPlanFailed'
   | 'redrawPlanToForm'
   | 'redrawPlanApplied'
   // ---- B-18 物料手动挑选 + 匹配回显 ----
@@ -670,7 +646,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineManualPickClear'
   | 'pipelineManualPickCount'
   | 'pipelineMatchedTitle'
-  | 'pipelineMatchedNone'
   | 'pipelineMatchedItem'
 
 /** Dictionary namespace owned by this plugin's browser half. */
@@ -736,7 +711,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   importDone: 'Imported',
   importUnsupported: 'Cannot read file paths here — importing needs the desktop app.',
 
-  generateReferenceLabel: 'Reference image',
   generateReferenceNone: 'None (text-to-image / text-to-video)',
   generateUseSelected: 'Use selected asset',
   generateClearReference: 'Clear reference',
@@ -972,7 +946,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   assetSortLargest: 'Largest first',
   assetSortName: 'By name',
   assetSearchEmpty: 'No matching assets (try clearing the search)',
-  previewActions: 'Send to composer',
   previewAsReference: 'Use as reference',
   previewAsLastFrame: 'Use as last frame',
   previewAsReferenceVideo: 'Use as reference video',
@@ -1141,15 +1114,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   promptApplyDone: 'Loaded into the prompt box',
   promptRemove: 'Delete prompt',
   promptSavedCount: '{n} prompts',
-  composeNeedsPrompt: 'Describe your scene before fusing.',
-  composeEmptyHint: 'No resources of this kind yet — create one under Resources.',
-  composeSelected: 'Selected',
-  composeSelectHint: 'Pick a few resources from the columns above to fuse.',
-  composePromptPlaceholder: 'Describe the final look: style, mood, details…',
-  composeDone: 'Fused into',
-  composeAssetCreated: 'new asset',
-  composeBusy: 'Fusing…',
-  composeRun: 'Fuse and generate',
   healthSize: 'Size report',
   healthDupes: 'Duplicates',
   healthStats: 'Per-project',
@@ -1224,9 +1188,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   exportsRetry: 'Retry export',
   exportsRetryDone: 'Retry started for {name}.',
   exportsRetryFailed: 'Retry failed',
-  exportsTimelineMissing: 'timeline no longer exists',
   exportsCount: '{n} records',
-  exportsOpen: 'Open output',
   exportsFailedNote: 'Export failed',
   exportsCancelledNote: 'Export cancelled',
   railExports: 'Export history',
@@ -1262,23 +1224,19 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   lensHighAngle: 'High angle',
   lensLowAngle: 'Low angle',
   lensOverhead: 'Overhead',
-  fusionStyleNoteLabel: 'Style note',
   fusionStyleNotePlaceholder: 'e.g. cinematic lighting, soft palette…',
   fusionCropLabel: 'Crop scene',
-  fusionCropEnable: 'Crop the selected scene image first',
   fusionCropX: 'X',
   fusionCropY: 'Y',
   fusionCropWidth: 'Width',
   fusionCropHeight: 'Height',
   fusionCropHint: 'Normalized 0–1 coordinates; the cropped scene replaces the original before the model sees it.',
-  fusionCropActive: 'Cropping',
   fusionCropInvalid: 'Invalid crop: keep within 0–1 and at least 5% on each side.',
 
   // ---- B-4 视频续写显式模式 ----
   videoContinuation: 'Continuation (extend)',
   videoContinuationHint: 'Keep shooting right after the reference video. A reference video is required; missing it is rejected, not silently downgraded.',
   videoContinuationNeedsRefVideo: 'Continuation needs a reference video — pick one first.',
-  videoContinuationPending: 'Extending…',
 
   // ---- B-5 成片多比例切片 ----
   ratioSlicesTitle: 'Multi-ratio export',
@@ -1324,25 +1282,18 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   promptRiskWarn: 'Caution',
   promptRiskBlock: 'Blocked',
   promptRiskBlocked: 'This prompt is blocked — it will not be submitted.',
-  promptRiskAdvice: 'Advice',
   promptRiskFailed: 'Safety check failed; submit at your own risk.',
 
   // ---- B-7 资源分类 + 重绘计划 ----
   resourceFoldersTitle: 'Folders',
   resourceFolderAll: 'All',
   resourceFolderUncategorized: 'Uncategorized',
-  resourceFolderLabel: 'Folder',
-  resourceFolderPlaceholder: 'Set a folder for this resource',
   resourceFolderNone: 'No folder',
-  redrawPlanTitle: 'Redraw plan',
   redrawPlanRun: 'Plan redraw',
-  redrawPlanBusy: 'Planning…',
   redrawPlanPromptLabel: 'Suggested prompt',
   redrawPlanRefs: 'Reference images',
   redrawPlanSuggestions: 'Suggestions',
   redrawPlanWarnings: 'Warnings',
-  redrawPlanNone: 'No plan yet.',
-  redrawPlanFailed: 'Failed to plan redraw.',
   redrawPlanToForm: 'Send to compose',
   redrawPlanApplied: 'Applied to compose form.',
 
@@ -1353,7 +1304,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineManualPickClear: 'Clear',
   pipelineManualPickCount: '{n} picked',
   pipelineMatchedTitle: 'Matched materials',
-  pipelineMatchedNone: 'No materials matched.',
   pipelineMatchedItem: '{name} · {kind}',
   exampleProject: 'Example project',
   exampleProjectDone: 'Example project created — try the Quick image template on the canvas.',
@@ -1381,23 +1331,19 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   lensHighAngle: '俯拍',
   lensLowAngle: '仰拍',
   lensOverhead: '顶拍',
-  fusionStyleNoteLabel: '风格备注',
   fusionStyleNotePlaceholder: '例如：电影感光影、柔和色调…',
   fusionCropLabel: '场景裁剪',
-  fusionCropEnable: '先裁剪选中的场景图再送模型',
   fusionCropX: 'X',
   fusionCropY: 'Y',
   fusionCropWidth: '宽',
   fusionCropHeight: '高',
   fusionCropHint: '归一化 0–1 坐标；裁剪后的场景图会替换原图送模型。',
-  fusionCropActive: '裁剪中',
   fusionCropInvalid: '裁剪无效：必须在 0–1 内，且每边至少保留 5%。',
 
   // ---- B-4 视频续写显式模式 ----
   videoContinuation: '续写（延续视频）',
   videoContinuationHint: '紧接参考视频往后拍。必须有参考视频，缺参考视频直接拒绝，不静默降级。',
   videoContinuationNeedsRefVideo: '续写需要参考视频——先选一条。',
-  videoContinuationPending: '续写中…',
 
   // ---- B-5 成片多比例切片 ----
   ratioSlicesTitle: '多比例导出',
@@ -1443,25 +1389,18 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   promptRiskWarn: '需注意',
   promptRiskBlock: '已拦截',
   promptRiskBlocked: '该提示词被拦截——不会提交。',
-  promptRiskAdvice: '建议',
   promptRiskFailed: '风控检测失败；自行承担风险提交。',
 
   // ---- B-7 资源分类 + 重绘计划 ----
   resourceFoldersTitle: '分类',
   resourceFolderAll: '全部',
   resourceFolderUncategorized: '未分类',
-  resourceFolderLabel: '分类',
-  resourceFolderPlaceholder: '给资源设置分类',
   resourceFolderNone: '无分类',
-  redrawPlanTitle: '重绘计划',
   redrawPlanRun: '生成重绘计划',
-  redrawPlanBusy: '生成中…',
   redrawPlanPromptLabel: '建议提示词',
   redrawPlanRefs: '参考图',
   redrawPlanSuggestions: '建议',
   redrawPlanWarnings: '提醒',
-  redrawPlanNone: '还没有计划。',
-  redrawPlanFailed: '重绘计划生成失败。',
   redrawPlanToForm: '填入融合表单',
   redrawPlanApplied: '已填入融合表单。',
 
@@ -1472,7 +1411,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineManualPickClear: '清空',
   pipelineManualPickCount: '已挑 {n} 个',
   pipelineMatchedTitle: '匹配到的物料',
-  pipelineMatchedNone: '没有匹配到物料。',
   pipelineMatchedItem: '{name} · {kind}',
 
   tabTitle: 'dsh-image-video 工作台',
@@ -1533,7 +1471,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   importDone: '已导入',
   importUnsupported: '这里拿不到文件路径——批量导入需在桌面应用里使用。',
 
-  generateReferenceLabel: '参考图',
   generateReferenceNone: '未指定（纯文生图 / 文生视频）',
   generateUseSelected: '用选中素材',
   generateClearReference: '清除参考',
@@ -1769,7 +1706,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   assetSortLargest: '体积最大',
   assetSortName: '按名称',
   assetSearchEmpty: '没有匹配的素材（试试清空搜索）',
-  previewActions: '送到生成位',
   previewAsReference: '设为参考',
   previewAsLastFrame: '设为尾帧',
   previewAsReferenceVideo: '设为参考视频',
@@ -1938,15 +1874,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   promptApplyDone: '已带入提示词框',
   promptRemove: '删除提示词',
   promptSavedCount: '{n} 条提示词',
-  composeNeedsPrompt: '融合生图前先写一段描述。',
-  composeEmptyHint: '这类资源还没有——去「资源库」新建吧。',
-  composeSelected: '已选',
-  composeSelectHint: '从上方列里挑几个要融合的资源。',
-  composePromptPlaceholder: '描述最终画面：风格、氛围、细节…',
-  composeDone: '已融合成',
-  composeAssetCreated: '新素材',
-  composeBusy: '融合中…',
-  composeRun: '融合并生成',
   healthSize: '体积排行',
   healthDupes: '重复素材',
   healthStats: '项目统计',
@@ -2021,9 +1948,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   exportsRetry: '重试导出',
   exportsRetryDone: '已为 {name} 重新开始导出。',
   exportsRetryFailed: '重试失败',
-  exportsTimelineMissing: '对应时间轴已不存在',
   exportsCount: '{n} 条记录',
-  exportsOpen: '打开产物',
   exportsFailedNote: '导出失败',
   exportsCancelledNote: '导出已取消',
   railExports: '导出历史',

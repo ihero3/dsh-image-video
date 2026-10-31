@@ -2,12 +2,12 @@
 
 - 文档角色：**需求层**——用户可见行为、边界、验收标准、追踪矩阵。
 - 配套文档（不重复写内容，只引用）：
-  - 事实依据：[`DESIGN-AUDIT.md`](./DESIGN-AUDIT.md)（今天代码有什么、Harness 支持什么、能力分级）
-  - 阶段设计：[`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md)（阶段 0–8、模块、数据模型、节点表）
+  - 事实依据：[`DESIGN-AUDIT.md`](./archive/2026-10-31/DESIGN-AUDIT.md)（今天代码有什么、Harness 支持什么、能力分级）
+  - 阶段设计：[`archive/2026-10-31/IMPLEMENTATION-PLAN.md`](./archive/2026-10-31/IMPLEMENTATION-PLAN.md)（阶段 0–8、模块、数据模型、节点表）
   - 执行手册：[`EXECUTION.md`](./EXECUTION.md)（环境前置、每阶段怎么执行、验证命令、回滚）
   - 任务列表：[`TASKS.md`](./TASKS.md)（可勾选原子任务，含依赖/验收/回滚）
 - 基线（2026-10-12）：插件仓库 `3a5c1e6`（`v0.3.1`，`main`，注意 `lib/` 仍是 `478832a` 的产物），Harness 仓库 `ee5114bb18`（子模块指针指向 `3a5c1e6`，`0.2.1-alpha.2`），本机 `ffmpeg 8.0` / `ffprobe 8.0` 可用。
-- 本文件只描述"要什么、怎么判定做到"，**不含实现细节**；实现顺序与改动文件看 `IMPLEMENTATION-PLAN.md` 与 `TASKS.md`。
+- 本文件只描述"要什么、怎么判定做到"，**不含实现细节**；实现顺序与改动文件看 `archive/2026-10-31/IMPLEMENTATION-PLAN.md` 与 `TASKS.md`。
 
 ## 0. 怎么读这份文件
 

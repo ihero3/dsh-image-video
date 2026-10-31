@@ -197,10 +197,10 @@ v1 打算新建 `tests/design-system.test.tsx` 覆盖 token/骨架/控件/图标
 首轮数字不达标的处理原则（重要）：
 
 - **不要为凑阈值补测试**。阈值是回归护栏，不是 KPI；补一堆断言 DOM 存在的测试只会让噪声上升。
-- 正确做法是按目录分档并写明"逐轮提升"，例如 `'src/client/panels/**'` 单独一档给更低阈值（面板三态迁移后自然会涨），`'src/client/*.tsx'` 一档。每轮结束把实测值追加进 `docs/COVERAGE-PLAN.md` 的表格，涨了就把阈值抬上去。
-- 若某文件确实不可测（例如纯样式字符串），排除它时必须在 `COVERAGE-PLAN.md` 写明理由，不许静默 exclude。
+- 正确做法是按目录分档并写明"逐轮提升"，例如 `'src/client/panels/**'` 单独一档给更低阈值（面板三态迁移后自然会涨），`'src/client/*.tsx'` 一档。每轮结束把实测值追加进 `docs/archive/2026-10-31/COVERAGE-PLAN.md` 的表格，涨了就把阈值抬上去。
+- 若某文件确实不可测（例如纯样式字符串），排除它时必须在 `archive/2026-10-31/COVERAGE-PLAN.md` 写明理由，不许静默 exclude。
 
-验收：`bash scripts/gate.sh` 第 5 步绿；`COVERAGE-PLAN.md` 里有一张"日期 / 全局 / client 分档 / 本轮变更"的表。
+验收：`bash scripts/gate.sh` 第 5 步绿；`archive/2026-10-31/COVERAGE-PLAN.md` 里有一张"日期 / 全局 / client 分档 / 本轮变更"的表。
 
 回退：把 `'src/client/**'` 加回 `exclude`、全局阈值还原即可（一次改动，无数据影响）。
 
@@ -665,7 +665,7 @@ node scripts/diff-ui-baseline.mjs
 
 - 本文件批次完成后回填"实测/结论"，不留在"方案阶段"；
 - `HANDOFF-UI-DETAILS.md` 补一节"设计系统骨架"（`.iv-pane` / `.iv-sub` / `PanelState` 的用法约束），否则下一个人会再造一套；
-- `COVERAGE-PLAN.md` 记录 D1 落地后的基线与分档表（日期 / 全局四项 / client 分档 / 本轮变更），后续每轮只追加不覆盖；
+- `archive/2026-10-31/COVERAGE-PLAN.md` 记录 D1 落地后的基线与分档表（日期 / 全局四项 / client 分档 / 本轮变更），后续每轮只追加不覆盖；
 
 ---
 
@@ -675,7 +675,7 @@ node scripts/diff-ui-baseline.mjs
 
 | 批次                              | 范围                                                                                                                                         | 交付物                                                                                                         | 验收                                                                                                 | 风险                 | 依赖        |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------ | --------- |
-| **R6-0 测试地基**                   | 环境自检脚本说明、`asyncUtilTimeout`、`data-iv-ready`、`--maxWorkers=2`、`--retry=0` 脚本、契约测试扩写、**覆盖率纳入（D1：测基线 → 改 exclude → 下调全局阈值 → client 分档）**、基线首采 | `tests/setup-dom.ts` + `vitest.config.ts` + 4 个测试文件 + `docs/COVERAGE-PLAN.md` 记录 + `docs/ui-baseline/*.png` | 连续 3 轮 UI 子集全绿且 retry=0；`gate.sh` 第 5 步绿；基线 10 张入库                                                 | 中（覆盖率阈值需一次调准）      | 无         |
+| **R6-0 测试地基**                   | 环境自检脚本说明、`asyncUtilTimeout`、`data-iv-ready`、`--maxWorkers=2`、`--retry=0` 脚本、契约测试扩写、**覆盖率纳入（D1：测基线 → 改 exclude → 下调全局阈值 → client 分档）**、基线首采 | `tests/setup-dom.ts` + `vitest.config.ts` + 4 个测试文件 + `docs/archive/2026-10-31/COVERAGE-PLAN.md` 记录 + `docs/ui-baseline/*.png` | 连续 3 轮 UI 子集全绿且 retry=0；`gate.sh` 第 5 步绿；基线 10 张入库                                                 | 中（覆盖率阈值需一次调准）      | 无         |
 | **R6-1 令牌补全** ✅ **已完成**         | 间距/字号/字重/圆角/层级/动效/阴影/`scrollbar-gutter` + 裸值禁令                                                                                             | `workbench-style.ts`（59 个令牌）、`client-design-system` 7 条令牌契约                                                 | typecheck + 契约（13 passed）+ build + bundle 89% ✅；真机 PNG 对照待做                                        | 低（无结构变化，单处位移 ≤1px） | R6-0      |
 | **R6-2 排版与层级** ✅ **已完成**        | `.iv-sub` 骨架、区块位置修正、删 `.iv-pane-body`（D2）、`iv-card` 补样式、密度/数字对齐                                                                            | 3 个 panel 容器 + `Workbench.tsx` 两处移动 + 3 处 fragment + 8 条容器规则合并                                              | 契约 **15 passed / 0 todo** ✅；相关既有测试全绿 ✅；真机矩阵/PNG 对照待做                                               | 中（动 JSX 顺序）        | R6-1      |
 | **R6-3a 交互与 a11y** ✅ **已完成**    | 手柄键盘化、focus trap/归还、常驻播报区、`placeOverlay` 纯函数                                                                                               | `timeline-math.ts` / `use-dialog-focus.ts` / `overlay-position.ts` + 3 个测试文件                                | 19 条断言全绿：`timeline-nudge`(9)、`client-timeline-keyboard`(5)、`client-a11y`(+1)、`overlay-position`(6) | 中（动键盘交互）           | R6-0、R6-2 |

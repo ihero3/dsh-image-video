@@ -1,7 +1,7 @@
 /**
  * 存储规模化基线（Track A / A8）：一万素材量级的读/写延迟。
  *
- * 断言用**宽松上限**（防 CI 抖动误报），真实数字打印出来供 `docs/PERF.md` 记录。
+ * 断言用**宽松上限**（防 CI 抖动误报），真实数字打印出来供 `docs/archive/2026-10-31/PERF.md` 记录。
  * 关键收益来自 `A8` 的按项目索引：`listAssets` 从"每次全表扫描"变成"建一次索引 O(n) + O(1) 读取"。
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'

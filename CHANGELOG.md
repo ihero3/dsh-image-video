@@ -2,6 +2,33 @@
 
 （下一轮的改动写这里）
 
+## [1.0.1-workbench-79] - 2026-10-31
+
+**收口轮：清场 + 进度整理 + 基线固化。功能行为零改动**——只删死代码与过期文档，把仓库整理成
+「快速创作页面重做」的干净起点。现状快照见 `docs/STATUS-2026-10-31.md`，新路线见 `docs/ROADMAP.md`。
+
+### 批次八十三（清场与收口）
+- **死文案**：删 25 个未使用的 locale key（`compose*` 旧命名、`redrawPlan*`、`resourceFolder*`、
+  `exportsOpen`/`exportsTimelineMissing`、`promptRiskAdvice` 等），`en` / `zh` / `WorkbenchLocaleKey`
+  联合类型三处同步删除；联合类型收敛到 629 条。**刻意保留** `panePlanned`（有测试用它断言"不显示"）
+  与 `fusionCrop{X,Y,Width,Height}`（由模板字符串拼接，静态扫描看不见）。
+- **死样式**：删 5 条无任何引用的 `.iv-*` 规则（`iv-sr-only`、`iv-progress--ok/--err`、
+  `iv-tile--image`、`iv-rail-txt`）。动态拼接的类名（`iv-clip--${kind}`、`iv-node-run--${status}`）一律保留；
+  样式版本戳 bump 到 `2026-10-31.3`（宿主不卸载文档级 `<style>`，版本戳是整表覆盖的依据）。
+- **过时脚本**：删 `check-scope.mjs`（双轨期越界自检，双轨已结束）与 `agent-restart.sh` /
+  `agent-stop.sh`（2026-10-15 事故期的一次性运维脚本）。
+- **文档**：新增 `docs/STATUS-2026-10-31.md`（能力现状 / 12 条硬约束 / 未做清单 / 下一轮输入）；
+  20 份一次性过程文档移入 `docs/archive/2026-10-31/`（含索引 README），活文档收敛到 11 份；
+  `ROADMAP.md` 重排为「快速创作页面重做」主线，其余能力转冻结；`TASKS.md` 增第 14 节收口记录。
+- **测试适配（两处，均为版本方案变化所致）**：`version-consistency` 不再要求不带 `lib/` 的 tag
+  核对构建产物（2026-10-25 起 `lib/` 不入库），CHANGELOG 连续性检查改为按 major.minor 系列分组
+  （1.0.1 与 0.3.1 的 patch 同为 1，原来的全局递增假设不再成立）。
+- 说明：领域层（`src/workbench/*`）、宿主 RPC 面、既有测试护栏均未改动；**没有文件级死代码**
+  （103 个源文件逐个反查引用，零孤儿）；162 个未使用导出全是类型/接口（编译期擦除），不动。
+- 复核：`bash scripts/gate.sh` 五道门全绿——**1,002 passed / 5 skipped**（179 文件通过、3 个 live 契约跳过）；
+  入口 **67,114 B / 21,504 gzip**（占预算 96% / 92%，清场前 69,412 B = 100%）；
+  总产物 1,013,991 B（93%）；覆盖率 85.01 / 73.63 / 84.03 / 87.87。
+
 ### 批次八十二（T10 任务失败原因可展开）
 - **问题**：失败任务的上游原文只写在 `title` 属性里——鼠标悬停才看得到，触屏与键盘用户拿不到。
 - **改动**：失败任务行新增「查看原因」按钮（`data-task-error-toggle`），`aria-expanded` 同步，

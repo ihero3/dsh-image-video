@@ -5,7 +5,7 @@
  * 帮助浮层只陈述**真实存在**的快捷键（Ctrl/⌘+Enter 生成、Ctrl/⌘+Z 撤销、
  * 空格播放、Delete 删除）；示例项目一键建项并套用「快速图片」模板，
  * 让新用户打开就有东西可看。真实生成端到端走查需要宿主授权（见
- * `docs/WALKTHROUGH-v1.0.0.md`），本文件只覆盖不花额度的部分。
+ * `docs/archive/2026-10-31/WALKTHROUGH-v1.0.0.md`），本文件只覆盖不花额度的部分。
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'

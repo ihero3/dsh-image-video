@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-10-31.2'
+export const WORKBENCH_STYLE_VERSION = '2026-10-31.3'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -109,11 +109,6 @@ export const WORKBENCH_STYLE = `
 .iv-micro{font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-bold);letter-spacing:.11em;color:var(--iv-tx3);text-transform:uppercase;white-space:nowrap}
 .iv-meta{font-size:var(--iv-fs-body);color:var(--iv-tx3)}
 .iv-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-/* 仅读屏可见：常驻 live region 用。不能用 display:none / visibility:hidden——
-   那样读屏同样读不到，播报会静默失效。 */
-.iv-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
-  clip-path:inset(50%);white-space:nowrap;border:0}
-
 /* ============ 应用外壳：顶栏 ============ */
 .iv-top{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5);padding:7px 10px;
   background:var(--iv-panel);border-bottom:1px solid var(--iv-line);flex:none}
@@ -308,8 +303,6 @@ export const WORKBENCH_STYLE = `
 .iv-count{margin-left:auto;font-size:var(--iv-fs-meta);color:var(--iv-tx3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .iv-progress{height:3px;border-radius:var(--iv-r-xs);background:var(--iv-panel-3);overflow:hidden;min-width:70px;flex:1}
 .iv-progress>i{display:block;height:100%;border-radius:var(--iv-r-xs);background:var(--iv-acc);transition:width var(--iv-dur-3) ease}
-.iv-progress--ok>i{background:var(--iv-ok)}
-.iv-progress--err>i{background:var(--iv-danger)}
 /* F3：生成没有百分比——不定进度条（色带往返），配"生成中 · 12s"文案 */
 .iv-progress--run>i{width:38%;animation:iv-progress-run 1.15s ease-in-out infinite}
 @keyframes iv-progress-run{0%{margin-left:-38%}100%{margin-left:100%}}
@@ -339,7 +332,6 @@ export const WORKBENCH_STYLE = `
 .iv-row-actions{display:flex;align-items:center;gap:var(--iv-sp-2);flex:none}
 .iv-tile{width:22px;height:22px;border-radius:var(--iv-r);display:grid;place-items:center;flex:none;
   border:1px solid var(--iv-line);background:var(--iv-panel-2);color:var(--iv-tx2)}
-.iv-tile--image{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 30%,transparent);background:var(--iv-acc-soft)}
 .iv-tile--video{color:var(--iv-ok);border-color:color-mix(in srgb,var(--iv-ok) 30%,transparent);background:var(--iv-ok-soft)}
 .iv-thumb{width:64px;height:44px;border-radius:var(--iv-r-xs);object-fit:cover;flex:none;background:var(--iv-monitor);
   border:1px solid var(--iv-line-2)}
@@ -630,12 +622,11 @@ export const WORKBENCH_STYLE = `
   border-radius:var(--iv-r);overflow:hidden;border:1px solid var(--iv-line)}
 .iv-flow .react-flow__attribution{background:transparent;color:var(--iv-tx3)}
 .iv-flow .react-flow__attribution a{color:var(--iv-tx3)}
-/* B7：窄窗（<768px）紧凑排版——右侧空间不足时缩小间距/字号，停靠区强制单列可滚，隐藏轨道文字（用悬浮提示代替） */
+/* B7：窄窗（<768px）紧凑排版——右侧空间不足时缩小间距/字号，停靠区强制单列可滚 */
 @media (max-width:768px){
 .iv{padding:6px;font-size:var(--iv-fs-body)}
 .iv-top{padding:6px 8px;gap:var(--iv-sp-3)}
 .iv-rail{width:42px}
-.iv-rail-txt{display:none}
 .iv-dock{grid-template-columns:1fr;max-height:44vh;overflow:auto}
 .iv-pane-head{padding:6px 8px}
 .iv-create{padding:10px}
