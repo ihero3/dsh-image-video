@@ -2433,7 +2433,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           <section className="iv-page" aria-label={t(MODE_KEYS[mode])}>
             {mode === 'quick'
               ? (
-                <section className="iv-pane">
+                <section className="iv-pane" data-workbench-pane="paneCreate">
                   <PaneBoundary label={t('modeQuick')} t={t}>
                   <PipelineCard
                     api={apiRef.current}
@@ -2461,7 +2461,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <div style={{ display: 'grid', gap: 'var(--iv-sp-3)' }}>
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
                       <textarea
-                        className="iv-input"
+                        className="iv-input iv-textarea"
                         rows={3}
                         value={generatePrompt}
                         placeholder={t('generatePromptPlaceholder')}
@@ -2480,7 +2480,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         ? null
                         : (
                           <p
-                            className={`iv-notice${promptRisk.level === 'block' ? ' iv-notice--error' : ''}`}
+                            className={`iv-notice${promptRisk.level === 'block' ? ' iv-notice--error iv-notice--block' : ''}`}
+                            role={promptRisk.level === 'block' ? 'alert' : undefined}
                             data-generate-risk={promptRisk.level}
                           >
                             <Icon name={promptRisk.level === 'block' ? 'alert' : 'eye'} size={12} />
@@ -2726,7 +2727,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
                         <button
                           type="button"
-                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          className={`iv-btn iv-btn--acc iv-btn--lg${generating === 'image' ? ' iv-btn--busy' : ''}`}
+                          aria-busy={generating === 'image' ? true : undefined}
                           data-generate-blocked={promptRisk?.level === 'block' ? 'true' : undefined}
                           disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
                           onClick={() => { void runGenerate('image') }}
@@ -2735,7 +2737,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </button>
                         <button
                           type="button"
-                          className="iv-btn iv-btn--sm"
+                          className={`iv-btn iv-btn--acc${generating === 'video' ? ' iv-btn--busy' : ''}`}
+                          aria-busy={generating === 'video' ? true : undefined}
                           disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
                           onClick={() => { void runGenerate('video') }}
                         >
@@ -3044,7 +3047,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : (
                             <span
-                              className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : 'warn'}`}
+                              className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : composeRisk.level === 'block' ? 'err' : 'warn'}`}
                               data-risk-level={composeRisk.level}
                             >
                               {composeRisk.level === 'block' ? t('promptRiskBlock') : composeRisk.level === 'warn' ? t('promptRiskWarn') : t('promptRiskOk')}
@@ -3052,12 +3055,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           )}
                         {composeRisk === undefined || composeRisk.hits.length === 0
                           ? null
-                          : <span className="iv-meta iv-meta--warn" data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
+                          : <span className={composeRisk.level === 'block' ? 'iv-meta iv-meta--err' : 'iv-meta iv-meta--warn'} data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
                       </div>
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
                         <button
                           type="button"
-                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          className={`iv-btn iv-btn--acc iv-btn--lg${composing ? ' iv-btn--busy' : ''}`}
+                          aria-busy={composing ? true : undefined}
                           data-fusion-run="true"
                           disabled={composing || activeId === undefined || composePrompt.trim() === '' || composeRisk?.level === 'block'}
                           onClick={() => { void runCompose() }}
@@ -3215,8 +3219,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </label>
                         <button
                           type="button"
-                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          className={`iv-btn iv-btn--acc${storyboardBusy ? ' iv-btn--busy' : ''}`}
                           data-storyboard-plan="true"
+                          aria-busy={storyboardBusy ? 'true' : undefined}
                           disabled={storyboardBusy || activeId === undefined || storyboardScript.trim() === ''}
                           onClick={() => { void runPlanStoryboard() }}
                         >
@@ -3613,7 +3618,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </select>
                     </label>
 
-                    <button type="button" className="iv-btn iv-btn--acc iv-btn--sm" data-timeline-export="true"
+                    <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
+                      aria-busy={renderRunning ? 'true' : undefined}
                       disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
                       onClick={() => {
                         setAssetRegistered(false)
@@ -4085,7 +4091,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             </section>
 
             {/* B-16 导出历史 pane（A-11 exports/*） */}
-            <section className="iv-pane" data-workbench-pane="paneExports" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneExports" data-workbench-planned="false">
               <PaneBoundary label={t('paneExports')} t={t}>
                 <div className="iv-pane-head">
                   <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
@@ -4102,7 +4108,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="paneAssets" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneAssets" data-workbench-planned="false">
               <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
@@ -4819,7 +4825,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="paneTasks" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneTasks" data-workbench-planned="false">
               <PaneBoundary label={t('paneTasks')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
@@ -4867,7 +4873,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="paneDiagnostics" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneDiagnostics" data-workbench-planned="false">
               <PaneBoundary label={t('paneDiagnostics')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>

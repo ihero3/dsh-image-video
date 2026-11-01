@@ -63,8 +63,9 @@ export function AssetHealthPanel({ api, formatBytes, t }: AssetHealthPanelProps)
         ))}
         <button
           type="button"
-          className="iv-btn iv-btn--acc iv-btn--sm iv-health-run"
+          className={`iv-btn iv-btn--acc iv-btn--sm iv-health-run${loading ? ' iv-btn--busy' : ''}`}
           data-health-run="true"
+          aria-busy={loading ? 'true' : undefined}
           disabled={loading}
           onClick={() => { void runReport() }}
         >

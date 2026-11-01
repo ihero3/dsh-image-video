@@ -60,7 +60,11 @@ describe('error actionability (T7-2)', () => {
       strict: true,
     })
     expect(missing.code).toBe('MEDIA_FFMPEG_UNAVAILABLE')
-    expect(missing.message).toMatch(/brew install ffmpeg/)
+    expect(missing.message).toMatch(
+      process.platform === 'win32'
+        ? /winget install ffmpeg|choco install ffmpeg|gyan\.dev/
+        : /brew install ffmpeg/,
+    )
     expect(missing.message).toMatch(/DSH_FFMPEG_PATH/)
   })
 })

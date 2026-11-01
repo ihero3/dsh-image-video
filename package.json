@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
     "lint": "pnpm run typecheck && echo OK",
     "check:bundle": "node scripts/check-bundle-size.mjs",
+    "check:emphasis": "node scripts/check-emphasis.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dsh": {

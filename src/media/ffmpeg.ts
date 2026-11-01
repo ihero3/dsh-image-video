@@ -8,6 +8,7 @@
  */
 import { access, constants } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
 
 /** 机器可读的失败码（UI 据此给不同下一步动作）。 */
 export type MediaFfmpegCode = 'MEDIA_FFMPEG_UNAVAILABLE' | 'MEDIA_FFMPEG_ENCODER_MISSING' | 'MEDIA_FFMPEG_NOT_EXECUTABLE'
@@ -30,11 +31,25 @@ export type RunCommand = (file: string, args: readonly string[]) => Promise<{ co
 /** 环境里可覆盖 ffmpeg 位置的变量名。 */
 export const FFMPEG_PATH_ENV = 'DSH_FFMPEG_PATH'
 
-const DEFAULT_CANDIDATES: readonly string[] = [
-  '/opt/homebrew/bin/ffmpeg',
-  '/usr/local/bin/ffmpeg',
-  '/usr/bin/ffmpeg',
-]
+/** 常见安装位置（按平台），用于 DSH_FFMPEG_PATH/PATH 都没命中时的兜底自动探测。 */
+function defaultFfmpegCandidates(): readonly string[] {
+  if (process.platform === 'win32') {
+    const home = homedir().replace(/\\/g, '/')
+    return [
+      `${home}/scoop/shims/ffmpeg.exe`,
+      'C:/ProgramData/chocolatey/bin/ffmpeg.exe',
+      'C:/ffmpeg/bin/ffmpeg.exe',
+      'C:/tools/ffmpeg/bin/ffmpeg.exe',
+    ]
+  }
+  return [
+    '/opt/homebrew/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/usr/bin/ffmpeg',
+  ]
+}
+
+const DEFAULT_CANDIDATES: readonly string[] = defaultFfmpegCandidates()
 
 const defaultRun: RunCommand = (file, args) => new Promise(resolve => {
   execFile(file, [...args], { timeout: 10_000 }, (error, stdout, stderr) => {
@@ -45,9 +60,21 @@ const defaultRun: RunCommand = (file, args) => new Promise(resolve => {
   })
 })
 
-/** 提示语：怎么把 ffmpeg 装上或指给宿主。 */
+/** 提示语：怎么把 ffmpeg 装上或指给宿主（按平台给不同安装命令）。 */
 function installHint(): string {
+  if (process.platform === 'win32') {
+    return `未找到可用的 ffmpeg。Windows 可下载静态构建（如 gyan.dev 的 essentials 包）解压，或用 \`winget install ffmpeg\` / \`choco install ffmpeg\`；已装在别处就设 ${FFMPEG_PATH_ENV}=C:/path/to/ffmpeg/bin/ffmpeg.exe 后重试。`
+  }
   return `未找到可用的 ffmpeg。macOS 可执行 \`brew install ffmpeg\`；已装在别处就设 ${FFMPEG_PATH_ENV}=/path/to/ffmpeg 后重试。`
+}
+
+/** 提示语：怎么换一份带 libx264 的 ffmpeg（缺 H.264 编码器时）。 */
+function installLibx264Hint(): string {
+  const pathHint = `或用 ${FFMPEG_PATH_ENV} 指向带编码器的副本`
+  if (process.platform === 'win32') {
+    return `下载带 libx264 的 Windows 静态构建（如 gyan.dev essentials）解压 ${pathHint}，或执行 \`winget install ffmpeg\` / \`choco install ffmpeg\`。`
+  }
+  return `装带 libx264 的构建：\`brew install ffmpeg\`，${pathHint}。`
 }
 
 /** 从 `ffmpeg -version` 输出里取版本号。 */
@@ -137,7 +164,7 @@ export async function probeFfmpeg(options: {
       path: found,
       ...version === undefined ? {} : { version },
       encoders,
-      message: `这份 ffmpeg 没有 H.264 编码器（试过 libx264/videotoolbox）。装带 libx264 的构建：\`brew install ffmpeg\`，或用 ${FFMPEG_PATH_ENV} 指向带编码器的副本。`,
+      message: `这份 ffmpeg 没有 H.264 编码器（试过 libx264/videotoolbox）。${installLibx264Hint()}`,
     }
   }
 

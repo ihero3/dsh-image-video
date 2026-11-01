@@ -34,7 +34,11 @@ describe('ffmpeg probing (T5-4)', () => {
     const probe = await probeFfmpeg({ env: {}, run, candidates: ['/nonexistent/ffmpeg'] })
     expect(probe.available).toBe(false)
     expect(probe.code).toBe('MEDIA_FFMPEG_UNAVAILABLE')
-    expect(probe.message).toContain('brew install ffmpeg')
+    expect(probe.message).toMatch(
+      process.platform === 'win32'
+        ? /winget install ffmpeg|choco install ffmpeg|gyan\.dev/
+        : /brew install ffmpeg/,
+    )
     expect(probe.message).toContain(FFMPEG_PATH_ENV)
   })
 
