@@ -459,7 +459,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
   const [promptRisk, setPromptRisk] = useState<PromptRiskView | undefined>(undefined)
   // `T8` 高级抽屉：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起。
-  // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏**最大只有 575px**（实测），
+  // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -2871,7 +2871,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
                     {/* `T8` 高级抽屉开关：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起，
-                        让「提示词 → 参数 → 生成 → 结果」在主视线内闭环（右栏只有 575px 宽）。 */}
+                        让「提示词 → 参数 → 生成 → 结果」在主视线内闭环（右栏默认档约 575px 宽）。 */}
                     <button
                       type="button"
                       className="iv-btn iv-btn--ghost iv-btn--sm iv-advanced-toggle"
