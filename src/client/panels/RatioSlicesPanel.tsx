@@ -81,8 +81,9 @@ export function RatioSlicesPanel({ api, t, timelineId, projectId }: RatioSlicesP
 
       <button
         type="button"
-        className="iv-btn iv-btn--acc iv-btn--sm"
+        className={`iv-btn iv-btn--acc${busy ? ' iv-btn--busy' : ''}`}
         data-ratio-run="true"
+        aria-busy={busy ? 'true' : undefined}
         disabled={busy || timelineId === undefined || picked.length === 0}
         onClick={() => { void run() }}
       >

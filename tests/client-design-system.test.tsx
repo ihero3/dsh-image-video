@@ -146,7 +146,7 @@ describe('令牌化契约（R6-1）', () => {
 
   it('字号 / 字重 / 圆角 / 层级 / 动效 / 阴影令牌存在', () => {
     const tokens = [
-      '--iv-fs-root', '--iv-fs-metric', '--iv-fs-title', '--iv-fs-strong',
+      '--iv-fs-root', '--iv-fs-metric', '--iv-fs-title', '--iv-fs-lead', '--iv-fs-strong',
       '--iv-fs-body', '--iv-fs-meta', '--iv-fs-micro', '--iv-fs-tick',
       '--iv-fw-regular', '--iv-fw-medium', '--iv-fw-bold',
       '--iv-r-xs', '--iv-r-sm', '--iv-r-lg', '--iv-r-xl', '--iv-r-pill',
@@ -223,5 +223,112 @@ describe('待启用契约（由对应批次改为 it）', () => {
     for (const block of blocks) {
       expect(children.indexOf(block)).toBeGreaterThan(headIndex)
     }
+  })
+})
+
+describe('视觉层级契约（R7）', () => {
+  /** 取第一条匹配选择器的规则体（到第一个 } 为止），用于断言"某选择器用了某令牌/尺寸"。 */
+  const ruleOf = (selector: string): string => {
+    const at = WORKBENCH_STYLE.indexOf(selector)
+    expect(at, `找不到 ${selector}`).toBeGreaterThan(-1)
+    return WORKBENCH_STYLE.slice(at, WORKBENCH_STYLE.indexOf('}', at))
+  }
+
+  it('引导档 --iv-fs-lead = 14px（填补 13→16 断档）', () => {
+    expect(WORKBENCH_STYLE).toMatch(/--iv-fs-lead:\s*14px/)
+  })
+
+  it('面板标题比正文大一档：pane-title 用 title，create-title 用 lead', () => {
+    expect(ruleOf('.iv-pane-title{')).toContain('font-size:var(--iv-fs-title)')
+    expect(ruleOf('.iv-create-title{')).toContain('font-size:var(--iv-fs-lead)')
+  })
+
+  it('空态主句用 lead，不再与正文同字号', () => {
+    expect(ruleOf('.iv-empty strong{')).toContain('font-size:var(--iv-fs-lead)')
+  })
+
+  it('主创提示词不再被压成单行：min-height ≥ 80px', () => {
+    expect(ruleOf('.iv-create textarea.iv-input{')).toContain('min-height:80px')
+  })
+
+  it('主按钮有独立大号档：lg 30px > 默认 23px > sm 20px', () => {
+    expect(WORKBENCH_STYLE).toContain('.iv-btn--lg{height:30px')
+    expect(WORKBENCH_STYLE).toContain('.iv-btn--sm{height:20px')
+    expect(WORKBENCH_STYLE).toContain(
+      '.iv-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--iv-sp-2);height:23px',
+    )
+  })
+
+  it('阻塞型告警有独立红色档 iv-chip--err', () => {
+    expect(ruleOf('.iv-chip--err{')).toContain('var(--iv-danger)')
+  })
+
+  it('进行中 busy 态有旋转环，且不套用 disabled 的 42% 透明度', () => {
+    expect(ruleOf('.iv-btn--busy{')).toContain('pointer-events:none')
+    expect(ruleOf('.iv-btn--busy::before{')).toContain('iv-spin')
+    expect(WORKBENCH_STYLE).toContain('@keyframes iv-spin')
+    expect(ruleOf('.iv-btn--acc.iv-btn--lg.iv-btn--busy{')).toContain('opacity:1')
+  })
+
+  it('阻塞级告警比 error 更响：左红条', () => {
+    expect(ruleOf('.iv-notice--block{')).toContain('border-left:3px solid var(--iv-danger)')
+  })
+
+  it('次要面板降权类存在，且保留边界（不做无框）', () => {
+    const rule = ruleOf('.iv-pane--quiet{')
+    expect(rule).toContain('var(--iv-surface)')
+    expect(rule).toContain('border-color')
+  })
+
+  it('小号按钮的 busy 环缩到 10px，避免撑破 20px 高度', () => {
+    expect(ruleOf('.iv-btn--sm.iv-btn--busy::before{')).toContain('width:10px')
+  })
+
+  it('所有多行文本域的高度归 rows 管（不被 .iv-input 的 23px 压扁）', () => {
+    expect(ruleOf('textarea.iv-input{')).toContain('height:auto')
+  })
+
+  it('主创 W1 簇：提示词用 textarea 撑开，生成图片 lg、生成视频默认档', async () => {
+    const host = fakeApi()
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '层级契约',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+
+    // 提示词：必须带 iv-textarea，否则会被 .iv-input{height:23px} 压成单行
+    const prompt = view.container.querySelector('.iv-create textarea') as HTMLTextAreaElement
+    expect(prompt, '主创提示词应是 textarea').toBeTruthy()
+    expect(prompt.classList.contains('iv-textarea')).toBe(true)
+
+    // 生成图片 = W1（lg）；生成视频 = W2（默认 accent，既不加 lg 也不退 sm）
+    const image = await screen.findByRole('button', { name: en.generateImage }) as HTMLButtonElement
+    expect(image.classList.contains('iv-btn--acc')).toBe(true)
+    expect(image.classList.contains('iv-btn--lg')).toBe(true)
+
+    const video = await screen.findByRole('button', { name: en.generateVideo }) as HTMLButtonElement
+    expect(video.classList.contains('iv-btn--acc')).toBe(true)
+    expect(video.classList.contains('iv-btn--lg')).toBe(false)
+    expect(video.classList.contains('iv-btn--sm')).toBe(false)
+  })
+
+  it('时间轴终局动作（导出）升 lg，且渲染中挂 busy 环', async () => {
+    const host = fakeApi({
+      assets: [{
+        schemaVersion: 1, id: 'ast-v', projectId: 'prj-1', kind: 'video',
+        path: '/tmp/outputs/clip.mp4', bytes: 1024, createdAt: '2026-10-16T00:00:00.000Z',
+      }],
+    })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '导出层级',
+      createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-export]')).toBeTruthy() })
+
+    const exportBtn = view.container.querySelector('[data-timeline-export]') as HTMLButtonElement
+    expect(exportBtn.classList.contains('iv-btn--acc')).toBe(true)
+    expect(exportBtn.classList.contains('iv-btn--lg')).toBe(true)
   })
 })

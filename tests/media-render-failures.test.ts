@@ -67,9 +67,9 @@ describe('export failure surfaces (T5-6)', () => {
     const outputs = await tempDir('dsh-fail-ffmpeg-')
     const service = new RenderService({
       outputsDir: outputs,
-      probe: async () => ({ available: false, code: 'MEDIA_FFMPEG_UNAVAILABLE', message: '未找到可用的 ffmpeg。macOS 可执行 `brew install ffmpeg`；已装在别处就设 DSH_FFMPEG_PATH 后重试。' }),
+      probe: async () => ({ available: false, code: 'MEDIA_FFMPEG_UNAVAILABLE', message: '未找到可用的 ffmpeg。请用包管理器安装（如 brew/winget install ffmpeg），或设 DSH_FFMPEG_PATH=/path/to/ffmpeg 后重试。' }),
     })
-    await expect(service.render(timelineWith('/tmp/whatever.mp4'))).rejects.toThrow(/brew install ffmpeg/)
+    await expect(service.render(timelineWith('/tmp/whatever.mp4'))).rejects.toThrow(/DSH_FFMPEG_PATH/)
   })
 
   it('maps ffmpeg stderr to disk-full / unsupported-encoder codes', async () => {

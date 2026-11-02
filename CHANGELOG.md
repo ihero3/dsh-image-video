@@ -1,6 +1,13 @@
 ## [Unreleased]
 
-（下一轮的改动写这里）
+### ffmpeg 提示与探测的 Windows 适配（遗留项收尾）
+- **问题**：`src/media/ffmpeg.ts` 的 `installHint()` 把 `brew install ffmpeg` 写死，且 `DEFAULT_CANDIDATES` 全是 Unix 路径——Windows 上提示语本身错误、自动探测也必然失败，只能靠手动设 `DSH_FFMPEG_PATH`。`diagnose.ts` 的 `MEDIA_FFMPEG_UNAVAILABLE` 动作同样只给 macOS 命令。
+- **改动**：
+  - `DEFAULT_CANDIDATES` 改为按 `process.platform` 生成，Windows 追加 `~/scoop/shims/ffmpeg.exe`、`C:/ProgramData/chocolatey/bin/ffmpeg.exe`、`C:/ffmpeg/bin/ffmpeg.exe`、`C:/tools/ffmpeg/bin/ffmpeg.exe`，Unix 保持原三条；
+  - `installHint()` 与新增的 `installLibx264Hint()`（缺 H.264 编码器时）按平台给安装命令（Windows：`winget` / `choco` / gyan.dev 静态包）；
+  - `diagnose.ts` 的 `FFMPEG_INSTALL_ACTION` 同样按平台生成。
+- **测试**：`media-ffmpeg.test.ts` / `error-actionability.test.ts` 改为按 `process.platform` 匹配安装命令；`media-render-failures.test.ts` / `workbench.client.test.tsx` 的 fixture 改为含 `DSH_FFMPEG_PATH` 的中性文案、断言锚点由 `brew install ffmpeg` 改为 `DSH_FFMPEG_PATH`。
+- 功能行为：macOS / Linux 文案与候选路径不变，仅 Windows 体验修正；不新增导出行为，不影响已装好 ffmpeg 的机器。
 
 ## [1.0.1-workbench-79] - 2026-10-31
 

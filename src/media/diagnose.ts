@@ -17,6 +17,10 @@ export interface Diagnosis {
   readonly actions: readonly string[]
 }
 
+const FFMPEG_INSTALL_ACTION = process.platform === 'win32'
+  ? '安装 ffmpeg（winget install ffmpeg 或 choco install ffmpeg，或从 gyan.dev 下载静态构建）'
+  : '安装 ffmpeg（brew install ffmpeg）'
+
 const KNOWN: Record<string, Omit<Diagnosis, 'code'>> = {
   MEDIA_TIMELINE_EMPTY: {
     title: '时间轴的视频轨是空的',
@@ -36,7 +40,7 @@ const KNOWN: Record<string, Omit<Diagnosis, 'code'>> = {
   MEDIA_FFMPEG_UNAVAILABLE: {
     title: '找不到可用的 ffmpeg',
     hint: '导出依赖 ffmpeg，宿主没有找到可执行文件。',
-    actions: ['安装 ffmpeg（brew install ffmpeg）', '或设置环境变量 DSH_FFMPEG_PATH 指向可执行文件', '然后调用 media/ffmpeg 确认可用'],
+    actions: [FFMPEG_INSTALL_ACTION, '或设置环境变量 DSH_FFMPEG_PATH 指向可执行文件', '然后调用 media/ffmpeg 确认可用'],
   },
   MEDIA_FFMPEG_ENCODER_MISSING: {
     title: 'ffmpeg 缺少所需的编码器',

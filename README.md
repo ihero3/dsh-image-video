@@ -115,6 +115,28 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 
 凭证建议通过环境变量注入（`!!js process.env.XXX`），不要明文写入配置文件。DSH 凭证系统支持 `~/.dsh/.credentials.yaml` 和 `~/.dsh/.env` 两种来源。
 
+### ffmpeg（时间轴导出需本机安装）
+
+时间轴导出 MP4 依赖**本机 ffmpeg**。插件在导出前会探测 `DSH_FFMPEG_PATH` → `PATH` → 常见安装位置，并检测版本与 H.264/AAC 编码器；缺失 / 无权限 / 缺编码器都会在界面给出可操作提示，而不是抛栈。
+
+按你的系统安装：
+
+- **macOS**：`brew install ffmpeg`
+- **Windows**：`winget install ffmpeg`（或 `choco install ffmpeg`）；也可从 [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) 下载 essentials 静态包解压后使用
+- **Linux**：`apt install ffmpeg`（Debian/Ubuntu）或 `brew install ffmpeg`（Homebrew on Linux）
+
+若装在非标准路径，设环境变量指向可执行文件后**重启宿主**生效：
+
+```sh
+# macOS / Linux
+export DSH_FFMPEG_PATH=/path/to/ffmpeg
+
+# Windows（用户级，持久化，在 PowerShell 中执行）
+# [Environment]::SetEnvironmentVariable('DSH_FFMPEG_PATH', 'C:\path\to\ffmpeg\bin\ffmpeg.exe', 'User')
+```
+
+> Windows 上 `installHint()` 不会提示 `brew install`（那是 macOS 命令）；装好后在 `C:/ProgramData/chocolatey/bin`、`C:/ffmpeg/bin`、`C:/tools/ffmpeg/bin` 或 `~/scoop/shims` 下的 `ffmpeg.exe` 会被自动探测到。
+
 ### 3. 运行
 
 ```sh
