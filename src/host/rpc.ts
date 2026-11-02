@@ -16,6 +16,7 @@ import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.t
 import { cropImage } from '../media/image-crop.ts'
 import { planRatioSlices } from '../workbench/derive-ratios.ts'
 import { catalogConsistencyIssues, modelCards } from '../media/model-catalog.ts'
+import { compareCardsAgainstRegistry, type ModelCatalogLive, type ModelRegistryProbe } from '../media/model-health.ts'
 import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
@@ -139,6 +140,8 @@ export interface WorkbenchRpcDeps {
   readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
+  /** 现场探测服务商模型目录（`GET /models`）；缺省时能力卡只能标「无法校验」。 */
+  probeModels?: () => Promise<ModelRegistryProbe>
   /** 逐字段来源（override / settings / none）；缺省时不带该字段，界面也就不标来源。 */
   defaultSources?: () => NonNullable<WorkbenchHealth['defaultsSources']>
   /** 默认值编辑器的可选项；缺省时不带该字段。 */
@@ -286,6 +289,34 @@ export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHan
  * @param payload - raw request payload.
  * @returns the endpoint's value.
  */
+/** 探测缓存 TTL：同一实例 60 秒内不重复打服务商（刷新按钮显式绕开）。 */
+const MODEL_PROBE_TTL_MS = 60_000
+
+/** 每个 handler 实例（= 每个插件加载）一份缓存，避免测试之间互相污染。 */
+const modelProbeCache = new WeakMap<WorkbenchRpcDeps, { at: number; probe: ModelRegistryProbe }>()
+
+/**
+ * 组装能力卡的实时段：默认走缓存，`refresh` 强制重新探测。
+ * 探测失败不是异常路径——返回 `ok:false` 的 probe，界面如实显示"无法校验（原因）"。
+ * @param deps - handler 依赖（探测能力可选）。
+ * @param refresh - 是否绕开缓存。
+ * @returns 一次探测 + 逐卡片结论。
+ */
+async function liveCatalog(deps: WorkbenchRpcDeps, refresh: boolean): Promise<ModelCatalogLive> {
+  const cached = modelProbeCache.get(deps)
+  const now = Date.now()
+  let probe: ModelRegistryProbe
+  if (!refresh && cached !== undefined && now - cached.at < MODEL_PROBE_TTL_MS) {
+    probe = cached.probe
+  } else if (deps.probeModels === undefined) {
+    probe = { attemptedAt: new Date().toISOString(), ok: false, ids: [], reason: '宿主未装配模型目录探测' }
+  } else {
+    probe = await deps.probeModels()
+  }
+  modelProbeCache.set(deps, { at: now, probe })
+  return { probe, targets: compareCardsAgainstRegistry(modelCards(), probe) }
+}
+
 async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown): Promise<unknown> {
   switch (endpoint) {
     case 'health': {
@@ -1076,12 +1107,18 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     // ---- `B-6`：模型能力卡 + 提示词风险校验 -------------------------------------------
     case 'models/catalog': {
       const cards = modelCards()
+      // `refresh`：界面刷新按钮要求现场重探服务商目录，而不是再读一遍静态清单
+      const refresh = (payload as { refresh?: unknown } | undefined)?.refresh === true
       return {
         cards,
         consistencyIssues: catalogConsistencyIssues(),
         generatedAt: new Date().toISOString(),
+        live: await liveCatalog(deps, refresh),
       }
     }
+    // 默认值编辑器的白名单：编辑器打开时现取一次，避免只靠 health 那次快照
+    case 'defaults/options':
+      return { options: workbenchOptions() }
     case 'prompts/check': {
       const raw = field(payload, 'text')
       const text = typeof raw === 'string' ? raw : ''

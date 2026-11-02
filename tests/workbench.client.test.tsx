@@ -397,6 +397,33 @@ describe('workbench project and asset flow', () => {
     expect(style.textContent).toContain(en.none)
   })
 
+  it('reloads the whitelist when the health snapshot carried none (T2-15 现场问题的回归)', async () => {
+    const host = fakeApi({
+      omitHealthOptions: true,
+      defaults: { mediaMode: null, imageProvider: null, imageSize: '1024*1024', imageStyle: null, videoProvider: null, videoAspectRatio: null, videoDuration: null },
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
+    // 打开编辑器就补取一次白名单，而不是让每个下拉只剩「未设置」
+    await waitFor(() => { expect(host.calls).toContain('defaults/options') })
+    const provider = view.container.querySelector('select[aria-label="Image provider"]') as HTMLSelectElement
+    await waitFor(() => { expect(provider.options.length).toBeGreaterThan(1) })
+    expect(view.container.querySelector('[data-defaults-options-missing]')).toBeNull()
+  })
+
+  it('says what to do when the host cannot provide the whitelist at all', async () => {
+    const host = fakeApi({
+      omitHealthOptions: true,
+      defaults: { mediaMode: null, imageProvider: null, imageSize: '1024*1024', imageStyle: null, videoProvider: null, videoAspectRatio: null, videoDuration: null },
+    })
+    host.api.defaultsOptions = async () => { throw new Error('no whitelist') }
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-defaults-options-missing]')).toBeTruthy() })
+  })
+
   it('edits the effective defaults from the workbench (R-CFG-2)', async () => {
     const host = fakeApi({
       defaults: {

@@ -32,7 +32,8 @@
 | `prompts/remove` | `{id}` | `{removed}` | **`A-5`** 删除 |
 | `prompts/extract` | `{path}` | `{text}` | **`A-5`** 图片→提示词；**宿主未注入视觉模型时如实报错**（`R-BND-4` 不伪造）|
 | `prompts/check` | `{text}` | `{report:{level:ok|warn|block,hits[],advice[]}}` | **`B-6`** 提示词风险校验 |
-| `models/catalog` | — | `{cards[],consistencyIssues[],generatedAt}` | **`B-6`** 模型能力卡（与运行时能力常量自检） |
+| `models/catalog` | `{refresh?: boolean}` | `{cards[],consistencyIssues[],generatedAt,live?}` | **`B-6`** 模型能力卡（与运行时能力常量自检）。`live` = **实时可用性**：`{probe:{attemptedAt,ok,ids[],reason?},targets{cardId:{status:available|missing|unknown,detail?}}}`；`refresh:true` 绕过 60s 缓存，**现场探测服务商 `GET /models`**；探测失败如实返回 `ok:false`+原因，不伪造可用 |
+| `defaults/options` | — | `{options}` | 默认值编辑器白名单（服务商/尺寸/风格/比例/时长范围），与 `health.options` 同源；编辑器打开时现取一次 |
 | `media/compose` | `{projectId,prompt,resourceIds[],size?,model?}` | `{path,asset,referencedImages,resourceIds}` | **`A-4`** 融合生图：按创作资源收集参考图（`assetPaths` 优先，回退 `assetPath`）与描述，一次生成并登记素材；**无生成适配器时如实报错** |
 | `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?,continuation?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）；**`continuation:true` 为显式「续写」意图（`B-4`，视频模式必须有参考视频，宿主校验，不静默降级）** |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |

@@ -2258,6 +2258,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 data-workbench-defaults-edit="true"
                 onClick={() => {
                   setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value === t('none') ? '' : row.value])))
+                  // 白名单只靠 health 那次快照时可能为空（旧宿主/慢启动）：打开编辑器时补取一次，
+                  // 拿不到就由编辑器里的提示条说明，而不是让每个下拉只剩「未设置」。
+                  if (health.status === 'ok' && health.options === undefined) {
+                    void run(async () => {
+                      const options = await apiRef.current.defaultsOptions()
+                      setHealth(current => current.status === 'ok' ? { ...current, options } : current)
+                    })
+                  }
                 }}
               >
                 <Icon name="sliders" />{t('defaultsEdit')}
@@ -2279,6 +2287,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-pop-head-sub">{t('defaultsEditHint')}</span>
                     </span>
                   </div>
+                  {options === undefined
+                    ? <span className="iv-meta iv-meta--warn" data-defaults-options-missing="true">{t('defaultsOptionsMissing')}</span>
+                    : null}
                   {DEFAULT_GROUPS.map(group => {
                     const rows = defaultRows.filter(row => group.fields.includes(row.field))
                     if (rows.length === 0) return null

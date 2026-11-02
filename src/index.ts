@@ -36,7 +36,7 @@ import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config, hasConfiguredCredentials } from './config.ts'
+import { Config, hasConfiguredCredentials, resolveActiveProvider } from './config.ts'
 import type { ApiKeyResolver } from './config.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Provider } from './config.ts'
@@ -46,6 +46,7 @@ import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defau
 import { createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
+import { probeModelRegistry } from './media/model-health.ts'
 import { DiagnosticsCollector } from './host/diagnostics.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
 import { resolveWorkbenchDirectory, WorkbenchStore } from './workbench/store.ts'
@@ -367,6 +368,20 @@ export function apply(ctx: Context, config: Config): void {
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
       // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
+      // 模型能力卡的"实时可用性"：现场问服务商模型目录，失败如实返回原因（不伪造可用）
+      probeModels: async () => {
+        try {
+          const active = await resolveActiveProvider(config, resolveApiKey)
+          return await probeModelRegistry({ baseUrl: active.baseURL, apiKey: active.apiKey })
+        } catch (error) {
+          return {
+            attemptedAt: new Date().toISOString(),
+            ok: false,
+            ids: [],
+            reason: `未解析到服务商凭证：${error instanceof Error ? error.message : String(error)}`.slice(0, 160),
+          }
+        }
+      },
       // 下拉白名单由宿主下发：浏览器包不内置服务商名（`T2-11`）
       options: workbenchOptions,
     })

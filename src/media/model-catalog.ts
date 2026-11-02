@@ -98,6 +98,28 @@ export const MODEL_CARDS: readonly ModelCapabilityCard[] = [
     verified: true,
   },
   {
+    id: 'minimax-image-01',
+    name: 'MiniMax Image 01',
+    family: 'minimax',
+    kinds: ['image'],
+    strength: '通用文生图/图生图；画面干净、构图稳，写实与产品图表现好',
+    costTier: 'low',
+    aspectRatios: IMAGE_RATIOS,
+    features: {
+      imageToVideo: false,
+      firstLastFrame: { supported: false },
+      multiFrame: { supported: false, note: '图片模型不谈多关键帧' },
+      referenceVideo: { supported: false },
+      audio: { supported: false },
+    },
+    promptTips: [
+      '主体 + 材质 + 光线写清楚，比堆形容词有效',
+      '要风格化就点名「摄影 / 插画 / 3D」，否则由模型自由发挥',
+      '尺寸选接近目标比例的档位，减少后续裁切',
+    ],
+    verified: true,
+  },
+  {
     id: 'minimax-h3',
     name: 'MiniMax H3',
     family: 'minimax',

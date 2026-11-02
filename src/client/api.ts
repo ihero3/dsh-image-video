@@ -7,7 +7,7 @@
  * the host handler's own tests pin the payloads.
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth } from '../workbench-contract.ts'
+import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
@@ -347,6 +347,31 @@ export interface PipelineResult {
   readonly matchedResources?: readonly PipelineMatchedResource[]
 }
 
+/** 一次模型目录探测的结果（与服务商 API 同源，失败如实给原因）。 */
+export interface ModelRegistryProbeView {
+  readonly attemptedAt: string
+  readonly ok: boolean
+  readonly ids: readonly string[]
+  readonly reason?: string
+}
+
+/** 单张卡片的实时可用性（`models/catalog` 的 `live.targets`）。 */
+export interface ModelLiveStatusView {
+  readonly status: 'available' | 'missing' | 'unknown'
+  readonly detail?: string
+}
+
+/** `models/catalog` 的完整响应：静态卡片 + 实时可用性。 */
+export interface ModelCatalogView {
+  readonly cards: readonly ModelCardView[]
+  readonly consistencyIssues: readonly string[]
+  /** 宿主未装配探测能力时缺省。 */
+  readonly live?: {
+    readonly probe: ModelRegistryProbeView
+    readonly targets: Readonly<Record<string, ModelLiveStatusView>>
+  }
+}
+
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
@@ -483,7 +508,9 @@ export interface WorkbenchApi {
     readonly model?: string
   }) => Promise<ComposeMediaResult>
   /** 模型能力卡（`B-6`）：选型建议 + 能力矩阵；`consistencyIssues` 非空说明卡片与运行时能力漂移。 */
-  modelsCatalog: () => Promise<{ readonly cards: readonly ModelCardView[]; readonly consistencyIssues: readonly string[] }>
+  modelsCatalog: (options?: { readonly refresh?: boolean }) => Promise<ModelCatalogView>
+  /** 默认值编辑器的白名单：编辑弹层打开时现取，避免只靠 health 那一次快照。 */
+  defaultsOptions: () => Promise<WorkbenchOptions>
   /** 提示词风险校验（`B-6`）：`block` 不要提交，`warn` 可提交但要把提醒展示给用户。 */
   checkPrompt: (text: string) => Promise<PromptRiskView>
   /** 多比例切片（`B-5`）：一条成片按多种画幅各导出一次（只编码，不重新生成）。 */
@@ -632,7 +659,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
         ...folder === undefined || folder === '' ? {} : { folder },
       }),
     planResourceRedraw: resourceId => call<ResourceRedrawPlan>('resources/plan-redraw', { resourceId }),
-    modelsCatalog: async () => (await call<{ cards: ModelCardView[]; consistencyIssues: string[] }>('models/catalog', {})),
+    modelsCatalog: async options => call<ModelCatalogView>('models/catalog', options?.refresh === true ? { refresh: true } : {}),
+    defaultsOptions: async () => (await call<{ options: WorkbenchOptions }>('defaults/options')).options,
     checkPrompt: async text => (await call<{ report: PromptRiskView }>('prompts/check', { text })).report,
     renderRatioSlices: input => call<{
       slices: Array<{ ratio: string; width: number; height: number }>

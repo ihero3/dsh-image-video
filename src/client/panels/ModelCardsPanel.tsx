@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Icon } from '../icons.tsx'
-import type { ModelCardView, WorkbenchApi } from '../api.ts'
+import type { ModelCardView, ModelLiveStatusView, ModelRegistryProbeView, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 import { PanelState } from './PanelState.tsx'
 
@@ -41,13 +41,16 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
   const [error, setError] = useState<string | undefined>(undefined)
   const [cards, setCards] = useState<readonly ModelCardView[] | undefined>(undefined)
   const [drift, setDrift] = useState<readonly string[]>([])
+  const [live, setLive] = useState<{ probe: ModelRegistryProbeView; targets: Readonly<Record<string, ModelLiveStatusView>> } | undefined>(undefined)
 
-  const load = async () => {
+  // `refresh` = 用户点了刷新：要求宿主**现场重探**服务商模型目录，而不是再读一遍静态清单
+  const load = async (refresh = false) => {
     setLoading(true); setError(undefined)
     try {
-      const result = await api.modelsCatalog()
+      const result = await api.modelsCatalog(refresh ? { refresh: true } : undefined)
       setCards(result.cards)
       setDrift(result.consistencyIssues)
+      setLive(result.live)
     } catch (thrown) {
       setError(thrown instanceof Error ? thrown.message : String(thrown))
     } finally {
@@ -57,7 +60,7 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
 
   useEffect(() => { void load() }, [])
 
-  const retry = () => { void load() }
+  const retry = () => { void load(true) }
   const errorView = (
     <PanelState
       view={{
@@ -88,6 +91,13 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
         </div>
       </div>
       <span className="iv-meta">{t('modelCardsHint')}</span>
+      {live === undefined
+        ? null
+        : (
+          <span className="iv-meta" data-model-live-probe={live.probe.ok ? 'ok' : 'failed'}>
+            {live.probe.ok ? `${t('modelLiveProbeOk')} · ${new Date(live.probe.attemptedAt).toLocaleTimeString()}` : `${t('modelLiveProbeFailed')}：${live.probe.reason ?? ''}`}
+          </span>
+        )}
 
       {/* 刷新中：保留旧卡片，只在顶部给一条细进度 */}
       {loading && cards !== undefined ? <PanelState view={{ kind: 'refreshing' }} /> : null}
@@ -112,9 +122,30 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
               <div key={card.id} className="iv-model-card" data-model-card={card.id}>
                 <div className="iv-model-card-head">
                   <span className="iv-model-card-name">{card.name}</span>
-                  <span className={`iv-chip iv-chip--${card.verified ? 'ok' : 'warn'}`}>
-                    {card.verified ? t('modelCardVerified') : t('modelCardUnverified')}
-                  </span>
+                  {(() => {
+                    const status = live?.targets[card.id]
+                    // 有实时结论就以实时为准（服务商会随时关模型）；没探测能力才退回静态自述
+                    if (status === undefined) {
+                      return (
+                        <span className={`iv-chip iv-chip--${card.verified ? 'ok' : 'warn'}`}>
+                          {card.verified ? t('modelCardVerified') : t('modelCardUnverified')}
+                        </span>
+                      )
+                    }
+                    const kind = status.status === 'available' ? 'ok' : 'warn'
+                    const label = status.status === 'available'
+                      ? t('modelLiveAvailable')
+                      : status.status === 'missing' ? t('modelLiveMissing') : t('modelLiveUnknown')
+                    return (
+                      <span
+                        className={`iv-chip iv-chip--${kind}`}
+                        data-model-live={status.status}
+                        title={status.detail}
+                      >
+                        {label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="iv-model-card-kinds">
                   {card.kinds.includes('image') ? <span className="iv-chip">{t('modelCardKindsImage')}</span> : null}

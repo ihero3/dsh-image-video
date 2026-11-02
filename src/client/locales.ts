@@ -613,6 +613,13 @@ export type WorkbenchLocaleKey =
   | 'modelCardCostMedium'
   | 'modelCardCostHigh'
   | 'modelCardVerified'
+  | 'modelLiveAvailable'
+  | 'modelLiveMissing'
+  | 'modelLiveUnknown'
+  | 'modelLiveProbeOk'
+  | 'modelLiveProbeFailed'
+  | 'defaultsOptionsMissing'
+  | 'defaultsOptionsLoading'
   | 'modelCardUnverified'
   | 'modelFeatureOn'
   | 'modelFeatureOff'
@@ -1271,6 +1278,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modelCardCostMedium: 'Medium cost',
   modelCardCostHigh: 'High cost',
   modelCardVerified: 'Verified',
+  modelLiveAvailable: 'listed by provider',
+  modelLiveMissing: 'not in provider catalog',
+  modelLiveUnknown: 'cannot verify',
+  modelLiveProbeOk: 'Checked provider model catalog',
+  modelLiveProbeFailed: 'Model catalog check failed',
+  defaultsOptionsMissing: 'This host did not send the option list — update or restart the plugin, then reopen.',
+  defaultsOptionsLoading: 'Loading options…',
+
   modelCardUnverified: 'Unverified',
   modelFeatureOn: 'Supported',
   modelFeatureOff: 'Not supported',
@@ -1378,6 +1393,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modelCardCostMedium: '中成本',
   modelCardCostHigh: '高成本',
   modelCardVerified: '已校验',
+  modelLiveAvailable: '服务商目录已列出',
+  modelLiveMissing: '服务商目录里没有',
+  modelLiveUnknown: '无法校验',
+  modelLiveProbeOk: '已核对服务商模型目录',
+  modelLiveProbeFailed: '模型目录校验失败',
+  defaultsOptionsMissing: '宿主没有下发可选项——请更新或重启插件后重新打开。',
+  defaultsOptionsLoading: '正在读取可选项…',
+
   modelCardUnverified: '未校验',
   modelFeatureOn: '支持',
   modelFeatureOff: '不支持',

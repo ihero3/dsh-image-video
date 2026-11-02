@@ -61,6 +61,12 @@ export function fakeApi(options: {
   defaults?: Record<string, string | number | null>
   /** 默认值逐字段来源（`T2-15` 之后新增；未给时界面不标来源）。 */
   defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
+  /** 让 health 不下发 `options`（模拟"编辑器拿不到白名单"的现场问题）。 */
+  omitHealthOptions?: boolean
+  /** `B-6`：`modelsCatalog` 返回的实时段（测试替身；给了就带上，用于断言"刷新真的重探"）。 */
+  modelLive?: { probe: { attemptedAt: string; ok: boolean; ids: readonly string[]; reason?: string }, targets: Record<string, { status: 'available' | 'missing' | 'unknown'; detail?: string }> }
+  /** 默认值白名单（测试替身）；不给时 `defaults/options` 返回最小白名单。 */
+  defaultsOptions?: { imageProviders: readonly string[], videoProviders: readonly string[], imageSizes: readonly { id: string, label: string, size: string }[], imageStyles: readonly string[], videoAspectRatios: readonly string[], videoDuration: { min: number, max: number } }
   /** `A-5` 提示词库初始内容（B-10 测试替身）。 */
   prompts?: PromptRecord[]
   /** `B-11` 体检三端点的返回（测试替身）。 */
@@ -247,8 +253,10 @@ export function fakeApi(options: {
     health: async () => {
       calls.push('health')
       if (options.failHealth !== undefined) throw new Error(options.failHealth)
+      const { options: healthOptions, ...rest } = HEALTH
       return {
-        ...HEALTH,
+        ...rest,
+        ...options.omitHealthOptions === true ? {} : { options: healthOptions },
         ...options.defaults === undefined ? {} : { defaults: options.defaults },
         ...options.defaultsSources === undefined ? {} : { defaultsSources: options.defaultsSources },
       }
@@ -547,8 +555,8 @@ export function fakeApi(options: {
       }
     },
     // `B-6`：模型能力卡（测试替身，固定两份）。
-    modelsCatalog: async () => {
-      calls.push('models/catalog')
+    modelsCatalog: async (callOptions?: { refresh?: boolean }) => {
+      calls.push(callOptions?.refresh === true ? 'models/catalog?refresh' : 'models/catalog')
       return {
         cards: modelCards.map(card => ({
           id: card.id, name: card.name, family: 'test', kinds: ['image', 'video'] as const,
@@ -563,6 +571,19 @@ export function fakeApi(options: {
           promptTips: ['keep prompts short'], verified: true,
         })),
         consistencyIssues: [],
+        ...options.modelLive === undefined ? {} : { live: options.modelLive },
+      }
+    },
+    // 默认值编辑器的白名单（测试替身）
+    defaultsOptions: async () => {
+      calls.push('defaults/options')
+      return options.defaultsOptions ?? {
+        imageProviders: ['threevideo'],
+        videoProviders: ['threevideo'],
+        imageSizes: [{ id: '1:1', label: '1:1', size: '1024*1024' }],
+        imageStyles: ['photo'],
+        videoAspectRatios: ['16:9'],
+        videoDuration: { min: 1, max: 30 },
       }
     },
     // `B-6`：提示词风控（测试替身）：含 'block' 判拦截，含 'warn' 判提醒，否则 ok。
