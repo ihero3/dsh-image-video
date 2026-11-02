@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### 生效默认值加"来源"标注（本批）
+- **问题**：顶栏「当前生效参数」只显示值，分不清某个 `1024*1024` 是**工作台/composer 改过的覆盖**，还是
+  **settings 里的持久默认**。用户要查"这个值是谁设的"只能去设置页翻。
+- **改动**：
+  - 宿主 `runtime-defaults` 新增 `resolveDefaultsSources()`：逐字段返回 `override` / `settings` / `none`，
+    与 `resolveDefaultsView()` **同源同口径**（有值必有来源、`null` 必为 `none`，单测钉住）；
+  - `health` 增加 `defaultsSources`（加法字段，旧客户端忽略即可）；客户端把来源透传到摘要条；
+  - 摘要条每个有值的字段后加小徽章：「已覆盖」（动作色）/「来自设置」（中性）；未设置的字段保持「未设置」不标来源；
+  - 保存默认值后的重读也带回来源，避免刚改完仍显示旧来源。
+- 说明：只解释"值从哪来"，**不改取值口径**（仍是 请求参数 > 工作台覆盖 > settings > 工具默认）。
+- 样式戳 `2026-11-02.1`（新增 `.iv-def-src`）。
+- 测试：`runtime-defaults` +2（来源标注、与视图同源）；`workbench.client` +1（徽章与未设置不虚报）。
+
 ### ffmpeg 提示与探测的 Windows 适配（遗留项收尾）
 - **问题**：`src/media/ffmpeg.ts` 的 `installHint()` 把 `brew install ffmpeg` 写死，且 `DEFAULT_CANDIDATES` 全是 Unix 路径——Windows 上提示语本身错误、自动探测也必然失败，只能靠手动设 `DSH_FFMPEG_PATH`。`diagnose.ts` 的 `MEDIA_FFMPEG_UNAVAILABLE` 动作同样只给 macOS 命令。
 - **改动**：

@@ -59,6 +59,8 @@ export function fakeApi(options: {
   timelines?: TimelineRecord[]
   ffmpeg?: { available: boolean; code?: string; message?: string; version?: string; path?: string }
   defaults?: Record<string, string | number | null>
+  /** 默认值逐字段来源（`T2-15` 之后新增；未给时界面不标来源）。 */
+  defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
   /** `A-5` 提示词库初始内容（B-10 测试替身）。 */
   prompts?: PromptRecord[]
   /** `B-11` 体检三端点的返回（测试替身）。 */
@@ -245,7 +247,11 @@ export function fakeApi(options: {
     health: async () => {
       calls.push('health')
       if (options.failHealth !== undefined) throw new Error(options.failHealth)
-      return options.defaults === undefined ? HEALTH : { ...HEALTH, defaults: options.defaults }
+      return {
+        ...HEALTH,
+        ...options.defaults === undefined ? {} : { defaults: options.defaults },
+        ...options.defaultsSources === undefined ? {} : { defaultsSources: options.defaultsSources },
+      }
     },
     listProjects: async () => { calls.push('projects/list'); return [...projects] },
     createProject: async (name) => {

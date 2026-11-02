@@ -21,6 +21,7 @@ import {
   MULTI_FRAME_CAPABLE_MODELS,
   parseDefaultsPatch,
   registerDefaultsRoute,
+  resolveDefaultsSources,
   resolveDefaultsView,
   resolveModelCandidates,
 } from '../src/runtime-defaults.ts'
@@ -446,5 +447,47 @@ describe('defaults 路由注册安全边界', () => {
     const webServer = fakeWebServer('0.0.0.0')
     expect(registerDefaultsRoute(webServer, createRuntimeDefaultsStore())).toBeUndefined()
     expect(webServer.routes.size).toBe(0)
+  })
+})
+
+describe('默认值来源标注（resolveDefaultsSources）', () => {
+  it('区分运行时覆盖 / settings 持久默认 / 都没有', () => {
+    const store = createRuntimeDefaultsStore()
+    const persisted = { imageProvider: 'wanx' as const, videoDuration: 6 }
+    expect(resolveDefaultsSources(store, persisted)).toEqual({
+      mediaMode: 'none',
+      imageProvider: 'settings',
+      imageSize: 'none',
+      imageStyle: 'none',
+      videoProvider: 'none',
+      videoAspectRatio: 'none',
+      videoDuration: 'settings',
+    })
+
+    store.patch({ mediaMode: 'video', imageProvider: 'seedance', imageSize: '1152*864', videoDuration: 5 })
+    expect(resolveDefaultsSources(store, persisted)).toEqual({
+      mediaMode: 'override',
+      imageProvider: 'override',
+      imageSize: 'override',
+      imageStyle: 'none',
+      videoProvider: 'none',
+      videoAspectRatio: 'none',
+      videoDuration: 'override',
+    })
+
+    // 清除覆盖后来源跟着落回 settings，不能停在上一次的"已覆盖"
+    store.patch({ imageProvider: null })
+    expect(resolveDefaultsSources(store, persisted).imageProvider).toBe('settings')
+  })
+
+  it('与生效视图同源：有值一定有来源，null 一定是 none', () => {
+    const store = createRuntimeDefaultsStore()
+    const persisted = { imageSize: '1024*1024' as const }
+    store.patch({ imageStyle: 'photo', videoAspectRatio: '9:16' })
+    const view = resolveDefaultsView(store, persisted)
+    const sources = resolveDefaultsSources(store, persisted)
+    for (const key of Object.keys(view) as Array<keyof typeof view>) {
+      expect(sources[key] === 'none', `${key} 的来源与取值不一致`).toBe(view[key] === null)
+    }
   })
 })

@@ -58,6 +58,12 @@ export interface WorkbenchHealth {
    * 工作台只读展示，避免"界面上看不出这一轮到底按什么参数生成"（`R-NFR-1`/`R-BIND-3`）。
    */
   defaults?: Record<string, string | number | null>
+  /**
+   * 每个默认值字段的来源：`override` = 工作台/composer 改过（内存覆盖）、
+   * `settings` = 来自 settings 持久默认、`none` = 都没有（工具内置默认）。
+   * 界面据此在值后面标「已覆盖 / 默认」，解决"看不出这个 1024*1024 是谁设的"。
+   */
+  defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
   /** 默认值编辑器的可选项（与宿主白名单同源）；缺省时编辑器只给「未设置」。 */
   options?: WorkbenchOptions
 }

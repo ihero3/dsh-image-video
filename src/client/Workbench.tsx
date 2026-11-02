@@ -76,7 +76,15 @@ export type WorkbenchProps =
 /** What the header can say about the host. */
 type HealthState =
   | { status: 'checking' }
-  | { status: 'ok'; version: string; provider: string; defaults?: Record<string, string | number | null>; options?: WorkbenchOptions }
+  | {
+    status: 'ok'
+    version: string
+    provider: string
+    defaults?: Record<string, string | number | null>
+    /** 每个默认值字段的来源：区分"我改过的"与"设置里的默认"（宿主未下发时不标注）。 */
+    defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
+    options?: WorkbenchOptions
+  }
   | { status: 'failed'; message: string }
 
 /** Mode → dictionary key, in switch order. */
@@ -1859,6 +1867,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         setHealth({
           status: 'ok', version: facts.version, provider: facts.provider,
           ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
+          ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
           ...facts.options === undefined ? {} : { options: facts.options },
         })
 
@@ -1946,7 +1955,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
   // `field` 是接口字段名（imageSize…），`key` 是界面文案键：下发 patch 必须用前者
-  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string }> = health.status === 'ok' && health.defaults !== undefined
+  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string; source?: 'override' | 'settings' | 'none' }> = health.status === 'ok' && health.defaults !== undefined
     ? ([
       ['defaultMediaMode', health.defaults.mediaMode],
       ['defaultImageProvider', health.defaults.imageProvider],
@@ -1956,11 +1965,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       ['defaultVideoAspectRatio', health.defaults.videoAspectRatio],
       ['defaultVideoDuration', health.defaults.videoDuration],
     ] as Array<[WorkbenchLocaleKey, string | number | null | undefined]>)
-      .map(([key, value]) => ({
-        key,
-        field: key.replace(/^default/, '').replace(/^./, character => character.toLowerCase()),
-        value: value === null || value === undefined || value === '' ? t('none') : String(value),
-      }))
+      .map(([key, value]) => {
+        const field = key.replace(/^default/, '').replace(/^./, character => character.toLowerCase())
+        const empty = value === null || value === undefined || value === ''
+        // 只有"有值"的字段才谈来源：「未设置」本身已经是来源的答案
+        const source = empty ? undefined : health.status === 'ok' ? health.defaultsSources?.[field] : undefined
+        return { key, field, value: empty ? t('none') : String(value), source: source === 'none' ? undefined : source }
+      })
     : []
 
   // 默认值下拉选项（`R-CFG-2`）：白名单随宿主 `health` 下发，与协议层校验同源，
@@ -2229,8 +2240,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           <div className="iv-defaults" data-workbench-defaults="true">
             <span className="iv-micro">{t('defaultsTitle')}</span>
             {defaultRows.map(row => (
-              <span key={row.key} className="iv-def" data-workbench-default={row.key}>
+              <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
                 <i>{t(row.key)}</i><b>{row.value}</b>
+                {row.source === undefined
+                  ? null
+                  : (
+                    <em className="iv-def-src" data-default-source-label={row.source}>
+                      {t(row.source === 'override' ? 'defaultsSourceOverride' : 'defaultsSourceSettings')}
+                    </em>
+                  )}
               </span>
             ))}
             <span className="iv-pop">
@@ -2316,6 +2334,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           setHealth({
                             status: 'ok', version: facts.version, provider: facts.provider,
                             ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
+                            ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
                           })
                           setNotice({ text: t('defaultsSaved'), tone: 'info' })
                         })

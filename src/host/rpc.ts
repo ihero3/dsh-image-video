@@ -139,6 +139,8 @@ export interface WorkbenchRpcDeps {
   readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
+  /** 逐字段来源（override / settings / none）；缺省时不带该字段，界面也就不标来源。 */
+  defaultSources?: () => NonNullable<WorkbenchHealth['defaultsSources']>
   /** 默认值编辑器的可选项；缺省时不带该字段。 */
   options?: () => WorkbenchOptions
 }
@@ -295,6 +297,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         outputsDir: deps.outputsDir,
         at: new Date().toISOString(),
         ...deps.defaults === undefined ? {} : { defaults: deps.defaults() },
+        ...deps.defaultSources === undefined ? {} : { defaultsSources: deps.defaultSources() },
         ...deps.options === undefined ? {} : { options: deps.options() },
       }
       return value

@@ -466,3 +466,37 @@ export function registerDefaultsRoute(
     handler: createDefaultsRouteHandler(store, persisted),
   })
 }
+
+/** 一个默认值字段的取值来源：运行时覆盖 / settings 持久默认 / 两者都没有（工具内置默认）。 */
+export type RuntimeDefaultsSource = 'override' | 'settings' | 'none'
+
+/** 七个字段各自的来源，与 {@link RuntimeDefaultsView} 同形状。 */
+export type RuntimeDefaultsSources = { [K in keyof RuntimeDefaults]: RuntimeDefaultsSource }
+
+/**
+ * 逐字段标注当前生效值来自哪一层：运行时覆盖 > settings 持久默认 > 无（工具内置默认）。
+ * 只解释"值从哪来"，不改取值口径——与 {@link resolveDefaultsView} 必须同源，
+ * 否则界面会出现"显示 1024*1024 却标成未设置"这种自相矛盾。
+ * `mediaMode` / `imageStyle` / `videoAspectRatio` 是纯运行时概念（settings 无对应字段），
+ * 因此只会出现 override 或 none。
+ * @param store - 运行时覆盖存储。
+ * @param persisted - settings 持久默认回落层；缺省为空。
+ * @returns 七个字段各自的来源。
+ */
+export function resolveDefaultsSources(
+  store: RuntimeDefaultsStore,
+  persisted: PersistedDefaultsView = {},
+): RuntimeDefaultsSources {
+  const current = store.get()
+  const sourceOf = <K extends keyof RuntimeDefaults>(key: K): RuntimeDefaultsSource =>
+    current[key] !== undefined ? 'override' : persisted[key] !== undefined ? 'settings' : 'none'
+  return {
+    mediaMode: sourceOf('mediaMode'),
+    imageProvider: sourceOf('imageProvider'),
+    imageSize: sourceOf('imageSize'),
+    imageStyle: sourceOf('imageStyle'),
+    videoProvider: sourceOf('videoProvider'),
+    videoAspectRatio: sourceOf('videoAspectRatio'),
+    videoDuration: sourceOf('videoDuration'),
+  }
+}

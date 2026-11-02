@@ -7,7 +7,7 @@
 
 | 端点 | 入参 | 出参 | 备注 |
 | --- | --- | --- | --- |
-| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?}` | `defaults` 为 7 字段生效默认值 |
+| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`options` 是编辑器白名单 |
 | `projects/list` / `create` / `remove` / `rename` | 见 TASKS | project 记录 | 删除会级联资源/时间轴/运行记录 |
 | `assets/probe` | `{path}` | `{path,spec{width?,height?,fps?,durationMs?,hasAudio}}` | `A44` 素材探测：**只允许 outputs 目录内或已登记素材**（防任意路径读取） |
 | `assets/list` / `attach` / `remove` / `quick-add` | — | asset / `{removed}` / `{projectId,asset,timelineId?}` | `remove` 未带 `force` 时对被引用素材报错并列出引用位置；`quick-add` 供对话卡片使用 |

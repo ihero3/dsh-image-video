@@ -88,6 +88,8 @@ export type WorkbenchLocaleKey =
   | 'defaultsCancel'
   | 'defaultsSave'
   | 'defaultsEdit'
+  | 'defaultsSourceOverride'
+  | 'defaultsSourceSettings'
   | 'resourceUseUnit'
   | 'resourceUsedBy'
   | 'resourceUnused'
@@ -776,6 +778,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsCancel: 'Cancel',
   defaultsSave: 'Save defaults',
   defaultsEdit: 'Edit',
+  defaultsSourceOverride: 'overridden',
+  defaultsSourceSettings: 'from settings',
   resourceUseUnit: 'artifacts',
   resourceUsedBy: 'Used by',
   resourceUnused: 'Not used by any artifact yet',
@@ -1536,6 +1540,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsCancel: '取消',
   defaultsSave: '保存默认值',
   defaultsEdit: '编辑',
+  defaultsSourceOverride: '已覆盖',
+  defaultsSourceSettings: '来自设置',
   resourceUseUnit: '次产物',
   resourceUsedBy: '被用到',
   resourceUnused: '还没被任何产物用过',

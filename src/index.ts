@@ -43,7 +43,7 @@ import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
-import { createRuntimeDefaultsStore, resolveDefaultsView } from './runtime-defaults.ts'
+import { createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
 import { DiagnosticsCollector } from './host/diagnostics.ts'
@@ -110,9 +110,10 @@ export {
   IMAGE_STYLE_OPTIONS,
   parseDefaultsPatch,
   registerDefaultsRoute,
+  resolveDefaultsSources,
   resolveDefaultsView,
 } from './runtime-defaults.ts'
-export type { MediaMode, PersistedDefaultsView, RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
+export type { MediaMode, PersistedDefaultsView, RuntimeDefaults, RuntimeDefaultsPatch, RuntimeDefaultsSources, RuntimeDefaultsSource, RuntimeDefaultsStore, RuntimeDefaultsView } from './runtime-defaults.ts'
 export { registerMediaModeInjection, renderMediaModeInstruction } from './media-mode-injection.ts'
 export type { MediaModeInjectionOptions } from './media-mode-injection.ts'
 
@@ -364,6 +365,8 @@ export function apply(ctx: Context, config: Config): void {
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
+      // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
+      defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
       // 下拉白名单由宿主下发：浏览器包不内置服务商名（`T2-11`）
       options: workbenchOptions,
     })

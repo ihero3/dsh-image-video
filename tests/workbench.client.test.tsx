@@ -356,6 +356,47 @@ describe('workbench project and asset flow', () => {
     expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.none)
   })
 
+  it('marks every effective default with where it came from (settings vs overridden)', async () => {
+    const host = fakeApi({
+      defaults: {
+        mediaMode: null,
+        imageProvider: null,
+        imageSize: '1024*1024',
+        imageStyle: null,
+        videoProvider: null,
+        videoAspectRatio: '16:9',
+        videoDuration: null,
+      },
+      defaultsSources: {
+        mediaMode: 'none',
+        imageProvider: 'none',
+        imageSize: 'settings',
+        imageStyle: 'none',
+        videoProvider: 'none',
+        videoAspectRatio: 'override',
+        videoDuration: 'none',
+      },
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
+
+    // settings 里的默认值：标「来自设置」
+    const size = view.container.querySelector('[data-workbench-default="defaultImageSize"]') as HTMLElement
+    expect(size.getAttribute('data-default-source')).toBe('settings')
+    expect(size.textContent).toContain(en.defaultsSourceSettings)
+
+    // 工作台/composer 改过的值：标「已覆盖」
+    const aspect = view.container.querySelector('[data-workbench-default="defaultVideoAspectRatio"]') as HTMLElement
+    expect(aspect.getAttribute('data-default-source')).toBe('override')
+    expect(aspect.textContent).toContain(en.defaultsSourceOverride)
+
+    // 未设置的字段只说「未设置」，不能虚报来源
+    const style = view.container.querySelector('[data-workbench-default="defaultImageStyle"]') as HTMLElement
+    expect(style.getAttribute('data-default-source')).toBe('none')
+    expect(style.querySelector('[data-default-source-label]')).toBeNull()
+    expect(style.textContent).toContain(en.none)
+  })
+
   it('edits the effective defaults from the workbench (R-CFG-2)', async () => {
     const host = fakeApi({
       defaults: {
