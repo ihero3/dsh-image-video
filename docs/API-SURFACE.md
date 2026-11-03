@@ -41,6 +41,7 @@
 | `maintenance/integrity` | — | `{integrity}`（`A104` 完整性巡检：悬空素材引用/孤儿记录/悬空资源使用，只报告不修复）|
 | `maintenance/archive` | `{olderThanDays?,dryRun?}` | `{archivedTasks,archivedRuns,estimatedBytes,dryRun,olderThanDays}`（`A94` 归档已结束的旧任务/运行记录到旁路文件，默认 dryRun）|
 | `maintenance/retention` | `{maxBytes?,maxFiles?,keepNewest?,dryRun?}` | `{dryRun,deleted,plan{remove[],keptFiles,keptBytes,freedBytes,overQuota},hint}` | `A15` 输出配额清理：**默认 dryRun 只算不删**；被素材库引用的文件永不删 |
+| `outputs/reveal` | — | `{reveal:{ok,path,reason?}}` | 在系统文件管理器里**打开本地产物目录**（人工清理用）：只在 Finder/资源管理器里定位，**不删除任何东西**；唤起失败时返回 `ok:false` + 原因，界面把路径给用户手动打开 |
 | `outputs/list` / `maintenance/compact` | — | — | 清理重复素材记录 |
 
 ## 新增能力（给 B 用）

@@ -47,6 +47,7 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import { groupRenderSets, retryError } from '../media/render-registry.ts'
 import { PLUGIN_VERSION } from '../version.ts'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
+import type { RevealResult } from './reveal.ts'
 import {
   IMAGE_SIZE_OPTIONS, IMAGE_STYLE_OPTIONS, MAX_VIDEO_DURATION, MIN_VIDEO_DURATION, PROVIDERS, VIDEO_ASPECT_RATIOS,
 } from '../runtime-defaults.ts'
@@ -140,6 +141,8 @@ export interface WorkbenchRpcDeps {
   readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
+  /** 在系统文件管理器里打开本地产物目录（人工清理用；缺省时界面只显示路径）。 */
+  revealOutputs?: () => Promise<RevealResult>
   /** 现场探测服务商模型目录（`GET /models`）；缺省时能力卡只能标「无法校验」。 */
   probeModels?: () => Promise<ModelRegistryProbe>
   /** 逐字段来源（override / settings / none）；缺省时不带该字段，界面也就不标来源。 */
@@ -1452,6 +1455,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const task = await deps.store.updateTask(id, { projectId: text(payload, 'projectId') })
       if (task === undefined) throw new Error(`unknown task: ${id}`)
       return { task }
+    }
+    // 打开本地产物目录：只唤起文件管理器，绝不删除任何东西（清理由用户自己做）
+    case 'outputs/reveal': {
+      const reveal = deps.revealOutputs === undefined
+        ? { ok: false, path: deps.outputsDir, reason: '宿主未装配目录打开能力' }
+        : await deps.revealOutputs()
+      return { reveal }
     }
     case 'outputs/list': {
       const limit = optionalNumber(payload, 'limit')

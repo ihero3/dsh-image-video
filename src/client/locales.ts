@@ -254,6 +254,11 @@ export type WorkbenchLocaleKey =
   | 'generateRiskBlocked'
   | 'generateRiskWarn'
   | 'assetSearchPlaceholder'
+  | 'storageUsageLabel'
+  | 'storageUsageFiles'
+  | 'storageUsageLoading'
+  | 'storageRevealFolder'
+  | 'storageRevealFailed'
   | 'assetSortLabel'
   | 'assetSortNewest'
   | 'assetSortOldest'
@@ -666,7 +671,7 @@ export type WorkbenchLocaleKey =
   | 'pipelineMatchedItem'
 
 /** Dictionary namespace owned by this plugin's browser half. */
-export const NS = 'image-video-workbench'
+export { NS } from './locale-ns.ts'
 
 /** English copy. */
 export const en: Record<WorkbenchLocaleKey, string> = {
@@ -967,6 +972,11 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateRiskBlocked: 'This prompt fails compliance checks — generation is disabled',
   generateRiskWarn: 'Prompt flagged as risky — the provider may reject it',
   assetSearchPlaceholder: 'Search name / prompt / model',
+  storageUsageLabel: 'Local outputs',
+  storageUsageFiles: 'files',
+  storageUsageLoading: 'reading…',
+  storageRevealFolder: 'Show in folder',
+  storageRevealFailed: 'Could not open the file manager — open this path manually: {path}',
   assetSortLabel: 'Sort',
   assetSortNewest: 'Newest first',
   assetSortOldest: 'Oldest first',
@@ -1754,6 +1764,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateRiskBlocked: '这段提示词过不了合规校验，生成已停用',
   generateRiskWarn: '提示词有风险，可能被上游拒绝',
   assetSearchPlaceholder: '搜索文件名 / 提示词 / 模型',
+  storageUsageLabel: '本地产物',
+  storageUsageFiles: '个文件',
+  storageUsageLoading: '读取中…',
+  storageRevealFolder: '在文件夹显示',
+  storageRevealFailed: '打不开文件管理器——请手动打开：{path}',
   assetSortLabel: '排序',
   assetSortNewest: '最新优先',
   assetSortOldest: '最早优先',

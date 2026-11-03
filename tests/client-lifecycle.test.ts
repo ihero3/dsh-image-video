@@ -8,10 +8,12 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { apply, inject, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
+import { apply, inject, WORKBENCH_LOCALE_NS, WORKBENCH_TAB_ID, WORKBENCH_TAB_KIND } from '../src/client/plugin.ts'
+import { NS as CHUNK_NS } from '../src/client/locale-ns.ts'
 import type { WorkbenchInjected } from '../src/client/Workbench.tsx'
 import { WorkbenchSeat } from '../src/client/WorkbenchSeat.tsx'
-import { en, NS, zh } from '../src/client/locales.ts'
+import { NS } from '../src/client/locales.ts'
+import { CHROME_NS, chromeEn, chromeZh } from '../src/client/chrome-locales.ts'
 
 /** One registered tab definition, narrowed to the fields this test asserts. */
 interface TabDefinition {
@@ -79,7 +81,10 @@ describe('workbench browser half', () => {
     apply(stub.ctx)
 
     expect(inject).toEqual(['slots', 'locale', 'sidebarRightTabs', 'connection'])
-    expect(stub.localeRegister).toHaveBeenCalledWith(NS, { zh, en })
+    // N5：入口只注册 2 条壳文案；界面字典由 chunk 加载后交回来注册
+    expect(stub.localeRegister).toHaveBeenCalledWith(CHROME_NS, { zh: chromeZh, en: chromeEn })
+    // 入口用字面量、chunk 用 locale-ns.ts：两处必须一致（共享模块会被切成 chunk，不能共享）
+    expect(WORKBENCH_LOCALE_NS).toBe(CHUNK_NS)
 
     expect(stub.registerTab).toHaveBeenCalledOnce()
     const definition = stub.definition()!
@@ -102,6 +107,11 @@ describe('workbench browser half', () => {
     // 注入面：kind 是注册身份，health 是宿主通道的取数入口（惰性，不在注册时调用）
     const face = seat.inject() as WorkbenchInjected
     expect(face.kind).toBe(WORKBENCH_TAB_KIND)
+    // 字典注册口：chunk 交回完整字典 → 注册到界面 ns，且重复调用幂等
+    expect(typeof face.registerDictionaries).toBe('function')
+    face.registerDictionaries?.({ zh: { tabTitle: 'z' }, en: { tabTitle: 'e' } })
+    face.registerDictionaries?.({ zh: { tabTitle: 'z' }, en: { tabTitle: 'e' } })
+    expect(stub.localeRegister.mock.calls.filter(call => call[0] === NS)).toHaveLength(1)
     expect(typeof face.api.health).toBe('function')
     expect(typeof face.api.createProject).toBe('function')
     // A-6 修订后注册的是「座位薄壳」：真正的 Workbench 在包内 chunk 里，首次打开才加载
@@ -111,8 +121,8 @@ describe('workbench browser half', () => {
   it('lifts the dictionaries, the tab type and the seat on teardown', () => {
     const stub = stubContext()
     apply(stub.ctx)
-    // 三处注册各留一个 disposer：字典、tab 类型、座位
-    expect(stub.disposers).toHaveLength(3)
+    // 四处：入口壳字典、界面字典的清理口（N5）、tab 类型、座位
+    expect(stub.disposers).toHaveLength(4)
     for (const dispose of stub.disposers) dispose()
     expect(stub.unregisterLocale).toHaveBeenCalledOnce()
     expect(stub.unregisterTab).toHaveBeenCalledOnce()

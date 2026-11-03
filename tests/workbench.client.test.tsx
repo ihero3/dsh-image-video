@@ -424,6 +424,16 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(view.container.querySelector('[data-defaults-options-missing]')).toBeTruthy() })
   })
 
+  it('hands the full dictionary back to the entry once the chunk is loaded (N5)', async () => {
+    const seen: Array<{ zh: Record<string, string>; en: Record<string, string> }> = []
+    const host = fakeApi()
+    render(<Workbench {...clientProps({ api: host.api, registerDictionaries: dicts => { seen.push(dicts) } })} />)
+    await waitFor(() => { expect(seen.length).toBeGreaterThan(0) })
+    // 交回的是完整字典（不是入口那 2 条壳文案），且 zh/en 键集合一致
+    expect(Object.keys(seen[0]!.zh).length).toBeGreaterThan(100)
+    expect(Object.keys(seen[0]!.zh).sort()).toEqual(Object.keys(seen[0]!.en).sort())
+  })
+
   it('orders the dock by user flow and hides the maintenance panes', async () => {
     const host = fakeApi()
     const view = render(<Workbench {...clientProps({ api: host.api })} />)

@@ -71,6 +71,8 @@ export function fakeApi(options: {
   prompts?: PromptRecord[]
   /** `B-11` 体检三端点的返回（测试替身）。 */
   sizeReport?: AssetSizeReport
+  /** `outputs/reveal` 的返回（测试替身）：默认成功并回显 outputsDir。 */
+  revealResult?: { ok: boolean; path: string; reason?: string }
   duplicates?: AssetDuplicatesReport
   projectStats?: AssetProjectStats
   /** `B-16`：导出历史初始内容（测试替身）。 */
@@ -415,6 +417,10 @@ export function fakeApi(options: {
     },
     // `B-11`：素材库体检三端点（测试替身）。未提供报告时返回空结果，
     // 让测试只声明它关心的那份数据。
+    revealOutputs: async () => {
+      calls.push('outputs/reveal')
+      return options.revealResult ?? { ok: true, path: '/tmp/outputs' }
+    },
     assetSizeReport: async () => {
       calls.push('assets/size-report')
       return options.sizeReport ?? { totalBytes: 0, topBytes: 0, topShare: 0, medianBytes: 0, count: 0, top: [] }
@@ -663,7 +669,7 @@ export function fakeApi(options: {
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
-export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean; api?: WorkbenchApi; maintenancePanes?: boolean } = {}): WorkbenchProps {
+export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean; api?: WorkbenchApi; maintenancePanes?: boolean; registerDictionaries?: (dicts: { zh: Record<string, string>, en: Record<string, string> }) => void } = {}): WorkbenchProps {
   const useTabInfo = () => ({
     sidebar: { expanded: true, fullscreen: overrides.fullscreen ?? false },
     panel: { id: 'pane-1' },
@@ -675,6 +681,7 @@ export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean
     useTabInfo,
     api: overrides.api ?? fakeApi().api,
     ...overrides.maintenancePanes === undefined ? {} : { maintenancePanes: overrides.maintenancePanes },
+    ...overrides.registerDictionaries === undefined ? {} : { registerDictionaries: overrides.registerDictionaries },
   } as unknown as WorkbenchProps
 }
 

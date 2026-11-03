@@ -32,9 +32,10 @@
  * 入口现有 626 个 key、~15 KB 中文文案（22%），且**无一冗余**（全量扫描确认）。
  *
  * 抬到 58_000 是为覆盖 T5~T10 的剩余文案增长（每任务约 +0.5~1 KB），避免每步都改基线。
- * **2026-11-03 再抬到 69_000 / 23_100（实测 69,265 / 23,219，预算落到约 84%）**：
- * 快速创建页连续几轮加文案（来源徽章、能力卡实时校验、资源库问答）后已顶到 100%，
- * 再涨一点点就会红。**这是最后一次靠抬基线过关**：下一轮只要还要加界面文案，先做下面的根治方案。
+ * **2026-11-03 抬到 69_000 / 23_100**（快速创建页连续几轮加文案后顶到 100%），
+ * 同日完成下面的根治方案（N5，「入口只注册壳文案、界面字典随 chunk 加载」）后**回落**到
+ * **15_000 / 5_600**：入口实测 14,775 / 5,496（−79%），界面字典搬进 `client.Workbench.js`。
+ * 从此入口不再随界面文案增长——新增界面文案只影响 chunk（总产物预算兜底）。
  *
  * **真正的解法（后续专项，`docs/快速创建.md` 四·L1 与 `docs/ROADMAP.md` §四 N5 有记录）**：
  * 入口只注册 tab 标题所需的 2 个 key（手写小对象），其余 key 用「延迟字典」占位，
@@ -42,7 +43,7 @@
  * 这样入口能一次砍掉 ~15 KB（-23%）。因涉及 i18n 装配且要避开 locale 服务
  * `already has locale` 的限制，单独排期做，不混在布局重构里。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 69_000, gzip: 23_100 })
+export const BUNDLE_BASELINE = Object.freeze({ raw: 15_000, gzip: 5_600 })
 export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 905_920, gzip: 194_780 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),

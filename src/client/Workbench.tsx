@@ -12,7 +12,7 @@
  * colours resolve through the Harness design tokens with currentColor-mix
  * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
-import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -42,7 +42,8 @@ import {
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
-import { NS, type WorkbenchLocaleKey } from './locales.ts'
+import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
+import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
@@ -62,6 +63,11 @@ export interface WorkbenchInjected {
   kind: string
   /** Host API over the workbench channel. */
   api: WorkbenchApi
+  /**
+   * 把界面 chunk 里的完整字典交回入口注册（N5：入口只带 2 条壳文案，其余随 chunk 加载）。
+   * 旧宿主/测试替身不提供时跳过：`t` 仍能从入口壳字典取那 2 条，其余键名会原样显示。
+   */
+  registerDictionaries?: (dicts: { zh: Record<string, string>, en: Record<string, string> }) => void
 }
 
 /** The three modes the workbench offers. */
@@ -361,8 +367,14 @@ function emptyTimeline(project: ProjectRecord): TimelineRecord {
  * @param props - seat runtime hooks, the injected API, and localized copy.
  * @returns the workbench surface.
  */
+/** 界面字典（完整 zh/en）：由入口在 chunk 加载后注册，见 {@link WorkbenchInjected.registerDictionaries}。 */
+export const workbenchDictionaries = { zh, en }
+
 export function Workbench(props: WorkbenchProps): ReactNode {
-  const { api, kind, t, useTabInfo, maintenancePanes } = props
+  const { api, kind, t, useTabInfo, maintenancePanes, registerDictionaries } = props
+  // N5：chunk 已经载入 → 把完整字典交回入口注册。用 layout effect 保证在首次绘制前完成，
+  // 不会出现"闪一下键名"。重复挂载幂等（入口侧只注册一次）。
+  useLayoutEffect(() => { registerDictionaries?.(workbenchDictionaries) }, [registerDictionaries])
   // 运维面板（素材库体检 / 诊断）默认不渲染：用户看不懂也用不上，只留给排障与回归测试
   const showMaintenancePanes = maintenancePanes === true
   const { sidebar, tab } = useTabInfo()
@@ -414,6 +426,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   const [assetFilter, setAssetFilter] = useState<'all' | 'image' | 'video'>('all')
+  /** 本地产物体积（媒体素材面板顶部的"占了多少磁盘"；只展示，清理交给人自己做）。 */
+  const [storageSize, setStorageSize] = useState<{ count: number; totalBytes: number } | undefined>(undefined)
+  /** 打开目录失败时的提示（含路径，用户可手动打开）。 */
+  const [revealNote, setRevealNote] = useState<string | undefined>(undefined)
   // `T6` 素材区搜索与排序：素材一多（实测 40+）就找不到东西
   const [assetQuery, setAssetQuery] = useState('')
   const [assetSort, setAssetSort] = useState<'newest' | 'oldest' | 'largest' | 'name'>('newest')
@@ -1348,6 +1364,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `A152`：最新产物里尚未登记进当前项目的那些（按钮上直接显示数量）
   const registeredPaths = new Set(assets.map(asset => asset.path))
   const pendingOutputs = outputs.filter(output => !registeredPaths.has(output.path))
+
+  // 本地产物体积：切项目/新增产物后重取（只读统计，失败静默——不影响素材列表）
+  useEffect(() => {
+    let stale = false
+    void (async () => {
+      try {
+        const report = await apiRef.current.assetSizeReport(1)
+        if (!stale) setStorageSize({ count: report.count, totalBytes: report.totalBytes })
+      } catch {
+        if (!stale) setStorageSize(undefined)
+      }
+    })()
+    return () => { stale = true }
+    // assets 变化（登记/导入/生成完成）时刷新体积
+  }, [activeProject?.id, assets])
 
   // `F1`：拿到生效默认值后回填一次（用户改过就不覆盖）
   useEffect(() => {
@@ -4199,6 +4230,30 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <option value="name">{t('assetSortName')}</option>
                   </select>
                 </div>
+              </div>
+              <div className="iv-storage" data-asset-storage="true">
+                <span className="iv-meta">
+                  {t('storageUsageLabel')}：{storageSize === undefined
+                    ? t('storageUsageLoading')
+                    : `${storageSize.count} ${t('storageUsageFiles')} · ${formatBytes(storageSize.totalBytes)}`}
+                </span>
+                <button
+                  type="button"
+                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                  data-asset-reveal="true"
+                  title={t('storageRevealFolder')}
+                  onClick={() => {
+                    void run(async () => {
+                      const result = await apiRef.current.revealOutputs()
+                      setRevealNote(result.ok ? undefined : t('storageRevealFailed').replace('{path}', result.path))
+                    })
+                  }}
+                >
+                  <Icon name="download" size={11} />{t('storageRevealFolder')}
+                </button>
+                {revealNote === undefined
+                  ? null
+                  : <span className="iv-meta iv-meta--warn" data-asset-reveal-note="true">{revealNote}</span>}
               </div>
               <div className="iv-toolbar">
                 <button

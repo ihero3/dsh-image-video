@@ -46,6 +46,7 @@ import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defau
 import { createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
+import { revealDirectory } from './host/reveal.ts'
 import { probeModelRegistry } from './media/model-health.ts'
 import { DiagnosticsCollector } from './host/diagnostics.ts'
 import { registerWorkbenchStatusRoute } from './host/status-route.ts'
@@ -368,6 +369,8 @@ export function apply(ctx: Context, config: Config): void {
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
       // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
+      // 打开本地产物目录：只在文件管理器里定位，不删任何东西（人工清理）
+      revealOutputs: () => revealDirectory(outputsDir),
       // 模型能力卡的"实时可用性"：现场问服务商模型目录，失败如实返回原因（不伪造可用）
       probeModels: async () => {
         try {

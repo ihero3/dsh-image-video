@@ -26,17 +26,30 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { createWorkbenchApi } from './api.ts'
 import type { WorkbenchInjected } from './Workbench.tsx'
 import { WorkbenchSeat } from './WorkbenchSeat.tsx'
-import { NS, en, zh, type WorkbenchLocaleKey } from './locales.ts'
+import type { WorkbenchLocaleKey } from './locales.ts'
+import { CHROME_NS, chromeEn, chromeZh, type ChromeLocaleKey } from './chrome-locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Workbench copy. */
     'image-video-workbench': WorkbenchLocaleKey
+    /** 入口壳文案（tab 标题 / guide）：必须在界面 chunk 之前就可读。 */
+    'image-video-workbench-chrome': ChromeLocaleKey
   }
 }
 
 /** Implementation identity: unique in the tab registry, and the key both seats register under. */
 export const WORKBENCH_TAB_ID = 'dsh-image-video'
+
+/**
+ * 界面 locale namespace。入口**不 import** `locale-ns.ts`：任何被入口与 chunk 同时引用的模块
+ * 都会被切成共享 chunk（`client.locale-ns.js`），入口反而多一次 require，断言也变复杂。
+ * 这里写字面量，值必须与 `locale-ns.ts` 一致（`client-lifecycle.test.ts` 钉住两者相等）。
+ */
+const NS = 'image-video-workbench' as const
+
+/** 供测试钉住"入口字面量 == chunk 侧常量"（入口与 chunk 不能共享模块）。 */
+export const WORKBENCH_LOCALE_NS = NS
 
 /** Tab type discriminator. Its own kind, so no built-in kind is shadowed. */
 export const WORKBENCH_TAB_KIND = 'dsh-image-video-workbench'
@@ -49,8 +62,19 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs', 'connection']
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'image-video-workbench: dictionaries')
-  const t = ctx.locale.bind(NS)
+  // N5：入口只注册这两条壳文案；界面字典随 chunk 加载后再注册（见 Workbench 的 useLayoutEffect）
+  ctx.effect(() => ctx.locale.register(CHROME_NS, { zh: chromeZh, en: chromeEn }), 'image-video-workbench: chrome dictionaries')
+  let bodyDictionaries: (() => void) | undefined
+  /**
+   * 界面 chunk 把自己那份完整字典交回来注册（入口持有 ctx，chunk 只持有字符串）。
+   * 幂等：重复调用只注册一次；卸载时随 fiber 撤销。
+   */
+  const registerDictionaries = (dicts: { zh: Record<string, string>, en: Record<string, string> }): void => {
+    if (bodyDictionaries !== undefined) return
+    bodyDictionaries = ctx.locale.register(NS as 'image-video-workbench', dicts as never)
+  }
+  ctx.effect(() => () => { bodyDictionaries?.(); bodyDictionaries = undefined }, 'image-video-workbench: body dictionaries')
+  const t = ctx.locale.bind(CHROME_NS)
 
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: WORKBENCH_TAB_ID,
@@ -68,7 +92,12 @@ export function apply(ctx: ClientContext): void {
     name: 'sidebar.right.pane.tab',
     key: WORKBENCH_TAB_ID,
     locale: NS,
-    inject: (): WorkbenchInjected => ({ kind: WORKBENCH_TAB_KIND, api: createWorkbenchApi(requireConnection(ctx)) }),
+    inject: (): WorkbenchInjected => ({
+      kind: WORKBENCH_TAB_KIND,
+      api: createWorkbenchApi(requireConnection(ctx)),
+      // 界面 chunk 加载完把自己那份字典交回来（入口不持有它，N5）
+      registerDictionaries,
+    }),
   }, WorkbenchSeat))
 }
 

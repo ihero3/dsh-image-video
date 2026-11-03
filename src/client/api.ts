@@ -348,6 +348,13 @@ export interface PipelineResult {
 }
 
 /** 一次模型目录探测的结果（与服务商 API 同源，失败如实给原因）。 */
+/** `outputs/reveal` 的结果：失败时带上路径与原因，界面让用户手动打开。 */
+export interface RevealResultView {
+  readonly ok: boolean
+  readonly path: string
+  readonly reason?: string
+}
+
 export interface ModelRegistryProbeView {
   readonly attemptedAt: string
   readonly ok: boolean
@@ -618,6 +625,8 @@ export interface WorkbenchApi {
   assignTask: (id: string, projectId: string) => Promise<TaskRecord>
   /** B-11 素材库体检：Top N/总量/中位数/占比，标注是否未使用（`assets/size-report`）。 */
   assetSizeReport: (topN?: number) => Promise<AssetSizeReport>
+  /** 在系统文件管理器里打开本地产物目录（不删除任何东西）。 */
+  revealOutputs: () => Promise<RevealResultView>
   /** B-11 内容去重：按大小分组 sha256，给建议保留项与可回收字节（`assets/duplicates`）。 */
   assetDuplicates: (maxHashFiles?: number) => Promise<AssetDuplicatesReport>
   /** B-11 项目统计：素材数/总字节/被引用字节/时间轴数，按占用降序（`assets/project-stats`）。 */
@@ -739,6 +748,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     recordExport: async input => (await call<{ export: ExportRecord }>('exports/record', input)).export,
     updateExport: async input => (await call<{ export: ExportRecord }>('exports/update', input)).export,
     assignTask: async (id, projectId) => (await call<{ task: TaskRecord }>('tasks/assign', { id, projectId })).task,
+    revealOutputs: async () => (await call<{ reveal: RevealResultView }>('outputs/reveal', {})).reveal,
     assetSizeReport: async topN =>
       (await call<{ size: AssetSizeReport }>('assets/size-report', topN === undefined ? {} : { topN })).size,
     assetDuplicates: async maxHashFiles =>
