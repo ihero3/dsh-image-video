@@ -426,6 +426,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [resourceTab, setResourceTab] = useState<'role' | 'scene' | 'prop' | 'other'>('role')
   const [resourceOtherKind, setResourceOtherKind] = useState<ResourceKind>('brand')
   const [resourceFilter, setResourceFilter] = useState('')
+  /** 正在编辑名称/备注的资源（备注 = 外观描述，重绘计划据此出建议提示词）。 */
+  const [editingMetaId, setEditingMetaId] = useState<string | undefined>(undefined)
+  const [metaName, setMetaName] = useState('')
+  const [metaNote, setMetaNote] = useState('')
+  /** 资源列表里的"当前选中"（视觉高亮；与素材选中是两件事）。 */
+  const [selectedResourceId, setSelectedResourceId] = useState<string | undefined>(undefined)
   const [resourceName, setResourceName] = useState('')
   // `A153`：资源的参考图（角色定妆照 / 场景基准）
   const [resourceAsset, setResourceAsset] = useState<string | undefined>(undefined)
@@ -1383,10 +1389,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 这里一次取全量再本地过滤——切栏/改筛选零请求、零闪烁，也不会把「其他」栏的
   // 数据反复拉进拉出。
   const activeResourceKind: ResourceKind = resourceTab === 'other' ? resourceOtherKind : resourceTab
+  const editingMeta = editingMetaId === undefined ? undefined : resources.find(resource => resource.id === editingMetaId)
   const resourceNeedle = resourceFilter.trim()
   const visibleResources = resources.filter(resource =>
     resource.kind === activeResourceKind
-    && (resourceNeedle === '' || resource.name.includes(resourceNeedle)),
+    // 匹配**名称或备注**：备注就是"外观描述"，按「短发 / 红裙」这类词找资源更顺手
+    && (resourceNeedle === ''
+      || resource.name.includes(resourceNeedle)
+      || (resource.note ?? '').includes(resourceNeedle)),
   )
 
   // `B-9` 融合生图：选中资源的参考图预览——去重、按角色→场景→物品的顺序、封顶 6 张。
@@ -4659,11 +4669,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <button
                     type="button"
                     className="iv-btn iv-btn--ghost iv-btn--sm"
+                    data-resource-use-selected="true"
+                    title={selectedAsset === undefined ? t('resourceUseSelectedHint') : t('resourceUseSelected')}
                     disabled={selectedAsset === undefined}
                     onClick={() => setResourceAsset(selectedAsset?.path)}
                   >
                     {t('resourceUseSelected')}
                   </button>
+                  {selectedAsset === undefined
+                    ? <span className="iv-meta" data-resource-use-hint="true">{t('resourceUseSelectedHint')}</span>
+                    : null}
                 </div>
                 {/* `B-8`：行内参考图编辑器（管理某个资源的多张参考图） */}
                 {editingResource === undefined
@@ -4685,6 +4700,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             {resourceRefs(editingResource).map((path, index) => (
                               <li key={path} className="iv-ref-chip" data-resource-ref={path}>
                                 <span className="iv-ref-order">{index + 1}</span>
+                                <button
+                                  type="button"
+                                  className="iv-ref-thumb-btn"
+                                  data-resource-ref-preview={path}
+                                  title={t('resourceRefPreview')}
+                                  aria-label={`${t('resourceRefPreview')} ${baseName(path)}`}
+                                  onClick={() => { setPreviewPath({ path, kind: 'image' }); scrollToPane('panePreview') }}
+                                >
+                                  <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}`} alt="" />
+                                </button>
                                 <span className="iv-ref-role">{index === 0 ? t('generateRefsBase') : t('generateRefsStyle')}</span>
                                 <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
                                 <button
@@ -4733,11 +4758,67 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                     </div>
                   )}
+                {/* 名称/备注编辑：备注 = 外观描述（重绘计划「建议补一句外观描述」就补在这里） */}
+                {editingMeta === undefined
+                  ? null
+                  : (
+                    <div className="iv-refs-editor" data-resource-meta-editor={editingMeta.id}>
+                      <span className="iv-meta">{t('resourceEdit')}：{editingMeta.name}</span>
+                      <div className="iv-add-row">
+                        <input
+                          className="iv-input"
+                          style={{ flex: 1, minWidth: '78px' }}
+                          aria-label={t('resourceNamePlaceholder')}
+                          value={metaName}
+                          onChange={event => { setMetaName(event.target.value) }}
+                        />
+                        <input
+                          className="iv-input"
+                          style={{ flex: 1, minWidth: '78px' }}
+                          aria-label={t('notePlaceholder')}
+                          placeholder={t('resourceNoteHint')}
+                          value={metaNote}
+                          onChange={event => { setMetaNote(event.target.value) }}
+                        />
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--acc iv-btn--sm"
+                          data-resource-meta-save={editingMeta.id}
+                          disabled={busy || metaName.trim() === ''}
+                          onClick={() => {
+                            void run(async () => {
+                              await apiRef.current.updateResource({
+                                id: editingMeta.id,
+                                name: metaName.trim(),
+                                note: metaNote.trim(),
+                              })
+                              setEditingMetaId(undefined)
+                              if (activeProject !== undefined) await loadResources(activeProject.id)
+                            })
+                          }}
+                        >
+                          {t('resourceEditSave')}
+                        </button>
+                        <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => setEditingMetaId(undefined)}>
+                          {t('cancel')}
+                        </button>
+                      </div>
+                      <span className="iv-meta">{t('resourceNoteHint')}</span>
+                    </div>
+                  )}
                 {visibleResources.length === 0
                   ? (
-                    <div className="iv-empty">
+                    <div className="iv-empty" data-resource-empty={resourceNeedle === '' ? 'none' : 'filtered'}>
                       <span className="iv-empty-tile"><Icon name="tag" size={17} /></span>
-                      <strong>{t('noResources')}</strong>
+                      <strong>{resourceNeedle === '' ? t('noResources') : t('resourceFilterEmpty')}</strong>
+                      {resourceNeedle === ''
+                        ? null
+                        : (
+                          <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
+                            data-resource-filter-clear="true" onClick={() => setResourceFilter('')}>
+                            {t('resourceClear')}
+                          </button>
+                        )}
                     </div>
                   )
                   : (
@@ -4745,7 +4826,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     const refs = resourceRefs(resource)
                     return (
                     <li key={resource.id} className="iv-row"
+                      data-active={selectedResourceId === resource.id ? 'true' : undefined}
+                      data-resource-row={resource.id}
+                      title={t('resourceFirstRefHint')}
                       onClick={() => {
+                        setSelectedResourceId(resource.id)
                         const first = refs[0]
                         if (first === undefined) return
                         setPreviewPath({ path: first, kind: 'image' })
@@ -4795,6 +4880,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           }}
                         >
                           <Icon name="plus" size={12} />
+                        </button>
+                        {/* 编辑名称/备注：备注就是「外观描述」，重绘计划的建议提示词据此生成 */}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                          data-resource-edit={resource.id}
+                          aria-label={`${t('resourceEdit')} · ${resource.name}`}
+                          title={t('resourceEdit')}
+                          disabled={busy}
+                          onClick={event => {
+                            event.stopPropagation()
+                            setEditingMetaId(current => (current === resource.id ? undefined : resource.id))
+                            setMetaName(resource.name)
+                            setMetaNote(resource.note ?? '')
+                          }}
+                        >
+                          <Icon name="pencil" size={12} />
                         </button>
                         {/* `B-8`：管理这个资源的多张参考图 */}
                         <button

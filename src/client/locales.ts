@@ -386,6 +386,13 @@ export type WorkbenchLocaleKey =
   | 'resourceRefsCount'
   | 'resourceRefsDuplicate'
   | 'resourceAttachSelected'
+  | 'resourceFilterEmpty'
+  | 'resourceUseSelectedHint'
+  | 'resourceEdit'
+  | 'resourceEditSave'
+  | 'resourceNoteHint'
+  | 'resourceRefPreview'
+  | 'resourceFirstRefHint'
   | 'resourceRefsNone'
   // ---- B-9 融合生图（G3，依赖 A-4 media/compose） ----
   | 'fusionTitle'
@@ -712,6 +719,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   resourceReference: 'Reference (makeup shot)',
   resourceUseSelected: 'Use selected asset',
+  resourceFilterEmpty: 'No resource matches the filter — clear it to see all.',
+  resourceUseSelectedHint: 'Pick one asset in “Media assets” first',
+  resourceEdit: 'Edit name and note',
+  resourceEditSave: 'Save',
+  resourceNoteHint: 'Note is the appearance description used by the redraw plan',
+  resourceRefPreview: 'Show this reference image in Preview',
+  resourceFirstRefHint: 'The first reference image is the look we keep using',
+
   resourceClear: 'Clear',
 
   attachAll: 'Register all new',
@@ -1052,7 +1067,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   resourceLibraries: 'Libraries',
   resourceTabOther: 'Other',
-  resourceFilterPlaceholder: 'Filter by name',
+  resourceFilterPlaceholder: 'Filter by name or note',
 
   clipSplit: 'Split at playhead',
   clipSplitOutsideHint: 'The playhead is outside this clip',
@@ -1491,6 +1506,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   resourceReference: '参考图（定妆照）',
   resourceUseSelected: '用选中素材',
+  resourceFilterEmpty: '没有匹配的资源——清空筛选看看全部。',
+  resourceUseSelectedHint: '先在右侧「媒体素材」里点一张图',
+  resourceEdit: '编辑名称与备注',
+  resourceEditSave: '保存',
+  resourceNoteHint: '备注就是重绘计划用的「外观描述」',
+  resourceRefPreview: '在预览里看这张参考图',
+  resourceFirstRefHint: '第一张参考图是长期沿用的定妆照',
+
   resourceClear: '清除',
 
   attachAll: '登记全部未登记',
@@ -1831,7 +1854,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   resourceLibraries: '物料分栏',
   resourceTabOther: '其他',
-  resourceFilterPlaceholder: '按名称筛选',
+  resourceFilterPlaceholder: '按名称/备注筛选',
 
   clipSplit: '在播放头分割',
   clipSplitOutsideHint: '播放头不在这个片段内',
