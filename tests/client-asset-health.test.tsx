@@ -43,7 +43,7 @@ function renderHealth() {
     schemaVersion: 1, id: 'prj-1', name: '雨夜',
     createdAt: '2026-10-22T00:00:00.000Z', updatedAt: '2026-10-22T00:00:00.000Z',
   })
-  const view = render(<Workbench {...clientProps({ api: host.api })} />)
+  const view = render(<Workbench {...clientProps({ api: host.api, maintenancePanes: true })} />)
   return { host, view }
 }
 

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-02.1'
+export const WORKBENCH_STYLE_VERSION = '2026-11-03.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -286,6 +286,15 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* ============ 面板 ============ */
 .iv-page{display:flex;flex-direction:column;gap:var(--iv-sp-5);padding:10px;flex:none}
 .iv-dock{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:var(--iv-sp-5);padding:0 10px 10px;align-items:start}
+/* 停靠区顺序按「用户动线」排：先选料（资源）→ 看效果（预览）→ 素材库 → 交付（导出历史）→ 任务；
+   用 order 排而不是搬 JSX：大块 JSX 移动易错，且面板内容与顺序无关。 */
+.iv-dock > [data-dock-order="1"]{order:1}
+.iv-dock > [data-dock-order="2"]{order:2}
+.iv-dock > [data-dock-order="3"]{order:3}
+.iv-dock > [data-dock-order="4"]{order:4}
+.iv-dock > [data-dock-order="5"]{order:5}
+.iv-dock > [data-dock-order="6"]{order:6}
+.iv-dock > [data-dock-order="7"]{order:7}
 .iv-pane{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0;border:1px solid var(--iv-line);
   border-radius:var(--iv-r-lg);background:var(--iv-panel);padding:var(--iv-sp-4) var(--iv-sp-5);scroll-margin:var(--iv-sp-5)}
 /* 左栏快捷入口点击后的确认高亮：一次性脉冲，避免"点了没反应"的错觉 */

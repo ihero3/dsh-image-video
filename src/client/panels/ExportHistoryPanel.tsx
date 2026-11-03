@@ -20,6 +20,13 @@ interface ExportHistoryPanelProps {
   readonly refreshTick: number
   /** 重试入口：交给工作台记账 + 重渲，面板不直接碰渲染端点。 */
   readonly onRetry: (record: ExportRecord, label: string) => void
+  /**
+   * 发起导出的入口：真正的导出控件在「时间轴」模式里，面板通过回调把用户送过去，
+   * 自己不碰渲染端点，也不假装能就地导出。
+   */
+  readonly onExport?: () => void
+  /** 已知没有任何时间轴时的提示（按钮仍可点：点过去由时间轴自己说"还没片段"）。 */
+  readonly exportHint?: string
   readonly t: (key: WorkbenchLocaleKey) => string
 }
 
@@ -60,7 +67,7 @@ function statusLabelKey(status: ExportStatus): WorkbenchLocaleKey {
   return 'statusQueued'
 }
 
-export function ExportHistoryPanel({ api, projects, formatBytes, refreshTick, onRetry, t }: ExportHistoryPanelProps) {
+export function ExportHistoryPanel({ api, projects, formatBytes, refreshTick, onRetry, onExport, exportHint, t }: ExportHistoryPanelProps) {
   const [records, setRecords] = useState<readonly ExportRecord[] | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -69,6 +76,8 @@ export function ExportHistoryPanel({ api, projects, formatBytes, refreshTick, on
   const [manualTick, setManualTick] = useState(0)
   /** timelineId → 名称（记录里只有 id，面板自己补齐显示名）。 */
   const [timelineNames, setTimelineNames] = useState<Readonly<Record<string, string>>>({})
+  /** 名称补齐是否跑完：跑完且一条时间轴都没有，才提示"先放片段"。 */
+  const [namesReady, setNamesReady] = useState(false)
 
   // 时间轴显示名：挂载时按项目各拉一次（项目数是小位数，N+1 可接受）。
   // 依赖用 id 签名而不是数组本身——轮询会换数组引用，不该触发重拉。
@@ -85,7 +94,7 @@ export function ExportHistoryPanel({ api, projects, formatBytes, refreshTick, on
           // 单个项目读失败不影响其它项目的名称补齐
         }
       }))
-      if (!stale) setTimelineNames(names)
+      if (!stale) { setTimelineNames(names); setNamesReady(true) }
     })()
     return () => { stale = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- projectsKey 是 projects 的稳定签名
@@ -113,6 +122,23 @@ export function ExportHistoryPanel({ api, projects, formatBytes, refreshTick, on
 
   return (
     <div className="iv-exports" data-exports-panel="true">
+      {onExport === undefined
+        ? null
+        : (
+          <div className="iv-toolbar" data-exports-actions="true">
+            <button
+              type="button"
+              className="iv-btn iv-btn--acc iv-btn--sm"
+              data-exports-start="true"
+              onClick={onExport}
+            >
+              <Icon name="download" />{t('exportStart')}
+            </button>
+            {namesReady && Object.keys(timelineNames).length === 0 && exportHint !== undefined
+              ? <span className="iv-meta" data-exports-start-hint="true">{exportHint}</span>
+              : null}
+          </div>
+        )}
       <div className="iv-exports-filter">
         <select
           className="iv-select iv-select--sm"

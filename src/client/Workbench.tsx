@@ -72,6 +72,13 @@ export type WorkbenchProps =
   PropsRuntime<'sidebar.right.pane.tab'>
   & InjectFace<WorkbenchInjected>
   & PropsLocale<typeof NS>
+  & {
+    /**
+     * 是否渲染停靠区里的两个**运维面板**（素材库体检 / 诊断）。默认 false：它们对创作没有价值，
+     * 只在排障或对应回归测试里显式打开。宿主不会传这个字段。
+     */
+    readonly maintenancePanes?: boolean
+  }
 
 /** What the header can say about the host. */
 type HealthState =
@@ -143,7 +150,8 @@ const DEFAULT_GROUPS: ReadonlyArray<{ key: WorkbenchLocaleKey; fields: readonly 
 function scrollToPane(pane: string): void {
   const target = document.querySelector<HTMLElement>(`[data-workbench-pane="${pane}"]`)
   if (target === null) return
-  target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  // jsdom / 旧 WebView 没有 scrollIntoView：定位失败不该把流程打断（`T9` 同款防御）
+  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   // 重启动画：先摘掉类，强制一次重排，再挂回去
   target.classList.remove('iv-pane--flash')
   void target.offsetWidth
@@ -354,7 +362,9 @@ function emptyTimeline(project: ProjectRecord): TimelineRecord {
  * @returns the workbench surface.
  */
 export function Workbench(props: WorkbenchProps): ReactNode {
-  const { api, kind, t, useTabInfo } = props
+  const { api, kind, t, useTabInfo, maintenancePanes } = props
+  // 运维面板（素材库体检 / 诊断）默认不渲染：用户看不懂也用不上，只留给排障与回归测试
+  const showMaintenancePanes = maintenancePanes === true
   const { sidebar, tab } = useTabInfo()
 
   // 设计系统样式表：挂载时注入一次（幂等，与 xyflow 官方样式同一机制）。
@@ -2414,15 +2424,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           <button
             type="button"
             className="iv-rail-btn"
-            aria-label={t('railHealth')}
-            onClick={() => { scrollToPane('paneHealth') }}
-          >
-            <Icon name="filter" size={15} />
-            <span className="iv-rail-tip">{t('railHealth')}</span>
-          </button>
-          <button
-            type="button"
-            className="iv-rail-btn"
             aria-label={t('railExports')}
             onClick={() => { scrollToPane('paneExports') }}
           >
@@ -4103,10 +4104,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               : null}
           </section>
 
-          {/* ============ 下部停靠区：四个面板（常驻） ============ */}
+          {/* ============ 下部停靠区：5 个用户面板（顺序见 data-dock-order / 样式表） ============ */}
           <div className="iv-dock">
-            {/* B-11 素材库体检 pane */}
-            <section className="iv-pane" data-workbench-pane="paneHealth" data-workbench-planned="false">
+            {/* B-11 素材库体检 pane：运维用途（体积排行/去重/项目统计），对创作没有价值 → 默认不展示 */}
+            {showMaintenancePanes
+              ? (
+              <section className="iv-pane" data-workbench-pane="paneHealth" data-dock-order="6" data-workbench-planned="false">
               <PaneBoundary label={t('paneHealth')} t={t}>
                 <div className="iv-pane-head">
                   <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
@@ -4118,10 +4121,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   t={(key) => t(key as WorkbenchLocaleKey)}
                 />
               </PaneBoundary>
-            </section>
+              </section>
+              )
+              : null}
 
             {/* B-16 导出历史 pane（A-11 exports/*） */}
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneExports" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneExports" data-dock-order="4" data-workbench-planned="false">
               <PaneBoundary label={t('paneExports')} t={t}>
                 <div className="iv-pane-head">
                   <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
@@ -4133,12 +4138,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   formatBytes={formatBytes}
                   refreshTick={exportsTick}
                   onRetry={(record, label) => { void retryExport(record, label) }}
+                  // 导出动作在时间轴模式：这里只负责把用户送过去，并如实说明为什么不能导
+                  onExport={() => {
+                    setMode('timeline')
+                    // 切模式后新面板才挂载，等一帧再滚，避免滚到还没渲染的节点
+                    window.setTimeout(() => { scrollToPane('paneTimeline') }, 0)
+                  }}
+                  exportHint={t('exportsNeedTimeline')}
                   t={(key) => t(key as WorkbenchLocaleKey)}
                 />
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneAssets" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneAssets" data-dock-order="3" data-workbench-planned="false">
               <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
@@ -4448,7 +4460,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="panePreview" data-workbench-planned="false">
+            <section className="iv-pane" data-workbench-pane="panePreview" data-dock-order="2" data-workbench-planned="false">
               <PaneBoundary label={t('panePreview')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
@@ -4540,7 +4552,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="paneResources" data-workbench-planned="false">
+            <section className="iv-pane" data-workbench-pane="paneResources" data-dock-order="1" data-workbench-planned="false">
               <PaneBoundary label={t('paneResources')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
@@ -4855,7 +4867,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneTasks" data-workbench-planned="false">
+            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneTasks" data-dock-order="5" data-workbench-planned="false">
               <PaneBoundary label={t('paneTasks')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
@@ -4903,7 +4915,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneDiagnostics" data-workbench-planned="false">
+            {/* 诊断 pane：运维用途（输出占用/渲染队列/近期错误），对创作没有价值 → 默认不展示 */}
+            {showMaintenancePanes
+              ? (
+              <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneDiagnostics" data-dock-order="7" data-workbench-planned="false">
               <PaneBoundary label={t('paneDiagnostics')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
@@ -4949,7 +4964,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   )}
               </div>
               </PaneBoundary>
-            </section>
+              </section>
+              )
+              : null}
           </div>
         </main>
       </div>

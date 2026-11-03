@@ -663,7 +663,7 @@ export function fakeApi(options: {
 }
 
 /** Props for one render; the seat binds far more than this component reads. */
-export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean; api?: WorkbenchApi } = {}): WorkbenchProps {
+export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean; api?: WorkbenchApi; maintenancePanes?: boolean } = {}): WorkbenchProps {
   const useTabInfo = () => ({
     sidebar: { expanded: true, fullscreen: overrides.fullscreen ?? false },
     panel: { id: 'pane-1' },
@@ -674,6 +674,7 @@ export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean
     t: (key: keyof typeof en) => en[key],
     useTabInfo,
     api: overrides.api ?? fakeApi().api,
+    ...overrides.maintenancePanes === undefined ? {} : { maintenancePanes: overrides.maintenancePanes },
   } as unknown as WorkbenchProps
 }
 

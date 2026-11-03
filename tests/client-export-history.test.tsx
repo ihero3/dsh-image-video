@@ -32,6 +32,44 @@ async function renderExports(options: Parameters<typeof fakeApi>[0] = {}) {
   return { host, view }
 }
 
+describe('导出历史 → 发起导出的入口', () => {
+  it('offers an export action that hands the user to the timeline view', async () => {
+    const host = fakeApi({
+      timelines: [{
+        schemaVersion: 1, id: 'tml-1', projectId: 'prj-1', name: '成片',
+        createdAt: '2026-10-23T09:00:00.000Z', updatedAt: '2026-10-23T09:00:00.000Z',
+        burnSubtitles: false, exportFormat: { width: 1280, height: 720, frameRate: 30 },
+        tracks: [
+          { id: 'v', kind: 'video', clips: [{ id: 'c1', assetPath: '/tmp/outputs/shot.png', startMs: 0, durationMs: 1000 }] },
+          { id: 'a', kind: 'audio', clips: [] },
+          { id: 's', kind: 'subtitle', clips: [] },
+        ],
+      }],
+    })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '成片项目',
+      createdAt: '2026-10-23T09:00:00.000Z', updatedAt: '2026-10-23T09:00:00.000Z',
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const start = await waitFor(() => {
+      const button = view.container.querySelector('[data-exports-start]') as HTMLButtonElement
+      expect(button).toBeTruthy()
+      return button
+    })
+    fireEvent.click(start)
+    // 切到时间轴模式后，真正的导出按钮出现在页面里（导出动作只有一处，不重复造）
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-export]')).toBeTruthy() })
+  })
+
+  it('hints to add clips first when no timeline exists yet', async () => {
+    const { view } = await renderExports()
+    await waitFor(() => { expect(view.container.querySelector('[data-exports-start-hint]')).toBeTruthy() })
+    expect(view.container.querySelector('[data-exports-start-hint]')?.textContent).toContain(en.exportsNeedTimeline)
+    // 点得动：进时间轴后由那段界面自己说"还没有片段"
+    expect((view.container.querySelector('[data-exports-start]') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
 describe('B-16 export history panel', () => {
   it('renders the four statuses with output / bytes / elapsed / failure facts', async () => {
     const { view } = await renderExports({

@@ -17,7 +17,7 @@ async function renderTimeline(preloaded?: TimelineRecord[]) {
     schemaVersion: 1, id: 'prj-1', name: '项目',
     createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
   })
-  const view = render(<Workbench {...clientProps({ api: host.api })} />)
+  const view = render(<Workbench {...clientProps({ api: host.api, maintenancePanes: true })} />)
   fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
   await waitFor(() => { expect(view.container.querySelector('[data-timeline-lane="subtitle"]')).toBeTruthy() })
   return { host, view }
@@ -61,7 +61,7 @@ describe('B15 template market', () => {
       schemaVersion: 1, id: 'prj-1', name: '项目',
       createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
     })
-    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = render(<Workbench {...clientProps({ api: host.api, maintenancePanes: true })} />)
     fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
     await waitFor(() => { expect(view.container.querySelector('[data-workbench-pane="paneCanvas"]')).toBeTruthy() })
     // 打开模板市场
@@ -84,7 +84,7 @@ describe('B15 diagnostics panel', () => {
       schemaVersion: 1, id: 'prj-1', name: '项目',
       createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z',
     })
-    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = render(<Workbench {...clientProps({ api: host.api, maintenancePanes: true })} />)
     const panel = await waitFor(() => view.container.querySelector('[data-diagnostics-panel="true"]'), { timeout: 3000 })
     expect(panel).toBeTruthy()
     expect(host.calls).toContain('diagnostics')

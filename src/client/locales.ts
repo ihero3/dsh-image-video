@@ -527,6 +527,7 @@ export type WorkbenchLocaleKey =
   | 'exportsHint'
   | 'exportsEmpty'
   | 'exportsFilterAll'
+  | 'exportsNeedTimeline'
   | 'exportsFilterProject'
   | 'exportsRefresh'
   | 'exportsOutput'
@@ -1191,6 +1192,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   exportsHint: 'Every export attempt, newest first. Failed ones keep their reason and can be retried.',
   exportsEmpty: 'No exports yet — render a timeline and it will show up here.',
   exportsFilterAll: 'All projects',
+  exportsNeedTimeline: 'Add clips on the Timeline first, then export',
   exportsFilterProject: 'Filter by project',
   exportsRefresh: 'Refresh',
   exportsOutput: 'Output',
@@ -1969,6 +1971,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   exportsHint: '每一次导出尝试都在这里，新的在前；失败的保留原因，可直接重试。',
   exportsEmpty: '还没有导出记录——渲染一条时间轴后就会出现在这里。',
   exportsFilterAll: '全部项目',
+  exportsNeedTimeline: '先到「时间轴」放片段，再来导出',
   exportsFilterProject: '按项目筛选',
   exportsRefresh: '刷新',
   exportsOutput: '产物',

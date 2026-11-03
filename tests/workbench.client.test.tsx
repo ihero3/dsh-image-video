@@ -424,6 +424,22 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => { expect(view.container.querySelector('[data-defaults-options-missing]')).toBeTruthy() })
   })
 
+  it('orders the dock by user flow and hides the maintenance panes', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('.iv-dock')).toBeTruthy() })
+    const panes = [...view.container.querySelectorAll('.iv-dock [data-workbench-pane]')]
+    // DOM 顺序不动，视觉顺序由 data-dock-order 决定（改顺序不用搬大块 JSX）
+    expect(panes.map(pane => pane.getAttribute('data-workbench-pane')))
+      .toEqual(['paneExports', 'paneAssets', 'panePreview', 'paneResources', 'paneTasks'])
+    expect(panes.map(pane => pane.getAttribute('data-dock-order'))).toEqual(['4', '3', '2', '1', '5'])
+    // 两个运维面板（素材库体检 / 诊断）默认不展示：对创作没有价值
+    expect(view.container.querySelector('[data-workbench-pane="paneHealth"]')).toBeNull()
+    expect(view.container.querySelector('[data-workbench-pane="paneDiagnostics"]')).toBeNull()
+    // 左栏入口同步移除，避免"点了没反应"
+    expect(view.container.querySelector(`[aria-label="${en.railHealth}"]`)).toBeNull()
+  })
+
   it('edits the effective defaults from the workbench (R-CFG-2)', async () => {
     const host = fakeApi({
       defaults: {
