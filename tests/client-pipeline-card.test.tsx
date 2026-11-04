@@ -75,4 +75,23 @@ describe('PipelineCard', () => {
     expect(api.runPipeline).toHaveBeenCalledTimes(1)
     expect((container.querySelector('[data-pipeline-result]') as HTMLElement).textContent).toContain('Pipeline started')
   })
+
+  it('没有严格模式开关：缺料只提示、不拦（用户 2026-11-04 要求删掉）', async () => {
+    const composePipeline = vi.fn(async () => ({
+      workflowId: 'wfl-loose-1', name: '一键成片 · 1 镜', mode: 'image-to-video',
+      shots: 1, nodes: 2, warnings: [], missingResources: ['林夏'],
+    }))
+    const api = makeApi({ composePipeline: composePipeline as unknown as WorkbenchApi['composePipeline'] })
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    // ① 复选框已经删掉
+    expect(container.querySelector('[data-pipeline-strict]')).toBeNull()
+    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头，林夏走来。' } })
+    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
+    // ② 缺料照常能编排（不再有"严格模式拒绝执行"这条路）
+    await waitFor(() => { expect(composePipeline).toHaveBeenCalledTimes(1) })
+    // ③ 请求不再带 strictResources（宿主默认宽松）
+    expect(composePipeline.mock.calls[0]?.[0]).not.toHaveProperty('strictResources')
+    // ④ 缺料信息仍然给出来（带登记入口）
+    await waitFor(() => { expect(container.querySelector('[data-pipeline-missing-item="林夏"]')).toBeTruthy() })
+  })
 })

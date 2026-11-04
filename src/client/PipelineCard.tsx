@@ -49,7 +49,6 @@ export function PipelineCard(props: PipelineCardProps) {
   const [mode, setMode] = useState<'image-to-video' | 'text-to-video'>('image-to-video')
   const [shots, setShots] = useState(DEFAULT_SHOTS)
   const [duration, setDuration] = useState(DEFAULT_DURATION)
-  const [strict, setStrict] = useState(false)
   // `B-18`：手动挑选物料——把指定资源 id 强制塞进流水线（留空则剧本自动匹配）。
   const [manualPick, setManualPick] = useState<readonly string[]>([])
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
@@ -76,7 +75,6 @@ export function PipelineCard(props: PipelineCardProps) {
       mode,
       shots,
       duration,
-      strictResources: strict,
       ...manualPick.length === 0 ? {} : { resourceIds: manualPick },
     }
     setRunning(true); setError(undefined); setResult(undefined)
@@ -107,7 +105,6 @@ export function PipelineCard(props: PipelineCardProps) {
       mode,
       shots,
       duration,
-      strictResources: strict,
       ...manualPick.length === 0 ? {} : { resourceIds: manualPick },
     }
     setRunning(true)
@@ -216,16 +213,6 @@ export function PipelineCard(props: PipelineCardProps) {
                   onChange={event => setDuration(Math.max(1, Math.min(30, Number(event.target.value) || 1)))}
                   style={{ width: '64px' }}
                 />
-              </label>
-              <label className="iv-check">
-                <input
-                  type="checkbox"
-                  data-pipeline-strict="true"
-                  checked={strict}
-                  disabled={running}
-                  onChange={event => setStrict(event.target.checked)}
-                />
-                {t('pipelineStrict')}
               </label>
               <button
                 type="button"

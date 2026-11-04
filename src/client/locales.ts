@@ -486,7 +486,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineModeTextToVideo'
   | 'pipelineShots'
   | 'pipelineDuration'
-  | 'pipelineStrict'
   | 'pipelineRun'
   | 'pipelineRunning'
   | 'pipelineStarted'
@@ -691,7 +690,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineModeTextToVideo: 'Text → video',
   pipelineShots: 'Shots',
   pipelineDuration: 'Seconds per shot',
-  pipelineStrict: 'Strict (registered roles/scenes required)',
   pipelineRun: 'Run pipeline',
   pipelineRunning: 'Running…',
   pipelineStarted: 'Pipeline started',
@@ -1489,7 +1487,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineModeTextToVideo: '文生视频',
   pipelineShots: '分镜数',
   pipelineDuration: '每镜秒数',
-  pipelineStrict: '严格模式（要求已登记角色/场景）',
   pipelineRun: '一键生成',
   pipelineRunning: '执行中…',
   pipelineStarted: '已起跑',
@@ -1499,7 +1496,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个剧集',
   pipelineMissingTitle: '物料缺失',
-  pipelineMissingHint: '剧本提到、剧集资源里还没有的角色/场景/物品。严格模式会拒绝执行；登记后会自动重新匹配。',
+  pipelineMissingHint: '剧本提到、剧集资源里还没有的角色/场景/物品：照常能生成，但这些物料没有参考图，一致性不保证；登记后会自动重新匹配。',
   pipelineMissingNone: '未检测到缺失物料',
   pipelineRegisterRole: '登记为角色',
   pipelineRegisterScene: '登记为场景',
