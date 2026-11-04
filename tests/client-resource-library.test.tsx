@@ -19,7 +19,7 @@ afterEach(cleanup)
 /** 一个项目（资源列表要求有 activeProject 才会加载）。 */
 function project(): Record<string, unknown> {
   return {
-    schemaVersion: 1, id: 'prj-1', name: '项目',
+    schemaVersion: 1, id: 'prj-1', name: '测试剧',
     createdAt: '2026-11-03T00:00:00.000Z', updatedAt: '2026-11-03T00:00:00.000Z',
   }
 }
@@ -48,6 +48,13 @@ async function renderLibrary() {
 }
 
 describe('创作资源库交互（用户反馈 2026-11-03）', () => {
+  it('names the resource pane after the active series ({series}资源)', async () => {
+    const { view } = await renderLibrary()
+    const title = view.container.querySelector('[data-resource-pane-title]') as HTMLElement
+    // 剧集叫「测试剧」→ 面板标题就是「测试剧资源」，不再是通用的「创作资源」
+    expect(title.textContent).toBe(en.paneResourcesNamed.replace('{series}', '测试剧'))
+  })
+
   it('filters by note as well as name, and says when the filter matched nothing', async () => {
     const { view } = await renderLibrary()
     const filter = view.container.querySelector('[data-resource-filter]') as HTMLInputElement

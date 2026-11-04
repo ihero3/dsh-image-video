@@ -45,6 +45,7 @@ export type WorkbenchLocaleKey =
   | 'modeTimeline'
   | 'paneAssets'
   | 'paneResources'
+  | 'paneResourcesNamed'
   | 'panePreview'
   | 'paneTasks'
   | 'paneHealth'
@@ -763,6 +764,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modeTimeline: 'Timeline',
   paneAssets: 'Media assets',
   paneResources: 'Resources',
+  paneResourcesNamed: '{series} resources',
   panePreview: 'Preview',
   paneTasks: 'Tasks',
   paneHealth: 'Library health',
@@ -1488,7 +1490,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个剧集',
   pipelineMissingTitle: '物料缺失',
-  pipelineMissingHint: '剧本提到、资源库还没有的角色/场景/物品。严格模式会拒绝执行；登记后会自动重新匹配。',
+  pipelineMissingHint: '剧本提到、剧集资源里还没有的角色/场景/物品。严格模式会拒绝执行；登记后会自动重新匹配。',
   pipelineMissingNone: '未检测到缺失物料',
   pipelineRegisterRole: '登记为角色',
   pipelineRegisterScene: '登记为场景',
@@ -1555,6 +1557,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modeTimeline: '时间轴精剪',
   paneAssets: '媒体素材',
   paneResources: '创作资源',
+  paneResourcesNamed: '{series}资源',
   panePreview: '预览',
   paneTasks: '任务',
   paneHealth: '素材库体检',

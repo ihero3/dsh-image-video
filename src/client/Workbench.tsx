@@ -1422,6 +1422,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const activeResourceKind: ResourceKind = resourceTab === 'other' ? resourceOtherKind : resourceTab
   const editingMeta = editingMetaId === undefined ? undefined : resources.find(resource => resource.id === editingMetaId)
   const resourceNeedle = resourceFilter.trim()
+  // 面板标题跟着**当前剧集**走：剧集叫「测试」→ 面板就叫「测试资源」（没选剧集时退回通用标题）
+  const resourcePaneTitle = activeProject === undefined
+    ? t('paneResources')
+    : t('paneResourcesNamed').replace('{series}', activeProject.name)
   const visibleResources = resources.filter(resource =>
     resource.kind === activeResourceKind
     // 匹配**名称或备注**：备注就是"外观描述"，按「短发 / 红裙」这类词找资源更顺手
@@ -4618,10 +4622,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             </section>
 
             <section className="iv-pane" data-workbench-pane="paneResources" data-dock-order="1" data-workbench-planned="false">
-              <PaneBoundary label={t('paneResources')} t={t}>
+              <PaneBoundary label={resourcePaneTitle} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
-                <h3 className="iv-pane-title">{t('paneResources')}</h3>
+                <h3 className="iv-pane-title" data-resource-pane-title="true">{resourcePaneTitle}</h3>
                 <div className="iv-pane-actions">
                   <input
                     className="iv-input"
