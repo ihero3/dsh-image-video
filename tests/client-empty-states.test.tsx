@@ -19,7 +19,8 @@ describe('B10 empty states and onboarding', () => {
     // 选项目 → 快速创作 → 放时间轴：生成 / 落入输出目录 / 登记进项目
     expect(screen.getByText(en.createStepOutputs)).toBeTruthy()
     expect(screen.getByText(en.createStepFile)).toBeTruthy()
-    expect(screen.getByText(en.modeQuickHint)).toBeTruthy()
+    // 模块头那句白话说明（取代原来两段堆叠的解释性长文）
+    expect(screen.getByText(en.moduleQuickDesc)).toBeTruthy()
   })
 
   it('shows empty-state guidance when there are no assets or tasks yet', async () => {

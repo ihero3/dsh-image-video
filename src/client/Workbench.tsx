@@ -2544,8 +2544,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                     </div>
                   <div className="iv-create">
-                    <span className="iv-meta">{busy ? t('busy') : t('emptyHint')}</span>
-                    <p className="iv-create-desc">{t('modeQuickHint')}</p>
+                    {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
+                        不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
+                    {busy ? <span className="iv-meta">{t('busy')}</span> : null}
                     <div className="iv-steps">
                       <span className="iv-step"><span className="iv-step-n">1</span>{t('createStepChat')}</span>
                       <Icon name="chevron" className="iv-step-arrow" size={12} />

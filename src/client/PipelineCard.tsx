@@ -154,14 +154,13 @@ export function PipelineCard(props: PipelineCardProps) {
         onClick={() => setOpen(current => !current)}
       >
         <Icon name="bolt" size={13} />
-        <strong>{t('pipelineTitle')}</strong>
+        <strong>{t('pipelineCardTitle')}</strong>
         <span className="iv-meta" style={{ marginLeft: 'auto' }}>{open ? '−' : '+'}</span>
       </button>
 
       {open
         ? (
           <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
-            <span className="iv-meta">{t('pipelineHint')}</span>
             <span className="iv-meta">{t('pipelineScriptLabel')}</span>
             <textarea
               className="iv-input"

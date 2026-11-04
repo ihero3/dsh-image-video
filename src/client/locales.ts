@@ -485,6 +485,7 @@ export type WorkbenchLocaleKey =
   | 'segTotal'
   | 'segJump'
   | 'pipelineTitle'
+  | 'pipelineCardTitle'
   | 'pipelineHint'
   | 'pipelineScriptLabel'
   | 'pipelineScriptPlaceholder'
@@ -689,6 +690,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   guideDescription: 'Series, media assets and generation tasks for image and video work.',
   sectionProject: 'Series',
   pipelineTitle: 'One-click film: script → shots → image → video',
+  pipelineCardTitle: 'Script & generation settings',
   pipelineHint: 'Paste a script; the host splits it into shots and builds a runnable canvas chain for you.',
   pipelineScriptLabel: 'Script',
   pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
@@ -1492,6 +1494,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   guideDescription: '图片与视频创作的剧集、媒体素材与生成任务。',
   sectionProject: '剧集',
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
+  pipelineCardTitle: '剧本与生成设置',
   pipelineHint: '粘贴剧本，宿主自动拆成分镜并生成一条可直接跑的画布流水线。',
   pipelineScriptLabel: '剧本',
   pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
