@@ -448,6 +448,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [metaNote, setMetaNote] = useState('')
   /** 资源列表里的"当前选中"（视觉高亮；与素材选中是两件事）。 */
   const [selectedResourceId, setSelectedResourceId] = useState<string | undefined>(undefined)
+  /** 哪一行展开了「详情」（使用记录 / 编辑 / 参考图 / 删除都收在里面，默认收起）。 */
+  const [expandedResourceId, setExpandedResourceId] = useState<string | undefined>(undefined)
+  /** 分类 + 重绘计划是高级功能：默认收起，别和新手抢注意力。 */
+  const [showFolders, setShowFolders] = useState(false)
   const [resourceName, setResourceName] = useState('')
   // `A153`：资源的参考图（角色定妆照 / 场景基准）
   const [resourceAsset, setResourceAsset] = useState<string | undefined>(undefined)
@@ -4713,6 +4717,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <Icon name="plus" />{t('addResource')}
                   </button>
                 </div>
+                {/* 最小创建路径：只填名称就能建，定妆照后补（新手不该被"先选参考图"挡住） */}
+                <span className="iv-meta" data-resource-create-hint="true">{t('resourceCreateHint')}</span>
                 <div className="iv-add-row" style={{ marginTop: '4px' }}>
                   <span className="iv-meta">{t('resourceReference')}：</span>
                   {resourceAsset === undefined
@@ -4911,13 +4917,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           </span>
                         )}
                       <span className="iv-row-main iv-ellipsis" title={resource.note ?? ''}>
-                        {t(kindKey(resource.kind))} · {resource.name}{resource.note === undefined ? '' : ` · ${resource.note}`}
+                        {t(kindKey(resource.kind))} · {resource.name}
+                        {resource.note === undefined ? '' : ` · ${resource.note}`}
+                        {refs.length === 0 ? null : ` · ${t('resourceRefsCount').replace('{n}', String(refs.length))}`}
                       </span>
                       {(() => {
                         const used = resourceUsage.filter(entry => entry.resourceId === resource.id)
                         const latest = used[0]
                         return (
-                          <span className="iv-badge" data-resource-usage={resource.id} title={latest?.assetPath ?? ''}>
+                          <span className="iv-badge iv-row-detail" data-resource-usage={resource.id}
+                            hidden={expandedResourceId !== resource.id} title={latest?.assetPath ?? ''}>
                             {used.length === 0
                               ? t('resourceUnused')
                               : `${t('resourceUsedBy')} ${used.length} ${t('resourceUseUnit')}${latest === undefined ? '' : ` · ${baseName(latest.assetPath)}`}`}
@@ -4940,11 +4949,28 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         >
                           <Icon name="plus" size={12} />
                         </button>
+                        {/* 详情：使用记录 / 编辑 / 参考图 / 删除都收在这里，默认收起 */}
+                        <button
+                          type="button"
+                          className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                          data-resource-expand={resource.id}
+                          aria-expanded={expandedResourceId === resource.id}
+                          aria-label={`${expandedResourceId === resource.id ? t('resourceHideDetails') : t('resourceDetails')} · ${resource.name}`}
+                          title={expandedResourceId === resource.id ? t('resourceHideDetails') : t('resourceDetails')}
+                          onClick={event => {
+                            event.stopPropagation()
+                            setExpandedResourceId(current => (current === resource.id ? undefined : resource.id))
+                          }}
+                        >
+                          <Icon name="chevron" size={12} />
+                        </button>
                         {/* 编辑名称/备注：备注就是「外观描述」，重绘计划的建议提示词据此生成 */}
+
                         <button
                           type="button"
                           className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
                           data-resource-edit={resource.id}
+                          hidden={expandedResourceId !== resource.id}
                           aria-label={`${t('resourceEdit')} · ${resource.name}`}
                           title={t('resourceEdit')}
                           disabled={busy}
@@ -4962,6 +4988,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           type="button"
                           className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
                           data-resource-refs-manage={resource.id}
+                          hidden={expandedResourceId !== resource.id}
                           aria-label={`${t('resourceRefsManage')} · ${resource.name}`}
                           title={t('resourceRefsManage')}
                           disabled={busy}
@@ -4975,6 +5002,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <button
                           type="button"
                           className={`iv-btn iv-btn--icon iv-btn--sm${confirming === resource.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                          hidden={expandedResourceId !== resource.id}
                           aria-label={`${confirming === resource.id ? t('confirmRemove') : t('remove')} ${resource.name}`}
                           title={confirming === resource.id ? t('confirmRemove') : t('remove')}
                           disabled={busy}
@@ -5002,6 +5030,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               type="button"
                               className="iv-btn iv-btn--danger iv-btn--sm"
                               data-workbench-force-remove={resource.id}
+                              hidden={expandedResourceId !== resource.id}
                               aria-label={`${t('forceRemove')} ${resource.name}`}
                               disabled={busy}
                               onClick={() => {
@@ -5024,7 +5053,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </>
               {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补）
                   —— 属辅助动作，放在三栏物料库之后，不再抢在面板标题前面 */}
-              <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
+              {/* 分类 + 重绘计划属高级功能：默认收起，先让"角色/场景/道具 + 定妆照"这条主路径清爽 */}
+              <button
+                type="button"
+                className="iv-btn iv-btn--ghost iv-btn--sm"
+                data-resource-folders-toggle="true"
+                aria-expanded={showFolders}
+                onClick={() => { setShowFolders(current => !current) }}
+              >
+                <Icon name="chevron" size={11} />{t('resourceFoldersAdvanced')}
+              </button>
+              {showFolders
+                ? <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
+                : null}
               </PaneBoundary>
             </section>
 

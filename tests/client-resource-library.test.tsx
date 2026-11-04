@@ -82,6 +82,8 @@ describe('创作资源库交互（用户反馈 2026-11-03）', () => {
 
   it('shows a thumbnail per reference image and previews it on click', async () => {
     const { view } = await renderLibrary()
+    fireEvent.click(view.container.querySelector('[data-resource-expand="res-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-resource-refs-manage="res-1"]')).toBeTruthy() })
     fireEvent.click(view.container.querySelector('[data-resource-refs-manage="res-1"]') as HTMLElement)
     const first = await waitFor(() => {
       const thumb = view.container.querySelector('[data-resource-ref-preview]') as HTMLElement
@@ -99,6 +101,8 @@ describe('创作资源库交互（用户反馈 2026-11-03）', () => {
 
   it('lets the user edit the name and note, so “add an appearance description” is actionable', async () => {
     const { host, view } = await renderLibrary()
+    fireEvent.click(view.container.querySelector('[data-resource-expand="res-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-resource-edit="res-1"]')).toBeTruthy() })
     fireEvent.click(view.container.querySelector('[data-resource-edit="res-1"]') as HTMLElement)
     const note = await waitFor(() => {
       const editor = view.container.querySelector('[data-resource-meta-editor="res-1"]') as HTMLElement

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-03.3'
+export const WORKBENCH_STYLE_VERSION = '2026-11-04.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -244,6 +244,8 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-def{display:inline-flex;align-items:baseline;gap:var(--iv-sp-2);white-space:nowrap}
 .iv-def i{font-style:normal;color:var(--iv-tx3)}
 .iv-def b{font-weight:var(--iv-fw-medium);color:var(--iv-tx);font-variant-numeric:tabular-nums}
+.iv-row{flex-wrap:wrap}
+.iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
 .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
@@ -252,7 +254,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-def-src{font-style:normal;font-size:var(--iv-fs-micro);line-height:13px;padding:0 5px;border-radius:var(--iv-r-pill);
   border:1px solid var(--iv-line-2);color:var(--iv-tx3);white-space:nowrap}
 /* 工作台/composer 改过的值用动作色点出来，和"设置里的默认"一眼可分 */
-.iv-def[data-default-source=override] .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
+.iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
+.iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
+.iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
 .iv-ref-thumb{width:22px;height:16px;object-fit:cover;border-radius:var(--iv-r-xs);display:block}

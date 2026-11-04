@@ -360,6 +360,10 @@ export type WorkbenchLocaleKey =
   // ---- G2 物料库分栏 ----
   | 'resourceLibraries'
   | 'resourceTabOther'
+  | 'resourceDetails'
+  | 'resourceHideDetails'
+  | 'resourceCreateHint'
+  | 'resourceFoldersAdvanced'
   | 'resourceFilterPlaceholder'
   // ---- B17 片段分割 ----
   | 'clipSplit'
@@ -812,6 +816,11 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsSourceSettings: 'from settings',
   resourceUseUnit: 'artifacts',
   resourceUsedBy: 'Used by',
+  resourceDetails: 'Details',
+  resourceHideDetails: 'Hide details',
+  resourceCreateHint: 'A name is enough to start — add the look photo later',
+  resourceFoldersAdvanced: 'Advanced: folders & redraw plan',
+
   resourceUnused: 'Not used by any artifact yet',
   statusImportedIdle: 'Imported (not running)',
   resourceMotionTrack: 'Motion track',
@@ -1078,7 +1087,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   videoEditPending: 'Last frame / reference video ride along in the request (media field) — they take effect once the host forwards them on media/generate.',
 
   resourceLibraries: 'Libraries',
-  resourceTabOther: 'Other',
+  resourceTabOther: 'More types',
   resourceFilterPlaceholder: 'Filter by name or note',
 
   clipSplit: 'Split at playhead',
@@ -1605,6 +1614,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsSourceSettings: '来自设置',
   resourceUseUnit: '次产物',
   resourceUsedBy: '被用到',
+  resourceDetails: '详情',
+  resourceHideDetails: '收起',
+  resourceCreateHint: '只填名称就能先建起来，定妆照可以稍后补',
+  resourceFoldersAdvanced: '高级：分类与重绘计划',
+
   resourceUnused: '还没被任何产物用过',
   statusImportedIdle: '已导入（未运行）',
   resourceMotionTrack: '轨迹',
@@ -1871,7 +1885,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   videoEditPending: '尾帧/参考视频已随请求透传（media 字段），待宿主 media/generate 转发后生效。',
 
   resourceLibraries: '物料分栏',
-  resourceTabOther: '其他',
+  resourceTabOther: '更多类型',
   resourceFilterPlaceholder: '按名称/备注筛选',
 
   clipSplit: '在播放头分割',

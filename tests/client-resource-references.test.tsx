@@ -37,6 +37,12 @@ function renderResources() {
   return { host, view }
 }
 
+/** 展开资源行的「详情」（次级动作默认收起，B 简化后要先展开）。 */
+function expandResource(view: { container: HTMLElement }, id = 'res-1'): void {
+  const toggle = view.container.querySelector(`[data-resource-expand="${id}"]`)
+  if (toggle !== null) fireEvent.click(toggle as HTMLElement)
+}
+
 /** 选中某张素材（点素材行主按钮）。 */
 async function selectAsset(name: string): Promise<void> {
   fireEvent.click(await screen.findByRole('button', { name: `${en.panePreview} ${name}` }))
@@ -45,6 +51,8 @@ async function selectAsset(name: string): Promise<void> {
 describe('B-8 resource references (F6)', () => {
   it('merges the legacy single assetPath into the reference list', async () => {
     const { view } = renderResources()
+    await waitFor(() => { expect(view.container.querySelector('[data-resource-expand="res-1"]')).toBeTruthy() })
+    expandResource(view)
     await waitFor(() => {
       expect(view.container.querySelector('[data-resource-usage="res-1"]')).toBeTruthy()
     })
@@ -54,8 +62,13 @@ describe('B-8 resource references (F6)', () => {
     expect(thumb.getAttribute('src')).toBe('/outputs/face-a.png')
     expect(pane.querySelector('.iv-thumb-more')).toBeNull()
 
-    // 打开行内编辑器：合并视图里就是那一张
-    fireEvent.click(pane.querySelector('[data-resource-refs-manage="res-1"]') as HTMLElement)
+    // 打开行内编辑器：合并视图里就是那一张（详情展开后按钮才渲染）
+    const manage = await waitFor(() => {
+      const button = view.container.querySelector('[data-resource-refs-manage="res-1"]') as HTMLElement | null
+      expect(button).toBeTruthy()
+      return button as HTMLElement
+    })
+    fireEvent.click(manage)
     await waitFor(() => { expect(view.container.querySelector('[data-resource-refs-editor="res-1"]')).toBeTruthy() })
     expect(view.container.querySelectorAll('[data-resource-ref]')).toHaveLength(1)
   })
@@ -87,6 +100,8 @@ describe('B-8 resource references (F6)', () => {
   it('adds and removes references in the inline editor', async () => {
     const { host, view } = renderResources()
     const spy = vi.spyOn(host.api, 'updateResource')
+    await waitFor(() => { expect(view.container.querySelector('[data-resource-expand="res-1"]')).toBeTruthy() })
+    expandResource(view)
     await waitFor(() => {
       expect(view.container.querySelector('[data-resource-refs-manage="res-1"]')).toBeTruthy()
     })
@@ -120,6 +135,8 @@ describe('B-8 resource references (F6)', () => {
   it('clears every reference including the legacy field', async () => {
     const { host, view } = renderResources()
     const spy = vi.spyOn(host.api, 'updateResource')
+    await waitFor(() => { expect(view.container.querySelector('[data-resource-expand="res-1"]')).toBeTruthy() })
+    expandResource(view)
     await waitFor(() => {
       expect(view.container.querySelector('[data-resource-refs-manage="res-1"]')).toBeTruthy()
     })
