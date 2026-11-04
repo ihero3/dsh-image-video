@@ -2100,7 +2100,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       data-workbench-tasks={String(tasks.length)}
       data-workbench-resources={String(resources.length)}
     >
-      {/* ============ 顶栏：品牌 / 项目 / 状态 / 操作 ============ */}
+      {/* ============ 顶栏：品牌 / 剧集 / 状态 / 操作 ============ */}
       <header className="iv-top">
         <div className="iv-brand">
           <span className="iv-mark"><BrandMark size={12} /></span>

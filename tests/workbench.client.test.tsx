@@ -322,8 +322,9 @@ describe('workbench project and asset flow', () => {
     await screen.findByText(en.projectNone)
     // 先有一个项目，项目下拉才会出现
     await createProject(host, '我的项目')
-    await waitFor(() => { expect(view.container.querySelector('select[aria-label="Project"]')).toBeTruthy() })
-    const before = view.container.querySelector('select[aria-label="Project"]')?.textContent ?? ''
+    const projectSelect = (): Element | null => view.container.querySelector(`select[aria-label="${en.sectionProject}"]`)
+    await waitFor(() => { expect(projectSelect()).toBeTruthy() })
+    const before = projectSelect()?.textContent ?? ''
     expect(before).toContain('我的项目')
     expect(before).not.toContain('Agent 建的项目')
 
@@ -333,7 +334,7 @@ describe('workbench project and asset flow', () => {
       createdAt: '2026-10-16T05:00:00.000Z', updatedAt: '2026-10-16T05:00:00.000Z',
     })
     await waitFor(() => {
-      expect(view.container.querySelector('select[aria-label="Project"]')?.textContent).toContain('Agent 建的项目')
+      expect(projectSelect()?.textContent).toContain('Agent 建的项目')
     }, { timeout: 12_000 })
   }, 30_000)
 

@@ -21,11 +21,11 @@ export type ChromeLocaleKey = 'tabTitle' | 'guideDescription'
 /** 入口壳中文文案。 */
 export const chromeZh: Record<ChromeLocaleKey, string> = {
   tabTitle: 'dsh-image-video 工作台',
-  guideDescription: '图片与视频创作的项目、媒体素材与生成任务。',
+  guideDescription: '图片与视频创作的剧集、媒体素材与生成任务。',
 }
 
 /** 入口壳英文文案。 */
 export const chromeEn: Record<ChromeLocaleKey, string> = {
   tabTitle: 'dsh-image-video workbench',
-  guideDescription: 'Projects, media assets and generation tasks for image and video work.',
+  guideDescription: 'Series, media assets and generation tasks for image and video work.',
 }
