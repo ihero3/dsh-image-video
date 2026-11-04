@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-04.1'
+export const WORKBENCH_STYLE_VERSION = '2026-11-04.2'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -442,6 +442,17 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
    改名原因：hero 是网页设计术语（hero section = 首屏主视觉/门面区），暗示"展示性"；
    而这块装的是标题 + 三步说明 + 提示词 + 参考图 + 视频槽 + 参数 + 生成按钮，是**操作区**。
    叫 hero 会让读代码的人误以为是营销首屏，也会让文档写成"提示词 Hero"这种看不懂的名字。 */
+.iv-modules{display:flex;flex-direction:column;gap:var(--iv-sp-6)}
+.iv-module{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0;padding:var(--iv-sp-5);
+  border:1px solid var(--iv-line);border-radius:var(--iv-r-lg);background:var(--iv-monitor)}
+.iv-module--quiet{background:transparent;border-style:dashed}
+.iv-module-head{display:flex;align-items:flex-start;gap:var(--iv-sp-4);min-width:0}
+.iv-module-n{flex:none;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;
+  justify-content:center;font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium);
+  color:var(--iv-acc);border:1px solid var(--iv-acc)}
+.iv-module-text{display:grid;gap:var(--iv-sp-1);min-width:0}
+.iv-module-title{margin:0;font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);
+  color:var(--iv-text);line-height:1.35}
 .iv-create{display:flex;flex-direction:column;gap:var(--iv-sp-6)}
 .iv-create-head{display:flex;align-items:center;gap:var(--iv-sp-6)}
 .iv-create-ico{width:36px;height:36px;border-radius:var(--iv-r-lg);display:grid;place-items:center;flex:none;

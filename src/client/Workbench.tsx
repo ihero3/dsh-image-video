@@ -2515,6 +2515,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ? (
                 <section className="iv-pane" data-workbench-pane="paneCreate">
                   <PaneBoundary label={t('modeQuick')} t={t}>
+                  <div className="iv-modules" data-quick-modules="true">
+                  {/* 模块 1：剧本成片（一键成片）——"一段剧本，自动拆成分镜并出图出片" */}
+                  <section className="iv-module" data-module="pipeline">
+                    <div className="iv-module-head">
+                      <span className="iv-module-n">1</span>
+                      <div className="iv-module-text">
+                        <h3 className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</h3>
+                        <span className="iv-meta">{t('modulePipelineDesc')}</span>
+                      </div>
+                    </div>
                   <PipelineCard
                     api={apiRef.current}
                     t={t}
@@ -2522,14 +2532,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     onStarted={() => { setMode('workflow') }}
                     injectScript={pipelineInject?.script}
                   />
-                  <div className="iv-create">
-                    <div className="iv-create-head">
-                      <span className="iv-create-ico"><Icon name="bolt" size={19} /></span>
-                      <div style={{ display: 'grid', gap: 'var(--iv-sp-1)' }}>
-                        <h3 className="iv-create-title">{t('modeQuick')}</h3>
-                        <span className="iv-meta">{busy ? t('busy') : t('emptyHint')}</span>
+                  </section>
+
+                  {/* 模块 2：单条生成（快速创作）——"一句话出一张图或一条视频" */}
+                  <section className="iv-module" data-module="quick">
+                    <div className="iv-module-head">
+                      <span className="iv-module-n">2</span>
+                      <div className="iv-module-text">
+                        <h3 className="iv-module-title" data-module-title="quick">{t('moduleQuick')}</h3>
+                        <span className="iv-meta">{t('moduleQuickDesc')}</span>
                       </div>
                     </div>
+                  <div className="iv-create">
+                    <span className="iv-meta">{busy ? t('busy') : t('emptyHint')}</span>
                     <p className="iv-create-desc">{t('modeQuickHint')}</p>
                     <div className="iv-steps">
                       <span className="iv-step"><span className="iv-step-n">1</span>{t('createStepChat')}</span>
@@ -2952,6 +2967,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           </div>
                         )}
                       <span className="iv-meta">{t('generateCostHint')}</span>
+                    </div>
+                  </div>
+                  </section>
+
+                  {/* 模块 3：高级设置（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力）——默认收起 */}
+                  <section className="iv-module iv-module--quiet" data-module="advanced">
+                    <div className="iv-module-head">
+                      <span className="iv-module-n">3</span>
+                      <div className="iv-module-text">
+                        <h3 className="iv-module-title" data-module-title="advanced">{t('moduleAdvanced')}</h3>
+                        <span className="iv-meta">{t('moduleAdvancedDesc')}</span>
+                      </div>
                     </div>
                     {/* `T8` 高级抽屉开关：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起，
                         让「提示词 → 参数 → 生成 → 结果」在主视线内闭环（右栏默认档约 575px 宽）。 */}
@@ -3448,6 +3475,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {/* `B-6` 模型能力卡：选型参考（只展示，不参与生成逻辑） */}
                     <ModelCardsPanel api={apiRef.current} t={t} />
                     </div>
+                  </section>
                   </div>
                   </PaneBoundary>
                 </section>

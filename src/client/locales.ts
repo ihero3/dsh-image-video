@@ -41,6 +41,12 @@ export type WorkbenchLocaleKey =
   | 'saveDirty'
   | 'saveFailed'
   | 'modeQuick'
+  | 'modulePipeline'
+  | 'modulePipelineDesc'
+  | 'moduleQuick'
+  | 'moduleQuickDesc'
+  | 'moduleAdvanced'
+  | 'moduleAdvancedDesc'
   | 'modeWorkflow'
   | 'modeTimeline'
   | 'paneAssets'
@@ -719,6 +725,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  modulePipeline: 'Script → film',
+  modulePipelineDesc: 'Paste a script: it is split into shots, then images and clips are generated for it.',
+  moduleQuick: 'One line, one shot',
+  moduleQuickDesc: 'Type one prompt to get a single image or a single clip.',
+  moduleAdvanced: 'Advanced',
+  moduleAdvancedDesc: 'Fusion generation, prompt workshop, shot list and model details — collapsed by default.',
   templateQuickImage: 'Quick image',
   templateQuickVideo: 'Quick video',
   templateStoryboard: 'Storyboard',
@@ -1516,6 +1528,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  modulePipeline: '剧本 → 成片',
+  modulePipelineDesc: '贴一段剧本：自动拆成分镜，再逐镜出图、出视频。',
+  moduleQuick: '一句话出一镜',
+  moduleQuickDesc: '写一句提示词，出一条图或一条视频。',
+  moduleAdvanced: '高级设置',
+  moduleAdvancedDesc: '融合生图、提示词工坊、分镜与模型能力——默认收起，需要时再展开。',
   templateQuickImage: '快速出图',
   templateQuickVideo: '快速出片',
   templateStoryboard: '图文分镜',
