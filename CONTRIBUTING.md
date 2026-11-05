@@ -58,3 +58,34 @@ pnpm run build        # 构建到 lib/
 - 合入 `main` 不自动发版
 - 维护者打 git tag `v0.x.y` 触发 GitHub Release，CHANGELOG 对应段落作为 Release notes
 - 遵循语义化版本：patch 修 bug / minor 加功能向后兼容 / major 破坏性变更
+
+## 工作约定：每轮收尾必须"提交并推送干净"
+
+> 起因（2026-11-05 用户要求）："把你没提交的每次都提交了，与仓库每次保持一致"。
+> 会话中断、机器重启、换人接手时，**仓库状态就是唯一的事实来源**；留在工作区的改动等于没做。
+
+每一轮改动的固定收尾动作（缺一不可）：
+
+1. `bash scripts/gate.sh` —— 5 道门禁全绿才继续（体积 / 类型 / 构建 / 测试 / 覆盖率）。
+2. 插件仓库提交并推送：
+   ```sh
+   git add -A && git commit -m "<type>(<scope>): <subject>" && git push origin main
+   ```
+   文档/台账与代码**可以分成两个提交**（`feat`/`fix` + `docs`），但都要推上去。
+3. 上游 Harness 仓库同步子模块指针并推送：
+   ```sh
+   cd ../.. && git add plugins/dsh-image-video && git commit -m "chore(fork): bump 插件指针（<sha>，<一句话>）" && git push origin master
+   ```
+4. **核对一致**（这一步别省）：
+   ```sh
+   git -C plugins/dsh-image-video rev-parse HEAD        # 插件 HEAD
+   git -C plugins/dsh-image-video rev-parse origin/main # 插件远端
+   git ls-tree HEAD plugins/dsh-image-video             # Harness 里记录的指针
+   ```
+   三者必须指向同一个 commit，且 `git status` 干净。
+
+补充约定：
+
+- 推送遇到 GitHub 5xx / `Permission denied` 属服务端抖动，**重试直到 `HEAD == origin`**，
+  不要把"没推上去"当成完成（`git push` 输出里出现 `rejected` 一律视为失败，即使它含 `main -> main`）。
+- `lib/` 是提交进仓库的构建产物：改了 `src/` 必须 `pnpm run build` 后一并提交。
