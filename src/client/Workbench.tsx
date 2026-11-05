@@ -503,7 +503,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `T3`：本次生成结果——生成完就地展示，不用滚到底部停靠区找（结构与 previewPath 同构）。
   const [lastResult, setLastResult] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
   // `T4`：失败的「下一步」——错误条旁边直接给可点的补救动作，而不是只留一行报错。
-  const [failureHint, setFailureHint] = useState<{ message: string } | undefined>(undefined)
   // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
   // `T8` 高级抽屉：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起。
   // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
@@ -620,7 +619,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    */
   const finishGenerate = (kind: 'image' | 'video', path: string): void => {
     setLastResult({ path, kind })
-    setFailureHint(undefined)
     void refreshAssetsAfterGenerate()
     setGeneratePrompt('')
     setNotice({ text: t('generateDone'), tone: 'info' })
@@ -688,19 +686,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       const message = error instanceof Error ? error.message : String(error)
       setNotice({ text: `${t('generateFailed')}：${message}`, tone: 'error' })
       // `T4`：失败不止报错——同时给出可点的补救动作
-      setFailureHint({ message })
     } finally {
       if (mediaMode === 'image') setGenerating(undefined)
     }
   }
 
-  // `T4` 自动定位：结果卡或失败条一出现，就把它滚进视口（smooth；已在视口内则等同无操作）。
+  // `T4` 自动定位：结果卡一出现就滚进视口（smooth；已在视口内则等同无操作）。
   useEffect(() => {
-    if (lastResult === undefined && failureHint === undefined) return
+    if (lastResult === undefined) return
     const node = generateOutcomeRef.current
     if (node === null || typeof node.scrollIntoView !== 'function') return
     node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [lastResult, failureHint])
+  }, [lastResult])
 
   /** 追踪非阻塞视频生成：任务结束（成功/失败/取消）时收尾。 */
   useEffect(() => {
@@ -3176,56 +3173,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           </div>
                         )}
                       {/* `T4` 失败下一步：把"怎么办"做成可点动作，而不是只留一行红字 */}
-                      {failureHint === undefined
-                        ? null
-                        : (
-                          <div className="iv-failure-actions" data-generate-failure-actions="true">
-                            <span className="iv-meta iv-failure-text">
-                              <Icon name="alert" size={11} />
-                              {t('generateFailureHint')}
-                            </span>
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-failure-action="switch-model"
-                              onClick={() => {
-                                const picker = document.querySelector<HTMLSelectElement>('[data-generate-model]')
-                                if (picker !== null) { picker.focus(); picker.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }
-                              }}
-                            >
-                              {t('generateFailureSwitchModel')}
-                            </button>
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-failure-action="shorter-duration"
-                              onClick={() => {
-                                const current = Number(generateDuration)
-                                const shorter = current > 5 ? 5 : current > 2 ? 2 : 2
-                                setGenerateDuration(String(shorter))
-                                setNotice({ text: t('generateFailureDurationApplied'), tone: 'info' })
-                              }}
-                            >
-                              {t('generateFailureShorter')}
-                            </button>
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-failure-action="clear-references"
-                              disabled={generateImages.length === 0 && generateLastFrame === undefined && generateRefVideo === undefined}
-                              onClick={() => {
-                                setGenerateImages([])
-                                setGenerateLastFrame(undefined)
-                                setGenerateRefVideo(undefined)
-                                setGenerateContinuation(false)
-                                setGenerateRealPerson(false)
-                                setNotice({ text: t('generateFailureRefsCleared'), tone: 'info' })
-                              }}
-                            >
-                              {t('generateFailureClearRefs')}
-                            </button>
-                          </div>
-                        )}
                       </div>
                       {/* `F3` 生成进度：服务商不给百分比，就显示已用时 + 不定进度条 */}
                       {generating === undefined

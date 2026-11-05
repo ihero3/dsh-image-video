@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-05.4'
+export const WORKBENCH_STYLE_VERSION = '2026-11-05.5'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -488,8 +488,12 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   justify-content:center;font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-medium);
   color:var(--iv-acc);background:var(--iv-acc-soft);margin-top:1px}
 .iv-module-text{display:grid;gap:var(--iv-sp-1);min-width:0}
-/* 模块内容容器：收起时用 hidden 属性整块隐藏（不是卸载，避免状态丢失） */
+/* 模块内容容器：收起时用 hidden 属性整块隐藏（不是卸载，避免状态丢失）。
+   **必须显式写 [hidden] 例外**：作者样式的 display:flex 会覆盖 UA 的
+   [hidden]{display:none}，少了这条的话"收起"只是状态变了、内容照样铺在页面上
+   （2026-11-05 真实缺陷：①② 点了没反应，③ 因为 .iv-advanced[hidden] 老规则才正常）。 */
 .iv-module-body{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0}
+.iv-module-body[hidden]{display:none}
 /* 模块级收起/展开：贴在标题行最右（用户要求"对齐最右边"） */
 .iv-module-toggle{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:var(--iv-sp-2);
   padding:2px 8px;border:1px solid var(--iv-line);border-radius:var(--iv-r-pill);background:transparent;

@@ -333,4 +333,11 @@ describe('视觉层级契约（R7）', () => {
     expect(exportBtn.classList.contains('iv-btn--acc')).toBe(true)
     expect(exportBtn.classList.contains('iv-btn--lg')).toBe(true)
   })
+
+  it('[hidden] 例外：设了 display 的容器必须显式写回 display:none（2026-11-05 真实缺陷）', () => {
+    // 起因：.iv-module-body{display:flex} 没配 [hidden] 例外，作者样式盖掉了 UA 的
+    // [hidden]{display:none} —— 模块①②点"收起"只是状态变了、内容照旧铺着，看着像没反应。
+    expect(WORKBENCH_STYLE).toContain('.iv-module-body[hidden]{display:none}')
+    expect(WORKBENCH_STYLE).toContain('.iv-advanced[hidden]{display:none}')
+  })
 })

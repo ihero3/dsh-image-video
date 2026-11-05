@@ -247,12 +247,6 @@ export type WorkbenchLocaleKey =
   | 'generateResultView'
   | 'generateResultAsReference'
   | 'generateResultDismiss'
-  | 'generateFailureHint'
-  | 'generateFailureSwitchModel'
-  | 'generateFailureShorter'
-  | 'generateFailureClearRefs'
-  | 'generateFailureDurationApplied'
-  | 'generateFailureRefsCleared'
   | 'assetSearchPlaceholder'
   | 'storageUsageLabel'
   | 'storageUsageFiles'
@@ -982,12 +976,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateResultView: 'View',
   generateResultAsReference: 'Use as reference',
   generateResultDismiss: 'Dismiss result',
-  generateFailureHint: 'Try:',
-  generateFailureSwitchModel: 'Switch model',
-  generateFailureShorter: 'Shorter duration',
-  generateFailureClearRefs: 'Clear references',
-  generateFailureDurationApplied: 'Duration shortened — try again',
-  generateFailureRefsCleared: 'References cleared — try again',
   assetSearchPlaceholder: 'Search name / prompt / model',
   storageUsageLabel: 'Local outputs',
   storageUsageFiles: 'files',
@@ -1790,12 +1778,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateResultView: '查看',
   generateResultAsReference: '设为参考',
   generateResultDismiss: '关闭结果',
-  generateFailureHint: '可以试试：',
-  generateFailureSwitchModel: '换模型',
-  generateFailureShorter: '缩短时长',
-  generateFailureClearRefs: '清空参考',
-  generateFailureDurationApplied: '已把时长改成较短的档位，再试一次',
-  generateFailureRefsCleared: '已清空参考图/参考视频，再试一次',
   assetSearchPlaceholder: '搜索文件名 / 提示词 / 模型',
   storageUsageLabel: '本地产物',
   storageUsageFiles: '个文件',

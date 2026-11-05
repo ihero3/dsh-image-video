@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 /**
- * `T4` 失败的「下一步」：不只报错，直接给可点的补救动作。
+ * 「失败的下一步」按钮组（`T4` / 清单 C11 + C14）**已于 2026-11-05 删除**。
  *
- * 断言：
- * 1. 生成失败后出现动作条（换模型 / 缩短时长 / 清空参考）；
- * 2. 「缩短时长」真的把时长档位改短，并给出确认提示；
- * 3. 「清空参考」清掉参考图 chips（并在没有参考时禁用）；
- * 4. 生成成功后动作条消失（不残留上一次的失败）。
+ * 用户对功能清单的批注：C11 写「保留（没看到这个）」、C14 写「可以试试（换模型/缩短时长/清空参考）
+ * —— 删掉吧」。两者描述的是界面上同一组按钮，按 C14 执行：**只留错误文案，不再给一排补救按钮**。
+ *
+ * 本文件因此改为"回归哨兵"：
+ * 1. 生成失败后**不出现** `[data-generate-failure-actions]` 动作条；
+ * 2. 失败原因仍然可见（顶部提示条 `iv-notice--error` 带服务商原始信息）；
+ * 3. 参数与参考图**不会被自动改动**（删掉动作条后，任何"顺手改状态"的副作用都不该存在）。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -26,61 +28,32 @@ function renderQuick() {
   return { host, view }
 }
 
-async function failOnce(host: ReturnType<typeof fakeApi>, view: { container: HTMLElement }) {
+/** 让一次生图失败，返回容器。 */
+async function failOnce(host: ReturnType<typeof fakeApi>) {
   const spy = vi.fn(async () => { throw new Error('upstream said no') })
   ;(host.api as unknown as { generateMedia: typeof spy }).generateMedia = spy
   const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
   fireEvent.change(box, { target: { value: '失败的提示词' } })
   fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
-  await waitFor(() => {
-    expect(view.container.querySelector('[data-generate-failure-actions]')).toBeTruthy()
-  })
 }
 
-describe('失败的下一步（T4）', () => {
-  it('失败后出现三个补救动作', async () => {
+describe('失败不再给"可以试试"按钮组（2026-11-05 删除）', () => {
+  it('keeps the error message but shows no remediation bar', async () => {
     const { host, view } = renderQuick()
-    await failOnce(host, view)
-    const bar = view.container.querySelector('[data-generate-failure-actions]') as HTMLElement
-    expect(bar.textContent).toContain(en.generateFailureHint)
-    expect(bar.querySelector('[data-failure-action="switch-model"]')).toBeTruthy()
-    expect(bar.querySelector('[data-failure-action="shorter-duration"]')).toBeTruthy()
-    expect(bar.querySelector('[data-failure-action="clear-references"]')).toBeTruthy()
-  })
-
-  it('「缩短时长」把时长档位改短并确认', async () => {
-    const { host, view } = renderQuick()
-    await failOnce(host, view)
-    const duration = view.container.querySelector('[data-generate-duration]') as HTMLSelectElement
-    fireEvent.change(duration, { target: { value: '12' } })
-    expect(duration.value).toBe('12')
-    fireEvent.click(view.container.querySelector('[data-failure-action="shorter-duration"]') as HTMLElement)
-    await waitFor(() => { expect((view.container.querySelector('[data-generate-duration]') as HTMLSelectElement).value).toBe('5') })
-    expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.generateFailureDurationApplied)
-  })
-
-  it('「清空参考」清掉 chips；无参考时该动作禁用', async () => {
-    const { host, view } = renderQuick()
-    await failOnce(host, view)
-    const clear = view.container.querySelector('[data-failure-action="clear-references"]') as HTMLButtonElement
-    // 没有参考时禁用
-    expect(clear.disabled).toBe(true)
-
-    // 加一张参考（用素材面板的「设为参考」路径不好造，这里直接验证禁用即可）
-    expect(view.container.querySelectorAll('[data-generate-ref]').length).toBe(0)
-  })
-
-  it('生成成功后失败动作条消失', async () => {
-    const { host, view } = renderQuick()
-    await failOnce(host, view)
-    expect(view.container.querySelector('[data-generate-failure-actions]')).toBeTruthy()
-
-    const ok = vi.fn(async () => ({ mediaMode: 'image' as const, path: '/tmp/outputs/ok.png', bytes: 1 }))
-    ;(host.api as unknown as { generateMedia: typeof ok }).generateMedia = ok
-    const box = screen.getByPlaceholderText(en.generatePromptPlaceholder)
-    fireEvent.change(box, { target: { value: '这次会成功' } })
-    fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
-    await waitFor(() => { expect(view.container.querySelector('[data-generate-result]')).toBeTruthy() })
+    await failOnce(host)
+    // 错误原因仍要可见（服务商原文进提示条）
+    await waitFor(() => { expect(view.container.textContent).toContain('upstream said no') })
+    // 动作条已删
     expect(view.container.querySelector('[data-generate-failure-actions]')).toBeNull()
+    expect(view.container.querySelector('[data-failure-action]')).toBeNull()
+  })
+
+  it('does not silently change duration or clear references on failure', async () => {
+    const { host, view } = renderQuick()
+    await failOnce(host)
+    await waitFor(() => { expect(view.container.textContent).toContain('upstream said no') })
+    const duration = view.container.querySelector('[data-generate-duration]') as HTMLSelectElement
+    // 时长仍是默认跟随（''），没被"缩短时长"副作用改掉
+    expect(duration.value).toBe('')
   })
 })
