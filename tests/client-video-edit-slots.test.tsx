@@ -50,10 +50,10 @@ describe('G4 video edit slots (B-3)', () => {
     // 参考视频槽：选中视频 → 「用选中素材」
     await selectAsset('dance.mp4')
     fireEvent.click(view.container.querySelector('[data-video-reference-use]') as HTMLElement)
-    // 两个槽都亮出 chip
+    // 两个槽都亮出 chip（2026-11-05：视频专用槽收进可折叠 details，class 换成 data-video-slots）
     await waitFor(() => {
-      expect(view.container.querySelector('.iv-vslots')?.textContent).toContain('portrait.png')
-      expect(view.container.querySelector('.iv-vslots')?.textContent).toContain('dance.mp4')
+      expect(view.container.querySelector('[data-video-slots]')?.textContent).toContain('portrait.png')
+      expect(view.container.querySelector('[data-video-slots]')?.textContent).toContain('dance.mp4')
     })
 
     fireEvent.change(await screen.findByPlaceholderText(en.generatePromptPlaceholder), { target: { value: '把背景换成雪夜街道' } })

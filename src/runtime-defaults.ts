@@ -10,10 +10,12 @@
  * 仅当 webServer 绑定 127.0.0.1 时注册，非本机回环一律不暴露。
  *
  * 请求协议（JSON）：
- *   - GET  → 200，七个字段齐全，值为「运行时覆盖 ?? settings 持久默认」的
- *     合并视图，`null` 表示两者皆未设置（工具使用内置默认）。
- *   - POST → body 为对象，仅接受六个已知键；值为 `null`（清除覆盖，回落
- *     settings 持久默认）或合法值；含未知键 / 非法值 / 不可解析 JSON → 400。
+ *   - GET  → 200，七个字段齐全，值为「运行时覆盖 ?? settings 持久默认 ?? 内置兜底」
+ *     的合并视图。六个用户可见字段（{@link DISPLAY_DEFAULT_KEYS}）永远有值：
+ *     未配置也解析出 {@link BUILT_IN_DEFAULTS}，界面不会出现「未设置」；
+ *     只有 `mediaMode` 可以 `null`（null = 文本模式，不是"没配"）。
+ *   - POST → body 为对象，仅接受七个已知键；值为 `null`（清除覆盖，回落
+ *     settings 持久默认 → 内置兜底）或合法值；含未知键 / 非法值 / 不可解析 JSON → 400。
  *   - 其他方法 → 405。
  *
  * @module dsh-image-video/runtime-defaults
@@ -24,7 +26,8 @@ import type { Config, Provider } from './config.ts'
 
 /**
  * 运行时覆盖值集合。字段语义与 generate_image / generate_video 工具的
- * 服务商/参数选择一一对应：`undefined` = 未覆盖，工具回落 settings（config）持久值。
+ * 服务商/参数选择一一对应：`undefined` = 未覆盖，取参链继续往下走
+ * （settings 持久值 → 内置兜底 {@link BUILT_IN_DEFAULTS}）。
  * `imageSize` 为映射后的尺寸串（如 '1024*1024'），`videoAspectRatio` 为比例串
  * （如 '16:9'），`imageStyle` 为风格 id（见 {@link IMAGE_STYLE_OPTIONS}）。
  */
@@ -38,19 +41,22 @@ export interface RuntimeDefaults {
   /**
    * composer 媒体 tab 模式覆盖；undefined / 'text' 不注入生成指令。
    * 纯运行时概念：settings 没有对应持久字段。
+   * 注意：输入形式（文本/图片/视频/音频）本来就都合法，所以这一项**不是**用户可见
+   * 参数（见 {@link DISPLAY_DEFAULT_KEYS}）；字段保留只为兼容既有 POST / health 契约
+   * 与媒体模式注入逻辑。
    */
   mediaMode?: MediaMode
-  /** 图片服务商覆盖（'threevideo' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings。 */
+  /** 图片服务商覆盖（'threevideo' | 'wanx' | 'seedance'，minimax 无图片能力）；undefined 跟随 settings，再缺省用内置兜底。 */
   imageProvider?: Provider
-  /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings。 */
+  /** 图片尺寸覆盖（'宽*高'）；undefined 跟随 settings，再缺省用内置兜底。 */
   imageSize?: string
-  /** 图片风格 id 覆盖；undefined 跟随 settings（不拼接风格后缀）。 */
+  /** 图片风格 id 覆盖；undefined 跟随 settings，再缺省用内置兜底（不拼接风格后缀）。 */
   imageStyle?: string
-  /** 视频服务商覆盖；undefined 跟随 settings。 */
+  /** 视频服务商覆盖；undefined 跟随 settings，再缺省用内置兜底。 */
   videoProvider?: Provider
-  /** 视频宽高比覆盖（如 '16:9'）；undefined 跟随 settings。 */
+  /** 视频宽高比覆盖（如 '16:9'）；undefined 跟随 settings，再缺省用内置兜底。 */
   videoAspectRatio?: string
-  /** 视频时长覆盖（秒，1-30）；undefined 跟随 settings。 */
+  /** 视频时长覆盖（秒，1-30）；undefined 跟随 settings，再缺省用内置兜底。 */
   videoDuration?: number
 }
 
@@ -137,8 +143,12 @@ export const IMAGE_SIZE_OPTIONS: ReadonlyArray<{ id: string; label: string; size
   { id: '9:16', label: '9:16', size: '720*1280' },
 ] as const
 
-/** 视频宽高比白名单（导出供 workbench 下拉选项复用，与协议层校验同源）。 */
-export const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1'] as const
+/**
+ * 视频宽高比白名单（导出供 workbench 下拉选项复用，与协议层校验同源）。
+ * 3:4 / 4:3 是竖屏/横屏的常见物料比例（小红书竖图、横屏封面），与 16:9 同级，
+ * 顺序即下拉顺序：通用横 → 通用竖（默认）→ 方形 → 竖图 → 横图。
+ */
+export const VIDEO_ASPECT_RATIOS: ReadonlyArray<string> = ['16:9', '9:16', '1:1', '3:4', '4:3'] as const
 
 /** 视频时长下限（与 generate_video 工具的强制规范一致）。 */
 export const MIN_VIDEO_DURATION = 1
@@ -147,6 +157,48 @@ export const MAX_VIDEO_DURATION = 30
 
 /** 合法服务商清单（与 config.ts 的 Provider 联合一一对应），供协议层白名单校验（导出供 workbench 下拉选项复用）。 */
 export const PROVIDERS: ReadonlyArray<Provider> = ['threevideo', 'wanx', 'minimax', 'seedance'] as const
+
+/**
+ * 「当前生效参数」条对用户可见的默认值字段，顺序即界面顺序。
+ *
+ * `mediaMode` 刻意不在其中：文本/图片/视频/音频都是合法输入形式，「输入模式」不是
+ * 用户需要配的参数（用户签字的功能清单 A4）。字段本身仍保留在 {@link RuntimeDefaults}
+ * / {@link RuntimeDefaultsView} 里，只为兼容既有 POST 协议与媒体模式注入。
+ */
+export const DISPLAY_DEFAULT_KEYS = [
+  'imageProvider',
+  'imageSize',
+  'imageStyle',
+  'videoProvider',
+  'videoAspectRatio',
+  'videoDuration',
+] as const
+
+/** 用户可见默认值字段名。 */
+export type DisplayDefaultKey = (typeof DISPLAY_DEFAULT_KEYS)[number]
+
+/**
+ * 内置兜底默认值：运行时覆盖与 settings 持久默认都没有时，最终解析出的生效值。
+ *
+ * 为什么要有这一层：界面顶栏要显示「当前生效参数」，而"未设置"对用户是无信息量的
+ * ——用户需要一个能直接开工的组合（聚合器 + 1:1 + 摄影 + 竖屏 + 10 秒）。
+ * 因此这六项在任何情况下都非 null，来源标 `none`（= 内置兜底，见
+ * {@link RuntimeDefaultsSource}）。
+ *
+ * 取值约束（由 tests/runtime-defaults.test.ts 守住，不要手写协议层不认的值）：
+ * `imageSize` 用 1:1 对应的协议尺寸 `1024*1024`（IMAGE_SIZE_OPTIONS 的 size，不是 id）；
+ * `imageStyle` 用 IMAGE_STYLE_OPTIONS 里 label 为「摄影」的 id `photo`（'' = 自动，
+ * 不能当默认值，否则等于没风格）；服务商须在 {@link PROVIDERS} 内。
+ * 视频默认走 threevideo 聚合器（与「视频固定 Threevideo」的项目约定一致）。
+ */
+export const BUILT_IN_DEFAULTS: Readonly<Required<Pick<RuntimeDefaults, DisplayDefaultKey>>> = {
+  imageProvider: 'threevideo',
+  imageSize: '1024*1024',
+  imageStyle: 'photo',
+  videoProvider: 'threevideo',
+  videoAspectRatio: '9:16',
+  videoDuration: 10,
+}
 
 /** 值是否为合法服务商（'' / 未知值均拒绝）。 */
 function isProvider(value: string): value is Provider {
@@ -260,7 +312,11 @@ export function resolveModelCandidates(
 /** defaults 路由路径（exact 匹配；桌面渲染进程同源调用）。 */
 export const DEFAULTS_ROUTE_PATH = '/image-video/defaults'
 
-/** GET / POST 响应体：七字段齐全，null = 无运行时覆盖且无 settings 持久默认（工具用内置默认）。 */
+/**
+ * GET / POST 响应体：七字段齐全，值为「运行时覆盖 ?? settings 持久默认 ?? 内置兜底」。
+ * 六个用户可见字段永远非 null（{@link BUILT_IN_DEFAULTS} 兜底）；只有 `mediaMode`
+ * 可为 null（null = 文本模式）。
+ */
 export type RuntimeDefaultsView = RuntimeDefaultsPatch
 
 /**
@@ -299,27 +355,29 @@ export function extractPersistedDefaults(config: Config): PersistedDefaultsView 
 }
 
 /**
- * 合并为响应视图：运行时覆盖优先，缺失回落 settings 持久默认，两者皆无 → null。
- * 风格与视频比例是纯运行时概念（settings 无对应持久字段），始终取覆盖层。
+ * 合并为响应视图：运行时覆盖优先，缺失回落 settings 持久默认，仍缺省 → 内置兜底
+ * （{@link BUILT_IN_DEFAULTS}）。兜底层保证用户可见的六项永远有值，界面不会再出现
+ * 「未设置」；`mediaMode` 没有兜底（null 就是文本模式，不能编一个"默认输入模式"）。
+ * 风格与视频比例是纯运行时概念（settings 无对应持久字段），只可能是覆盖或内置值。
  */
 function toView(defaults: Readonly<RuntimeDefaults>, persisted: PersistedDefaultsView): RuntimeDefaultsView {
   return {
     mediaMode: defaults.mediaMode ?? null,
-    imageProvider: defaults.imageProvider ?? persisted.imageProvider ?? null,
-    imageSize: defaults.imageSize ?? persisted.imageSize ?? null,
-    imageStyle: defaults.imageStyle ?? null,
-    videoProvider: defaults.videoProvider ?? persisted.videoProvider ?? null,
-    videoAspectRatio: defaults.videoAspectRatio ?? null,
-    videoDuration: defaults.videoDuration ?? persisted.videoDuration ?? null,
+    imageProvider: defaults.imageProvider ?? persisted.imageProvider ?? BUILT_IN_DEFAULTS.imageProvider,
+    imageSize: defaults.imageSize ?? persisted.imageSize ?? BUILT_IN_DEFAULTS.imageSize,
+    imageStyle: defaults.imageStyle ?? persisted.imageStyle ?? BUILT_IN_DEFAULTS.imageStyle,
+    videoProvider: defaults.videoProvider ?? persisted.videoProvider ?? BUILT_IN_DEFAULTS.videoProvider,
+    videoAspectRatio: defaults.videoAspectRatio ?? persisted.videoAspectRatio ?? BUILT_IN_DEFAULTS.videoAspectRatio,
+    videoDuration: defaults.videoDuration ?? persisted.videoDuration ?? BUILT_IN_DEFAULTS.videoDuration,
   }
 }
 
 /**
- * 合并为「运行时覆盖 ?? settings 持久默认」的当前生效视图。defaults 路由与
- * 媒体模式注入共用这一个取值口径，避免两处各算一遍。
+ * 合并为「运行时覆盖 ?? settings 持久默认 ?? 内置兜底」的当前生效视图。defaults 路由、
+ * 媒体模式注入与 health 快照共用这一个取值口径，避免三处各算一遍。
  * @param store - 运行时覆盖存储。
  * @param persisted - settings 持久默认回落层；缺省为空。
- * @returns 当前生效默认值视图。
+ * @returns 当前生效默认值视图（用户可见六项保证非 null）。
  */
 export function resolveDefaultsView(
   store: RuntimeDefaultsStore,
@@ -330,7 +388,8 @@ export function resolveDefaultsView(
 
 /**
  * 校验并归一化 POST body 为存储 patch。严格协议：仅接受七个已知键；
- * null 清除覆盖；'' 表示「自动」（归一化为 null）；其余值按字段白名单/范围校验。
+ * null 清除覆盖；'' 表示「清除覆盖」（归一化为 null，随后回落 settings → 内置兜底）；
+ * 其余值按字段白名单/范围校验。
  * @param body - 已 JSON.parse 的请求体（可能是任意值）。
  * @returns 归一化后的 patch；校验失败返回错误信息（字符串）。
  */
@@ -399,12 +458,12 @@ export function parseDefaultsPatch(body: unknown): { ok: true; patch: RuntimeDef
 }
 
 /**
- * 创建 defaults 路由 handler。GET 返回「运行时覆盖 ?? settings 持久默认」合并
- * 视图；POST 校验写入并返回合并视图；非 GET/POST 405；请求体不可解析或校验
+ * 创建 defaults 路由 handler。GET 返回「运行时覆盖 ?? settings 持久默认 ?? 内置兜底」
+ * 合并视图；POST 校验写入并返回合并视图；非 GET/POST 405；请求体不可解析或校验
  * 失败 400。
  * @param store - 运行时默认值存储。
  * @param persisted - settings 持久默认回落层（{@link extractPersistedDefaults}
- *   提取；未提供时用空对象，即不回落）。
+ *   提取；未提供时用空对象，即不回落 settings，直接到内置兜底）。
  */
 export function createDefaultsRouteHandler(
   store: RuntimeDefaultsStore,
@@ -467,14 +526,24 @@ export function registerDefaultsRoute(
   })
 }
 
-/** 一个默认值字段的取值来源：运行时覆盖 / settings 持久默认 / 两者都没有（工具内置默认）。 */
+/**
+ * 一个默认值字段的取值来源：
+ * - `'override'`：运行时覆盖（composer / 工作台改过）。
+ * - `'settings'`：settings 持久默认。
+ * - `'none'`：前两层都没有 → 落到内置兜底（{@link BUILT_IN_DEFAULTS}）。
+ *   语义上等同 "builtin"：对 {@link DISPLAY_DEFAULT_KEYS} 这六项，`none` 一定伴随一个
+ *   非 null 的生效值（所以界面**不能**把 `none` 解读成「未设置」）；`mediaMode` 没有
+ *   内置兜底，`none` 在这里才真的是"没有值"（= 文本模式）。
+ *   沿用 `none` 这个名字是为了不改 `WorkbenchHealth.defaultsSources` 的既有契约
+ *   （客户端与 rpc 都已按三者穷举），避免为了一个标签去动客户端联合类型。
+ */
 export type RuntimeDefaultsSource = 'override' | 'settings' | 'none'
 
 /** 七个字段各自的来源，与 {@link RuntimeDefaultsView} 同形状。 */
 export type RuntimeDefaultsSources = { [K in keyof RuntimeDefaults]: RuntimeDefaultsSource }
 
 /**
- * 逐字段标注当前生效值来自哪一层：运行时覆盖 > settings 持久默认 > 无（工具内置默认）。
+ * 逐字段标注当前生效值来自哪一层：运行时覆盖 > settings 持久默认 > 内置兜底（`none`）。
  * 只解释"值从哪来"，不改取值口径——与 {@link resolveDefaultsView} 必须同源，
  * 否则界面会出现"显示 1024*1024 却标成未设置"这种自相矛盾。
  * `mediaMode` / `imageStyle` / `videoAspectRatio` 是纯运行时概念（settings 无对应字段），

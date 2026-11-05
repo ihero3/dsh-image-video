@@ -59,9 +59,16 @@ describe('快速创作页 · 模块化分区', () => {
     const drawer = advanced.querySelector('[data-advanced-open]') as HTMLElement
     expect(drawer.hasAttribute('hidden')).toBe(true)
 
-    // 展开后抽屉才出来（融合生图在里面）
+    // 2026-11-05 产品调整后的归属：融合生图进 ②（主路径入口）、手动分镜进 ①
+    expect(quick.querySelector('[data-fusion-entry] [data-fusion]')).toBeTruthy()
+    expect(pipeline.querySelector('[data-storyboard-entry] [data-storyboard]')).toBeTruthy()
+    // 高级抽屉只剩低频工具（提示词工坊 / 输出空态），不再包含融合生图与分镜
+    expect(advanced.querySelector('[data-fusion]')).toBeNull()
+    expect(advanced.querySelector('[data-storyboard]')).toBeNull()
+
+    // 展开后抽屉才出来
     fireEvent.click(toggle)
     await waitFor(() => { expect((advanced.querySelector('[data-advanced-open]') as HTMLElement).hasAttribute('hidden')).toBe(false) })
-    expect(advanced.querySelector('[data-fusion]')).toBeTruthy()
+    expect(advanced.querySelector('[data-prompt-studio]')).toBeTruthy()
   })
 })

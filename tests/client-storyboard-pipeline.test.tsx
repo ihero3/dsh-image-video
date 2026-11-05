@@ -81,10 +81,13 @@ describe('分镜 → 一键成片（T9）', () => {
     expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.storyboardSentToPipeline)
   })
 
-  it('收起的抽屉里也能点（按钮在抽屉内，展开后可见）', async () => {
+  it('分镜工坊已并入模块 ①（2026-11-05）：不再挂在高级抽屉里', async () => {
     const { view } = renderQuick()
-    await openAdvanced(view.container)
-    const drawer = view.container.querySelector('[data-advanced-open]') as HTMLElement
-    expect(drawer.querySelector('[data-storyboard-to-pipeline]')).toBeTruthy()
+    // 位置变了：从"高级抽屉"搬到模块 ① 的「手动分镜」折叠块里
+    const entry = view.container.querySelector('[data-module="pipeline"] [data-storyboard-entry]') as HTMLElement
+    expect(entry).toBeTruthy()
+    expect(entry.querySelector('[data-storyboard-to-pipeline]')).toBeTruthy()
+    // 高级抽屉里不该再有它
+    expect(view.container.querySelector('[data-advanced-open] [data-storyboard]')).toBeNull()
   })
 })

@@ -1,10 +1,11 @@
 /**
  * 一键自动流水线（`P0-2`）：剧本 → 分镜 →（生图）→ 生视频 的编排契约。
  *
- * 单测盯着三件事：
- * 1. **编排正确**：模式（图生/文生）、分镜数、节点与连线数量、参数透传；
- * 2. **诚实拒绝**：严格模式缺物料要报错且消息能照着修（列出缺哪些物料）；
- * 3. **落库可用**：`pipelines/compose` 产出的工作流真的能被 store 读回、`pipelines/run` 能起跑。
+ * 单测盯着四件事：
+ * 1. **编排正确**：模式（图生/文生/视频生）、分镜数、节点与连线数量、参数透传；
+ * 2. **时长口径**（`B4`/`B5`）：默认 6 秒、逐镜时长覆盖全局值、脏值回落有提醒；
+ * 3. **诚实拒绝**：严格模式缺物料要报错且消息能照着修（列出缺哪些物料）；
+ * 4. **落库可用**：`pipelines/compose` 产出的工作流真的能被 store 读回、`pipelines/run` 能起跑。
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -13,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
 import { planPipeline } from '../src/workbench/pipeline.ts'
 import type { PlanResource } from '../src/workbench/storyboard.ts'
+import { validateWorkflow } from '../src/workbench/workflow.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 
 const SCRIPT = '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。镜头推近她的侧脸。'
@@ -119,6 +121,90 @@ describe('物料手动挑选 + 回显（B-18 申请，A 认领）', () => {
     })
     expect(draft.diagnostics.matchedResources.map(entry => entry.resourceId)).toEqual(['res-a'])
     expect(draft.diagnostics.warnings.join('\n')).toContain('不存在')
+  })
+})
+
+describe('B2/B4/B5：视频生视频模式 + 默认 6 秒 + 逐镜时长', () => {
+  it('默认每镜 6 秒（B4）：视频节点参数与分镜回显一致', () => {
+    const draft = planPipeline({ script: SCRIPT, options: { shots: 2 }, resources: RESOURCES })
+    const videos = draft.nodes.filter(node => node.kind === 'video-generate')
+    expect(videos.map(node => node.params.duration)).toEqual([6, 6])
+    expect(draft.shots.map(shot => shot.duration)).toEqual([6, 6])
+  })
+
+  it('video-to-video（B2）：不经过生图，参考片透传到既有 referenceVideo 参数', () => {
+    const draft = planPipeline({
+      script: SCRIPT,
+      options: { mode: 'video-to-video', shots: 3, referenceVideo: '/outputs/ref-01.mp4', duration: 8 },
+      resources: RESOURCES,
+    })
+    expect(draft.mode).toBe('video-to-video')
+    expect(draft.name).toContain('视频生视频')
+    expect(draft.nodes).toHaveLength(3)
+    expect(draft.nodes.every(node => node.kind === 'video-generate')).toBe(true)
+    expect(draft.edges).toHaveLength(0)
+    for (const node of draft.nodes) {
+      expect(node.params.referenceVideo).toBe('/outputs/ref-01.mp4')
+      expect(node.params.compare).toBe(true)
+      expect(node.params.duration).toBe(8)
+      expect(String(node.params.prompt)).toContain('复刻')
+    }
+    // 复刻语义落在提示词里，不只是名字里声称
+    expect(draft.shots.every(shot => shot.videoPrompt.includes('参考视频'))).toBe(true)
+  })
+
+  it('video-to-video 缺参考片：警告说清只能从零生成，且不开对比片', () => {
+    const draft = planPipeline({ script: SCRIPT, options: { mode: 'video-to-video', shots: 1 }, resources: RESOURCES })
+    expect(draft.nodes[0]!.params.referenceVideo).toBe('')
+    expect(draft.nodes[0]!.params.compare).toBe(false)
+    expect(draft.diagnostics.warnings.join('\n')).toContain('参考视频')
+  })
+
+  it('只有 video-to-video 用参考片：其它模式不偷塞参考片/对比片', () => {
+    const draft = planPipeline({ script: SCRIPT, options: { shots: 1, referenceVideo: '/outputs/ref.mp4' }, resources: RESOURCES })
+    const video = draft.nodes.find(node => node.kind === 'video-generate')
+    expect(video?.params.referenceVideo).toBe('')
+    expect(video?.params.compare).toBe(false)
+  })
+
+  it('逐镜时长覆盖全局时长（B5）：节点参数与回显都用本镜自己的秒数', () => {
+    const draft = planPipeline({
+      script: SCRIPT,
+      options: { shots: 3, duration: 5, shotDurations: [4, 6, 9] },
+      resources: RESOURCES,
+    })
+    const videos = draft.nodes.filter(node => node.kind === 'video-generate')
+    expect(videos.map(node => node.params.duration)).toEqual([4, 6, 9])
+    expect(draft.shots.map(shot => shot.duration)).toEqual([4, 6, 9])
+    // 时长只属于视频节点：生图节点不该冒出一个 duration 参数
+    expect(draft.nodes.filter(node => node.kind === 'image-generate').every(node => node.params.duration === undefined)).toBe(true)
+  })
+
+  it('逐镜时长缺项回落全局值；非正数/超界/多余项都留下提醒', () => {
+    const draft = planPipeline({
+      script: SCRIPT,
+      options: { shots: 3, duration: 7, shotDurations: [3, 0, 90, 12] },
+      resources: RESOURCES,
+    })
+    const videos = draft.nodes.filter(node => node.kind === 'video-generate')
+    // 第 1 镜 3 秒；第 2 镜给 0（非正数）→ 回落全局 7 秒；第 3 镜给 90 → 封顶 30 秒
+    expect(videos.map(node => node.params.duration)).toEqual([3, 7, 30])
+    expect(draft.shots.map(shot => shot.duration)).toEqual([3, 7, 30])
+    const warnings = draft.diagnostics.warnings.join('\n')
+    expect(warnings).toContain('不是正数')
+    expect(warnings).toContain('封顶')
+    expect(warnings).toContain('多余的已忽略')
+  })
+
+  it('三种模式编排出的图都通过画布校验（不存在不可运行节点/端口错配）', () => {
+    for (const mode of ['image-to-video', 'text-to-video', 'video-to-video'] as const) {
+      const draft = planPipeline({
+        script: SCRIPT,
+        options: { mode, shots: 2, shotDurations: [6, 9], referenceVideo: '/ref.mp4' },
+        resources: RESOURCES,
+      })
+      expect(validateWorkflow(draft.nodes, draft.edges).issues).toEqual([])
+    }
   })
 })
 

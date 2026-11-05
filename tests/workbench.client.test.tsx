@@ -338,11 +338,11 @@ describe('workbench project and asset flow', () => {
     }, { timeout: 12_000 })
   }, 30_000)
 
-  it('shows the seven effective defaults from the host (T2-11)', async () => {
+  it('shows the six effective defaults from the host, without mediaMode (A4 2026-11-05)', async () => {
     const host = fakeApi({
       defaults: {
-        mediaMode: 'video', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
-        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
+        mediaMode: null, imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
+        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 10,
       },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
@@ -350,23 +350,26 @@ describe('workbench project and asset flow', () => {
       expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy()
     })
     const rows = [...view.container.querySelectorAll('[data-workbench-default]')]
-    expect(rows).toHaveLength(7)
-    expect(view.container.textContent).toContain('1024*1024')
+    // 用户要求：mediaMode（输入模式）不再展示，其余 6 项常驻
+    expect(rows).toHaveLength(6)
+    expect(view.container.querySelector('[data-workbench-default="defaultMediaMode"]')).toBeNull()
+    // 尺寸存协议串 1024*1024，展示要反查成 1:1；风格存 id 要显示中文「摄影」
+    expect(view.container.textContent).toContain('1:1')
     expect(view.container.textContent).toContain('16:9')
-    // 没设的字段要明确说"未设置"，而不是留空
-    expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.none)
+    expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.optStylePhoto)
   })
 
   it('marks every effective default with where it came from (settings vs overridden)', async () => {
     const host = fakeApi({
       defaults: {
+        // 宿主改造后这 6 项永远有值（没配 = 内置默认），所以这里不再出现 null
         mediaMode: null,
-        imageProvider: null,
+        imageProvider: 'threevideo',
         imageSize: '1024*1024',
-        imageStyle: null,
-        videoProvider: null,
+        imageStyle: 'photo',
+        videoProvider: 'threevideo',
         videoAspectRatio: '16:9',
-        videoDuration: null,
+        videoDuration: 10,
       },
       defaultsSources: {
         mediaMode: 'none',
@@ -391,11 +394,10 @@ describe('workbench project and asset flow', () => {
     expect(aspect.getAttribute('data-default-source')).toBe('override')
     expect(aspect.textContent).toContain(en.defaultsSourceOverride)
 
-    // 未设置的字段只说「未设置」，不能虚报来源
+    // 来源 none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
     const style = view.container.querySelector('[data-workbench-default="defaultImageStyle"]') as HTMLElement
     expect(style.getAttribute('data-default-source')).toBe('none')
-    expect(style.querySelector('[data-default-source-label]')).toBeNull()
-    expect(style.textContent).toContain(en.none)
+    expect(style.textContent).toContain(en.defaultsBuiltinSource)
   })
 
   it('reloads the whitelist when the health snapshot carried none (T2-15 现场问题的回归)', async () => {
@@ -463,7 +465,8 @@ describe('workbench project and asset flow', () => {
       fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeTruthy() })
       // 默认值编辑器全部为下拉选择（白名单内），不再提供自由输入
-      const sizeSelect = view.container.querySelector('select[aria-label="Image size"]') as HTMLSelectElement
+      // 作用域限定在弹层里：模块② 也有一个 aria-label 相同的"本次尺寸"下拉
+      const sizeSelect = view.container.querySelector('[data-workbench-defaults-editor] select[aria-label="Image size"]') as HTMLSelectElement
       expect(sizeSelect).toBeInstanceOf(HTMLSelectElement)
       expect([...sizeSelect.options].every(option => option.value === '' || /^(\d+\*\d+)$/.test(option.value))).toBe(true)
       fireEvent.change(sizeSelect, { target: { value: '1152*864' } })

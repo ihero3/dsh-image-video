@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The browser half's typed face over the `/image-video` channel.
  *
  * Endpoint names and result shapes are mirrored by hand (the host half is a
@@ -10,6 +10,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
+import type { PipelineMode, PipelineShot } from '../workbench/pipeline.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { ResourceUsageRecord } from '../workbench/records.ts'
@@ -322,12 +323,23 @@ export interface ComposeCropView {
 export interface PipelineRunInput {
   readonly projectId: string
   readonly script: string
-  readonly mode?: 'image-to-video' | 'text-to-video'
+  /** 物料生成模式（`B2`）：图生视频 / 文生视频 / 视频生视频（复刻，不经过生图）。 */
+  readonly mode?: PipelineMode
   readonly shots?: number
   readonly imageModel?: string
   readonly videoModel?: string
   readonly ratio?: string
   readonly duration?: number
+  /**
+   * 逐镜时长覆盖（秒，`B5`）：用户在「生成分镜」里逐条改过的每镜时长，
+   * 下标与分镜一一对应；缺项 / 非正数由宿主回落到 `duration`。
+   */
+  readonly shotDurations?: readonly number[]
+  /**
+   * 参考视频（`B2`）：路径 / URL，**仅** `video-to-video` 使用，
+   * 落在视频节点的 `referenceVideo` 参数上（与画布同名参数一致）。
+   */
+  readonly referenceVideo?: string
   readonly strictResources?: boolean
   readonly styleNote?: string
   /** 显式指定物料资源 id（`B-18`）：给了就按指定资源编排，缺 id 仍走剧本自动匹配。 */
@@ -345,6 +357,12 @@ export interface PipelineResult {
   readonly missingResources: readonly string[]
   /** 实际匹配上的物料（`B-18` 回显；旧宿主不返回时客户端不渲染该区）。 */
   readonly matchedResources?: readonly PipelineMatchedResource[]
+  /**
+   * 逐镜明细（`B5`：镜号 / 本镜时长 / 画面提示词 / 视频提示词），界面据此做「可编辑分镜」。
+   * 字段名不叫 `shots`：那个历史上是**分镜数**（number），不能占用。
+   * 旧宿主不返回时客户端用同一个纯函数 `planPipeline` 在本地补一份（口径一致）。
+   */
+  readonly shotDetails?: readonly PipelineShot[]
 }
 
 /** 一次模型目录探测的结果（与服务商 API 同源，失败如实给原因）。 */

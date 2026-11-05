@@ -682,6 +682,8 @@ export function clientProps(overrides: { visible?: boolean; fullscreen?: boolean
     api: overrides.api ?? fakeApi().api,
     ...overrides.maintenancePanes === undefined ? {} : { maintenancePanes: overrides.maintenancePanes },
     ...overrides.registerDictionaries === undefined ? {} : { registerDictionaries: overrides.registerDictionaries },
+    // 用例自己摆项目状态：默认关掉"没有剧集就自动建一部"，避免项目数断言多一条
+    autoCreateSeries: false,
   } as unknown as WorkbenchProps
 }
 

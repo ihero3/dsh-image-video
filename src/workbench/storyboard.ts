@@ -79,7 +79,8 @@ export function planStoryboard(input: {
       characters,
       ...scene === undefined ? {} : { scene },
       imagePrompt: `${subject}${text}${where}；电影感构图，主体清晰，光影统一`,
-      videoPrompt: `${text}${where}；镜头运动克制，画面连贯，时长约 5 秒`,
+      // 不写死秒数：每镜时长由 pipeline 侧（默认 6 秒 / 逐镜覆盖）决定，写死会与实际生成时长对不上
+      videoPrompt: `${text}${where}；镜头运动克制，画面连贯`,
     }
   })
   return { shots, referencedResourceIds: [...referenced] }

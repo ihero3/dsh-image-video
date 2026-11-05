@@ -49,6 +49,36 @@ describe('PipelineCard manual pick (B-18)', () => {
     expect(container.querySelector('[data-pipeline-matched-item="res-2"]')).toBeNull()
   })
 
+  it('keeps the picked order and lets the user move it up/down before composing (B7)', async () => {
+    const host = fakeApi()
+    host.resources.push(
+      resource('res-1', 'role', '林萧'),
+      resource('res-2', 'scene', '雨夜街道'),
+      resource('res-3', 'prop', '雨伞'),
+    )
+    const { container } = render(<PipelineCard api={host.api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    await waitFor(() => { expect(container.querySelector('[data-pipeline-pick-list="true"]')).toBeTruthy() })
+    fireEvent.change(container.querySelector('[data-pipeline-script="true"]') as HTMLTextAreaElement, {
+      target: { value: '雨夜街头。林夏抬头。' },
+    })
+    // 先勾场景、再勾角色：挑选顺序就是排序条的顺序
+    fireEvent.click(container.querySelector('[data-pipeline-pick-item="res-2"]') as HTMLInputElement)
+    fireEvent.click(container.querySelector('[data-pipeline-pick-item="res-1"]') as HTMLInputElement)
+    const orderNow = (): (string | null)[] => [...container.querySelectorAll('[data-pipeline-pick-selected]')]
+      .map(node => node.getAttribute('data-pipeline-pick-selected'))
+    expect(orderNow()).toEqual(['res-2', 'res-1'])
+    // 第一项不能再上移，末项不能再下移（护栏在按钮上）
+    expect((container.querySelector('[data-pipeline-pick-up="res-2"]') as HTMLButtonElement).disabled).toBe(true)
+    expect((container.querySelector('[data-pipeline-pick-down="res-1"]') as HTMLButtonElement).disabled).toBe(true)
+    // 把「雨夜街道」下移一位 → 顺序变成 角色 → 场景
+    fireEvent.click(container.querySelector('[data-pipeline-pick-down="res-2"]') as HTMLButtonElement)
+    expect(orderNow()).toEqual(['res-1', 'res-2'])
+    // 排好的顺序原样写进 resourceIds（顺序即语义：先用谁的参考图）
+    fireEvent.click(container.querySelector('[data-pipeline-compose="true"]') as HTMLButtonElement)
+    await waitFor(() => { expect(host.pipelinePayloads).toHaveLength(1) })
+    expect(host.pipelinePayloads[0]!.resourceIds).toEqual(['res-1', 'res-2'])
+  })
+
   it('omits resourceIds when nothing is manually picked (script auto-matches)', async () => {
     const host = fakeApi()
     host.resources.push(resource('res-1', 'role', '林萧'))

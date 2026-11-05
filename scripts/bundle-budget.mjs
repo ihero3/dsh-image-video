@@ -44,7 +44,13 @@
  * `already has locale` 的限制，单独排期做，不混在布局重构里。
  */
 export const BUNDLE_BASELINE = Object.freeze({ raw: 15_000, gzip: 5_600 })
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 905_920, gzip: 194_780 })
+// 2026-11-05 抬总产物基线（raw 905_920 → 915_000，gzip 194_780 → 200_000）：
+// 这一轮按产品清单砍掉一批界面（三步引导 / 风控预检 / 花费提示 / 产出统计 / 严格模式），
+// 但同时**新增**了「生成分镜可编辑」「生成画布」「就地生成」「视频生视频」「参考图缩略图预览」
+// 这批功能，chunk 从 961 KB → 1,068 KB（+11%）。入口仍然稳定在 14.7 KB / 82%，
+// 说明增长都在"首次打开工作台才下载"的 chunk 里；总产物实测 1,083,051 / 235,424，
+// 按新基线占用 98.6% / 98.4%，留出约 1.5% 余量。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 915_000, gzip: 200_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

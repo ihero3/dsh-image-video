@@ -84,6 +84,11 @@ export type WorkbenchProps =
      * 只在排障或对应回归测试里显式打开。宿主不会传这个字段。
      */
     readonly maintenancePanes?: boolean
+  /**
+   * 没有剧集时自动建一部默认剧集（`A1`，默认开）。
+   * 测试里通常传 `false`：用例自己摆项目状态，自动建会让"项目数"断言多出一条。
+   */
+  readonly autoCreateSeries?: boolean
   }
 
 /** What the header can say about the host. */
@@ -139,7 +144,6 @@ function trackIdKey(kind: TrackKind): WorkbenchLocaleKey {
  * `fields` 用接口字段名（下发 patch 的口径），与 `defaultRows[].field` 对齐。
  */
 const DEFAULT_GROUPS: ReadonlyArray<{ key: WorkbenchLocaleKey; fields: readonly string[] }> = [
-  { key: 'defaultsGroupMode', fields: ['mediaMode'] },
   { key: 'defaultsGroupImage', fields: ['imageProvider', 'imageSize', 'imageStyle'] },
   { key: 'defaultsGroupVideo', fields: ['videoProvider', 'videoAspectRatio', 'videoDuration'] },
 ]
@@ -241,7 +245,7 @@ function resourceRefs(resource: ResourceRecord): readonly string[] {
  * 6 是与工具侧 `images[]` 的实用上限对齐的客户端护栏（再多对构图帮助有限、
  * 请求体先变大），不是宿主限制。
  */
-const MAX_REFERENCE_IMAGES = 6
+const MAX_REFERENCE_IMAGES = 8
 
 /** 片段 id 生成器（分割/复制用；随机后缀保证同帧内多次操作也不撞 id）。 */
 function nextClipId(): string {
@@ -371,7 +375,7 @@ function emptyTimeline(project: ProjectRecord): TimelineRecord {
 export const workbenchDictionaries = { zh, en }
 
 export function Workbench(props: WorkbenchProps): ReactNode {
-  const { api, kind, t, useTabInfo, maintenancePanes, registerDictionaries } = props
+  const { api, kind, t, useTabInfo, maintenancePanes, registerDictionaries, autoCreateSeries } = props
   // N5：chunk 已经载入 → 把完整字典交回入口注册。用 layout effect 保证在首次绘制前完成，
   // 不会出现"闪一下键名"。重复挂载幂等（入口侧只注册一次）。
   useLayoutEffect(() => { registerDictionaries?.(workbenchDictionaries) }, [registerDictionaries])
@@ -501,7 +505,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // `T4`：失败的「下一步」——错误条旁边直接给可点的补救动作，而不是只留一行报错。
   const [failureHint, setFailureHint] = useState<{ message: string } | undefined>(undefined)
   // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
-  const [promptRisk, setPromptRisk] = useState<PromptRiskView | undefined>(undefined)
   // `T8` 高级抽屉：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起。
   // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
@@ -685,20 +688,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       if (mediaMode === 'image') setGenerating(undefined)
     }
   }
-
-  // `T5` 提示词风控预检：停止输入 400ms 后再问宿主（避免每个按键都发一次 RPC）。
-  // 失败时静默——预检不可用不能挡住正常生成。
-  useEffect(() => {
-    const text = generatePrompt.trim()
-    if (text === '') { setPromptRisk(undefined); return }
-    let alive = true
-    const timer = setTimeout(() => {
-      apiRef.current.checkPrompt(text)
-        .then(report => { if (alive) setPromptRisk(report) })
-        .catch(() => { if (alive) setPromptRisk(undefined) })
-    }, 400)
-    return () => { alive = false; clearTimeout(timer) }
-  }, [generatePrompt])
 
   // `T4` 自动定位：结果卡或失败条一出现，就把它滚进视口（smooth；已在视口内则等同无操作）。
   useEffect(() => {
@@ -1793,11 +1782,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }, [])
 
+  /** 已经自动建过默认剧集了吗（一次会话只试一次，失败也不反复建）。 */
+  const autoSeriesTried = useRef(false)
   const loadProjects = useCallback(async () => {
     const list = await apiRef.current.listProjects()
+    // 用户要求（A1）：没有剧集时给一部默认剧集，名字固定「三视剧集」——空表单对新人不友好
+    if (list.length === 0 && autoCreateSeries !== false && !autoSeriesTried.current) {
+      autoSeriesTried.current = true
+      try {
+        const created = await apiRef.current.createProject(t('defaultSeriesName'))
+        const next = await apiRef.current.listProjects()
+        setProjects(next.length === 0 ? [created] : next)
+        setActiveId(created.id)
+        return
+      } catch {
+        // 建不出来就照旧走空列表（示例剧集按钮还在），不打断启动
+      }
+    }
     setProjects(list)
     setActiveId(previous => (previous !== undefined && list.some(item => item.id === previous) ? previous : list[0]?.id))
-  }, [])
+  }, [t, autoCreateSeries])
 
   const loadOutputs = useCallback(async () => {
     setOutputs(await apiRef.current.listOutputs())
@@ -2012,11 +2016,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     })()
   }, [activeId, loadResources])
 
+  const styleLabelKeys: Record<string, WorkbenchLocaleKey> = {
+    photo: 'optStylePhoto', illustration: 'optStyleIllustration',
+    '3d': 'optStyle3d', anime: 'optStyleAnime', ink: 'optStyleInk',
+  }
+
   // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
   // `field` 是接口字段名（imageSize…），`key` 是界面文案键：下发 patch 必须用前者
-  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string; source?: 'override' | 'settings' | 'none' }> = health.status === 'ok' && health.defaults !== undefined
+  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string; display: string; source?: 'override' | 'settings' | 'none' }> = health.status === 'ok' && health.defaults !== undefined
     ? ([
-      ['defaultMediaMode', health.defaults.mediaMode],
       ['defaultImageProvider', health.defaults.imageProvider],
       ['defaultImageSize', health.defaults.imageSize],
       ['defaultImageStyle', health.defaults.imageStyle],
@@ -2027,22 +2035,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       .map(([key, value]) => {
         const field = key.replace(/^default/, '').replace(/^./, character => character.toLowerCase())
         const empty = value === null || value === undefined || value === ''
-        // 只有"有值"的字段才谈来源：「未设置」本身已经是来源的答案
-        const source = empty ? undefined : health.status === 'ok' ? health.defaultsSources?.[field] : undefined
-        return { key, field, value: empty ? t('none') : String(value), source: source === 'none' ? undefined : source }
+        // 来源徽章：none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
+        const source = health.status === 'ok' ? health.defaultsSources?.[field] : undefined
+        const raw = empty ? '' : String(value)
+        // `value` 是下发口径（1024*1024 / photo），`display` 才是给人看的（1:1 / 摄影）
+        return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source }
       })
     : []
+
+  /** 生效默认值的显示口径：尺寸存协议串（1024*1024）要反查成 1:1；风格存 id 要显示中文标签。 */
+  function displayDefaultValue(field: string, raw: string): string {
+    if (health.status !== 'ok') return raw
+    const opts = health.options
+    if (field === 'imageSize') {
+      const match = opts?.imageSizes?.find(option => option.size === raw)
+      return match === undefined ? raw : match.label
+    }
+    if (field === 'imageStyle') {
+      // 白名单是 id 数组（不是对象），中文标签靠 styleLabelKeys 映射
+      const labelKey = styleLabelKeys[raw]
+      return labelKey === undefined ? raw : t(labelKey)
+    }
+    return raw
+  }
 
   // 默认值下拉选项（`R-CFG-2`）：白名单随宿主 `health` 下发，与协议层校验同源，
   // 浏览器包不内置服务商名（`T2-11`）。'' = 未设置（清除覆盖，跟随设置）；
   // 宿主未下发 `options` 时只给「未设置」。
   const options = health.status === 'ok' ? health.options : undefined
-  const styleLabelKeys: Record<string, WorkbenchLocaleKey> = {
-    photo: 'optStylePhoto', illustration: 'optStyleIllustration',
-    '3d': 'optStyle3d', anime: 'optStyleAnime', ink: 'optStyleInk',
-  }
   const defaultsOptions = (field: string): ReadonlyArray<{ value: string; label: string }> => {
-    const unset = { value: '', label: t('none') }
+    const unset = { value: '', label: t('defaultsFollow') }
     switch (field) {
       case 'mediaMode':
         return [unset, { value: 'text', label: t('optModeText') }, { value: 'image', label: t('optModeImage') }, { value: 'video', label: t('optModeVideo') }]
@@ -2300,12 +2322,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <span className="iv-micro">{t('defaultsTitle')}</span>
             {defaultRows.map(row => (
               <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
-                <i>{t(row.key)}</i><b>{row.value}</b>
+                <i>{t(row.key)}</i><b>{row.display}</b>
                 {row.source === undefined
                   ? null
                   : (
                     <em className="iv-def-src" data-default-source-label={row.source}>
-                      {t(row.source === 'override' ? 'defaultsSourceOverride' : 'defaultsSourceSettings')}
+                      {t(row.source === 'override'
+                        ? 'defaultsSourceOverride'
+                        : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
                     </em>
                   )}
               </span>
@@ -2316,7 +2340,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 className="iv-btn iv-btn--ghost iv-btn--sm"
                 data-workbench-defaults-edit="true"
                 onClick={() => {
-                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value === t('none') ? '' : row.value])))
+                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value])))
                   // 白名单只靠 health 那次快照时可能为空（旧宿主/慢启动）：打开编辑器时补取一次，
                   // 拿不到就由编辑器里的提示条说明，而不是让每个下拉只剩「未设置」。
                   if (health.status === 'ok' && health.options === undefined) {
@@ -2394,7 +2418,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           const patch: Record<string, string | number | null> = {}
                           for (const row of defaultRows) {
                             const next = (defaultsDraft[row.field] ?? '').trim()
-                            const current = row.value === t('none') ? '' : row.value
+                            const current = row.value
                             if (next === current) continue
                             patch[row.field] = next === '' ? null : /duration/i.test(row.field) ? Number(next) : next
                           }
@@ -2497,7 +2521,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               aria-label={t('railDefaults')}
               onClick={() => {
                 if (defaultsDraft === undefined && defaultRows.length > 0) {
-                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value === t('none') ? '' : row.value])))
+                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value])))
                 }
                 document.querySelector('[data-workbench-defaults]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
               }}
@@ -2531,7 +2555,221 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     projectId={activeProject?.id}
                     onStarted={() => { setMode('workflow') }}
                     injectScript={pipelineInject?.script}
+                    // `B2` 视频生视频（复刻）：把「媒体素材」里选中的那条视频交给卡片当参考片
+                    selectedAsset={selectedAsset === undefined ? undefined : { path: selectedAsset.path, kind: selectedAsset.kind }}
                   />
+
+                  {/* `D3` 手动分镜：和“自动拆镜”是同一件事的两个档位（自动 / 手动），
+                      所以并进模块 ①，不再单独放在高级抽屉里。默认收起。 */}
+                  <details className="iv-vonly" data-storyboard-entry="true">
+                    <summary className="iv-vonly-head">{t('storyboardTitle')}</summary>
+                    <div className="iv-vonly-body">
+                        <div className="iv-storyboard" data-storyboard="true">
+                          <div className="iv-sb-head">
+                            <span className="iv-chip"><Icon name="storyboard" size={11} />{t('storyboardTitle')}</span>
+                            {/* `T9` 分镜 → 一键成片：剧本只粘一遍。**始终渲染**——空态点击给明确提示，
+                                比"按钮凭空消失"更容易理解（用户会怀疑功能没做）。 */}
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-storyboard-to-pipeline="true"
+                              title={t('storyboardToPipelineHint')}
+                              onClick={storyboardToPipeline}
+                            >
+                              <Icon name="flow" size={11} />{t('storyboardToPipeline')}
+                            </button>
+                            {storyboardShots.length === 0
+                              ? null
+                              : (
+                                <span className="iv-sb-count">
+                                  <span className="iv-meta" data-storyboard-count="true">
+                                    {t('storyboardShotsCount').replace('{n}', String(storyboardShots.length))}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--ghost iv-btn--sm"
+                                    data-storyboard-add="true"
+                                    onClick={addStoryboardShot}
+                                  >
+                                    <Icon name="plus" size={11} />{t('storyboardAddShot')}
+                                  </button>
+
+                                </span>
+                              )}
+                          </div>
+                          <span className="iv-meta">{t('storyboardHint')}</span>
+                          <div className="iv-sb-field">
+                            <span className="iv-meta">{t('storyboardScriptLabel')}</span>
+                            <textarea
+                              className="iv-input"
+                              rows={3}
+                              value={storyboardScript}
+                              placeholder={t('storyboardScriptPlaceholder')}
+                              data-storyboard-script="true"
+                              disabled={storyboardBusy}
+                              onChange={event => setStoryboardScript(event.target.value)}
+                              style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                            />
+                          </div>
+                          <div className="iv-sb-row">
+                            <label className="iv-sb-field" style={{ flex: '0 0 120px' }}>
+                              <span className="iv-meta">{t('storyboardCountLabel')}</span>
+                              <input
+                                className="iv-input"
+                                type="number"
+                                min={1}
+                                max={60}
+                                value={storyboardTarget}
+                                placeholder={t('none')}
+                                data-storyboard-target="true"
+                                disabled={storyboardBusy}
+                                onChange={event => setStoryboardTarget(event.target.value)}
+                                style={{ font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className={`iv-btn iv-btn--acc${storyboardBusy ? ' iv-btn--busy' : ''}`}
+                              data-storyboard-plan="true"
+                              aria-busy={storyboardBusy ? 'true' : undefined}
+                              disabled={storyboardBusy || activeId === undefined || storyboardScript.trim() === ''}
+                              onClick={() => { void runPlanStoryboard() }}
+                            >
+                              <Icon name="sparkles" size={11} />{storyboardBusy ? t('storyboardPlanning') : t('storyboardPlan')}
+                            </button>
+                            <span className="iv-meta">{activeId === undefined ? t('storyboardNeedsProject') : ''}</span>
+                          </div>
+                          {storyboardShots.length === 0
+                            ? <div className="iv-empty" data-storyboard-empty="true">{t('storyboardEmpty')}</div>
+                            : (
+                              <div className="iv-sb-list">
+                                {storyboardShots.map((shot, index) => (
+                                  <div className="iv-sb-shot" key={`shot-${shot.index}-${index}`} data-storyboard-shot={String(index)}>
+                                    <span className="iv-sb-shot-index">{shot.index}</span>
+                                    <div className="iv-sb-shot-body">
+                                      <div className="iv-sb-row">
+                                        <label className="iv-sb-field">
+                                          <span className="iv-meta">{t('storyboardShotLabel')}</span>
+                                          <input
+                                            className="iv-input"
+                                            value={shot.shot}
+                                            data-storyboard-field="shot"
+                                            onChange={event => patchStoryboardText(index, 'shot', event.target.value)}
+                                            style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                          />
+                                        </label>
+                                        <label className="iv-sb-field">
+                                          <span className="iv-meta">{t('storyboardSceneLabel')}</span>
+                                          <input
+                                            className="iv-input"
+                                            value={shot.scene ?? ''}
+                                            placeholder={t('none')}
+                                            data-storyboard-field="scene"
+                                            onChange={event => patchStoryboardText(index, 'scene', event.target.value)}
+                                            style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                          />
+                                        </label>
+                                      </div>
+                                      <label className="iv-sb-field">
+                                        <span className="iv-meta">
+                                          {t('storyboardCharactersLabel')}
+                                          {shot.characters.length === 0 ? `（${t('storyboardCharactersEmpty')}）` : ''}
+                                        </span>
+                                        <input
+                                          className="iv-input"
+                                          value={shot.characters.join('、')}
+                                          data-storyboard-field="characters"
+                                          onChange={event => patchStoryboardCharacters(index, event.target.value)}
+                                          style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                        />
+                                      </label>
+                                      <label className="iv-sb-field">
+                                        <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
+                                        <textarea
+                                          className="iv-input"
+                                          rows={2}
+                                          value={shot.imagePrompt}
+                                          data-storyboard-field="imagePrompt"
+                                          onChange={event => patchStoryboardText(index, 'imagePrompt', event.target.value)}
+                                          style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                        />
+                                      </label>
+                                      <label className="iv-sb-field">
+                                        <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
+                                        <textarea
+                                          className="iv-input"
+                                          rows={2}
+                                          value={shot.videoPrompt}
+                                          data-storyboard-field="videoPrompt"
+                                          onChange={event => patchStoryboardText(index, 'videoPrompt', event.target.value)}
+                                          style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                                        />
+                                      </label>
+                                      <div className="iv-sb-actions">
+                                        <button
+                                          type="button"
+                                          className="iv-btn iv-btn--sm"
+                                          data-storyboard-to-generate={String(index)}
+                                          onClick={() => storyboardToGenerate(shot)}
+                                        >
+                                          <Icon name="bolt" size={11} />{t('storyboardToGenerate')}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="iv-btn iv-btn--sm"
+                                          data-storyboard-to-canvas={String(index)}
+                                          onClick={() => { void storyboardToCanvas(shot) }}
+                                        >
+                                          <Icon name="flow" size={11} />{t('storyboardToCanvas')}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="iv-btn iv-btn--icon iv-btn--sm"
+                                          aria-label={t('storyboardMoveUp')}
+                                          data-storyboard-up={String(index)}
+                                          disabled={index === 0}
+                                          onClick={() => moveStoryboardShot(index, -1)}
+                                        >
+                                          <Icon name="chevron" size={11} className="iv-ico--up" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="iv-btn iv-btn--icon iv-btn--sm"
+                                          aria-label={t('storyboardMoveDown')}
+                                          data-storyboard-down={String(index)}
+                                          disabled={index === storyboardShots.length - 1}
+                                          onClick={() => moveStoryboardShot(index, 1)}
+                                        >
+                                          <Icon name="chevron" size={11} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="iv-btn iv-btn--icon iv-btn--sm"
+                                          aria-label={`${t('storyboardRemoveShot')} ${shot.index}`}
+                                          data-storyboard-remove={String(index)}
+                                          onClick={() => removeStoryboardShot(index)}
+                                        >
+                                          <Icon name="trash" size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          {storyboardShots.length === 0 ? null : (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-storyboard-add-bottom="true"
+                              onClick={addStoryboardShot}
+                            >
+                              <Icon name="plus" size={11} />{t('storyboardAddShot')}
+                            </button>
+                      )}
+                        </div>
+                      </div>
+                  </details>
                   </section>
 
                   {/* 模块 2：单条生成（快速创作）——"一句话出一张图或一条视频" */}
@@ -2547,13 +2785,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
                         不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
                     {busy ? <span className="iv-meta">{t('busy')}</span> : null}
-                    <div className="iv-steps">
-                      <span className="iv-step"><span className="iv-step-n">1</span>{t('createStepChat')}</span>
-                      <Icon name="chevron" className="iv-step-arrow" size={12} />
-                      <span className="iv-step"><span className="iv-step-n">2</span>{t('createStepOutputs')}</span>
-                      <Icon name="chevron" className="iv-step-arrow" size={12} />
-                      <span className="iv-step"><span className="iv-step-n">3</span>{t('createStepFile')}</span>
-                    </div>
                     <div style={{ display: 'grid', gap: 'var(--iv-sp-3)' }}>
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
                       <textarea
@@ -2571,23 +2802,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         }}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
-                      {/* `T5` 风控预检结果：block 会同时禁用生成按钮；warn 只提醒 */}
-                      {promptRisk === undefined || promptRisk.level === 'ok'
-                        ? null
-                        : (
-                          <p
-                            className={`iv-notice${promptRisk.level === 'block' ? ' iv-notice--error iv-notice--block' : ''}`}
-                            role={promptRisk.level === 'block' ? 'alert' : undefined}
-                            data-generate-risk={promptRisk.level}
-                          >
-                            <Icon name={promptRisk.level === 'block' ? 'alert' : 'eye'} size={12} />
-                            <span>
-                              {promptRisk.level === 'block' ? t('generateRiskBlocked') : t('generateRiskWarn')}
-                              {promptRisk.advice.length === 0 ? '' : `：${promptRisk.advice.join('；')}`}
-                            </span>
-                          </p>
-                        )}
-                      <span className="iv-meta" data-generate-shortcut="true">{t('generateShortcutHint')}</span>
                       {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
                       <div className="iv-refs" data-generate-refs="true">
                         <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2649,7 +2863,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                 >
                                   <span className="iv-ref-order">{index + 1}</span>
                                   <span className="iv-ref-role">{index === 0 ? t('generateRefsBase') : t('generateRefsStyle')}</span>
-                                  <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
+                                  {/* 缩略图 + 文件名一起当"预览按钮"：文件名本身对不上图，必须能看一眼 */}
+                                  <button
+                                    type="button"
+                                    className="iv-ref-open"
+                                    data-generate-ref-preview={path}
+                                    title={t('generateRefsPreviewHint')}
+                                    aria-label={`${t('generateRefsPreviewHint')} ${baseName(path)}`}
+                                    onClick={() => { setPreviewPath({ path, kind: 'image' }); scrollToPane('panePreview') }}
+                                  >
+                                    <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}`} alt="" />
+                                    <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
+                                  </button>
                                   <button
                                     type="button"
                                     className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--up"
@@ -2686,15 +2911,28 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           )}
                         <span className="iv-meta">{t('generateRefsHint')}</span>
                       </div>
-                      {/* `G4` 首尾帧 / 视频编辑槽：尾帧图 + 参考视频 + 真人勾选（仅视频生成生效） */}
-                      <div className="iv-vslots" data-video-slots="true">
+                      {/* `G4` 首尾帧 / 视频编辑槽：尾帧图 + 参考视频 + 真人勾选（仅视频生成生效）。
+                          用户 2026-11-05：生图时这些都是无效控件 → 收进可折叠的「视频专用」，
+                          默认收起；用到再展开。 */}
+                      <details className="iv-vonly" data-video-slots="true">
+                      <summary className="iv-vonly-head">{t('videoSlotsTitle')}</summary>
+                      <div className="iv-vonly-body">
                         <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                           <span className="iv-meta">{t('videoLastFrame')}：</span>
                           {generateLastFrame === undefined
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
                             : (
                               <>
-                                <span className="iv-chip" title={generateLastFrame}>{baseName(generateLastFrame)}</span>
+                                <button
+                                  type="button"
+                                  className="iv-ref-open iv-chip"
+                                  data-video-last-frame-preview={generateLastFrame}
+                                  title={t('generateRefsPreviewHint')}
+                                  onClick={() => { setPreviewPath({ path: generateLastFrame, kind: 'image' }); scrollToPane('panePreview') }}
+                                >
+                                  <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateLastFrame))}`} alt="" />
+                                  <span className="iv-ellipsis">{baseName(generateLastFrame)}</span>
+                                </button>
                                 <button
                                   type="button"
                                   className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -2720,7 +2958,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
                             : (
                               <>
-                                <span className="iv-chip" title={generateRefVideo}>{baseName(generateRefVideo)}</span>
+                                <button
+                                  type="button"
+                                  className="iv-ref-open iv-chip"
+                                  data-video-reference-preview={generateRefVideo}
+                                  title={t('generateRefsPreviewHint')}
+                                  onClick={() => { setPreviewPath({ path: generateRefVideo, kind: 'video' }); scrollToPane('panePreview') }}
+                                >
+                                  <video className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateRefVideo))}`} muted preload="metadata" />
+                                  <span className="iv-ellipsis">{baseName(generateRefVideo)}</span>
+                                </button>
                                 <button
                                   type="button"
                                   className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -2763,6 +3010,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : <span className="iv-meta" data-video-edit-pending="true">{t('videoEditPending')}</span>}
                       </div>
+                      </details>
                       <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span className="iv-meta">{t('defaultImageSize')}：</span>
                         {/* `T1` 参数改成候选下拉：候选来自宿主 `health.options`（与协议层校验同源），
@@ -2806,6 +3054,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ))}
                         </select>
                       </div>
+                      <details className="iv-vonly" data-model-details="true">
+                        <summary className="iv-vonly-head">{t('modelDetails')}</summary>
+                        <div className="iv-vonly-body">
+                          {/* `B-6` 模型能力卡：跟着"选模型"放在一起（原来埋在高级抽屉最底下） */}
+                          <ModelCardsPanel api={apiRef.current} t={t} />
+                        </div>
+                      </details>
                       <div className="iv-model-row" data-generate-models="true">
                         <span className="iv-meta">{t('generateImageModel')}：</span>
                         <ModelPicker
@@ -2820,37 +3075,34 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           disabled={generating !== undefined}
                         />
                       </div>
-                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap' }}>
+                      {/* 两个按钮**等宽等大**（用户要求：别让手滑点错）；生成中就地变成"取消生成" */}
+                      <div className="iv-gen-actions" data-generate-actions="true">
                         <button
                           type="button"
-                          className={`iv-btn iv-btn--acc iv-btn--lg${generating === 'image' ? ' iv-btn--busy' : ''}`}
+                          className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'image' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
                           aria-busy={generating === 'image' ? true : undefined}
-                          data-generate-blocked={promptRisk?.level === 'block' ? 'true' : undefined}
-                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
-                          onClick={() => { void runGenerate('image') }}
+                          data-generate-image="true"
+                          disabled={generating === 'video' || activeId === undefined || (generating !== 'image' && generatePrompt.trim() === '')}
+                          onClick={() => {
+                            if (generating === 'image') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
+                            void runGenerate('image')
+                          }}
                         >
-                          {generating === 'image' ? t('generating') : t('generateImage')}
+                          {generating === 'image' ? t('generateCancel') : t('generateImage')}
                         </button>
                         <button
                           type="button"
-                          className={`iv-btn iv-btn--acc${generating === 'video' ? ' iv-btn--busy' : ''}`}
+                          className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'video' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
                           aria-busy={generating === 'video' ? true : undefined}
-                          disabled={generating !== undefined || activeId === undefined || generatePrompt.trim() === '' || promptRisk?.level === 'block'}
-                          onClick={() => { void runGenerate('video') }}
+                          data-generate-video="true"
+                          disabled={generating === 'image' || activeId === undefined || (generating !== 'video' && generatePrompt.trim() === '')}
+                          onClick={() => {
+                            if (generating === 'video') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
+                            void runGenerate('video')
+                          }}
                         >
-                          {generating === 'video' ? t('generating') : t('generateVideo')}
+                          {generating === 'video' ? t('generateCancel') : t('generateVideo')}
                         </button>
-                        {generateTaskId === undefined
-                          ? null
-                          : (
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--danger iv-btn--sm"
-                              onClick={() => { void apiRef.current.cancelTask(generateTaskId) }}
-                            >
-                              {t('generateCancel')}
-                            </button>
-                          )}
                       </div>
                       {/* `T3` 本次结果就地展示 + `T4` 自动定位锚点 */}
                       <div ref={generateOutcomeRef} data-generate-outcome="true">
@@ -2967,9 +3219,200 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </span>
                           </div>
                         )}
-                      <span className="iv-meta">{t('generateCostHint')}</span>
                     </div>
                   </div>
+
+                    {/* `D1` 融合生图进主路径：本质是"用剧集设定拼一段提示词"，属于单条生成的一种输入方式，
+                        不再埋在高级抽屉里；默认收起，避免和普通提示词输入抢位置。 */}
+                    <details className="iv-vonly" data-fusion-entry="true">
+                      <summary className="iv-vonly-head">{t('fusionEntry')} · {t('fusionEntryHint')}</summary>
+                      <div className="iv-vonly-body">
+                        <div className="iv-fusion" data-fusion="true">
+                          <div className="iv-fusion-head">
+                            <span className="iv-chip iv-chip--run"><Icon name="layers" size={11} />{t('fusionTitle')}</span>
+                            {composeSelection.length === 0
+                              ? null
+                              : (
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setComposeRoles([]); setComposeScenes([]); setComposeProps([]) }}
+                                >
+                                  {t('fusionClear')}
+                                </button>
+                              )}
+                          </div>
+                          <FusionGroup
+                            kind="role"
+                            label={t('fusionRoles')}
+                            resources={composeResourcesOf('role')}
+                            selected={composeRoles}
+                            emptyHint={t('fusionNoResources')}
+                            onToggle={id => setComposeRoles(current => toggleSelection(current, id))}
+                          />
+                          <FusionGroup
+                            kind="scene"
+                            label={t('fusionScenes')}
+                            resources={composeResourcesOf('scene')}
+                            selected={composeScenes}
+                            emptyHint={t('fusionNoResources')}
+                            onToggle={id => setComposeScenes(current => toggleSelection(current, id))}
+                          />
+                          <FusionGroup
+                            kind="prop"
+                            label={t('fusionProps')}
+                            resources={composeResourcesOf('prop')}
+                            selected={composeProps}
+                            emptyHint={t('fusionNoResources')}
+                            onToggle={id => setComposeProps(current => toggleSelection(current, id))}
+                          />
+                          {/* `B-3` 融合生图参数化：姿态 × 镜头 × 风格备注 × 场景裁剪 */}
+                          <div className="iv-compose-params" data-compose-params="true">
+                            <div className="iv-param-row" data-param="pose">
+                              <span className="iv-meta">{t('fusionPoseLabel')}：</span>
+                              <button
+                                type="button"
+                                className={`iv-chip iv-chip--toggle${composePose === '' ? ' on' : ''}`}
+                                data-pose="none"
+                                onClick={() => { setComposePose('') }}
+                              >{t('fusionPoseNone')}</button>
+                              {POSE_PRESETS.map(preset => (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  className={`iv-chip iv-chip--toggle${composePose === preset.id ? ' on' : ''}`}
+                                  data-pose={preset.id}
+                                  onClick={() => { setComposePose(current => (current === preset.id ? '' : preset.id)) }}
+                                >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
+                              ))}
+                            </div>
+                            <div className="iv-param-row" data-param="lens">
+                              <span className="iv-meta">{t('fusionLensLabel')}：</span>
+                              <button
+                                type="button"
+                                className={`iv-chip iv-chip--toggle${composeLens === '' ? ' on' : ''}`}
+                                data-lens="none"
+                                onClick={() => { setComposeLens('') }}
+                              >{t('fusionLensNone')}</button>
+                              {LENS_PRESETS.map(preset => (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  className={`iv-chip iv-chip--toggle${composeLens === preset.id ? ' on' : ''}`}
+                                  data-lens={preset.id}
+                                  onClick={() => { setComposeLens(current => (current === preset.id ? '' : preset.id)) }}
+                                >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
+                              ))}
+                            </div>
+                            <textarea
+                              className="iv-input"
+                              rows={1}
+                              value={composeStyleNote}
+                              placeholder={t('fusionStyleNotePlaceholder')}
+                              data-compose-style="true"
+                              disabled={composing}
+                              onChange={event => { setComposeStyleNote(event.target.value) }}
+                              style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                            />
+                            <div className="iv-crop" data-crop="true">
+                              <label className="iv-check">
+                                <input
+                                  type="checkbox"
+                                  checked={composeCropEnabled}
+                                  data-crop-enable="true"
+                                  onChange={event => { setComposeCropEnabled(event.target.checked); setComposeCropError(undefined) }}
+                                />
+                                <span>{t('fusionCropLabel')}</span>
+                              </label>
+                              {composeCropEnabled
+                                ? (
+                                  <div className="iv-crop-fields" data-crop-fields="true">
+                                    {(['x', 'y', 'width', 'height'] as const).map(field => (
+                                      <label key={field} className="iv-crop-field">
+                                        <span>{t(`fusionCrop${field.charAt(0).toUpperCase()}${field.slice(1)}` as WorkbenchLocaleKey)}</span>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={1}
+                                          step={0.01}
+                                          className="iv-input"
+                                          style={{ width: '64px' }}
+                                          value={composeCrop[field]}
+                                          data-crop-field={field}
+                                          disabled={composing}
+                                          onChange={event => {
+                                            const next = Number(event.target.value)
+                                            setComposeCrop(current => ({ ...current, [field]: Number.isFinite(next) ? next : 0 }))
+                                            setComposeCropError(undefined)
+                                          }}
+                                        />
+                                      </label>
+                                    ))}
+                                    <span className="iv-meta">{t('fusionCropHint')}</span>
+                                    {composeCropError === undefined ? null : (
+                                      <span className="iv-meta iv-meta--warn" data-crop-error="true">{t('fusionCropInvalid')}：{composeCropError}</span>
+                                    )}
+                                  </div>
+                                )
+                                : <span className="iv-meta">{t('fusionCropHint')}</span>}
+                            </div>
+                          </div>
+                          <span className="iv-meta" data-fusion-preview="true">
+                            {composePreviewRefs.length === 0
+                              ? t('fusionPreviewNone')
+                              : t('fusionPreview').replace('{n}', String(composePreviewRefs.length))}
+                          </span>
+                          <textarea
+                            className="iv-input"
+                            rows={2}
+                            value={composePrompt}
+                            placeholder={t('fusionPromptPlaceholder')}
+                            data-fusion-prompt="true"
+                            disabled={composing}
+                            onChange={event => setComposePrompt(event.target.value)}
+                            style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                          />
+                          {/* `B-6` 提示词风控条：block 提交前拦截，warn 随结果提醒 */}
+                          <div className="iv-risk" data-risk="true">
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              data-risk-check="true"
+                              disabled={composeRiskBusy || composePrompt.trim() === ''}
+                              onClick={() => { void checkComposePrompt() }}
+                            >
+                              {composeRiskBusy ? t('promptRiskChecking') : t('promptRiskTitle')}
+                            </button>
+                            {composeRisk === undefined
+                              ? null
+                              : (
+                                <span
+                                  className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : composeRisk.level === 'block' ? 'err' : 'warn'}`}
+                                  data-risk-level={composeRisk.level}
+                                >
+                                  {composeRisk.level === 'block' ? t('promptRiskBlock') : composeRisk.level === 'warn' ? t('promptRiskWarn') : t('promptRiskOk')}
+                                </span>
+                              )}
+                            {composeRisk === undefined || composeRisk.hits.length === 0
+                              ? null
+                              : <span className={composeRisk.level === 'block' ? 'iv-meta iv-meta--err' : 'iv-meta iv-meta--warn'} data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
+                          </div>
+                          <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              className={`iv-btn iv-btn--acc iv-btn--lg${composing ? ' iv-btn--busy' : ''}`}
+                              aria-busy={composing ? true : undefined}
+                              data-fusion-run="true"
+                              disabled={composing || activeId === undefined || composePrompt.trim() === '' || composeRisk?.level === 'block'}
+                              onClick={() => { void runCompose() }}
+                            >
+                              {composing ? t('fusionRunning') : t('fusionRun')}
+                            </button>
+                            <span className="iv-meta">{t('fusionHint')}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
                   </section>
 
                   {/* 模块 3：高级设置（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力）——默认收起 */}
@@ -2995,190 +3438,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </button>
                     <div className="iv-advanced" data-advanced-open={advancedOpen ? 'true' : 'false'} hidden={!advancedOpen}>
                     {/* `B-9` 融合生图（G3）：选角色/场景/物品 → 参考图预览 → 调 media/compose */}
-                    <div className="iv-fusion" data-fusion="true">
-                      <div className="iv-fusion-head">
-                        <span className="iv-chip iv-chip--run"><Icon name="layers" size={11} />{t('fusionTitle')}</span>
-                        {composeSelection.length === 0
-                          ? null
-                          : (
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              onClick={() => { setComposeRoles([]); setComposeScenes([]); setComposeProps([]) }}
-                            >
-                              {t('fusionClear')}
-                            </button>
-                          )}
-                      </div>
-                      <FusionGroup
-                        kind="role"
-                        label={t('fusionRoles')}
-                        resources={composeResourcesOf('role')}
-                        selected={composeRoles}
-                        emptyHint={t('fusionNoResources')}
-                        onToggle={id => setComposeRoles(current => toggleSelection(current, id))}
-                      />
-                      <FusionGroup
-                        kind="scene"
-                        label={t('fusionScenes')}
-                        resources={composeResourcesOf('scene')}
-                        selected={composeScenes}
-                        emptyHint={t('fusionNoResources')}
-                        onToggle={id => setComposeScenes(current => toggleSelection(current, id))}
-                      />
-                      <FusionGroup
-                        kind="prop"
-                        label={t('fusionProps')}
-                        resources={composeResourcesOf('prop')}
-                        selected={composeProps}
-                        emptyHint={t('fusionNoResources')}
-                        onToggle={id => setComposeProps(current => toggleSelection(current, id))}
-                      />
-                      {/* `B-3` 融合生图参数化：姿态 × 镜头 × 风格备注 × 场景裁剪 */}
-                      <div className="iv-compose-params" data-compose-params="true">
-                        <div className="iv-param-row" data-param="pose">
-                          <span className="iv-meta">{t('fusionPoseLabel')}：</span>
-                          <button
-                            type="button"
-                            className={`iv-chip iv-chip--toggle${composePose === '' ? ' on' : ''}`}
-                            data-pose="none"
-                            onClick={() => { setComposePose('') }}
-                          >{t('fusionPoseNone')}</button>
-                          {POSE_PRESETS.map(preset => (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              className={`iv-chip iv-chip--toggle${composePose === preset.id ? ' on' : ''}`}
-                              data-pose={preset.id}
-                              onClick={() => { setComposePose(current => (current === preset.id ? '' : preset.id)) }}
-                            >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
-                          ))}
-                        </div>
-                        <div className="iv-param-row" data-param="lens">
-                          <span className="iv-meta">{t('fusionLensLabel')}：</span>
-                          <button
-                            type="button"
-                            className={`iv-chip iv-chip--toggle${composeLens === '' ? ' on' : ''}`}
-                            data-lens="none"
-                            onClick={() => { setComposeLens('') }}
-                          >{t('fusionLensNone')}</button>
-                          {LENS_PRESETS.map(preset => (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              className={`iv-chip iv-chip--toggle${composeLens === preset.id ? ' on' : ''}`}
-                              data-lens={preset.id}
-                              onClick={() => { setComposeLens(current => (current === preset.id ? '' : preset.id)) }}
-                            >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
-                          ))}
-                        </div>
-                        <textarea
-                          className="iv-input"
-                          rows={1}
-                          value={composeStyleNote}
-                          placeholder={t('fusionStyleNotePlaceholder')}
-                          data-compose-style="true"
-                          disabled={composing}
-                          onChange={event => { setComposeStyleNote(event.target.value) }}
-                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                        />
-                        <div className="iv-crop" data-crop="true">
-                          <label className="iv-check">
-                            <input
-                              type="checkbox"
-                              checked={composeCropEnabled}
-                              data-crop-enable="true"
-                              onChange={event => { setComposeCropEnabled(event.target.checked); setComposeCropError(undefined) }}
-                            />
-                            <span>{t('fusionCropLabel')}</span>
-                          </label>
-                          {composeCropEnabled
-                            ? (
-                              <div className="iv-crop-fields" data-crop-fields="true">
-                                {(['x', 'y', 'width', 'height'] as const).map(field => (
-                                  <label key={field} className="iv-crop-field">
-                                    <span>{t(`fusionCrop${field.charAt(0).toUpperCase()}${field.slice(1)}` as WorkbenchLocaleKey)}</span>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={1}
-                                      step={0.01}
-                                      className="iv-input"
-                                      style={{ width: '64px' }}
-                                      value={composeCrop[field]}
-                                      data-crop-field={field}
-                                      disabled={composing}
-                                      onChange={event => {
-                                        const next = Number(event.target.value)
-                                        setComposeCrop(current => ({ ...current, [field]: Number.isFinite(next) ? next : 0 }))
-                                        setComposeCropError(undefined)
-                                      }}
-                                    />
-                                  </label>
-                                ))}
-                                <span className="iv-meta">{t('fusionCropHint')}</span>
-                                {composeCropError === undefined ? null : (
-                                  <span className="iv-meta iv-meta--warn" data-crop-error="true">{t('fusionCropInvalid')}：{composeCropError}</span>
-                                )}
-                              </div>
-                            )
-                            : <span className="iv-meta">{t('fusionCropHint')}</span>}
-                        </div>
-                      </div>
-                      <span className="iv-meta" data-fusion-preview="true">
-                        {composePreviewRefs.length === 0
-                          ? t('fusionPreviewNone')
-                          : t('fusionPreview').replace('{n}', String(composePreviewRefs.length))}
-                      </span>
-                      <textarea
-                        className="iv-input"
-                        rows={2}
-                        value={composePrompt}
-                        placeholder={t('fusionPromptPlaceholder')}
-                        data-fusion-prompt="true"
-                        disabled={composing}
-                        onChange={event => setComposePrompt(event.target.value)}
-                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                      />
-                      {/* `B-6` 提示词风控条：block 提交前拦截，warn 随结果提醒 */}
-                      <div className="iv-risk" data-risk="true">
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--ghost iv-btn--sm"
-                          data-risk-check="true"
-                          disabled={composeRiskBusy || composePrompt.trim() === ''}
-                          onClick={() => { void checkComposePrompt() }}
-                        >
-                          {composeRiskBusy ? t('promptRiskChecking') : t('promptRiskTitle')}
-                        </button>
-                        {composeRisk === undefined
-                          ? null
-                          : (
-                            <span
-                              className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : composeRisk.level === 'block' ? 'err' : 'warn'}`}
-                              data-risk-level={composeRisk.level}
-                            >
-                              {composeRisk.level === 'block' ? t('promptRiskBlock') : composeRisk.level === 'warn' ? t('promptRiskWarn') : t('promptRiskOk')}
-                            </span>
-                          )}
-                        {composeRisk === undefined || composeRisk.hits.length === 0
-                          ? null
-                          : <span className={composeRisk.level === 'block' ? 'iv-meta iv-meta--err' : 'iv-meta iv-meta--warn'} data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
-                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className={`iv-btn iv-btn--acc iv-btn--lg${composing ? ' iv-btn--busy' : ''}`}
-                          aria-busy={composing ? true : undefined}
-                          data-fusion-run="true"
-                          disabled={composing || activeId === undefined || composePrompt.trim() === '' || composeRisk?.level === 'block'}
-                          onClick={() => { void runCompose() }}
-                        >
-                          {composing ? t('fusionRunning') : t('fusionRun')}
-                        </button>
-                        <span className="iv-meta">{t('fusionHint')}</span>
-                      </div>
-                    </div>
                     {/* `B-10` 提示词工坊（G1）：选中图片 → 提取 → 编辑 → 入库 → 带入表单 */}
                     <div className="iv-prompt-studio" data-prompt-studio="true">
                       <div className="iv-fusion-head">
@@ -3261,220 +3520,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                       <span className="iv-meta">{t('promptHint')}</span>
                     </div>
-                    {/* `B-15` 分镜工坊（A-7）：剧本 → 可编辑镜头表 → 带入生成 / 送入画布 */}
-                    <div className="iv-storyboard" data-storyboard="true">
-                      <div className="iv-sb-head">
-                        <span className="iv-chip"><Icon name="storyboard" size={11} />{t('storyboardTitle')}</span>
-                        {/* `T9` 分镜 → 一键成片：剧本只粘一遍。**始终渲染**——空态点击给明确提示，
-                            比"按钮凭空消失"更容易理解（用户会怀疑功能没做）。 */}
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--ghost iv-btn--sm"
-                          data-storyboard-to-pipeline="true"
-                          title={t('storyboardToPipelineHint')}
-                          onClick={storyboardToPipeline}
-                        >
-                          <Icon name="flow" size={11} />{t('storyboardToPipeline')}
-                        </button>
-                        {storyboardShots.length === 0
-                          ? null
-                          : (
-                            <span className="iv-sb-count">
-                              <span className="iv-meta" data-storyboard-count="true">
-                                {t('storyboardShotsCount').replace('{n}', String(storyboardShots.length))}
-                              </span>
-                              <button
-                                type="button"
-                                className="iv-btn iv-btn--ghost iv-btn--sm"
-                                data-storyboard-add="true"
-                                onClick={addStoryboardShot}
-                              >
-                                <Icon name="plus" size={11} />{t('storyboardAddShot')}
-                              </button>
-
-                            </span>
-                          )}
-                      </div>
-                      <span className="iv-meta">{t('storyboardHint')}</span>
-                      <div className="iv-sb-field">
-                        <span className="iv-meta">{t('storyboardScriptLabel')}</span>
-                        <textarea
-                          className="iv-input"
-                          rows={3}
-                          value={storyboardScript}
-                          placeholder={t('storyboardScriptPlaceholder')}
-                          data-storyboard-script="true"
-                          disabled={storyboardBusy}
-                          onChange={event => setStoryboardScript(event.target.value)}
-                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                        />
-                      </div>
-                      <div className="iv-sb-row">
-                        <label className="iv-sb-field" style={{ flex: '0 0 120px' }}>
-                          <span className="iv-meta">{t('storyboardCountLabel')}</span>
-                          <input
-                            className="iv-input"
-                            type="number"
-                            min={1}
-                            max={60}
-                            value={storyboardTarget}
-                            placeholder={t('none')}
-                            data-storyboard-target="true"
-                            disabled={storyboardBusy}
-                            onChange={event => setStoryboardTarget(event.target.value)}
-                            style={{ font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className={`iv-btn iv-btn--acc${storyboardBusy ? ' iv-btn--busy' : ''}`}
-                          data-storyboard-plan="true"
-                          aria-busy={storyboardBusy ? 'true' : undefined}
-                          disabled={storyboardBusy || activeId === undefined || storyboardScript.trim() === ''}
-                          onClick={() => { void runPlanStoryboard() }}
-                        >
-                          <Icon name="sparkles" size={11} />{storyboardBusy ? t('storyboardPlanning') : t('storyboardPlan')}
-                        </button>
-                        <span className="iv-meta">{activeId === undefined ? t('storyboardNeedsProject') : ''}</span>
-                      </div>
-                      {storyboardShots.length === 0
-                        ? <div className="iv-empty" data-storyboard-empty="true">{t('storyboardEmpty')}</div>
-                        : (
-                          <div className="iv-sb-list">
-                            {storyboardShots.map((shot, index) => (
-                              <div className="iv-sb-shot" key={`shot-${shot.index}-${index}`} data-storyboard-shot={String(index)}>
-                                <span className="iv-sb-shot-index">{shot.index}</span>
-                                <div className="iv-sb-shot-body">
-                                  <div className="iv-sb-row">
-                                    <label className="iv-sb-field">
-                                      <span className="iv-meta">{t('storyboardShotLabel')}</span>
-                                      <input
-                                        className="iv-input"
-                                        value={shot.shot}
-                                        data-storyboard-field="shot"
-                                        onChange={event => patchStoryboardText(index, 'shot', event.target.value)}
-                                        style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                      />
-                                    </label>
-                                    <label className="iv-sb-field">
-                                      <span className="iv-meta">{t('storyboardSceneLabel')}</span>
-                                      <input
-                                        className="iv-input"
-                                        value={shot.scene ?? ''}
-                                        placeholder={t('none')}
-                                        data-storyboard-field="scene"
-                                        onChange={event => patchStoryboardText(index, 'scene', event.target.value)}
-                                        style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                      />
-                                    </label>
-                                  </div>
-                                  <label className="iv-sb-field">
-                                    <span className="iv-meta">
-                                      {t('storyboardCharactersLabel')}
-                                      {shot.characters.length === 0 ? `（${t('storyboardCharactersEmpty')}）` : ''}
-                                    </span>
-                                    <input
-                                      className="iv-input"
-                                      value={shot.characters.join('、')}
-                                      data-storyboard-field="characters"
-                                      onChange={event => patchStoryboardCharacters(index, event.target.value)}
-                                      style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                    />
-                                  </label>
-                                  <label className="iv-sb-field">
-                                    <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
-                                    <textarea
-                                      className="iv-input"
-                                      rows={2}
-                                      value={shot.imagePrompt}
-                                      data-storyboard-field="imagePrompt"
-                                      onChange={event => patchStoryboardText(index, 'imagePrompt', event.target.value)}
-                                      style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                    />
-                                  </label>
-                                  <label className="iv-sb-field">
-                                    <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
-                                    <textarea
-                                      className="iv-input"
-                                      rows={2}
-                                      value={shot.videoPrompt}
-                                      data-storyboard-field="videoPrompt"
-                                      onChange={event => patchStoryboardText(index, 'videoPrompt', event.target.value)}
-                                      style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                    />
-                                  </label>
-                                  <div className="iv-sb-actions">
-                                    <button
-                                      type="button"
-                                      className="iv-btn iv-btn--sm"
-                                      data-storyboard-to-generate={String(index)}
-                                      onClick={() => storyboardToGenerate(shot)}
-                                    >
-                                      <Icon name="bolt" size={11} />{t('storyboardToGenerate')}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="iv-btn iv-btn--sm"
-                                      data-storyboard-to-canvas={String(index)}
-                                      onClick={() => { void storyboardToCanvas(shot) }}
-                                    >
-                                      <Icon name="flow" size={11} />{t('storyboardToCanvas')}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="iv-btn iv-btn--icon iv-btn--sm"
-                                      aria-label={t('storyboardMoveUp')}
-                                      data-storyboard-up={String(index)}
-                                      disabled={index === 0}
-                                      onClick={() => moveStoryboardShot(index, -1)}
-                                    >
-                                      <Icon name="chevron" size={11} className="iv-ico--up" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="iv-btn iv-btn--icon iv-btn--sm"
-                                      aria-label={t('storyboardMoveDown')}
-                                      data-storyboard-down={String(index)}
-                                      disabled={index === storyboardShots.length - 1}
-                                      onClick={() => moveStoryboardShot(index, 1)}
-                                    >
-                                      <Icon name="chevron" size={11} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="iv-btn iv-btn--icon iv-btn--sm"
-                                      aria-label={`${t('storyboardRemoveShot')} ${shot.index}`}
-                                      data-storyboard-remove={String(index)}
-                                      onClick={() => removeStoryboardShot(index)}
-                                    >
-                                      <Icon name="trash" size={11} />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      {storyboardShots.length === 0 ? null : (
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--ghost iv-btn--sm"
-                          data-storyboard-add-bottom="true"
-                          onClick={addStoryboardShot}
-                        >
-                          <Icon name="plus" size={11} />{t('storyboardAddShot')}
-                        </button>
-                      )}
-                    </div>
-                    <div className="iv-stats">
-                      <span className="iv-stat"><b>{outputs.length}</b><span>{t('statOutputs')}</span></span>
-                      <span className="iv-stat"><b>{assets.length}</b><span>{t('statAssets')}</span></span>
-                      <span className="iv-stat"><b>{tasks.length}</b><span>{t('statTasks')}</span></span>
-                      <span className="iv-stat"><b>{resources.length}</b><span>{t('statResources')}</span></span>
-                    </div>
+                    {/* `D3` 分镜工坊已并入模块 ① 的「手动分镜」（见上方 data-storyboard-entry） */}
                     {outputs.length === 0 ? <p className="iv-meta">{t('noOutputs')}</p> : null}
-                    {/* `B-6` 模型能力卡：选型参考（只展示，不参与生成逻辑） */}
-                    <ModelCardsPanel api={apiRef.current} t={t} />
                     </div>
                   </section>
                   </div>

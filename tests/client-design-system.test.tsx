@@ -288,7 +288,7 @@ describe('视觉层级契约（R7）', () => {
     expect(ruleOf('textarea.iv-input{')).toContain('height:auto')
   })
 
-  it('主创 W1 簇：提示词用 textarea 撑开，生成图片 lg、生成视频默认档', async () => {
+  it('主创 W1 簇：提示词用 textarea 撑开，两个生成按钮同尺寸（2026-11-05 产品调整）', async () => {
     const host = fakeApi()
     host.projects.push({
       schemaVersion: 1, id: 'prj-1', name: '层级契约',
@@ -301,15 +301,17 @@ describe('视觉层级契约（R7）', () => {
     expect(prompt, '主创提示词应是 textarea').toBeTruthy()
     expect(prompt.classList.contains('iv-textarea')).toBe(true)
 
-    // 生成图片 = W1（lg）；生成视频 = W2（默认 accent，既不加 lg 也不退 sm）
+    // 2026-11-05 产品调整：两个按钮**等宽等大**（用户要求，避免手滑点错），
+    // 所以旧的"图片 lg / 视频默认档"层级契约作废，改成两者同为 lg + 同尺寸类
     const image = await screen.findByRole('button', { name: en.generateImage }) as HTMLButtonElement
     expect(image.classList.contains('iv-btn--acc')).toBe(true)
     expect(image.classList.contains('iv-btn--lg')).toBe(true)
+    expect(image.classList.contains('iv-gen-btn')).toBe(true)
 
     const video = await screen.findByRole('button', { name: en.generateVideo }) as HTMLButtonElement
     expect(video.classList.contains('iv-btn--acc')).toBe(true)
-    expect(video.classList.contains('iv-btn--lg')).toBe(false)
-    expect(video.classList.contains('iv-btn--sm')).toBe(false)
+    expect(video.classList.contains('iv-btn--lg')).toBe(true)
+    expect(video.classList.contains('iv-gen-btn')).toBe(true)
   })
 
   it('时间轴终局动作（导出）升 lg，且渲染中挂 busy 环', async () => {

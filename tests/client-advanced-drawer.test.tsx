@@ -44,7 +44,7 @@ describe('高级抽屉（T8）', () => {
     expect(screen.getByRole('button', { name: en.generateImage })).toBeTruthy()
   })
 
-  it('点开后四个区块出现；再点收起', async () => {
+  it('点开后抽屉里只剩低频工具；融合生图/手动分镜已在主模块（2026-11-05 调整）', async () => {
     const { view } = renderQuick()
     const toggle = await waitFor(() => {
       const node = view.container.querySelector('[data-advanced-toggle]') as HTMLButtonElement
@@ -59,11 +59,13 @@ describe('高级抽屉（T8）', () => {
       expect(drawer.getAttribute('data-advanced-open')).toBe('true')
       expect(drawer.hidden).toBe(false)
     })
-    // 四个区块都在抽屉里
+    // 产品调整后：融合生图进模块 ②、手动分镜进模块 ①，抽屉只留提示词工坊这类低频工具
     const drawer = view.container.querySelector('[data-advanced-open]') as HTMLElement
-    expect(drawer.querySelector('[data-fusion]')).toBeTruthy()
     expect(drawer.querySelector('[data-prompt-studio]')).toBeTruthy()
-    expect(drawer.querySelector('[data-storyboard]')).toBeTruthy()
+    expect(drawer.querySelector('[data-fusion]')).toBeNull()
+    expect(drawer.querySelector('[data-storyboard]')).toBeNull()
+    expect(view.container.querySelector('[data-module="quick"] [data-fusion-entry] [data-fusion]')).toBeTruthy()
+    expect(view.container.querySelector('[data-module="pipeline"] [data-storyboard-entry] [data-storyboard]')).toBeTruthy()
     // aria-expanded 同步
     expect((view.container.querySelector('[data-advanced-toggle]') as HTMLElement).getAttribute('aria-expanded')).toBe('true')
 

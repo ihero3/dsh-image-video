@@ -23,7 +23,6 @@ export type WorkbenchLocaleKey =
   | 'generateHeading'
   | 'generatePromptLabel'
   | 'generatePromptPlaceholder'
-  | 'generateShortcutHint'
   | 'generateImage'
   | 'generateVideo'
   | 'generating'
@@ -31,7 +30,6 @@ export type WorkbenchLocaleKey =
   | 'generateDone'
   | 'generateFailed'
   | 'generateNeedsProject'
-  | 'generateCostHint'
   | 'tabTitle'
   | 'guideDescription'
   | 'sectionProject'
@@ -55,7 +53,6 @@ export type WorkbenchLocaleKey =
   | 'panePreview'
   | 'paneTasks'
   | 'paneHealth'
-  | 'emptyHint'
   | 'healthChecking'
   | 'healthFailed'
   | 'panePlanned'
@@ -234,14 +231,10 @@ export type WorkbenchLocaleKey =
   | 'kindStyle'
   | 'kindVoice'
   | 'brandTagline'
-  | 'modeQuickHint'
   | 'statOutputs'
   | 'statAssets'
   | 'statTasks'
   | 'statResources'
-  | 'createStepChat'
-  | 'createStepOutputs'
-  | 'createStepFile'
   | 'generateParamAuto'
   | 'generateImageModel'
   | 'generateVideoModel'
@@ -258,8 +251,6 @@ export type WorkbenchLocaleKey =
   | 'generateFailureClearRefs'
   | 'generateFailureDurationApplied'
   | 'generateFailureRefsCleared'
-  | 'generateRiskBlocked'
-  | 'generateRiskWarn'
   | 'assetSearchPlaceholder'
   | 'storageUsageLabel'
   | 'storageUsageFiles'
@@ -347,6 +338,22 @@ export type WorkbenchLocaleKey =
   | 'diagRefresh'
   // ---- F2 多参考图选择器 ----
   | 'generateRefsLabel'
+  | 'generateRefsPreviewHint'
+  | 'pipelineModeVideoToVideo'
+  | 'pipelineToCanvas'
+  | 'pipelineToCanvasHint'
+  | 'pipelineInlineRun'
+  | 'pipelineInlineRunHint'
+  | 'pipelineShotDuration'
+  | 'pipelineVideoToVideoNeedsRef'
+  | 'pipelineShotEditable'
+  | 'modelDetails'
+  | 'fusionEntry'
+  | 'fusionEntryHint'
+  | 'defaultsBuiltinSource'
+  | 'defaultsFollow'
+  | 'defaultSeriesName'
+  | 'videoSlotsTitle'
   | 'generateRefsHint'
   | 'generateRefsAdd'
   | 'generateRefsFull'
@@ -486,14 +493,12 @@ export type WorkbenchLocaleKey =
   | 'segJump'
   | 'pipelineTitle'
   | 'pipelineCardTitle'
-  | 'pipelineHint'
   | 'pipelineScriptLabel'
   | 'pipelineScriptPlaceholder'
   | 'pipelineModeImageToVideo'
   | 'pipelineModeTextToVideo'
   | 'pipelineShots'
   | 'pipelineDuration'
-  | 'pipelineRun'
   | 'pipelineRunning'
   | 'pipelineStarted'
   | 'pipelineCompose'
@@ -691,18 +696,16 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   sectionProject: 'Series',
   pipelineTitle: 'One-click film: script → shots → image → video',
   pipelineCardTitle: 'Script & generation settings',
-  pipelineHint: 'Paste a script; the host splits it into shots and builds a runnable canvas chain for you.',
   pipelineScriptLabel: 'Script',
   pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
   pipelineModeImageToVideo: 'Image → video',
   pipelineModeTextToVideo: 'Text → video',
   pipelineShots: 'Shots',
   pipelineDuration: 'Seconds per shot',
-  pipelineRun: 'Run pipeline',
   pipelineRunning: 'Running…',
   pipelineStarted: 'Pipeline started',
-  pipelineCompose: 'Compose only (free)',
-  pipelineComposed: 'Pipeline saved (not started)',
+  pipelineCompose: 'Generate shots',
+  pipelineComposed: 'Shots ready — edit them below',
   pipelineShotsCount: 'shots',
   pipelineWarnings: 'Note',
   pipelineNeedsProject: 'Create or pick a series first',
@@ -766,7 +769,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateHeading: 'Generate here',
   generatePromptLabel: 'Prompt',
   generatePromptPlaceholder: 'Describe the shot you want…',
-  generateShortcutHint: '⌘/Ctrl + Enter to generate',
   generateImage: 'Generate image',
   generateVideo: 'Generate video',
   generating: 'Generating…',
@@ -774,7 +776,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateDone: 'Generated and filed as an asset',
   generateFailed: 'Generation failed',
   generateNeedsProject: 'Pick a series at the top first, otherwise the result cannot be filed.',
-  generateCostHint: 'Runs against the effective parameters — this is a real provider call.',
 
   modeWorkflow: 'Workflow',
   modeTimeline: 'Timeline',
@@ -784,7 +785,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   panePreview: 'Preview',
   paneTasks: 'Tasks',
   paneHealth: 'Library health',
-  emptyHint: 'Series, assets, the task ledger and a runnable node canvas are all available.',
   healthChecking: 'Connecting to host…',
   healthFailed: 'Host unavailable',
   panePlanned: 'Not runnable yet — planned for a later phase',
@@ -968,14 +968,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   kindStyle: 'Style',
   kindVoice: 'Voice',
   brandTagline: 'Media production workbench',
-  modeQuickHint: 'Generate images or videos straight from the composer. Once a file lands in the local output directory, file it into the active series from the Media assets panel in one click.',
   statOutputs: 'Outputs',
   statAssets: 'Assets',
   statTasks: 'Tasks',
   statResources: 'Resources',
-  createStepChat: 'Generate in chat',
-  createStepOutputs: 'Lands in outputs',
-  createStepFile: 'File into series',
   generateParamAuto: 'Auto (use current defaults)',
   generateImageModel: 'Image model',
   generateVideoModel: 'Video model',
@@ -992,8 +988,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateFailureClearRefs: 'Clear references',
   generateFailureDurationApplied: 'Duration shortened — try again',
   generateFailureRefsCleared: 'References cleared — try again',
-  generateRiskBlocked: 'This prompt fails compliance checks — generation is disabled',
-  generateRiskWarn: 'Prompt flagged as risky — the provider may reject it',
   assetSearchPlaceholder: 'Search name / prompt / model',
   storageUsageLabel: 'Local outputs',
   storageUsageFiles: 'files',
@@ -1081,6 +1075,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   diagRefresh: 'Refresh',
 
   generateRefsLabel: 'Reference images (ordered)',
+  generateRefsPreviewHint: 'Click the thumbnail or the filename to preview it',
+  pipelineModeVideoToVideo: 'Video → video (recreate)',
+  pipelineToCanvas: 'Build canvas',
+  pipelineToCanvasHint: 'Only lays the shots out on the canvas — nothing starts until you run it there',
+  pipelineInlineRun: 'Generate here',
+  pipelineInlineRunHint: 'Generates shot by shot right here, without opening the canvas',
+  pipelineShotDuration: 'Shot seconds',
+  pipelineVideoToVideoNeedsRef: 'Video → video needs a reference clip first',
+  pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
+  modelDetails: 'Model details',
+  fusionEntry: 'Compose with series looks',
+  fusionEntryHint: 'Pick roles, scenes and props — they are turned into one prompt',
+  defaultsBuiltinSource: 'Built-in',
+  defaultsFollow: 'Follow default',
+  defaultSeriesName: 'First series',
+  videoSlotsTitle: 'Video only (last frame / reference clip / real person / continuation)',
   generateRefsHint: 'First = base image, the rest = style / face references. Up to 6 — drag a chip or use the arrows to reorder.',
   generateRefsAdd: 'Add selected asset',
   generateRefsFull: 'At most 6 reference images',
@@ -1495,18 +1505,16 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   sectionProject: '剧集',
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
   pipelineCardTitle: '剧本与生成设置',
-  pipelineHint: '粘贴剧本，宿主自动拆成分镜并生成一条可直接跑的画布流水线。',
   pipelineScriptLabel: '剧本',
   pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
   pipelineModeImageToVideo: '图生视频',
   pipelineModeTextToVideo: '文生视频',
   pipelineShots: '分镜数',
   pipelineDuration: '每镜秒数',
-  pipelineRun: '一键生成',
   pipelineRunning: '执行中…',
   pipelineStarted: '已起跑',
-  pipelineCompose: '仅编排（零花费）',
-  pipelineComposed: '流水线已保存（未起跑）',
+  pipelineCompose: '生成分镜',
+  pipelineComposed: '分镜已生成，可在下面逐条修改',
   pipelineShotsCount: '个分镜',
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个剧集',
@@ -1570,7 +1578,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateHeading: '直接生成',
   generatePromptLabel: '提示词',
   generatePromptPlaceholder: '描述你想要的画面…',
-  generateShortcutHint: '⌘/Ctrl + Enter 生成',
   generateImage: '生成图片',
   generateVideo: '生成视频',
   generating: '生成中…',
@@ -1578,7 +1585,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateDone: '已生成，并登记为剧集素材',
   generateFailed: '生成失败',
   generateNeedsProject: '先在顶部选一个剧集，生成结果才好归档。',
-  generateCostHint: '按当前生效参数真实调用服务商（会产生费用）。',
 
   modeWorkflow: '专业工作流',
   modeTimeline: '时间轴精剪',
@@ -1588,7 +1594,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   panePreview: '预览',
   paneTasks: '任务',
   paneHealth: '素材库体检',
-  emptyHint: '剧集、素材、资源与任务账本已可用；「专业工作流」模式里是可直接运行的节点画布。',
   healthChecking: '正在连接宿主…',
   healthFailed: '宿主未就绪',
   panePlanned: '暂不可运行——排在后续阶段',
@@ -1772,14 +1777,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   kindStyle: '风格',
   kindVoice: '音色',
   brandTagline: '媒体创作工作台',
-  modeQuickHint: '在中间对话区直接出图或出片；产物落在本机输出目录后，可在「媒体素材」面板一键登记进当前剧集。',
   statOutputs: '输出产物',
   statAssets: '媒体素材',
   statTasks: '生成任务',
   statResources: '创作资源',
-  createStepChat: '对话区生成',
-  createStepOutputs: '落入输出目录',
-  createStepFile: '登记进剧集',
   generateParamAuto: '自动（跟随当前生效值）',
   generateImageModel: '图像模型',
   generateVideoModel: '视频模型',
@@ -1796,8 +1797,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateFailureClearRefs: '清空参考',
   generateFailureDurationApplied: '已把时长改成较短的档位，再试一次',
   generateFailureRefsCleared: '已清空参考图/参考视频，再试一次',
-  generateRiskBlocked: '这段提示词过不了合规校验，生成已停用',
-  generateRiskWarn: '提示词有风险，可能被上游拒绝',
   assetSearchPlaceholder: '搜索文件名 / 提示词 / 模型',
   storageUsageLabel: '本地产物',
   storageUsageFiles: '个文件',
@@ -1885,6 +1884,22 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   diagRefresh: '刷新',
 
   generateRefsLabel: '参考图（按序）',
+  generateRefsPreviewHint: '点击缩略图或文件名，在预览里看这张图',
+  pipelineModeVideoToVideo: '视频生视频（复刻）',
+  pipelineToCanvas: '生成画布',
+  pipelineToCanvasHint: '只把分镜铺到画布，不开始生成；你在画布确认后再点生成',
+  pipelineInlineRun: '就地生成',
+  pipelineInlineRunHint: '不跳画布，直接按分镜逐镜出图 / 出视频',
+  pipelineShotDuration: '本镜时长(秒)',
+  pipelineVideoToVideoNeedsRef: '视频生视频要先选一段参考视频',
+  pipelineShotEditable: '分镜可以逐条改内容与时长',
+  modelDetails: '模型详情',
+  fusionEntry: '用剧集设定拼画面',
+  fusionEntryHint: '多选角色 / 场景 / 道具，自动拼成一段提示词',
+  defaultsBuiltinSource: '内置默认',
+  defaultsFollow: '跟随默认',
+  defaultSeriesName: '三视剧集',
+  videoSlotsTitle: '视频专用（尾帧 / 参考视频 / 真人 / 续写）',
   generateRefsHint: '首图=底图，其余为风格/脸部参考；最多 6 张，可拖拽 chip 或用箭头排序。',
   generateRefsAdd: '加入选中素材',
   generateRefsFull: '最多 6 张参考图',

@@ -202,19 +202,32 @@ async function composePipeline(
   warnings: string[]
   missingResources: string[]
   matchedResources: Array<{ name: string; resourceId: string; kind: string }>
+  /** `B5`：逐镜明细（时长 / 提示词），界面据此做"可编辑分镜"；旧宿主没有该字段。 */
+  shotDetails: Array<{ index: number; shot: string; duration: number; imagePrompt: string; videoPrompt: string }>
 }> {
   const projectId = text(payload, 'projectId')
   const script = text(payload, 'script')
   const resources = await deps.store.listResources(projectId)
   const styleResource = resources.find(resource => resource.kind === 'style' && (resource.note ?? '') !== '')
+  const rawMode = field(payload, 'mode')
+  const mode = rawMode === 'text-to-video' || rawMode === 'video-to-video' || rawMode === 'image-to-video' ? rawMode : undefined
   const options: PipelineOptions = {
-    ...field(payload, 'mode') === 'text-to-video' ? { mode: 'text-to-video' as const } : field(payload, 'mode') === 'image-to-video' ? { mode: 'image-to-video' as const } : {},
+    ...mode === undefined ? {} : { mode },
     ...optionalNumber(payload, 'shots') === undefined ? {} : { shots: optionalNumber(payload, 'shots') as number },
     ...optionalText(payload, 'imageModel') === undefined ? {} : { imageModel: optionalText(payload, 'imageModel') as string },
     ...optionalText(payload, 'videoModel') === undefined ? {} : { videoModel: optionalText(payload, 'videoModel') as string },
     ...optionalText(payload, 'ratio') === undefined ? {} : { ratio: optionalText(payload, 'ratio') as string },
     ...optionalNumber(payload, 'duration') === undefined ? {} : { duration: optionalNumber(payload, 'duration') as number },
     ...field(payload, 'strictResources') === true ? { strictResources: true } : {},
+    // `B5`：用户在界面改过的逐镜时长（下标对应分镜）；脏值由域层兜底
+    ...Array.isArray(field(payload, 'shotDurations'))
+      ? {
+        shotDurations: (field(payload, 'shotDurations') as unknown[])
+          .filter((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry)),
+      }
+      : {},
+    // `B2` 视频生视频（复刻）：参考视频路径
+    ...optionalText(payload, 'referenceVideo') === undefined ? {} : { referenceVideo: optionalText(payload, 'referenceVideo') as string },
     ...optionalText(payload, 'styleNote') === undefined
       ? styleResource?.note === undefined ? {} : { styleNote: styleResource.note }
       : { styleNote: optionalText(payload, 'styleNote') as string },
@@ -247,6 +260,8 @@ async function composePipeline(
     warnings: [...draft.diagnostics.warnings],
     missingResources: [...draft.diagnostics.missingResources],
     matchedResources: draft.diagnostics.matchedResources.map(entry => ({ ...entry })),
+    // `shots` 这个字段历史上是"分镜数"（number），不能占用；逐镜明细单独给
+    shotDetails: draft.shots.map(shot => ({ ...shot })),
   }
 }
 

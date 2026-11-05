@@ -144,13 +144,13 @@ describe('F2 multi-reference selector (B-1)', () => {
     await waitFor(() => { expect(view.container.querySelectorAll('[data-generate-ref]')).toHaveLength(0) })
   })
 
-  it('stops at six references and says so', async () => {
-    const { host, view } = renderWithImages(7)
-    for (let index = 0; index < 7; index += 1) {
+  it('stops at eight references and says so (2026-11-05 上限 6 → 8)', async () => {
+    const { host, view } = renderWithImages(9)
+    for (let index = 0; index < 9; index += 1) {
       fireEvent.click(await screen.findByRole('button', { name: `${en.referenceAsset} ref-${index}.png` }))
     }
-    // 第 7 张被拒：仍然 6 枚 chip，并给出提示
-    await waitFor(() => { expect(view.container.querySelectorAll('[data-generate-ref]')).toHaveLength(6) })
+    // 第 9 张被拒：仍然 8 枚 chip，并给出提示
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-generate-ref]')).toHaveLength(8) })
     expect(noticeText()).toContain(en.generateRefsFull)
     expect(host.calls).toContain('assets/list')
   })

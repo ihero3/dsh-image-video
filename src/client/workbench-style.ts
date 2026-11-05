@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-04.3'
+export const WORKBENCH_STYLE_VERSION = '2026-11-05.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -246,6 +246,20 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-def b{font-weight:var(--iv-fw-medium);color:var(--iv-tx);font-variant-numeric:tabular-nums}
 .iv-row{flex-wrap:wrap}
 .iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
+/* 生成动作行：两个按钮等宽等大（用户要求：防止点错），生成中就地变「取消生成」 */
+.iv-gen-actions{display:flex;gap:var(--iv-sp-4);min-width:0}
+.iv-gen-btn{flex:1 1 0;min-width:0;justify-content:center}
+/* 参考图 chip 的"缩略图 + 文件名"预览按钮：名字本身认不出图，点一下就能看 */
+.iv-ref-open{display:inline-flex;align-items:center;gap:var(--iv-sp-2);min-width:0;max-width:220px;
+  padding:1px 4px;border:1px solid transparent;border-radius:var(--iv-r-sm);background:transparent;
+  color:var(--iv-tx);font:inherit;cursor:pointer}
+.iv-ref-open:hover{border-color:var(--iv-line-2);background:var(--iv-panel-3)}
+/* 视频专用块：默认收起（生图时全是无效控件），风格低调 */
+.iv-vonly{border:1px dashed color-mix(in srgb,var(--iv-line) 80%,transparent);border-radius:var(--iv-r);
+  padding:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
+.iv-vonly[open]{padding-bottom:var(--iv-sp-3)}
+.iv-vonly-head{cursor:pointer;font-size:var(--iv-fs-meta);color:var(--iv-tx3);user-select:none}
+.iv-vonly-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding-top:var(--iv-sp-3);min-width:0}
 .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
@@ -256,6 +270,20 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* 工作台/composer 改过的值用动作色点出来，和"设置里的默认"一眼可分 */
 .iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
 .iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
+/* 生成动作行：两个按钮等宽等大（用户要求：防止点错），生成中就地变「取消生成」 */
+.iv-gen-actions{display:flex;gap:var(--iv-sp-4);min-width:0}
+.iv-gen-btn{flex:1 1 0;min-width:0;justify-content:center}
+/* 参考图 chip 的"缩略图 + 文件名"预览按钮：名字本身认不出图，点一下就能看 */
+.iv-ref-open{display:inline-flex;align-items:center;gap:var(--iv-sp-2);min-width:0;max-width:220px;
+  padding:1px 4px;border:1px solid transparent;border-radius:var(--iv-r-sm);background:transparent;
+  color:var(--iv-tx);font:inherit;cursor:pointer}
+.iv-ref-open:hover{border-color:var(--iv-line-2);background:var(--iv-panel-3)}
+/* 视频专用块：默认收起（生图时全是无效控件），风格低调 */
+.iv-vonly{border:1px dashed color-mix(in srgb,var(--iv-line) 80%,transparent);border-radius:var(--iv-r);
+  padding:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
+.iv-vonly[open]{padding-bottom:var(--iv-sp-3)}
+.iv-vonly-head{cursor:pointer;font-size:var(--iv-fs-meta);color:var(--iv-tx3);user-select:none}
+.iv-vonly-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding-top:var(--iv-sp-3);min-width:0}
 .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}

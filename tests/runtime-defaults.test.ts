@@ -1,7 +1,8 @@
 /**
  * 运行时默认值测试：store 内存语义、风格后缀拼接、POST 协议校验、
  * 回环路由 handler（真实 node:http + fetch，对齐 media-route.test.ts 模式）
- * 与注册安全边界（非 127.0.0.1 不注册）。
+ * 与注册安全边界（非 127.0.0.1 不注册）；另含「用户可见六项永不未设置」的
+ * 内置兜底（BUILT_IN_DEFAULTS）与展示字段清单（DISPLAY_DEFAULT_KEYS）。
  *
  * @module dsh-image-video/tests/runtime-defaults
  */
@@ -11,21 +12,28 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   applyImageStyle,
+  BUILT_IN_DEFAULTS,
   createDefaultsRouteHandler,
   createRuntimeDefaultsStore,
   DEFAULTS_ROUTE_PATH,
+  DISPLAY_DEFAULT_KEYS,
   extractPersistedDefaults,
   IMAGE_SIZE_OPTIONS,
   IMAGE_STYLE_OPTIONS,
+  MAX_VIDEO_DURATION,
+  MIN_VIDEO_DURATION,
   MODEL_FAMILY_RULES,
   MULTI_FRAME_CAPABLE_MODELS,
   parseDefaultsPatch,
+  PROVIDERS,
   registerDefaultsRoute,
   resolveDefaultsSources,
   resolveDefaultsView,
   resolveModelCandidates,
+  VIDEO_ASPECT_RATIOS,
 } from '../src/runtime-defaults.ts'
 import type { Config, Provider } from '../src/config.ts'
+import type { PersistedDefaultsView } from '../src/runtime-defaults.ts'
 import type { MediaWebServer } from '../src/media-route.ts'
 
 describe('运行时默认值存储', () => {
@@ -50,6 +58,87 @@ describe('运行时默认值存储', () => {
     store.patch({ imageSize: '1280*720', imageStyle: 'anime' })
     store.reset()
     expect(store.get()).toEqual({})
+  })
+})
+
+describe('内置兜底默认值（BUILT_IN_DEFAULTS）', () => {
+  it('六项用户可见字段的内置值与 A4 规格一致', () => {
+    expect(BUILT_IN_DEFAULTS).toEqual({
+      imageProvider: 'threevideo',
+      // A4 写的是 1:1；协议层尺寸串 = IMAGE_SIZE_OPTIONS 里 1:1 的 size
+      imageSize: '1024*1024',
+      // A4 写的是「摄影」；IMAGE_STYLE_OPTIONS 里 label=摄影 的 id 是 photo
+      imageStyle: 'photo',
+      videoProvider: 'threevideo',
+      videoAspectRatio: '9:16',
+      videoDuration: 10,
+    })
+  })
+
+  it('内置值都能通过协议层校验（不是手写的野值）', () => {
+    expect(PROVIDERS).toContain(BUILT_IN_DEFAULTS.imageProvider)
+    expect(PROVIDERS).toContain(BUILT_IN_DEFAULTS.videoProvider)
+    expect(IMAGE_SIZE_OPTIONS.find((option) => option.id === '1:1')?.size).toBe(BUILT_IN_DEFAULTS.imageSize)
+    expect(IMAGE_STYLE_OPTIONS.find((option) => option.id === BUILT_IN_DEFAULTS.imageStyle)?.label).toBe('摄影')
+    expect(VIDEO_ASPECT_RATIOS).toContain(BUILT_IN_DEFAULTS.videoAspectRatio)
+    expect(BUILT_IN_DEFAULTS.videoDuration).toBeGreaterThanOrEqual(MIN_VIDEO_DURATION)
+    expect(BUILT_IN_DEFAULTS.videoDuration).toBeLessThanOrEqual(MAX_VIDEO_DURATION)
+    // 六个值原样回灌 POST 协议也必须被接受（否则界面选不回默认值）
+    expect(parseDefaultsPatch({ ...BUILT_IN_DEFAULTS }).ok).toBe(true)
+  })
+
+  it('无人配置时直接解析出可用组合（六项永不「未设置」）', () => {
+    const view = resolveDefaultsView(createRuntimeDefaultsStore())
+    for (const key of DISPLAY_DEFAULT_KEYS) {
+      expect(view[key], `${key} 不应为 null（未设置）`).not.toBeNull()
+      expect(view[key]).toEqual(BUILT_IN_DEFAULTS[key])
+    }
+    // mediaMode 不参与兜底：null 就是文本模式，不编一个"默认输入模式"
+    expect(view.mediaMode).toBeNull()
+  })
+
+  it('兜底在最后一级：settings 持久默认与运行时覆盖都优先', () => {
+    const store = createRuntimeDefaultsStore()
+    const persisted: PersistedDefaultsView = { imageProvider: 'wanx', videoDuration: 6 }
+    const fromSettings = resolveDefaultsView(store, persisted)
+    expect(fromSettings.imageProvider).toBe('wanx')
+    expect(fromSettings.videoDuration).toBe(6)
+    expect(fromSettings.imageSize).toBe(BUILT_IN_DEFAULTS.imageSize)
+    expect(fromSettings.imageStyle).toBe(BUILT_IN_DEFAULTS.imageStyle)
+
+    store.patch({ imageProvider: 'seedance', imageStyle: 'anime' })
+    const overridden = resolveDefaultsView(store, persisted)
+    expect(overridden.imageProvider).toBe('seedance')
+    expect(overridden.imageStyle).toBe('anime')
+    expect(overridden.videoDuration).toBe(6) // 覆盖不影响其它字段
+    expect(overridden.videoAspectRatio).toBe(BUILT_IN_DEFAULTS.videoAspectRatio)
+  })
+
+  it('DISPLAY_DEFAULT_KEYS = 六项、顺序即界面顺序、不含 mediaMode', () => {
+    expect([...DISPLAY_DEFAULT_KEYS]).toEqual([
+      'imageProvider',
+      'imageSize',
+      'imageStyle',
+      'videoProvider',
+      'videoAspectRatio',
+      'videoDuration',
+    ])
+    // mediaMode 不是用户可配参数（输入形式本来就都合法），只保留字段兼容
+    expect((DISPLAY_DEFAULT_KEYS as ReadonlyArray<string>).includes('mediaMode')).toBe(false)
+    // 兜底表恰好覆盖展示字段，不多不少：将来加字段却忘了兜底会在这里挂
+    expect(Object.keys(BUILT_IN_DEFAULTS).sort()).toEqual([...DISPLAY_DEFAULT_KEYS].sort())
+  })
+})
+
+describe('视频宽高比白名单（VIDEO_ASPECT_RATIOS）', () => {
+  it('含 16:9 / 9:16 / 1:1 / 3:4 / 4:3，顺序固定', () => {
+    expect([...VIDEO_ASPECT_RATIOS]).toEqual(['16:9', '9:16', '1:1', '3:4', '4:3'])
+  })
+
+  it('3:4 / 4:3 可通过 POST 校验，白名单外仍被拒', () => {
+    expect(parseDefaultsPatch({ videoAspectRatio: '3:4' }).ok).toBe(true)
+    expect(parseDefaultsPatch({ videoAspectRatio: '4:3' }).ok).toBe(true)
+    expect(parseDefaultsPatch({ videoAspectRatio: '21:9' }).ok).toBe(false)
   })
 })
 
@@ -249,9 +338,11 @@ describe('POST 协议校验', () => {
     expect(parseDefaultsPatch({ imageStyle: 'oil' }).ok).toBe(false)
   })
 
-  it('videoAspectRatio 仅接受 16:9 / 9:16 / 1:1', () => {
+  it('videoAspectRatio 仅接受白名单比例（含 3:4 / 4:3）', () => {
     expect(parseDefaultsPatch({ videoAspectRatio: '16:9' }).ok).toBe(true)
-    expect(parseDefaultsPatch({ videoAspectRatio: '4:3' }).ok).toBe(false)
+    expect(parseDefaultsPatch({ videoAspectRatio: '3:4' }).ok).toBe(true)
+    expect(parseDefaultsPatch({ videoAspectRatio: '4:3' }).ok).toBe(true)
+    expect(parseDefaultsPatch({ videoAspectRatio: '21:9' }).ok).toBe(false)
   })
 
   it('videoDuration 仅接受 1-30 整数', () => {
@@ -291,21 +382,21 @@ describe('defaults 路由 handler', () => {
     })
   })
 
-  it('GET 初始返回七字段全 null 视图', async () => {
+  it('GET 初始返回内置兜底视图：六项非 null，mediaMode 仍为 null', async () => {
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       mediaMode: null,
-      imageProvider: null,
-      imageSize: null,
-      imageStyle: null,
-      videoProvider: null,
-      videoAspectRatio: null,
-      videoDuration: null,
+      imageProvider: 'threevideo',
+      imageSize: '1024*1024',
+      imageStyle: 'photo',
+      videoProvider: 'threevideo',
+      videoAspectRatio: '9:16',
+      videoDuration: 10,
     })
   })
 
-  it('POST 合法写入后 GET 读回覆盖值', async () => {
+  it('POST 合法写入后 GET 读回覆盖值，未覆盖的字段落到内置兜底', async () => {
     const post = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -314,16 +405,16 @@ describe('defaults 路由 handler', () => {
     expect(post.status).toBe(200)
     expect(await post.json()).toEqual({
       mediaMode: null,
-      imageProvider: null,
-      imageSize: null,
+      imageProvider: 'threevideo',
+      imageSize: '1024*1024',
       imageStyle: 'anime',
-      videoProvider: null,
-      videoAspectRatio: null,
+      videoProvider: 'threevideo',
+      videoAspectRatio: '9:16',
       videoDuration: 8,
     })
   })
 
-  it('POST null 清除覆盖', async () => {
+  it('POST null 清除覆盖后回落内置兜底（不是「未设置」）', async () => {
     await fetch(`${base}${DEFAULTS_ROUTE_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -331,7 +422,7 @@ describe('defaults 路由 handler', () => {
     })
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     const view = await res.json() as Record<string, unknown>
-    expect(view.imageStyle).toBeNull()
+    expect(view.imageStyle).toBe('photo')
     expect(view.videoDuration).toBe(8)
   })
 
@@ -362,11 +453,11 @@ describe('defaults 路由 handler', () => {
   })
 })
 
-describe('defaults 路由合并视图（override ?? settings 持久默认）', () => {
+describe('defaults 路由合并视图（override ?? settings 持久默认 ?? 内置兜底）', () => {
   let server: Server
   let base: string
   const store = createRuntimeDefaultsStore()
-  const persisted = { imageProvider: 'wanx', videoDuration: 6 }
+  const persisted: PersistedDefaultsView = { imageProvider: 'wanx', videoDuration: 6 }
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -385,16 +476,16 @@ describe('defaults 路由合并视图（override ?? settings 持久默认）', (
     })
   })
 
-  it('GET 无覆盖时回落 settings 持久默认', async () => {
+  it('GET 无覆盖时回落 settings 持久默认，其余字段用内置兜底', async () => {
     const res = await fetch(`${base}${DEFAULTS_ROUTE_PATH}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       mediaMode: null,
       imageProvider: 'wanx',
-      imageSize: null,
-      imageStyle: null,
-      videoProvider: null,
-      videoAspectRatio: null,
+      imageSize: '1024*1024',
+      imageStyle: 'photo',
+      videoProvider: 'threevideo',
+      videoAspectRatio: '9:16',
       videoDuration: 6,
     })
   })
@@ -451,9 +542,9 @@ describe('defaults 路由注册安全边界', () => {
 })
 
 describe('默认值来源标注（resolveDefaultsSources）', () => {
-  it('区分运行时覆盖 / settings 持久默认 / 都没有', () => {
+  it('区分运行时覆盖 / settings 持久默认 / 内置兜底（none）', () => {
     const store = createRuntimeDefaultsStore()
-    const persisted = { imageProvider: 'wanx' as const, videoDuration: 6 }
+    const persisted: PersistedDefaultsView = { imageProvider: 'wanx', videoDuration: 6 }
     expect(resolveDefaultsSources(store, persisted)).toEqual({
       mediaMode: 'none',
       imageProvider: 'settings',
@@ -480,14 +571,23 @@ describe('默认值来源标注（resolveDefaultsSources）', () => {
     expect(resolveDefaultsSources(store, persisted).imageProvider).toBe('settings')
   })
 
-  it('与生效视图同源：有值一定有来源，null 一定是 none', () => {
+  it('与生效视图同源：none 对六项展示字段 = 内置兜底而非「未设置」', () => {
     const store = createRuntimeDefaultsStore()
-    const persisted = { imageSize: '1024*1024' as const }
+    const persisted: PersistedDefaultsView = { imageSize: '1024*1024' }
     store.patch({ imageStyle: 'photo', videoAspectRatio: '9:16' })
     const view = resolveDefaultsView(store, persisted)
     const sources = resolveDefaultsSources(store, persisted)
-    for (const key of Object.keys(view) as Array<keyof typeof view>) {
-      expect(sources[key] === 'none', `${key} 的来源与取值不一致`).toBe(view[key] === null)
+
+    // mediaMode 没有内置兜底：none ↔ null（文本模式）
+    expect(sources.mediaMode).toBe('none')
+    expect(view.mediaMode).toBeNull()
+
+    for (const key of DISPLAY_DEFAULT_KEYS) {
+      expect(view[key], `${key} 不应为 null（未设置）`).not.toBeNull()
+      // 来源只解释层级：none 时值一定等于内置兜底
+      if (sources[key] === 'none') expect(view[key]).toEqual(BUILT_IN_DEFAULTS[key])
+      if (sources[key] === 'settings') expect(view[key]).toEqual(persisted[key])
+      if (sources[key] === 'override') expect(view[key]).not.toBeNull()
     }
   })
 })
