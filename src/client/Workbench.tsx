@@ -509,7 +509,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  /**
+   * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
+   * 收起就把整块内容一起藏起来（③ 默认收起，因为它是低频高级工具）。
+   */
+  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; advanced: boolean }>({ pipeline: true, quick: true, advanced: false })
+  const toggleModule = (key: 'pipeline' | 'quick' | 'advanced'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
   // `T9` 分镜 → 一键成片直通：把剧本「推」给 PipelineCard。
   // 用递增 seq 包一层，保证**同一段脚本连点两次也能再次触发**（value 变化才触发 effect）。
   const [pipelineInject, setPipelineInject] = useState<{ seq: number; script: string } | undefined>(undefined)
@@ -2542,13 +2547,24 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <div className="iv-modules" data-quick-modules="true">
                   {/* 模块 1：剧本成片（一键成片）——"一段剧本，自动拆成分镜并出图出片" */}
                   <section className="iv-module" data-module="pipeline">
-                    <div className="iv-module-head">
+                    <button
+                      type="button"
+                      className="iv-module-head"
+                      data-module-toggle="pipeline"
+                      aria-expanded={openModules.pipeline}
+                      aria-label={`${openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')} · ${t('modulePipeline')}`}
+                      onClick={() => { toggleModule('pipeline') }}
+                    >
                       <span className="iv-module-n">1</span>
-                      <div className="iv-module-text">
-                        <h3 className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</h3>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</span>
                         <span className="iv-meta">{t('modulePipelineDesc')}</span>
-                      </div>
-                    </div>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
+                    </button>
+                    <div className="iv-module-body" data-module-body="pipeline" hidden={!openModules.pipeline}>
                   <PipelineCard
                     api={apiRef.current}
                     t={t}
@@ -2770,17 +2786,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </div>
                       </div>
                   </details>
+                    </div>
                   </section>
 
                   {/* 模块 2：单条生成（快速创作）——"一句话出一张图或一条视频" */}
                   <section className="iv-module" data-module="quick">
-                    <div className="iv-module-head">
+                    <button
+                      type="button"
+                      className="iv-module-head"
+                      data-module-toggle="quick"
+                      aria-expanded={openModules.quick}
+                      aria-label={`${openModules.quick ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleQuick')}`}
+                      onClick={() => { toggleModule('quick') }}
+                    >
                       <span className="iv-module-n">2</span>
-                      <div className="iv-module-text">
-                        <h3 className="iv-module-title" data-module-title="quick">{t('moduleQuick')}</h3>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="quick">{t('moduleQuick')}</span>
                         <span className="iv-meta">{t('moduleQuickDesc')}</span>
-                      </div>
-                    </div>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.quick ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
+                    </button>
+                    <div className="iv-module-body" data-module-body="quick" hidden={!openModules.quick}>
                   <div className="iv-create">
                     {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
                         不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
@@ -3413,30 +3441,31 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </div>
                       </div>
                     </details>
+                    </div>
                   </section>
 
                   {/* 模块 3：高级设置（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力）——默认收起 */}
                   <section className="iv-module iv-module--quiet" data-module="advanced">
-                    <div className="iv-module-head">
-                      <span className="iv-module-n">3</span>
-                      <div className="iv-module-text">
-                        <h3 className="iv-module-title" data-module-title="advanced">{t('moduleAdvanced')}</h3>
-                        <span className="iv-meta">{t('moduleAdvancedDesc')}</span>
-                      </div>
-                    </div>
-                    {/* `T8` 高级抽屉开关：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起，
-                        让「提示词 → 参数 → 生成 → 结果」在主视线内闭环（右栏默认档约 575px 宽）。 */}
                     <button
                       type="button"
-                      className="iv-btn iv-btn--ghost iv-btn--sm iv-advanced-toggle"
+                      className="iv-module-head"
+                      data-module-toggle="advanced"
                       data-advanced-toggle="true"
-                      aria-expanded={advancedOpen}
-                      onClick={() => { setAdvancedOpen(open => !open) }}
+                      aria-expanded={openModules.advanced}
+                      aria-label={`${openModules.advanced ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleAdvanced')}`}
+                      onClick={() => { toggleModule('advanced') }}
                     >
-                      <Icon name='chevron' size={11} />
-                      {advancedOpen ? t('advancedCollapse') : t('advancedExpand')}
+                      <span className="iv-module-n">3</span>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="advanced">{t('moduleAdvanced')}</span>
+                        <span className="iv-meta">{t('moduleAdvancedDesc')}</span>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.advanced ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
                     </button>
-                    <div className="iv-advanced" data-advanced-open={advancedOpen ? 'true' : 'false'} hidden={!advancedOpen}>
+                    <div className="iv-module-body iv-advanced" data-module-body="advanced"
+                      data-advanced-open={openModules.advanced ? 'true' : 'false'} hidden={!openModules.advanced}>
                     {/* `B-9` 融合生图（G3）：选角色/场景/物品 → 参考图预览 → 调 media/compose */}
                     {/* `B-10` 提示词工坊（G1）：选中图片 → 提取 → 编辑 → 入库 → 带入表单 */}
                     <div className="iv-prompt-studio" data-prompt-studio="true">

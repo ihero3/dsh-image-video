@@ -75,17 +75,18 @@ describe('高级抽屉（T8）', () => {
     })
   })
 
-  it('开关文案随状态切换（展开/收起）', async () => {
+  it('模块③ 的开关文案随状态切换（展开/收起，与模块①② 同一套）', async () => {
     const { view } = renderQuick()
     const toggle = await waitFor(() => {
       const node = view.container.querySelector('[data-advanced-toggle]') as HTMLButtonElement
       expect(node).toBeTruthy()
       return node
     })
-    expect(toggle.textContent).toContain(en.advancedExpand)
+    // 2026-11-05：收起/展开挪到模块标题行最右，文案和模块①② 统一为「展开 / 收起」
+    expect(toggle.textContent).toContain(en.moduleExpand)
     fireEvent.click(toggle)
     await waitFor(() => {
-      expect((view.container.querySelector('[data-advanced-toggle]') as HTMLElement).textContent).toContain(en.advancedCollapse)
+      expect((view.container.querySelector('[data-advanced-toggle]') as HTMLElement).textContent).toContain(en.moduleCollapse)
     })
   })
 })

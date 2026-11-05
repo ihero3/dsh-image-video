@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-05.1'
+export const WORKBENCH_STYLE_VERSION = '2026-11-05.4'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -448,7 +448,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   border-radius:var(--iv-r-sm);border:1px solid var(--iv-line);background:var(--iv-panel-2);
   font-family:var(--iv-mono);
   font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:pre-wrap;word-break:break-word;flex-basis:100%}
-.iv-advanced-toggle{align-self:flex-start;margin-top:var(--iv-sp-4)}
 .iv-advanced{display:flex;flex-direction:column;gap:var(--iv-sp-6);margin-top:var(--iv-sp-4);
   padding-top:var(--iv-sp-5);border-top:1px solid var(--iv-line)}
 .iv-advanced[hidden]{display:none}
@@ -479,11 +478,25 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-modules > .iv-module:first-child{padding-top:0;border-top:0}
 /* 高级设置：默认收起，用虚线分隔强调"可以不管它"，仍然不填底色 */
 .iv-module--quiet{border-top-style:dashed}
-.iv-module-head{display:flex;align-items:flex-start;gap:var(--iv-sp-4);min-width:0}
+/* 模块标题行整行可点：收起/展开不只靠右边那枚小按钮（用户 2026-11-05）
+   —— 用 <button> 承载整行，所以要把按钮默认样式清干净，只保留布局 */
+.iv-module-head{display:flex;align-items:flex-start;gap:var(--iv-sp-4);min-width:0;width:100%;
+  padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.iv-module-head:hover .iv-module-title{color:var(--iv-acc)}
+.iv-module-head:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px;border-radius:var(--iv-r-sm)}
 .iv-module-n{flex:none;width:18px;height:18px;border-radius:var(--iv-r-pill);display:inline-flex;align-items:center;
   justify-content:center;font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-medium);
   color:var(--iv-acc);background:var(--iv-acc-soft);margin-top:1px}
 .iv-module-text{display:grid;gap:var(--iv-sp-1);min-width:0}
+/* 模块内容容器：收起时用 hidden 属性整块隐藏（不是卸载，避免状态丢失） */
+.iv-module-body{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0}
+/* 模块级收起/展开：贴在标题行最右（用户要求"对齐最右边"） */
+.iv-module-toggle{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:var(--iv-sp-2);
+  padding:2px 8px;border:1px solid var(--iv-line);border-radius:var(--iv-r-pill);background:transparent;
+  color:var(--iv-tx3);font:inherit;font-size:var(--iv-fs-meta);cursor:pointer}
+.iv-module-toggle:hover{border-color:var(--iv-line-2);color:var(--iv-tx);background:var(--iv-panel-3)}
+.iv-module-toggle .iv-ico{transition:transform .16s ease}
+.iv-module-toggle[aria-expanded="false"] .iv-ico{transform:rotate(-90deg)}
 .iv-module-title{margin:0;font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);
   color:var(--iv-tx);line-height:1.35}
 .iv-create{display:flex;flex-direction:column;gap:var(--iv-sp-6)}

@@ -89,7 +89,6 @@ interface InlineRow {
  */
 export function PipelineCard(props: PipelineCardProps) {
   const { api, t, projectId, injectScript } = props
-  const [open, setOpen] = useState(true)
   const [script, setScript] = useState('')
   // `T9`：外部注入的剧本变化时覆盖（空串不覆盖，避免把用户正在写的内容清掉）
   useEffect(() => {
@@ -398,20 +397,6 @@ export function PipelineCard(props: PipelineCardProps) {
 
   return (
     <div className="iv-card" data-pipeline-card="true">
-      <button
-        type="button"
-        className="iv-card-head"
-        data-pipeline-toggle="true"
-        aria-expanded={open}
-        onClick={() => setOpen(current => !current)}
-      >
-        <Icon name="bolt" size={13} />
-        <strong>{t('pipelineCardTitle')}</strong>
-        <span className="iv-meta" style={{ marginLeft: 'auto' }}>{open ? '−' : '+'}</span>
-      </button>
-
-      {open
-        ? (
           <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
             <span className="iv-meta">{t('pipelineScriptLabel')}</span>
             {/* `B1`：6 行高——一整段剧本粘贴进来不用先滚才看得全 */}
@@ -804,8 +789,6 @@ export function PipelineCard(props: PipelineCardProps) {
                 </div>
               )}
           </div>
-        )
-        : null}
     </div>
   )
 }

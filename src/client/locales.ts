@@ -45,6 +45,8 @@ export type WorkbenchLocaleKey =
   | 'moduleQuickDesc'
   | 'moduleAdvanced'
   | 'moduleAdvancedDesc'
+  | 'moduleCollapse'
+  | 'moduleExpand'
   | 'modeWorkflow'
   | 'modeTimeline'
   | 'paneAssets'
@@ -269,8 +271,6 @@ export type WorkbenchLocaleKey =
   | 'previewSentReference'
   | 'previewSentLastFrame'
   | 'previewSentReferenceVideo'
-  | 'advancedExpand'
-  | 'advancedCollapse'
   | 'storyboardToPipeline'
   | 'storyboardToPipelineHint'
   | 'storyboardSentToPipeline'
@@ -492,7 +492,6 @@ export type WorkbenchLocaleKey =
   | 'segTotal'
   | 'segJump'
   | 'pipelineTitle'
-  | 'pipelineCardTitle'
   | 'pipelineScriptLabel'
   | 'pipelineScriptPlaceholder'
   | 'pipelineModeImageToVideo'
@@ -695,7 +694,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   guideDescription: 'Series, media assets and generation tasks for image and video work.',
   sectionProject: 'Series',
   pipelineTitle: 'One-click film: script → shots → image → video',
-  pipelineCardTitle: 'Script & generation settings',
   pipelineScriptLabel: 'Script',
   pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
   pipelineModeImageToVideo: 'Image → video',
@@ -736,6 +734,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   moduleQuickDesc: 'Type one prompt to get a single image or a single clip.',
   moduleAdvanced: 'Advanced',
   moduleAdvancedDesc: 'Fusion generation, prompt workshop, shot list and model details — collapsed by default.',
+  moduleCollapse: 'Collapse',
+  moduleExpand: 'Expand',
   templateQuickImage: 'Quick image',
   templateQuickVideo: 'Quick video',
   templateStoryboard: 'Storyboard',
@@ -1006,8 +1006,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   previewSentReference: 'Added to reference images',
   previewSentLastFrame: 'Set as last frame',
   previewSentReferenceVideo: 'Set as reference video',
-  advancedExpand: 'More tools: fusion · prompt studio · storyboard · model cards',
-  advancedCollapse: 'Collapse',
   storyboardToPipeline: 'Build pipeline',
   storyboardToPipelineHint: 'Turn the current storyboard into a script for One-click compose (no re-pasting)',
   storyboardSentToPipeline: 'Storyboard script sent to One-click compose',
@@ -1504,7 +1502,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   guideDescription: '图片与视频创作的剧集、媒体素材与生成任务。',
   sectionProject: '剧集',
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
-  pipelineCardTitle: '剧本与生成设置',
   pipelineScriptLabel: '剧本',
   pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
   pipelineModeImageToVideo: '图生视频',
@@ -1542,9 +1539,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modulePipeline: '剧本 → 成片',
   modulePipelineDesc: '贴一段剧本：自动拆成分镜，再逐镜出图、出视频。',
   moduleQuick: '一句话出一镜',
-  moduleQuickDesc: '写一句提示词，出一条图或一条视频。',
+  moduleQuickDesc: '写一句提示词，出一张图或一段视频。',
   moduleAdvanced: '高级设置',
   moduleAdvancedDesc: '融合生图、提示词工坊、分镜与模型能力——默认收起，需要时再展开。',
+  moduleCollapse: '收起',
+  moduleExpand: '展开',
   templateQuickImage: '快速出图',
   templateQuickVideo: '快速出片',
   templateStoryboard: '图文分镜',
@@ -1815,8 +1814,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   previewSentReference: '已加入参考图',
   previewSentLastFrame: '已设为尾帧',
   previewSentReferenceVideo: '已设为参考视频',
-  advancedExpand: '展开高级（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡）',
-  advancedCollapse: '收起高级',
   storyboardToPipeline: '编排成流水线',
   storyboardToPipelineHint: '把当前分镜表组装成剧本，交给「一键成片」编排（不用重新粘剧本）',
   storyboardSentToPipeline: '已把分镜脚本送入一键成片',

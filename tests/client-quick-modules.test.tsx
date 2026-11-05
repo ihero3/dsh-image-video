@@ -71,4 +71,45 @@ describe('快速创作页 · 模块化分区', () => {
     await waitFor(() => { expect((advanced.querySelector('[data-advanced-open]') as HTMLElement).hasAttribute('hidden')).toBe(false) })
     expect(advanced.querySelector('[data-prompt-studio]')).toBeTruthy()
   })
+
+  it('collapses a whole module from the toggle at the far right of its header (2026-11-05)', async () => {
+    const { view } = await renderQuick()
+    const body = (key: string): HTMLElement => view.container.querySelector(`[data-module-body="${key}"]`) as HTMLElement
+    const toggle = (key: string): HTMLElement => view.container.querySelector(`[data-module-toggle="${key}"]`) as HTMLElement
+
+    // 默认展开
+    expect(body('pipeline').hasAttribute('hidden')).toBe(false)
+    expect(body('quick').hasAttribute('hidden')).toBe(false)
+    expect(toggle('pipeline').getAttribute('aria-expanded')).toBe('true')
+
+    // 收起模块①：整块内容（剧本卡 + 手动分镜）一起藏起来
+    fireEvent.click(toggle('pipeline'))
+    await waitFor(() => { expect(body('pipeline').hasAttribute('hidden')).toBe(true) })
+    expect(toggle('pipeline').getAttribute('aria-expanded')).toBe('false')
+    expect(toggle('pipeline').textContent).toContain(en.moduleExpand)
+    // 另一个模块不受影响
+    expect(body('quick').hasAttribute('hidden')).toBe(false)
+
+    // 模块② 同理
+    fireEvent.click(toggle('quick'))
+    await waitFor(() => { expect(body('quick').hasAttribute('hidden')).toBe(true) })
+
+    // 再点回来
+    fireEvent.click(toggle('pipeline'))
+    await waitFor(() => { expect(body('pipeline').hasAttribute('hidden')).toBe(false) })
+  })
+
+  it('clicking anywhere on the module header row toggles it (2026-11-05)', async () => {
+    const { view } = await renderQuick()
+    const head = view.container.querySelector('[data-module-toggle="quick"]') as HTMLButtonElement
+    const body = view.container.querySelector('[data-module-body="quick"]') as HTMLElement
+    // 整行就是一个 button：点标题文字区域（不是右边那枚小胶囊）也要能收起
+    expect(head.tagName).toBe('BUTTON')
+    const title = head.querySelector('[data-module-title="quick"]') as HTMLElement
+    fireEvent.click(title)
+    await waitFor(() => { expect(body.hasAttribute('hidden')).toBe(true) })
+    expect(head.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(title)
+    await waitFor(() => { expect(body.hasAttribute('hidden')).toBe(false) })
+  })
 })
