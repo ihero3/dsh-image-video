@@ -112,4 +112,35 @@ describe('快速创作页 · 模块化分区', () => {
     fireEvent.click(title)
     await waitFor(() => { expect(body.hasAttribute('hidden')).toBe(false) })
   })
+
+  it('keeps 模型详情 at shell level, collapsed by default, between params and the notice (2026-11-06)', async () => {
+    // 需要参数条存在（它只在宿主给了 defaults 时渲染），所以这里单独造 host
+    const host = fakeApi({
+      defaults: {
+        mediaMode: null, imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
+        videoProvider: 'threevideo', videoAspectRatio: '9:16', videoDuration: 10,
+      },
+    })
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '模型详情位置',
+      createdAt: '2026-11-06T00:00:00.000Z', updatedAt: '2026-11-06T00:00:00.000Z',
+    } as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-details]')).toBeTruthy() })
+    const details = view.container.querySelector('[data-model-details]') as HTMLDetailsElement
+    // ① 在壳层级（不属于任何模块）
+    expect(details).toBeTruthy()
+    expect(view.container.querySelector('[data-module] [data-model-details]')).toBeNull()
+    // ② 位置：参数条之后、创建面板之前（"引用到提示词"提示条就在这两者之间）
+    const params = view.container.querySelector('[data-workbench-defaults]') as HTMLElement
+    const pane = view.container.querySelector('[data-workbench-pane="paneCreate"]') as HTMLElement
+    expect(params.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(details.compareDocumentPosition(pane) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // ③ 默认收起，点标题展开、再点收起（行为与原来一致）
+    expect(details.open).toBe(false)
+    fireEvent.click(details.querySelector('summary') as HTMLElement)
+    await waitFor(() => { expect(details.open).toBe(true) })
+    fireEvent.click(details.querySelector('summary') as HTMLElement)
+    await waitFor(() => { expect(details.open).toBe(false) })
+  })
 })

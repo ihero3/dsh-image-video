@@ -2453,6 +2453,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           </div>
         )}
 
+      {/* ============ 模型能力（公共信息：跟着生效参数展示，不归某个模块）============ */}
+      {/* 用户 2026-11-06：模型详情属"当前生效参数"的延伸，放到参数条与提示条之间；
+          仍是默认收起、点一下展开、再点收起（用原生 <details>，行为与之前完全一致）。 */}
+      <details className="iv-shell-details" data-model-details="true">
+        <summary className="iv-shell-details-head">
+          <Icon name="sliders" size={11} />{t('modelDetails')}
+        </summary>
+        <div className="iv-shell-details-body">
+          {/* `B-6` 模型能力卡：可用模型 / 擅长 / 关键限制 / 实时校验徽章 / 刷新 */}
+          <ModelCardsPanel api={apiRef.current} t={t} />
+        </div>
+      </details>
+
       {/* ============ 提示条 ============ */}
       {notice === undefined ? null : (
         <p className={`iv-notice${notice.tone === 'error' ? ' iv-notice--error' : ''}`}>
@@ -3079,13 +3092,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ))}
                         </select>
                       </div>
-                      <details className="iv-vonly" data-model-details="true">
-                        <summary className="iv-vonly-head">{t('modelDetails')}</summary>
-                        <div className="iv-vonly-body">
-                          {/* `B-6` 模型能力卡：跟着"选模型"放在一起（原来埋在高级抽屉最底下） */}
-                          <ModelCardsPanel api={apiRef.current} t={t} />
-                        </div>
-                      </details>
                       <div className="iv-model-row" data-generate-models="true">
                         <span className="iv-meta">{t('generateImageModel')}：</span>
                         <ModelPicker
