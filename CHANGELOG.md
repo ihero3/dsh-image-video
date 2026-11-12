@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [1.0.3-workbench-81] - 2026-11-12
+
+### 修「开关已打开、界面里没有入口」（2026-11-12）
+
+用户反馈：装好插件、「已安装插件」里开关已打开，但左栏没有入口，也没有任何报错。
+
+- **根因**：旧右栏 tab 的类型注册被包在 `ctx.effect(() => ctx.sidebarRightTabs.register(...))` 里。注册表内部会向它所属 fiber 添加 effect，而在另一个插件 apply 的活动 effect 作用域里做这件事，会让浏览器启动无报错地卡住（`ui-sidebar-right` 的 apply 注释写明了这条）；表现就是入口不出现。现在 register 在 apply 顶层调用，disposer 单独交给 `ctx.effect` 托管。
+- **旧右栏服务改为可选**：`sidebarRightTabs` 移出 cordis `inject`，用 `ctx.get` 判断后再注册。宿主没装右栏、或未来移除该服务时，左栏入口与主面板照常出现（旧布局记录只是不再迁移）。
+- 测试：`client-lifecycle` +1（右栏服务缺失时仍注册左栏入口与主面板）、注入清单断言更新；`manifest-contract` 的「服务 → 客户端包」表同步。
+
 ## [1.0.2-workbench-80] - 2026-11-12
 
 ### 按 0.3.1 用户排障报告修正错误提示与升级说明（2026-11-12）

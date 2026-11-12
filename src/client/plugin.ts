@@ -73,8 +73,15 @@ const NS = 'image-video-workbench' as const
 /** 供测试钉住"入口字面量 == chunk 侧常量"（入口与 chunk 不能共享模块）。 */
 export const WORKBENCH_LOCALE_NS = NS
 
-/** Required services（cordis fiber inject）。 */
-export const inject = ['slots', 'locale', 'sidebarRightTabs', 'connection']
+/**
+ * Required services（cordis fiber inject）。
+ *
+ * 旧右栏 tab 用的 `sidebarRightTabs` **不在这里**：它只服务「旧布局记录迁移」，
+ * 缺了它也必须让左栏入口正常出现（宿主关掉右栏、或未来版本移除该服务时，
+ * 把整条插件 fiber 挂在这里等一个永远不会到的服务，表现就是「开关已打开、
+ * 界面上没有任何入口」且没有任何报错）。
+ */
+export const inject = ['slots', 'locale', 'connection']
 
 /**
  * 注册主面板、左栏入口与旧 tab 的迁移页。
@@ -138,11 +145,23 @@ export function apply(ctx: ClientContext): void {
   }, WorkbenchPanelIcon))
 
   // ③ 旧右栏 tab：保留类型，body 换成「已迁移」（不挂第二份工作台）
-  ctx.effect(() => ctx.sidebarRightTabs.register({
-    id: LEGACY_TAB_ID,
-    kind: LEGACY_TAB_KIND,
-    title: () => t('tabTitle'),
-  }), 'image-video-workbench: legacy tab type')
+  //
+  // 只做兼容：注册表缺失（宿主没装右栏 / 未提供该服务）时直接跳过，
+  // 不影响左栏入口与主面板。
+  //
+  // register() 会向注册表所属的 fiber 添加 effect；在另一个插件 apply 的活动
+  // effect 作用域里调用它，会让浏览器启动无报错地卡住（ui-sidebar-right 的
+  // apply 注释写明了这条），表现就是「插件开关已打开、界面上没有入口」。
+  // 因此注册放在 apply 顶层，disposer 单独交给 ctx.effect 托管。
+  const legacyTabs = ctx.get('sidebarRightTabs')
+  if (legacyTabs !== undefined) {
+    const disposeLegacyTab = legacyTabs.register({
+      id: LEGACY_TAB_ID,
+      kind: LEGACY_TAB_KIND,
+      title: () => t('tabTitle'),
+    })
+    ctx.effect(() => disposeLegacyTab, 'image-video-workbench: legacy tab type')
+  }
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: LEGACY_TAB_ID,

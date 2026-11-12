@@ -36,7 +36,6 @@ const clientPackages = manifest.dsh.client.inject
 const SERVICE_PACKAGES: Record<string, string> = {
   slots: '@deepseek-ai/dsh-client-ui-slots',
   locale: '@deepseek-ai/dsh-client-locale',
-  sidebarRightTabs: '@deepseek-ai/dsh-client-ui-sidebar-right',
   connection: '@deepseek-ai/dsh-client-connection',
 }
 

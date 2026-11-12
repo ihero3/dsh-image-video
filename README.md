@@ -421,6 +421,7 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 | DSH 启动报 `cannot find module dsh-image-video` | 若用 `link:` 本地路径安装，改过 `src/` 后需跑 `pnpm run build` 让 `lib/` 与源码同步；从 git/npm 安装无需构建，产物已随包提交 |
 | 生成图片但对话无内嵌渲染 | 确认 profile 包含 `attachment-local`；图片文件始终可在 `outputs/` 查看 |
 | 装了插件但界面里没有入口 / 调用报「没有任何已配置 API Key 的服务商」 | 0.3.x 没有前端产物；1.0.x 请在工作台右上角「连接服务」里填 Key，或在 `cordis.patch.yml` 配 `apiKey` / `apiKeyEnv`。插件加载时也会 warn 这一条 |
+| 「已安装插件」里开关已打开，左栏仍没有入口 | 先确认装的是 1.0.x（0.3.x 没有前端产物）。1.0.2 及更早版本在部分宿主上会因旧右栏服务的注册时机卡住浏览器启动，升级到 **1.0.3** 后重启 DSH 即可 |
 | `模型不可用（HTTP 404）：…未开通该模型` | 该 Key 所属分组没开通这个模型：换 `defaultImageModel` / `defaultVideoModel`（或在调用参数里指定 `model`），或到服务商后台为当前分组开通 |
 | `size is not in the correct format` | 百炼接口要求 `*` 分隔（如 `1024*1024`），不是 `x`；插件已自动转换 |
 

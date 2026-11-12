@@ -43,7 +43,7 @@ interface PanelEntryOptions {
 /** 旧 tab 的类型定义。 */
 interface TabDefinition { id: string; kind: string; title: () => string }
 
-function stubContext() {
+function stubContext({ withRightTabs = true }: { withRightTabs?: boolean } = {}) {
   const disposers: Array<() => void> = []
   const unregisterTab = vi.fn()
   const unregisterLocale = vi.fn()
@@ -73,8 +73,7 @@ function stubContext() {
     // 座位注入面在注册时会构造客户端 API；迁移页的 layout 是懒取的，给 undefined 即可
     get: (name: string) => (name === 'connection'
       ? { rpc: { call: async () => ({ ok: true as const, value: {} }) } }
-      : undefined),
-    sidebarRightTabs: { register: registerTab },
+      : name === 'sidebarRightTabs' && withRightTabs ? { register: registerTab } : undefined),
     slots: { inject: slotsInject, register: registerSeat },
   }
   return {
@@ -93,7 +92,7 @@ describe('workbench browser half', () => {
     const stub = stubContext()
     apply(stub.ctx)
 
-    expect(inject).toEqual(['slots', 'locale', 'sidebarRightTabs', 'connection'])
+    expect(inject).toEqual(['slots', 'locale', 'connection'])
     // N5：入口只注册壳文案；界面字典由 chunk 加载后交回来注册
     expect(stub.localeRegister).toHaveBeenCalledWith(CHROME_NS, { zh: chromeZh, en: chromeEn })
     // 入口用字面量、chunk 用 locale-ns.ts：两处必须一致（共享模块会被切成 chunk，不能共享）
@@ -153,6 +152,15 @@ describe('workbench browser half', () => {
     expect(stub.componentFor('sidebar.right.pane.tab')).toBe(RelocatedNotice)
     const seat = stub.slotsInject.mock.calls.find(call => call[0] === 'sidebar.right.pane.tab')
     expect(seat).toBeTruthy()
+  })
+
+  it('keeps the sidebar entry when the right-pane service is absent', () => {
+    const stub = stubContext({ withRightTabs: false })
+    // 旧右栏注册表缺失不能让整条 fiber 等死：apply 不抛错，左栏入口与主面板照常注册
+    expect(() => apply(stub.ctx)).not.toThrow()
+    expect(stub.registerTab).not.toHaveBeenCalled()
+    expect(stub.panelEntry()?.id).toBe(PANEL_ID)
+    expect(stub.componentFor('main')).toBe(WorkbenchSeat)
   })
 
   it('lifts every registration on teardown', () => {
