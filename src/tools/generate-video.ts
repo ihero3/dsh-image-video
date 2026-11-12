@@ -9,7 +9,7 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { ApiKeyResolver, Config, Provider } from '../config.ts'
+import type { ApiKeyResolver, NormalizedConfig, Provider } from '../config.ts'
 import { hasConfiguredCredentials, resolveProviderCredentials } from '../config.ts'
 import type { RuntimeDefaultsStore } from '../runtime-defaults.ts'
 import { resolveModelCandidates, MULTI_FRAME_CAPABLE_MODELS, REFERENCE_VIDEO_CAPABLE_MODELS } from '../runtime-defaults.ts'
@@ -31,7 +31,7 @@ const MAX_VIDEO_DURATION = 30
 
 /** 工具依赖。 */
 export interface GenerateVideoDeps {
-  config: Config
+  config: NormalizedConfig
   taskManager: TaskManager
   /** 运行时默认值存储：composer 热更新覆盖值优先于 settings 持久值。 */
   runtimeDefaults: RuntimeDefaultsStore

@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [1.0.4-workbench-82] - 2026-11-12
+
+### 修 0.3.x 旧配置升级后「启用失败」（2026-11-12）
+
+用户反馈：同事装完插件打开开关即报异常，截图里的版本是 **v0.3.1**，报错为
+`ValidationError: invalid config: $provider expected "threerouter" ... but got "threevideo" (at provider)`。
+
+- **原因两层**：① 装的不是最新版（0.3.1 没有前端界面，配置里已是新 id `threevideo`，而 0.3.1 的 schema 只认旧 id `threerouter`，于是加载校验直接失败）；② 1.0.0–1.0.3 反过来只认新 id，0.3.x 留在 patch 里的 `provider: threerouter` 与 `threerouter: { apiKey }` 会在升级后报同样的错。
+- **兼容旧命名**：`provider` / `defaultImageProvider` / `defaultVideoProvider` 同时接受 `threerouter`，`apply()` 开头统一归一为 `threevideo`（`normalizeConfig`），下游只面对当前 id；旧凭证块 `threerouter` 并入 `threevideo`，新块里已填的字段优先、未填字段（含 `baseURL`）继承旧块。升级用户无需手改配置。
+- 测试：`tests/config.test.ts` +6（三个服务商字段归一、留空不改写、旧凭证块并入、新旧并存优先级、空配置不变、归一后可直接解析旧 Key）。
+
 ## [1.0.3-workbench-81] - 2026-11-12
 
 ### 修「开关已打开、界面里没有入口」（2026-11-12）

@@ -27,7 +27,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ApiKeyResolver, Config, Provider } from '../config.ts'
+import type { ApiKeyResolver, NormalizedConfig, Provider } from '../config.ts'
 import { randomUUID } from 'node:crypto'
 import { applyImageWatermark } from '../watermark.ts'
 import { hasConfiguredCredentials, resolveProviderCredentials } from '../config.ts'
@@ -69,7 +69,7 @@ import type { MediaSaveResult } from '../media.ts'
  * 不在执行体内部运行时 `ctx.get` 读取——依赖关系在构造时即明确。
  */
 export interface GenerateImageDeps {
-  config: Config
+  config: NormalizedConfig
   taskManager: TaskManager
   attachments: AttachmentStore
   ctx: Context

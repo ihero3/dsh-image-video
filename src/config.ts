@@ -9,6 +9,15 @@ import z from '@deepseek-ai/schemastery'
 /** 支持的生成服务商。minimax 为 MiniMax 官方平台直连（仅视频），threevideo 为聚合器（所有模型）。 */
 export type Provider = 'threevideo' | 'wanx' | 'minimax' | 'seedance'
 
+/**
+ * 0.3.x 使用的聚合器 id。1.0 起改名为 `threevideo`；配置里仍接受旧值，
+ * 加载时归一，避免升级用户一开开关就报 ValidationError。
+ */
+export type LegacyProvider = 'threerouter'
+
+/** 配置里服务商字段的合法取值（含旧 id）。 */
+export type ProviderField = Provider | LegacyProvider
+
 /** 单个服务商的凭证与自定义接口地址。 */
 export interface ProviderCredentials {
   /** 服务商 API Key；切换 provider 后对应 key 立即生效。 */
@@ -63,10 +72,15 @@ export interface WatermarkConfig {
 import type { TtsSettings } from './media/tts.ts'
 
 export interface Config {
-  /** 当前激活的服务商，切换后立即生效（HMR）。 */
-  provider: Provider
+  /** 当前激活的服务商，切换后立即生效（HMR）。旧值 `threerouter` 会在加载时归一为 `threevideo`。 */
+  provider: ProviderField
   /** Threevideo 凭证；provider=threevideo 时使用（支持图片+视频）。 */
   threevideo: ProviderCredentials
+  /**
+   * 0.3.x 的聚合器凭证块（旧 id `threerouter`）。仅用于升级兼容：加载时并入
+   * `threevideo`，新块里已填的字段优先。
+   */
+  threerouter?: ProviderCredentials
   /** 万象（wanx）凭证；provider=wanx 时使用。 */
   wanx: ProviderCredentials
   /** MiniMax 官方平台凭证；provider=minimax 时使用（图片与视频）。 */
@@ -74,9 +88,9 @@ export interface Config {
   /** Seedance2.5 凭证；provider=seedance 时使用。 */
   seedance: ProviderCredentials
   /** 默认图片服务商；留空跟随激活服务商。 */
-  defaultImageProvider: '' | Provider
+  defaultImageProvider: '' | ProviderField
   /** 默认视频服务商；留空跟随激活服务商，adapter 使用其内置默认模型。 */
-  defaultVideoProvider: '' | Provider
+  defaultVideoProvider: '' | ProviderField
   /** 默认图片模型；留空使用 adapter 内置默认模型。 */
   defaultImageModel: string
   /** 默认视频模型；留空使用 adapter 内置默认模型。 */
@@ -126,13 +140,14 @@ const ProviderCredentialsSchema: z<ProviderCredentials> = z.object({
 
 /** 插件配置 schema，默认服务商为 threevideo（图片+视频统一入口），wanx/seedance 可选。 */
 export const Config: z<Config> = z.object({
-  provider: z.union(['threevideo', 'wanx', 'minimax', 'seedance']).default('threevideo').description('激活的生成服务商'),
+  provider: z.union(['threevideo', 'threerouter', 'wanx', 'minimax', 'seedance']).default('threevideo').description('激活的生成服务商（旧值 threerouter 等价于 threevideo）'),
   threevideo: ProviderCredentialsSchema.default({ apiKey: '' }).description('Threevideo 凭证（默认服务商，聚合器）'),
+  threerouter: ProviderCredentialsSchema.description('0.3.x 旧聚合器凭证块；仅升级兼容，加载时并入 threevideo（新块已填字段优先）'),
   wanx: ProviderCredentialsSchema.default({ apiKey: '' }).description('万象（wanx）凭证'),
   minimax: ProviderCredentialsSchema.default({ apiKey: '' }).description('MiniMax 官方平台凭证（仅视频）'),
   seedance: ProviderCredentialsSchema.default({ apiKey: '' }).description('Seedance2.5 凭证'),
-  defaultImageProvider: z.union(['', 'threevideo', 'wanx', 'minimax', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
-  defaultVideoProvider: z.union(['', 'threevideo', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
+  defaultImageProvider: z.union(['', 'threevideo', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认图片服务商，留空跟随激活服务商'),
+  defaultVideoProvider: z.union(['', 'threevideo', 'threerouter', 'wanx', 'minimax', 'seedance']).default('').description('默认视频服务商，留空跟随激活服务商'),
   defaultImageModel: z.string().default('').description('默认图片模型，留空使用服务商内置默认模型'),
   defaultVideoModel: z.string().default('').description('默认视频模型，留空使用服务商内置默认模型'),
   defaultImageSize: z.string().default('3:4').description('默认图片尺寸/比例，如 3:4（qwen/wan 系自动换算为宽*高，threevideo/方舟换算为宽x高）'),
@@ -247,6 +262,53 @@ export async function resolveProviderCredentials(
 }
 
 /**
+ * 归一后的插件配置：服务商字段已收窄为当前 id，旧凭证块已并入 `threevideo`。
+ * 插件入口用它替代原始配置传给下游，下游因此不再需要处理旧 id。
+ */
+export interface NormalizedConfig extends Omit<Config, 'provider' | 'defaultImageProvider' | 'defaultVideoProvider'> {
+  provider: Provider
+  defaultImageProvider: '' | Provider
+  defaultVideoProvider: '' | Provider
+}
+
+/**
+ * 把配置里的服务商名归一到当前 id。
+ * @param value - 配置值，可能是 0.3.x 的旧 id `threerouter`。
+ * @returns 当前服务商 id。
+ */
+export function normalizeProviderName(value: ProviderField): Provider {
+  return value === 'threerouter' ? 'threevideo' : value
+}
+
+/**
+ * 把 0.3.x 的旧命名归一到当前命名：`threerouter` → `threevideo`，旧凭证块
+ * 并入 `threevideo`（新块里已填的字段优先）。升级用户的 patch 里可能还留着旧值，
+ * 不归一会在加载时直接 ValidationError，表现为「打开开关就报异常」。
+ * @param config - 通过 schema 校验的配置（可能含旧 id 与旧凭证块）。
+ * @returns 服务商 id 与凭证块都按当前命名归一后的配置。
+ */
+export function normalizeConfig(config: Config): NormalizedConfig {
+  return {
+    ...config,
+    provider: normalizeProviderName(config.provider),
+    defaultImageProvider: config.defaultImageProvider === '' ? '' : normalizeProviderName(config.defaultImageProvider),
+    defaultVideoProvider: config.defaultVideoProvider === '' ? '' : normalizeProviderName(config.defaultVideoProvider),
+    threevideo: mergeLegacyCredentials(config.threevideo, config.threerouter),
+  }
+}
+
+/** 旧凭证块并入新块：逐字段取新块的非空值，其余继承旧块。 */
+function mergeLegacyCredentials(current: ProviderCredentials, legacy: ProviderCredentials | undefined): ProviderCredentials {
+  if (legacy === undefined) return current
+  const baseURL = (current.baseURL ?? '').trim() === '' ? legacy.baseURL : current.baseURL
+  return {
+    apiKey: current.apiKey.trim() === '' ? legacy.apiKey : current.apiKey,
+    apiKeyEnv: (current.apiKeyEnv ?? '').trim() === '' ? (legacy.apiKeyEnv ?? '') : current.apiKeyEnv,
+    ...(baseURL === undefined || baseURL.trim() === '' ? {} : { baseURL }),
+  }
+}
+
+/**
  * 解析当前激活服务商的凭证，校验非空。配置错误在首次调用时响亮失败。
  * @param config - 已校验的插件配置。
  * @param resolveApiKey - 按引用名解析凭证值的回调。
@@ -257,7 +319,7 @@ export async function resolveActiveProvider(
   config: Config,
   resolveApiKey: ApiKeyResolver,
 ): Promise<{ provider: Provider; apiKey: string; baseURL: string }> {
-  return resolveProviderCredentials(config, config.provider, resolveApiKey)
+  return resolveProviderCredentials(config, normalizeProviderName(config.provider), resolveApiKey)
 }
 
 /** 服务商默认接口地址。 */

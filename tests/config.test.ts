@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Config, hasConfiguredCredentials, resolveActiveProvider } from '../src/config.ts'
+import { Config, hasConfiguredCredentials, normalizeConfig, resolveActiveProvider } from '../src/config.ts'
 
 describe('Config Schema', () => {
   it('空对象 → 全部使用默认值（默认 provider=threevideo）', () => {
@@ -50,11 +50,12 @@ describe('Config Schema', () => {
     expect(Config({ watermark: { enabled: false } }).watermark.enabled).toBe(false)
   })
 
-  it('provider 接受四家服务商，非法值报错', () => {
+  it('provider 接受四家服务商与 0.3.x 的旧 id threerouter，非法值报错', () => {
     expect(() => Config({ provider: 'threevideo' })).not.toThrow()
     expect(() => Config({ provider: 'wanx' })).not.toThrow()
     expect(() => Config({ provider: 'seedance' })).not.toThrow()
     expect(() => Config({ provider: 'minimax' })).not.toThrow()
+    expect(() => Config({ provider: 'threerouter' })).not.toThrow()
     expect(() => Config({ provider: 'other' })).toThrow()
     expect(() => Config({ provider: 123 as unknown as string })).toThrow()
   })
@@ -174,5 +175,59 @@ describe('resolveActiveProvider 凭证解析', () => {
     expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: 'sk' } }), 'threevideo')).toBe(true)
     expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: '', apiKeyEnv: 'THREEVIDEO_API_KEY' } }), 'threevideo')).toBe(true)
     expect(hasConfiguredCredentials(Config({ threevideo: { apiKey: '  ', apiKeyEnv: '  ' } }), 'threevideo')).toBe(false)
+  })
+})
+
+describe('normalizeConfig 旧命名兼容', () => {
+  it('0.3.x 的 provider: threerouter 归一为 threevideo，默认服务商同样归一', () => {
+    const cfg = normalizeConfig(Config({
+      provider: 'threerouter',
+      defaultImageProvider: 'threerouter',
+      defaultVideoProvider: 'threerouter',
+    }))
+    expect(cfg.provider).toBe('threevideo')
+    expect(cfg.defaultImageProvider).toBe('threevideo')
+    expect(cfg.defaultVideoProvider).toBe('threevideo')
+  })
+
+  it('留空与当前 id 原样保留，不改写别的服务商', () => {
+    const cfg = normalizeConfig(Config({ provider: 'wanx' }))
+    expect(cfg.provider).toBe('wanx')
+    expect(cfg.defaultImageProvider).toBe('')
+    expect(cfg.defaultVideoProvider).toBe('')
+  })
+
+  it('旧凭证块 threerouter 并入 threevideo：apiKey 与 baseURL 继承', () => {
+    const cfg = normalizeConfig(Config({
+      provider: 'threerouter',
+      threerouter: { apiKey: 'sk-legacy', baseURL: 'https://legacy.example.com/v1' },
+    }))
+    expect(cfg.threevideo.apiKey).toBe('sk-legacy')
+    expect(cfg.threevideo.baseURL).toBe('https://legacy.example.com/v1')
+  })
+
+  it('新旧凭证块并存时新块已填字段优先，未填字段继承旧块', () => {
+    const cfg = normalizeConfig(Config({
+      threevideo: { apiKey: 'sk-new', apiKeyEnv: 'THREEVIDEO_API_KEY' },
+      threerouter: { apiKey: 'sk-legacy', apiKeyEnv: 'THREEROUTER_API_KEY', baseURL: 'https://legacy.example.com/v1' },
+    }))
+    expect(cfg.threevideo.apiKey).toBe('sk-new')
+    expect(cfg.threevideo.apiKeyEnv).toBe('THREEVIDEO_API_KEY')
+    expect(cfg.threevideo.baseURL).toBe('https://legacy.example.com/v1')
+  })
+
+  it('没有旧凭证块时 threevideo 凭证保持原样（空配置仍为空）', () => {
+    const cfg = normalizeConfig(Config({}))
+    expect(cfg.threevideo.apiKey).toBe('')
+    expect(cfg.threevideo.apiKeyEnv).toBe('')
+    expect(cfg.threevideo.baseURL ?? '').toBe('')
+  })
+
+  it('归一后的配置可直接解析出旧块里的 Key', async () => {
+    const cfg = normalizeConfig(Config({ provider: 'threerouter', threerouter: { apiKey: 'sk-legacy' } }))
+    const r = await resolveActiveProvider(cfg, async () => undefined)
+    expect(r.provider).toBe('threevideo')
+    expect(r.apiKey).toBe('sk-legacy')
+    expect(r.baseURL).toBe('https://www.threevideo.com/v1')
   })
 })

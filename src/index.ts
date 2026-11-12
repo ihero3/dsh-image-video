@@ -36,7 +36,7 @@ import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config, hasConfiguredCredentials, resolveActiveProvider } from './config.ts'
+import { Config, hasConfiguredCredentials, normalizeConfig, resolveActiveProvider } from './config.ts'
 import type { ApiKeyResolver } from './config.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Provider } from './config.ts'
@@ -141,9 +141,11 @@ export const inject = ['tools']
  * 内部经 effect 注册，fiber dispose 时自动清理。
  *
  * @param ctx - 插件上下文。
- * @param config - 已由 Schemastery 填充默认值的插件配置。
+ * @param rawConfig - 已由 Schemastery 填充默认值的插件配置（可能含 0.3.x 的旧服务商命名）。
  */
-export function apply(ctx: Context, config: Config): void {
+export function apply(ctx: Context, rawConfig: Config): void {
+  // 旧配置归一（threerouter → threevideo、旧凭证块并入 threevideo）：下游只面对当前命名。
+  const config = normalizeConfig(rawConfig)
   // outputsDir 的**唯一解析点**：相对路径按进程 cwd 解析成绝对路径后，生成/下载/
   // 水印后处理/只读媒体路由全部使用这一个结果。这样「图片到底写到了哪个目录」
   // 有唯一答案，不会再出现模型结果在 A 目录、后处理结果在 B 目录的旁路产物。
