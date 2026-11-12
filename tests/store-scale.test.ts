@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { WorkbenchStore } from '../src/workbench/store.ts'
+import { WORKBENCH_SCHEMA_VERSION } from '../src/workbench/records.ts'
 
 const ASSETS = 10_000
 const PROJECTS = 20
@@ -23,16 +24,16 @@ async function temp(): Promise<string> {
 function seedDocument() {
   const now = Date.UTC(2026, 9, 1)
   const projects = Array.from({ length: PROJECTS }, (_, index) => ({
-    schemaVersion: 2, id: `prj-${index}`, name: `项目 ${index}`,
+    schemaVersion: WORKBENCH_SCHEMA_VERSION, id: `prj-${index}`, name: `项目 ${index}`,
     createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString(),
   }))
   const assets = Array.from({ length: ASSETS }, (_, index) => ({
-    schemaVersion: 2, id: `ast-${index}`, projectId: `prj-${index % PROJECTS}`,
+    schemaVersion: WORKBENCH_SCHEMA_VERSION, id: `ast-${index}`, projectId: `prj-${index % PROJECTS}`,
     name: `素材 ${index}`, path: `outputs/asset-${index}.mp4`, kind: index % 2 === 0 ? 'image' : 'video',
     bytes: 1024, createdAt: new Date(now + index).toISOString(),
   }))
   return {
-    schemaVersion: 2, projects, assets, tasks: [] as never[], resources: [] as never[],
+    schemaVersion: WORKBENCH_SCHEMA_VERSION, projects, assets, tasks: [] as never[], resources: [] as never[],
     workflows: [] as never[], runs: [] as never[], timelines: [] as never[], nodeCache: [] as never[], resourceUsage: [] as never[],
   }
 }

@@ -51,7 +51,9 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-ui-renderer"
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
   },
@@ -78,7 +80,9 @@
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/dsh-client-connection": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-locale": "^0.2.1-alpha.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.1-alpha.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-credentials": "^0.2.1-alpha.1",
@@ -89,13 +93,19 @@
     "@deepseek-ai/cordis": {
       "optional": true
     },
-    "@deepseek-ai/dsh-credentials": {
+    "@deepseek-ai/dsh-client-connection": {
       "optional": true
     },
-    "@deepseek-ai/dsh-llm": {
+    "@deepseek-ai/dsh-client-locale": {
       "optional": true
     },
-    "@deepseek-ai/dsh-tools": {
+    "@deepseek-ai/dsh-client-ui-layout": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-renderer": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-sidebar": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-sidebar-right": {
@@ -104,13 +114,13 @@
     "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-locale": {
+    "@deepseek-ai/dsh-credentials": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-connection": {
+    "@deepseek-ai/dsh-llm": {
       "optional": true
     },
-    "@deepseek-ai/dsh-client-ui-renderer": {
+    "@deepseek-ai/dsh-tools": {
       "optional": true
     }
   },
@@ -125,7 +135,9 @@
     "@deepseek-ai/dsh-client-connection": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-locale": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-test-runtime": "^0.2.1-alpha.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.1-alpha.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.1-alpha.1",
     "@deepseek-ai/dsh-credentials": "^0.2.1-alpha.1",

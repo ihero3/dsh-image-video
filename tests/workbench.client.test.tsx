@@ -816,3 +816,51 @@ describe('workbench project and asset flow', () => {
     expect(failure.textContent).toContain(en.failed)
   })
 })
+
+describe('workbench state across remounts', () => {
+  it('keeps the mode and the half-written prompt after the panel unmounts and comes back (T2)', async () => {
+    const host = fakeApi()
+    const first = render(<Workbench {...clientProps({ api: host.api })} />)
+    await screen.findByText('0.3.1 · threevideo')
+
+    fireEvent.click(screen.getByRole('button', { name: en.modeQuick }))
+    const prompt = screen.getByPlaceholderText(en.generatePromptPlaceholder)
+    fireEvent.change(prompt, { target: { value: '一只在雨里跑的白猫' } })
+    expect((prompt as HTMLTextAreaElement).value).toBe('一只在雨里跑的白猫')
+
+    first.unmount()
+    render(<Workbench {...clientProps({ api: host.api })} />)
+
+    // 主面板是 keyed slot：卸载后组件状态清零，提示词必须从跨挂载 store 里读回来
+    await screen.findByText('0.3.1 · threevideo')
+    expect((screen.getByPlaceholderText(en.generatePromptPlaceholder) as HTMLTextAreaElement).value)
+      .toBe('一只在雨里跑的白猫')
+  })
+})
+
+describe('workbench dock rail', () => {
+  it('点展示列标题整行即可收起，右侧窄条点一下再展开', async () => {
+    const host = fakeApi({
+      defaults: {
+        mediaMode: null, imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
+        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 10,
+      },
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-dock-collapse]')).toBeTruthy() })
+
+    const head = view.container.querySelector('[data-workbench-dock-collapse]') as HTMLElement
+    expect(head.textContent).toContain(en.dockTitle)
+    expect(head.getAttribute('aria-label')).toContain(en.moduleCollapse)
+    fireEvent.click(head)
+
+    const rail = view.container.querySelector('[data-workbench-dock-expand]') as HTMLElement
+    expect(rail).toBeTruthy()
+    expect(rail.getAttribute('aria-label')).toContain(en.moduleExpand)
+    expect(view.container.querySelector('.iv-dock-col--off')).toBeTruthy()
+
+    fireEvent.click(rail)
+    expect(view.container.querySelector('[data-workbench-dock-expand]')).toBeNull()
+    expect(view.container.querySelector('.iv-dock-col--off')).toBeNull()
+  })
+})

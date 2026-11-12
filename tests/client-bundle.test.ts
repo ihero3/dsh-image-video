@@ -100,6 +100,14 @@ describe('client entry bundle (注册壳)', () => {
     expect(Buffer.byteLength(source)).toBeLessThan(120_000)
   })
 
+  it('never requires a package chunk synchronously (only require.async)', () => {
+    // 入口与界面 chunk 共用的模块会被抽成共享 chunk（如 `client.icons.js`）；入口侧要是
+    // 同步 `require` 它，宿主模块表答不上来，整条入口激活失败（桌面端 "1 entry did not activate"）。
+    const pattern = /(?<![\w.])require\((['"])\.\/client\.[^'"]+\.js\1\)/u
+    expect(readFileSync(ENTRY_PATH, 'utf8')).not.toMatch(pattern)
+    expect(readFileSync(CHUNK_PATH, 'utf8')).not.toMatch(pattern)
+  })
+
   it('declares no dsh.client.external (nothing beyond the baseline table)', () => {
     const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
       dsh?: { client?: { external?: string[] } }

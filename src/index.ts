@@ -371,6 +371,8 @@ export function apply(ctx: Context, config: Config): void {
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
       // 打开本地产物目录：只在文件管理器里定位，不删任何东西（人工清理）
       revealOutputs: () => revealDirectory(outputsDir),
+      // 打开技能目录：技能库与 workbench.json 同目录，只唤起文件管理器
+      revealPath: (directory: string) => revealDirectory(directory),
       // 模型能力卡的"实时可用性"：现场问服务商模型目录，失败如实返回原因（不伪造可用）
       probeModels: async () => {
         try {

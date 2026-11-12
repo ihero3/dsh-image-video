@@ -21,6 +21,8 @@ import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
+import { SkillLibrary } from '../workbench/skills.ts'
+import { exportEpisode } from '../workbench/episode-export.ts'
 import { duplicateClip, splitClipAt } from '../workbench/edits.ts'
 import { copyFile } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -33,6 +35,7 @@ import { parseVtt, serializeVtt } from '../workbench/vtt.ts'
 import { findDuplicateAssets } from '../workbench/duplicates.ts'
 import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
+import { createAuthRpcHandler } from './auth.ts'
 import { summarizePreflight } from './assembly.ts'
 import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
@@ -70,6 +73,7 @@ import type { RenderRegistry } from '../media/render-registry.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
 } from '../workbench/records.ts'
+import type { EpisodeRefAction, EpisodeRefInput, SegmentInput } from '../workbench/episodes.ts'
 
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
@@ -143,6 +147,10 @@ export interface WorkbenchRpcDeps {
   defaults?: () => Record<string, string | number | null>
   /** 在系统文件管理器里打开本地产物目录（人工清理用；缺省时界面只显示路径）。 */
   revealOutputs?: () => Promise<RevealResult>
+  /** 在系统文件管理器里打开技能目录（缺省时界面只显示路径）。 */
+  revealPath?: (directory: string) => Promise<RevealResult>
+  /** 双技能库（缺省时按工作台数据目录惰性创建）。 */
+  skills?: SkillLibrary
   /** 现场探测服务商模型目录（`GET /models`）；缺省时能力卡只能标「无法校验」。 */
   probeModels?: () => Promise<ModelRegistryProbe>
   /** 逐字段来源（override / settings / none）；缺省时不带该字段，界面也就不标来源。 */
@@ -278,6 +286,22 @@ function promptLibraryFor(deps: WorkbenchRpcDeps): PromptLibrary {
   return new PromptLibrary({ directory: dirname(deps.outputsDir) })
 }
 
+/** 每个 handler 实例一份技能库，避免每次端点调用都重新读索引。 */
+const skillLibraries = new WeakMap<WorkbenchRpcDeps, SkillLibrary>()
+
+/**
+ * Lazily built skill library bound to the workbench data directory.
+ * @param deps - handler dependencies.
+ * @returns shared library instance.
+ */
+function skillLibraryFor(deps: WorkbenchRpcDeps): SkillLibrary {
+  const existing = deps.skills ?? skillLibraries.get(deps)
+  if (existing !== undefined) return existing
+  const created = new SkillLibrary({ directory: deps.store.directory })
+  skillLibraries.set(deps, created)
+  return created
+}
+
 export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHandler {
   return async (endpoint, payload) => {
     try {
@@ -360,7 +384,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'projects/remove':
       return { removed: await deps.store.removeProject(text(payload, 'id')) }
     case 'assets/list':
-      return { assets: await deps.store.listAssets(text(payload, 'projectId')) }
+      return { assets: await deps.store.listAssets(optionalText(payload, 'projectId')) }
     // `A152`：批量登记素材（「登记全部未登记产物」一次调用，避免 N 次往返）
     case 'assets/attach-many': {
       const projectId = text(payload, 'projectId')
@@ -538,7 +562,121 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'tasks/list': {
       const limit = optionalNumber(payload, 'limit')
       const projectId = optionalText(payload, 'projectId')
-      return { tasks: await deps.store.listTasks(limit ?? undefined, projectId) }
+      const episodeId = optionalText(payload, 'episodeId')
+      return { tasks: await deps.store.listTasks(limit ?? undefined, projectId, episodeId) }
+    }
+    // ---- 集 / 分段 / 分镜（剧集四层结构）----------------------------------------
+    case 'episodes/list':
+      return { episodes: await deps.store.listEpisodes(text(payload, 'projectId')) }
+    case 'episodes/create':
+      return {
+        episode: await deps.store.createEpisode(text(payload, 'projectId'), {
+          ...field(payload, 'no') === undefined ? {} : { no: field(payload, 'no') },
+          ...field(payload, 'title') === undefined ? {} : { title: field(payload, 'title') },
+        }),
+      }
+    case 'episodes/get':
+      return { episode: await deps.store.getEpisode(text(payload, 'id')) }
+    case 'episodes/update':
+      return {
+        episode: await deps.store.updateEpisode(text(payload, 'id'), {
+          ...field(payload, 'title') === undefined ? {} : { title: field(payload, 'title') },
+          ...field(payload, 'remark') === undefined ? {} : { remark: field(payload, 'remark') },
+          ...field(payload, 'script') === undefined ? {} : { script: field(payload, 'script') },
+        }),
+      }
+    case 'episodes/remove':
+      return { removed: await deps.store.deleteEpisode(text(payload, 'id'), field(payload, 'force') === true) }
+    case 'episodes/reorder':
+      return {
+        episodes: await deps.store.reorderEpisodes(text(payload, 'projectId'), stringArray(payload, 'order')),
+      }
+    case 'episodes/resources':
+      return {
+        refs: await deps.store.episodeResources(text(payload, 'id'), episodeRefAction(payload), refInput(payload)),
+      }
+    case 'episodes/assets':
+      return {
+        refs: await deps.store.episodeAssets(text(payload, 'id'), episodeRefAction(payload), refInput(payload)),
+      }
+    case 'segments/list':
+      return { segments: await deps.store.listSegments(text(payload, 'episodeId')) }
+    case 'segments/create':
+      return { segment: await deps.store.createSegment(text(payload, 'episodeId'), segmentInput(payload)) }
+    case 'segments/update':
+      return { segment: await deps.store.updateSegment(text(payload, 'id'), segmentInput(payload)) }
+    case 'segments/remove':
+      return { removed: await deps.store.deleteSegment(text(payload, 'id')) }
+    case 'segments/reorder':
+      return { segments: await deps.store.reorderSegments(text(payload, 'episodeId'), stringArray(payload, 'order')) }
+    case 'storyboards/list':
+      return { storyboards: await deps.store.listStoryboards(text(payload, 'episodeId')) }
+    case 'storyboards/get':
+      return { storyboard: await deps.store.getStoryboard(text(payload, 'id')) }
+    case 'storyboards/save':
+      return {
+        storyboard: await deps.store.upsertStoryboard({
+          ...field(payload, 'id') === undefined ? {} : { id: text(payload, 'id') },
+          ...field(payload, 'episodeId') === undefined ? {} : { episodeId: text(payload, 'episodeId') },
+          segmentId: text(payload, 'segmentId'),
+          ...field(payload, 'skillId') === undefined ? {} : { skillId: field(payload, 'skillId') },
+          shots: field(payload, 'shots') ?? [],
+        }),
+      }
+    case 'storyboards/remove':
+      return { removed: await deps.store.deleteStoryboard(text(payload, 'id')) }
+    case 'episodes/export': {
+      const episodeId = text(payload, 'episodeId')
+      return {
+        export: await exportEpisode({
+          store: deps.store,
+          episodeId,
+          targetDir: join(deps.outputsDir, 'episodes', episodeId),
+        }),
+      }
+    }
+    // ---- 双技能库（导演库 / 逆向库）--------------------------------------------
+    case 'skills/list': {
+      const kind = optionalText(payload, 'kind')
+      return {
+        skills: await skillLibraryFor(deps).list({
+          ...kind === undefined ? {} : { kind },
+          ...field(payload, 'enabled') === true ? { enabledOnly: true } : {},
+        }),
+      }
+    }
+    case 'skills/get':
+      return { skill: await skillLibraryFor(deps).get(text(payload, 'id')) }
+    case 'skills/save':
+      return {
+        skill: await skillLibraryFor(deps).save({
+          ...optionalText(payload, 'id') === undefined ? {} : { id: optionalText(payload, 'id') as string },
+          kind: text(payload, 'kind'),
+          name: text(payload, 'name'),
+          description: optionalText(payload, 'description') ?? '',
+          prompt: text(payload, 'prompt'),
+        }),
+      }
+    case 'skills/import':
+      return {
+        skill: await skillLibraryFor(deps).import({
+          kind: text(payload, 'kind'),
+          source: text(payload, 'source'),
+        }),
+      }
+    case 'skills/toggle': {
+      const enabled = field(payload, 'enabled')
+      if (typeof enabled !== 'boolean') throw new Error('invalid workbench payload: enabled must be a boolean')
+      return { skill: await skillLibraryFor(deps).toggle(text(payload, 'id'), enabled) }
+    }
+    case 'skills/remove':
+      return { removed: await skillLibraryFor(deps).remove(text(payload, 'id')) }
+    case 'skills/reveal': {
+      const directory = await skillLibraryFor(deps).directoryOf(text(payload, 'id'))
+      const reveal = deps.revealPath === undefined
+        ? { ok: false, path: directory, reason: '宿主未装配目录打开能力' }
+        : await deps.revealPath(directory)
+      return { reveal }
     }
     // ---- 工作流文档（阶段 4）----------------------------------------------------
     case 'workflows/list':
@@ -553,6 +691,8 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           edges: field(payload, 'edges') ?? [],
         }),
       }
+    case 'workflows/sync-episode':
+      return { workflow: await deps.store.syncEpisodeWorkflow(text(payload, 'episodeId')) }
     case 'workflows/remove':
       return { removed: await deps.store.removeWorkflow(text(payload, 'id')) }
     // ---- 运行（阶段 4，T4-4）----------------------------------------------------
@@ -978,11 +1118,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const wait = field(payload, 'wait') !== false
       if (!wait && !tracked) throw new Error('非阻塞模式（wait:false）必须传 projectId：否则生成结果无处可查')
       const startedAt = new Date().toISOString()
+      const taskEpisodeId = optionalText(payload, 'episodeId')
+      const taskSegmentId = optionalText(payload, 'segmentId')
+      const taskShotId = optionalText(payload, 'shotId')
       let task: { id: string } | undefined
       if (tracked) {
         task = await deps.store.recordTask({
           kind: mediaMode, status: 'running', provider: deps.provider, prompt,
           projectId, startedAt,
+          ...taskEpisodeId === undefined ? {} : { episodeId: taskEpisodeId },
+          ...taskSegmentId === undefined ? {} : { segmentId: taskSegmentId },
+          ...taskShotId === undefined ? {} : { shotId: taskShotId },
         })
       }
       // `A146`：把这次生成登记进取消表 —— 面板用 `tasks/cancel`（或 `tasks/running` 找到它）就能中断，
@@ -1183,14 +1329,26 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { export: updated }
     }
     // `A-5`：提示词库（独立 JSON 文件，不动项目 schema）
-    case 'prompts/list':
-      return { prompts: await promptLibraryFor(deps).list() }
+    case 'prompts/list': {
+      const projectId = optionalText(payload, 'projectId')
+      const episodeId = optionalText(payload, 'episodeId')
+      return {
+        prompts: await promptLibraryFor(deps).list({
+          ...projectId === undefined ? {} : { projectId },
+          ...episodeId === undefined ? {} : { episodeId },
+        }),
+      }
+    }
     case 'prompts/save': {
+      const projectId = optionalText(payload, 'projectId')
+      const episodeId = optionalText(payload, 'episodeId')
       const prompt = await promptLibraryFor(deps).save({
         ...optionalText(payload, 'id') === undefined ? {} : { id: optionalText(payload, 'id') as string },
         name: text(payload, 'name'),
         text: text(payload, 'text'),
         ...optionalText(payload, 'source') === undefined ? {} : { source: optionalText(payload, 'source') as 'manual' | 'extract' | 'template' },
+        ...projectId === undefined ? {} : { projectId },
+        ...episodeId === undefined ? {} : { episodeId },
       })
       return { prompt }
     }
@@ -1203,8 +1361,16 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         throw new Error('提示词提取需要视觉模型适配器（当前宿主未注入 vision 适配器）；可先用手写提示词，或等宿主接入多模态模型')
       }
       const path = text(payload, 'path')
+      // 逆向库选中的技能正文作为提取指令；未选时用适配器默认口径。
+      const skillId = optionalText(payload, 'skillId')
+      const instructions = skillId === undefined
+        ? undefined
+        : (await skillLibraryFor(deps).get(skillId)).prompt
       const controller = new AbortController()
-      const value = await vision.execute({ image: path }, { signal: controller.signal })
+      const value = await vision.execute(
+        instructions === undefined ? { image: path } : { image: path, instructions },
+        { signal: controller.signal },
+      )
       const outcome = extractOutcome(value)
       if (outcome.outputPath === undefined) throw new Error('视觉模型没有返回提示词结果')
       return { text: outcome.outputPath }
@@ -1529,6 +1695,46 @@ function optionalNumber(payload: unknown, key: string): number | undefined {
   return value
 }
 
+/** Read one required string array field. */
+function stringArray(payload: unknown, key: string): string[] {
+  const value = field(payload, key)
+  if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
+    throw new Error(`invalid workbench payload: ${key} must be a string array`)
+  }
+  return value
+}
+
+/** Read the episode reference action (`list` / `add` / `remove` / `move`). */
+function episodeRefAction(payload: unknown): EpisodeRefAction {
+  const value = field(payload, 'action')
+  if (value === 'list') return 'list'
+  if (value === 'add') return 'add'
+  if (value === 'remove') return 'remove'
+  if (value === 'move') return 'move'
+  throw new Error('invalid workbench payload: action must be list/add/remove/move')
+}
+
+/** Read the optional fields shared by resource and asset references. */
+function refInput(payload: unknown): EpisodeRefInput {
+  return {
+    ...field(payload, 'resourceId') === undefined ? {} : { resourceId: field(payload, 'resourceId') },
+    ...field(payload, 'assetId') === undefined ? {} : { assetId: field(payload, 'assetId') },
+    ...field(payload, 'category') === undefined ? {} : { category: field(payload, 'category') },
+    ...field(payload, 'order') === undefined ? {} : { order: field(payload, 'order') },
+  }
+}
+
+/** Read the optional fields shared by segment create and update. */
+function segmentInput(payload: unknown): SegmentInput {
+  const keys = ['promptText', 'durationSec', 'order', 'imageModel', 'videoModel', 'skillId', 'refs'] as const
+  const input: Record<string, unknown> = {}
+  for (const key of keys) {
+    const value = field(payload, key)
+    if (value !== undefined) input[key] = value
+  }
+  return input
+}
+
 /** Read one field out of an untyped payload. */
 function field(payload: unknown, key: string): unknown {
   if (typeof payload !== 'object' || payload === null) {
@@ -1552,7 +1758,12 @@ export function registerWorkbenchRpc(ctx: Context, deps: WorkbenchRpcDeps): void
     // nothing to lift, so the channel simply never exists.
     if (connection === undefined) return () => {}
     try {
-      const remove = connection.rpc.handle(WORKBENCH_RPC_CHANNEL, createWorkbenchHandler(deps))
+      const workbench = createWorkbenchHandler(deps)
+      // 同一个通道按前缀分流：`auth/*` 走登录闭环 dispatcher，其余仍是工作台端点。
+      // 共用一条通道让浏览器半边只持有一个 ConnectionHandle（凭证明文只在宿主内流转）。
+      const auth = createAuthRpcHandler(ctx)
+      const remove = connection.rpc.handle(WORKBENCH_RPC_CHANNEL, async (endpoint, payload, signal, peer) =>
+        endpoint.startsWith('auth/') ? auth(endpoint, payload) : workbench(endpoint, payload, signal, peer))
       status = { channel: WORKBENCH_RPC_CHANNEL, registered: true, awaiting: false }
       return () => {
         status = { channel: WORKBENCH_RPC_CHANNEL, registered: false, awaiting: false }

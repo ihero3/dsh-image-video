@@ -8,12 +8,19 @@
 | 端点 | 入参 | 出参 | 备注 |
 | --- | --- | --- | --- |
 | `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`options` 是编辑器白名单 |
+| `auth/health` | — | `{ready,credentials,signedIn,email?,username?,balance?,hasKey,keyLast4?,provider,providers[{id,label,settable,testable}]}` | 登录闭环的宿主状态；`credentials:false` 表示宿主管不到凭证缝（登录仍可建立会话，但写不进 Key）；**App 明文永不下发** |
+| `auth/login` | `{email,password,turnstileToken?}` | `{success,email,username,balance,hasKey,keyLast4?,credentialsWritten,affCode?}` | 账号登录 → 自动创建/复用 Key → 写凭证缝；同一条通道按 `auth/` 前缀分流 |
+| `auth/logout` | — | `{success}` | 清本插件的会话记录（`image-video/auth`）并撤销本插件写入的 Key |
+| `auth/profile` | — | `{signedIn,email,username,balance,hasKey,keyLast4?,affCode?}` | 刷新账号资料；未登录时 `auth/not-signed-in` |
+| `auth/set-key` | `{apiKey,provider?,test?}` | `{success,provider,keyLast4,configured}` | 自带 Key 写凭证缝（`test:true` 先探活）；只回末四位 |
+| `auth/test-key` | `{apiKey?,provider?}` | `{valid,testable,reason?}` | 只做连通性测试，不写盘；`testable:false` 表示该服务商没有已知探测端点 |
+| `auth/key-state` | `{provider?}` | `{provider,configured,last4?,source?}` | 脱敏 Key 状态（有没有 / 末四位 / 来源层） |
 | `projects/list` / `create` / `remove` / `rename` | 见 TASKS | project 记录 | 删除会级联资源/时间轴/运行记录 |
 | `assets/probe` | `{path}` | `{path,spec{width?,height?,fps?,durationMs?,hasAudio}}` | `A44` 素材探测：**只允许 outputs 目录内或已登记素材**（防任意路径读取） |
 | `assets/list` / `attach` / `remove` / `quick-add` | — | asset / `{removed}` / `{projectId,asset,timelineId?}` | `remove` 未带 `force` 时对被引用素材报错并列出引用位置；`quick-add` 供对话卡片使用 |
 | `resources/list` / `create` / `remove` / `usage` | — | resource / `{removed}` / `{usage[]}` | 资源含 `scope`（V1 恒为 `project`）与轨迹关键帧 |
 | `tasks/list` / `assign` / `cancel` | — | task 记录 | 取消会真的中止在飞生成 |
-| `workflows/list` / `save` / `remove` / `run` / `runs` / `run-cancel` / `run-retry` | — | — | `run` 默认复用成功结果缓存；`run-retry` 只重跑失败节点及下游 |
+| `workflows/list` / `save` / `remove` / `run` / `runs` / `run-cancel` / `run-retry` / `sync-episode` | — | — | `run` 默认复用成功结果缓存；`run-retry` 只重跑失败节点及下游；`sync-episode` 把一集分镜同步成固定工作流 |
 | `timelines/list` / `save` / `remove` / `render`（`{timelineId,priority?,retryTransient?,thumbnailAtMs?}`（`A126` 封面帧位置）（`A114` 瞬时失败自动重试一次，opt-in）） / `renders`（`{renders,sets}`，`A56` 成片集） / `render-cancel` | — | — | `render` 起导出任务；`renders` 轮询；`render-retry{renderId}` 复用原时间轴与原优先级重跑（`A59`）；`render-cancel` 杀 ffmpeg 并清理半成品；渲染任务带 `progressStep{current,total}`（`A41` 进度细分）、`progressEtaSec`（`A52` 预计剩余秒数，过早不给）；成功后 `summary` 可含 `segmentTimingsMs`/`slowestSegment`（`A57` 各段耗时）；任务成功后带 `summary`（`A37` 产物/规格/轨道概览，加法字段）；配置 `DSH_OUTPUT_MAX_FILES`/`DSH_OUTPUT_MAX_GB` 时摘要还会带 `retention` **建议**（`A38`，只报告不删除）；**轨道支持 `volume`(0–2) 与 `muted`**（A1，导出真实混音）；**`exportFormat`** `{width,height,frameRate(24/25/30/60),bitrateKbps?}` 可存可改，导出按此出片并**实测复核**（A2） |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline 上限：≤2MB / 片段 ≤400（与存储同源）/ 轨道 ≤50） | `{ok,issues[{code,message,trackId?,clipId?}]}` | `A34`+`A45` 一致性预检（含真实时长越界检测）：**未保存文档也能查**（界面拖拽/保存前用） |
 | `presets/list` | — | `{presets[]}`（内置 `custom:false` + 自定义 `custom:true`） | `A31`+`A48` 导出预设 |
@@ -27,15 +34,15 @@
 | `exports/list` | `{projectId?,limit?}` | `{exports[]}` | **`A-11`** 导出历史（独立 `exports.json`，按项目过滤、默认 50 条）|
 | `exports/record` | `{projectId,timelineId}` | `{export}` | **`A-11`** 记录一次导出（初始 `queued`）|
 | `exports/update` | `{id,status?,outputPath?,bytes?,error?,elapsedSeconds?}` | `{export}` | **`A-11`** 更新导出状态/产物/失败原因 |
-| `prompts/list` | `{}` | `{prompts[]}` | **`A-5`** 提示词库（独立 `prompts.json`，不动项目 schema）|
-| `prompts/save` | `{id?,name,text,source?}` | `{prompt}` | **`A-5`** 新增/更新提示词（名称/内容不能为空）|
+| `prompts/list` | `{projectId?,episodeId?}` | `{prompts[]}` | **`A-5`** 提示词库（独立 `prompts.json`，不动项目 schema）；**`episodeId` 只列本集提示词**（集重构 M4）|
+| `prompts/save` | `{id?,name,text,source?,projectId?,episodeId?}` | `{prompt}` | **`A-5`** 新增/更新提示词（名称/内容不能为空）；带 `episodeId` 即落本集提示词库 |
 | `prompts/remove` | `{id}` | `{removed}` | **`A-5`** 删除 |
-| `prompts/extract` | `{path}` | `{text}` | **`A-5`** 图片→提示词；**宿主未注入视觉模型时如实报错**（`R-BND-4` 不伪造）|
+| `prompts/extract` | `{path,skillId?}` | `{text}` | **`A-5`** 图片→提示词；`skillId` 取逆向库技能正文作为提取指令（不传即适配器默认口径）；**宿主未注入视觉模型时如实报错**（`R-BND-4` 不伪造）|
 | `prompts/check` | `{text}` | `{report:{level:ok|warn|block,hits[],advice[]}}` | **`B-6`** 提示词风险校验 |
 | `models/catalog` | `{refresh?: boolean}` | `{cards[],consistencyIssues[],generatedAt,live?}` | **`B-6`** 模型能力卡（与运行时能力常量自检）。`live` = **实时可用性**：`{probe:{attemptedAt,ok,ids[],reason?},targets{cardId:{status:available|missing|unknown,detail?}}}`；`refresh:true` 绕过 60s 缓存，**现场探测服务商 `GET /models`**；探测失败如实返回 `ok:false`+原因，不伪造可用 |
 | `defaults/options` | — | `{options}` | 默认值编辑器白名单（服务商/尺寸/风格/比例/时长范围），与 `health.options` 同源；编辑器打开时现取一次 |
 | `media/compose` | `{projectId,prompt,resourceIds[],size?,model?}` | `{path,asset,referencedImages,resourceIds}` | **`A-4`** 融合生图：按创作资源收集参考图（`assetPaths` 优先，回退 `assetPath`）与描述，一次生成并登记素材；**无生成适配器时如实报错** |
-| `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?,continuation?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）；**`continuation:true` 为显式「续写」意图（`B-4`，视频模式必须有参考视频，宿主校验，不静默降级）** |
+| `media/generate` | `{prompt,mediaMode?,size?,model?,image?,images?,duration?,aspectRatio?,resolution?,projectId?,wait?,continuation?,episodeId?,segmentId?,shotId?}` | `{mediaMode,path,bytes?,asset?,taskId?}` | **`A145`** 工作台内直接生成（复用对话同一对工具；给 `projectId` 时产物自动登记素材并写任务账本；**不自动重试**；**可取消**（`tasks/running` 取 id → `tasks/cancel`，取消后任务落 `cancelled`）；`wait:false` 立即返回 `{pending:true,taskId}`（**必须带 projectId**，视频这类长任务用它避免 RPC 干等）；**`continuation:true` 为显式「续写」意图（`B-4`，视频模式必须有参考视频，宿主校验，不静默降级）**；`episodeId/segmentId/shotId` 为**集归属**（就地生成时写进任务账本） |
 | `media/ffmpeg` | `{path?}` | `{ffmpeg:probe}` | 带 `path` 时严格只查该副本（诊断） |
 | `packages/export` / `import` / `export-resources` / `import-resources` | — | — | 导出**只允许写到 `packages/` 之下**（安全边界）；`A53` 起包格式 **v3**（含自定义预设，导入按名称去重），v1/v2 仍可导入 |
 | `maintenance/integrity` | — | `{integrity}`（`A104` 完整性巡检：悬空素材引用/孤儿记录/悬空资源使用，只报告不修复）|
@@ -78,7 +85,7 @@
 | （示例）`timelines/save` 增加 `track.duckingDb` | 旁白压背景音乐 | `{duckingDb: number}`；导出按 `sidechaincompress` 处理 | 示例 |
 | `media/generate` 转发 `media[]`（每项 `{image?,video?,type?,position?}`）与 `realPerson`（布尔）到 `generate_video` 工具 | 「尾帧图 / 参考视频」槽生效（B-3 客户端已接线，请求体已按 `media:[{image,type:'last_frame'},{video,type:'reference_video'}]` 发送） | 入参在现有 `media/generate` 上加两个字段；宿主原样拼进 `generate_video` 的 `media` 参数即可（工具侧 `last_frame`/`reference_video` 已实现，见 `src/tools/generate-video.ts`） | **已认领**（2026-10-25，宿主已转发；`tests/host-media-generate.test.ts` 钉住 `media[]`/`realPerson` 原样透传） |
 | `media/compose`（A-4） | 融合生图：选角色+场景+物品 → 一次拼装生成（B-9 客户端已接线，见 `src/client/api.ts` 的 `composeMedia`） | 入：`{projectId, prompt, roles?: string[], scenes?: string[], props?: string[]}`（**资源 id**；宿主按 id 解析各自参考图、缺图降级为纯文生）；出：`{mediaMode?, path?, bytes?, asset?, taskId?, referencePaths?}`（与 `media/generate` 同构；`referencePaths` 可选回显真正用到的参考图） | **已认领**（2026-10-25，`media/compose` 已上线：按资源 id 解析参考图 + 缺图降级纯文生） |
-| `prompts/extract` + `prompts/list` / `prompts/save` / `prompts/remove`（A-5） | 提示词工坊：从素材提取结构化提示词 → 编辑 → 入库 → 一键带入（B-10 客户端已接线，见 `src/client/api.ts` 的 `extractPrompt`/`listPrompts`/`savePrompt`/`removePrompt`） | `extract` 入：`{projectId?, assetId?, path?}`；出：`{style?, subject?, material?, details?, text?}`（客户端缺字段容忍；模型不可用时给清晰错误、**不伪造结果**）。`list` 出 `{prompts: PromptRecord[]}`；`save` 入 `{id?, name, text, tags?}` 出 `{prompt: PromptRecord}`；`remove` 入 `{id}` 出 `{removed: boolean}`。`PromptRecord = {id, name, text, tags?, createdAt?}` | **已认领**（2026-10-25，`prompts/extract` + 提示词库 CRUD 已上线；模型不可用时不伪造结果） |
+| `prompts/extract` + `prompts/list` / `prompts/save` / `prompts/remove`（A-5） | 「提示词·分镜」逆向提取：从素材提取结构化提示词 → 编辑 → 入库 → 一键带入（客户端见 `src/client/api.ts` 的 `extractPrompt`/`listPrompts`/`savePrompt`/`removePrompt`） | `extract` 入：`{projectId?, assetId?, path?, skillId?}`；出：`{style?, subject?, material?, details?, text?}`（客户端缺字段容忍；模型不可用时给清晰错误、**不伪造结果**）。`list` 出 `{prompts: PromptRecord[]}`，入可带 `{projectId?, episodeId?}`；`save` 入 `{id?, name, text, tags?, projectId?, episodeId?}` 出 `{prompt: PromptRecord}`；`remove` 入 `{id}` 出 `{removed: boolean}`。`PromptRecord = {id, name, text, tags?, projectId?, episodeId?, createdAt?}` | **已认领**（2026-10-25，`prompts/extract` + 提示词库 CRUD 已上线；模型不可用时不伪造结果） |
 | `pipelines/compose`（与 `pipelines/run`）支持显式 `resourceIds?: string[]`；编排结果回显 `matchedResources?: {name,resourceId,kind}[]` | 「一键成片」物料**手动挑选** + 自动匹配结果可见（B-18 已交付缺失清单 `missingResources` 与快速登记；手动指派与 matched 回显缺契约） | 入参在现有 `pipelines/compose|run` 上加一个可选字段：给了就按指定资源编排（缺 id 仍走剧本自动匹配）；出参在 `PipelineDiagnostics` 加一个可选数组（**加法字段**，旧宿主不返回时客户端不渲染该区） | **已认领**（2026-10-26：`pipelines/compose|run` 支持 `resourceIds`，编排结果回显 `matchedResources`；未知 id 如实提醒） |
 | | | | |
 
@@ -100,7 +107,7 @@
 | `projects/create` | `{name}` | `{project}` |
 | `projects/rename` | `{projectId,name}` | `{project}` |
 | `projects/remove` | `{projectId}` | `{removed}` |
-| `assets/list` | `{projectId,kind?}` | `{assets}` |
+| `assets/list` | `{projectId?,kind?}` | `{assets}`（缺省 `projectId` 返回全局素材库；所有剧集都能选） |
 | `assets/attach` | `{projectId,path,kind?,prompt?}` | `{asset,created}` |
 | `assets/quick-add` | `{projectId,path?}` | `{asset,created}`（自动推断种类） |
 | `assets/remove` | `{projectId,assetId}` | `{removed}` |
@@ -133,6 +140,7 @@
 | `workflows/runs` | `{projectId,workflowId?}` | `{runs}` |
 | `workflows/run-cancel` | `{runId}` | `{cancelled}` |
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
+| `workflows/sync-episode` | `{episodeId}` | `{workflow}`（分镜逐镜映射成 `image-generate → video-generate`，末尾 `preview`；工作流 id 按集固定 `wfl-ep-<id>`，重复同步幂等） |
 | `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?, resourceIds?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources, matchedResources}}` —— **只编排不跑**（零花费；`P0-2`） |
 | `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
 | `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?}}` —— 配音可用性（TTS 未接入时 `available:false` + 原因；`P0-1`） |
@@ -165,10 +173,47 @@
 
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
-| `tasks/list` | `{projectId?}` | `{tasks}` |
+| `tasks/list` | `{projectId?,episodeId?,limit?}` | `{tasks}`（可按集过滤） |
 | `tasks/running` | — | `{tasks}`（进行中的生成任务） |
 | `tasks/assign` | `{taskId,resourceId}` | `{task}` |
 | `tasks/cancel` | `{taskId}` | `{cancelled}` |
+
+### 集 / 分段 / 分镜（剧集四层结构）
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `episodes/list` | `{projectId}` | `{episodes}`（空剧集首次访问自动补建第 1 集） |
+| `episodes/create` | `{projectId,title?,no?}` | `{episode}`（集号冲突如实报错） |
+| `episodes/get` | `{id}` | `{episode}`（含剧本、分段、分镜与两类引用） |
+| `episodes/update` | `{id,title?,remark?,script?}` | `{episode}`（`script` 可传正文或 `{text}`；`remark:null` 清空备注） |
+| `episodes/remove` | `{id,force?}` | `{removed}`（有归属任务时需 `force`；只删元引用，`outputs` 文件保留） |
+| `episodes/reorder` | `{projectId,order}` | `{episodes}`（集号重编为 1..n） |
+| `episodes/resources` | `{id,action,resourceId?,category?,order?}` | `{refs}`（`action` = `list/add/remove/move`；剧集级资源库引用，只存 id） |
+| `episodes/assets` | `{id,action,assetId?,category?,order?}` | `{refs}`（全局素材库引用，只存 id） |
+| `episodes/export` | `{episodeId}` | `{export}`（只导这一集：`outputs/episodes/<id>/episode.json` + `files/` 里被本集镜头引用的素材副本；缺失文件记进 `missing`） |
+| `segments/list` | `{episodeId}` | `{segments}` |
+| `segments/create` | `{episodeId,promptText?,durationSec?,order?,imageModel?,videoModel?,skillId?,refs?}` | `{segment}`（时长 1–60 秒，缺省 5） |
+| `segments/update` | `{id,promptText?,durationSec?,order?,imageModel?,videoModel?,skillId?,refs?}` | `{segment}`（改 `order` 即移动位置） |
+| `segments/remove` | `{id}` | `{removed}`（同段分镜一并删除） |
+| `segments/reorder` | `{episodeId,order}` | `{segments}` |
+| `storyboards/list` | `{episodeId}` | `{storyboards}` |
+| `storyboards/get` | `{id}` | `{storyboard}` |
+| `storyboards/save` | `{segmentId,id?,episodeId?,skillId?,shots}` | `{storyboard}`（无 `id` 新建、有 `id` 整组替换；回填分段的 `storyboardId`） |
+| `storyboards/remove` | `{id}` | `{removed}`（清掉分段的 `storyboardId` 回填） |
+
+### 双技能库（导演库 / 逆向库）
+
+技能落盘在工作台数据目录的 `skills/<kind>/<id>/skill.json`，启用状态在 `skills/index.json`，覆盖 / 删除前复制到 `skills/_backup/`。内置技能（director / reverse 各 ≥2）只读，但可以禁用。
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `skills/list` | `{kind?,enabled?}` | `{skills}`（`kind` 缺省列两库；`enabled:true` 只要启用中的） |
+| `skills/get` | `{id}` | `{skill}` |
+| `skills/save` | `{id?,kind,name,description?,prompt}` | `{skill}`（用户技能新建 / 修改；内置技能拒绝） |
+| `skills/import` | `{kind,source}` | `{skill}`（`source` 是绝对本地路径（目录 / `.json` / `.zip`）或 `https://` URL；限 20MB，zip 拒绝路径穿越） |
+| `skills/toggle` | `{id,enabled}` | `{skill}`（内置技能也可禁用） |
+| `skills/remove` | `{id}` | `{removed}`（先备份；内置技能拒绝） |
+| `skills/reveal` | `{id}` | `{reveal}`（在文件管理器里打开技能目录） |
 
 ### 项目包
 

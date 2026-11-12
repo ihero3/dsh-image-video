@@ -26,16 +26,10 @@ function renderQuick() {
   return { host, view }
 }
 
-/** 打开高级抽屉（分镜在其中）。 */
+/** 模块 ① 的「手动分镜」默认展开（旧高级抽屉已下线）。 */
 async function openAdvanced(container: HTMLElement) {
-  const toggle = await waitFor(() => {
-    const node = container.querySelector('[data-advanced-toggle]') as HTMLButtonElement
-    expect(node).toBeTruthy()
-    return node
-  })
-  if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle)
   await waitFor(() => {
-    expect((container.querySelector('[data-advanced-open]') as HTMLElement).hidden).toBe(false)
+    expect(container.querySelector('[data-module="pipeline"] [data-storyboard]')).toBeTruthy()
   })
 }
 
@@ -81,13 +75,12 @@ describe('分镜 → 一键成片（T9）', () => {
     expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.storyboardSentToPipeline)
   })
 
-  it('分镜工坊已并入模块 ①（2026-11-05）：不再挂在高级抽屉里', async () => {
+  it('分镜工坊已并入模块 ①（2026-11-05）：旧高级抽屉已下线', async () => {
     const { view } = renderQuick()
     // 位置变了：从"高级抽屉"搬到模块 ① 的「手动分镜」折叠块里
     const entry = view.container.querySelector('[data-module="pipeline"] [data-storyboard-entry]') as HTMLElement
     expect(entry).toBeTruthy()
     expect(entry.querySelector('[data-storyboard-to-pipeline]')).toBeTruthy()
-    // 高级抽屉里不该再有它
-    expect(view.container.querySelector('[data-advanced-open] [data-storyboard]')).toBeNull()
+    expect(view.container.querySelector('[data-module="advanced"]')).toBeNull()
   })
 })

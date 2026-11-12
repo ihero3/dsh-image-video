@@ -7,16 +7,28 @@ const PACKAGE_NAME = 'dsh-image-video'
 const CLIENT_CHUNK_NAME = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
 
 /**
+ * 入口与包内 chunk 之间不允许出现同步的包内 require。
+ *
+ * 宿主工厂收到的 `require` 是**同步模块表查找**（不会去取脚本），只有 `require.async`
+ * 会按包内路由加载 chunk。被入口与惰性 chunk 同时引用的模块会被抽成共享 chunk
+ * （`client.icons.js`），入口侧于是生成 `require("./client.icons.js")`——运行期必然激活失败。
+ * 这类漏网在 `renderChunk` 阶段直接让构建失败，而不是留到宿主启动后才报。
+ */
+const SYNC_CHUNK_REQUIRE = /(?<![\w.])require\((['"])\.\/client\.[^'"]+\.js\1\)/u
+
+/**
  * Rolldown 在 CJS 产物里把 `import()` 编译成
- * `Promise.resolve().then(() => require('./client.X.js'))`；而宿主工厂收到的 `require`
- * 是**同步模块表查找**（不会去取脚本），只有 `require.async` 会按包内路由加载 chunk。
- * 这里把生成式改写成 `require.async(...)`；漏改一个 chunk 就直接构建失败，
- * 不留"运行期必然失败"的 require。
+ * `Promise.resolve().then(() => require('./client.X.js'))`；这里改写成 `require.async(...)`，
+ * 并拒绝任何残留的同步包内 require。
  */
 function asyncChunkRequire() {
   return {
     name: 'dsh-image-video-client-async-chunk',
-    renderChunk(code: string, chunk: { dynamicImports: string[] }, outputOptions: { format?: string }) {
+    renderChunk(
+      code: string,
+      chunk: { dynamicImports: string[], fileName: string },
+      outputOptions: { format?: string },
+    ) {
       if (outputOptions.format !== 'cjs') return null
       const transformed = new MagicString(code)
       for (const request of chunk.dynamicImports) {
@@ -37,8 +49,16 @@ function asyncChunkRequire() {
           transformed.overwrite(match.index!, match.index! + match[0].length, `require.async(${JSON.stringify(specifier)})`)
         }
       }
+      const output = transformed.toString()
+      const syncRequire = SYNC_CHUNK_REQUIRE.exec(output)
+      if (syncRequire !== null) {
+        throw new Error(
+          `client bundle: ${chunk.fileName} requires package chunk ${syncRequire[0]} synchronously;`
+          + ' the host module table cannot answer it — keep the module out of the entry, or load it with require.async',
+        )
+      }
       return transformed.hasChanged()
-        ? { code: transformed.toString(), map: transformed.generateMap({ hires: true }) }
+        ? { code: output, map: transformed.generateMap({ hires: true }) }
         : null
     },
   }

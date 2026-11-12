@@ -21,9 +21,17 @@ import { MAX_NODE_CACHE, type CachedNodeResult } from './node-cache.ts'
 import type { ExportPresetRecord, ResourceUsageRecord } from './records.ts'
 import { planArchive } from './archive.ts'
 import { inspectIntegrity } from './integrity.ts'
-import { migrateDocument, type WorkbenchMigration } from './migrate.ts'
 import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
+import { buildEpisodeWorkflow } from './storyboard-workflow.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
+import {
+  applyReorder, DEFAULT_EPISODE_REF_CATEGORY, emptySegment, EPISODE_REF_CATEGORIES, FIRST_ORDER, newEpisode, nextOrder,
+  normalizeEpisodeNo, normalizeEpisodeRefCategory, normalizeEpisodeTitle, normalizeOptionalId,
+  normalizePromptText, normalizeRemark, normalizeScriptText, normalizeSegmentDuration, normalizeSegmentRefs,
+  normalizeShots, type EpisodeAssetRef, type EpisodeInput, type EpisodePatch, type EpisodeRecord,
+  type EpisodeRefAction, type EpisodeRefInput, type EpisodeRefCategory, type EpisodeResourceRef,
+  type SegmentInput, type SegmentPatch, type SegmentRecord, type StoryboardInput, type StoryboardRecord,
+} from './episodes.ts'
 
 /** One stored document: every project and asset the workbench knows about. */
 interface WorkbenchDocument {
@@ -46,12 +54,12 @@ interface WorkbenchDocument {
   resourceUsage: ResourceUsageRecord[]
   /** 用户自定义导出预设（`A48`）。 */
   exportPresets: ExportPresetRecord[]
+  /** 集（episode）：剧集下的第二层实体，含分段与分镜。 */
+  episodes: EpisodeRecord[]
 }
 
 /** Facts the store is constructed with. */
 export interface WorkbenchStoreOptions {
-  /** 迁移链（默认用内置的；测试可注入）。 */
-  readonly migrations?: readonly WorkbenchMigration[]
   /** Directory holding `workbench.json` (created on first write). */
   readonly directory: string
   /** Clock override, for deterministic tests. */
@@ -68,6 +76,9 @@ export interface TaskInput {
   readonly outputPath?: string
   readonly bytes?: number
   readonly projectId?: string
+  readonly episodeId?: string
+  readonly segmentId?: string
+  readonly shotId?: string
   readonly error?: string
   /** When the call started (defaults to now). */
   readonly startedAt?: string
@@ -79,6 +90,9 @@ export interface TaskPatch {
   readonly outputPath?: string
   readonly bytes?: number
   readonly projectId?: string
+  readonly episodeId?: string
+  readonly segmentId?: string
+  readonly shotId?: string
   readonly error?: string
 }
 
@@ -98,6 +112,14 @@ export interface AssetInput {
  */
 /** 任务账本最多保留多少条（规模化：账本只留最近这批，避免 JSON 无界膨胀）。 */
 export const MAX_TASKS = 1000
+
+/** 空文档（首次启动、旧版本留证后重开、坏文件兜底共用一份定义）。 */
+function emptyDocument(): WorkbenchDocument {
+  return {
+    schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
+    runs: [], timelines: [], nodeCache: [], resourceUsage: [], exportPresets: [], episodes: [],
+  }
+}
 
 export class WorkbenchStore {
   /** Absolute directory holding the document. */
@@ -119,14 +141,10 @@ export class WorkbenchStore {
   /**
    * @param options - directory and optional clock.
    */
-  /** 迁移链（默认用内置；测试可注入）。 */
-  private readonly migrations: readonly WorkbenchMigration[] | undefined
-
   constructor(options: WorkbenchStoreOptions) {
     this.directory = options.directory
     this.file = join(options.directory, 'workbench.json')
     this.now = options.now ?? (() => new Date())
-    this.migrations = options.migrations
   }
 
   /** Read every project, newest first. */
@@ -176,14 +194,14 @@ export class WorkbenchStore {
   }
 
   /**
-   * List one project's assets, newest first.
-   * @param projectId - project id.
+   * List assets, newest first.
+   * @param projectId - 来源剧集；缺省时返回全局素材库（素材库对所有剧集可见）。
    * @returns the asset records.
    */
-  async listAssets(projectId: string): Promise<AssetRecord[]> {
+  async listAssets(projectId?: string): Promise<AssetRecord[]> {
     const document = await this.load()
     return document.assets
-      .filter(asset => asset.projectId === projectId)
+      .filter(asset => projectId === undefined || asset.projectId === projectId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
 
@@ -430,7 +448,7 @@ export class WorkbenchStore {
     const name = input.name === undefined || input.name === '' ? '未命名工作流' : String(input.name).slice(0, 80)
     const record: WorkflowRecord = {
       schemaVersion: 1,
-      id: existing?.id ?? newWorkbenchId('wfl'),
+      id: input.id ?? existing?.id ?? newWorkbenchId('wfl'),
       projectId: project.id,
       name,
       nodes: graph.nodes,
@@ -443,6 +461,24 @@ export class WorkbenchStore {
       : document.workflows.map(row => (row.id === record.id ? record : row))
     await this.save(document)
     return record
+  }
+
+  /**
+   * 把一集的分镜同步成固定的工作流文档（幂等：同一份分镜重复同步只更新同一份图）。
+   * @param episodeId - 集 id。
+   * @returns 同步后的工作流记录。
+   * @throws {Error} 集不存在或本集没有分镜镜头时。
+   */
+  async syncEpisodeWorkflow(episodeId: string): Promise<WorkflowRecord> {
+    const episode = await this.getEpisode(episodeId)
+    const graph = buildEpisodeWorkflow(episode)
+    return this.saveWorkflow({
+      id: graph.id,
+      projectId: episode.projectId,
+      name: graph.name,
+      nodes: graph.nodes,
+      edges: graph.edges,
+    })
   }
 
   /**
@@ -918,6 +954,9 @@ export class WorkbenchStore {
       ...input.outputPath === undefined ? {} : { outputPath: input.outputPath },
       ...input.bytes === undefined ? {} : { bytes: input.bytes },
       ...input.projectId === undefined ? {} : { projectId: input.projectId },
+      ...input.episodeId === undefined ? {} : { episodeId: input.episodeId },
+      ...input.segmentId === undefined ? {} : { segmentId: input.segmentId },
+      ...input.shotId === undefined ? {} : { shotId: input.shotId },
       ...input.error === undefined ? {} : { error: input.error },
     }
     document.tasks.push(task)
@@ -942,6 +981,9 @@ export class WorkbenchStore {
       ...patch.outputPath === undefined ? {} : { outputPath: patch.outputPath },
       ...patch.bytes === undefined ? {} : { bytes: patch.bytes },
       ...patch.projectId === undefined ? {} : { projectId: patch.projectId },
+      ...patch.episodeId === undefined ? {} : { episodeId: patch.episodeId },
+      ...patch.segmentId === undefined ? {} : { segmentId: patch.segmentId },
+      ...patch.shotId === undefined ? {} : { shotId: patch.shotId },
       ...patch.error === undefined ? {} : { error: patch.error },
       updatedAt: this.now().toISOString(),
     }
@@ -954,14 +996,453 @@ export class WorkbenchStore {
    * List recorded generations, newest first.
    * @param limit - maximum entries.
    * @param projectId - restrict to one project (tasks filed into it).
+   * @param episodeId - restrict to one episode.
    * @returns the records.
    */
-  async listTasks(limit = 50, projectId?: string): Promise<TaskRecord[]> {
+  async listTasks(limit = 50, projectId?: string, episodeId?: string): Promise<TaskRecord[]> {
     const document = await this.load()
     return document.tasks
       .filter(task => projectId === undefined || task.projectId === projectId)
+      .filter(task => episodeId === undefined || task.episodeId === episodeId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, Math.max(0, limit))
+  }
+
+  /**
+   * 列出一个剧集的集，按集号排序。
+   *
+   * 空剧集（含重构前的老剧集）首次访问时补建一个空的 Episode #1：旧剧集级剧本 / 分镜
+   * 不迁移、不再展示，只保证集视图可用。
+   * @param projectId - 剧集 id。
+   * @returns 该剧集的集。
+   * @throws {Error} 剧集不存在时。
+   */
+  async listEpisodes(projectId: string): Promise<EpisodeRecord[]> {
+    const document = await this.load()
+    this.assertProject(document, projectId)
+    let episodes = document.episodes.filter(episode => episode.projectId === projectId)
+    if (episodes.length === 0) {
+      const stamp = this.now().toISOString()
+      const created = newEpisode(projectId, 1, normalizeEpisodeTitle(undefined, 1), stamp)
+      document.episodes.push(created)
+      await this.save(document)
+      episodes = [created]
+    }
+    return [...episodes].sort((left, right) => left.no - right.no)
+  }
+
+  /**
+   * 新建一集；集号缺省取当前最大值 +1。
+   * @param projectId - 剧集 id。
+   * @param input - 可选的标题与集号。
+   * @returns 新建的集。
+   * @throws {Error} 剧集不存在、集号冲突或标题不合法时。
+   */
+  async createEpisode(projectId: string, input: EpisodeInput = {}): Promise<EpisodeRecord> {
+    const document = await this.load()
+    this.assertProject(document, projectId)
+    const siblings = document.episodes.filter(episode => episode.projectId === projectId)
+    const nextNo = siblings.length === 0 ? 1 : Math.max(...siblings.map(episode => episode.no)) + 1
+    const no = normalizeEpisodeNo(input.no, nextNo)
+    if (siblings.some(episode => episode.no === no)) throw new Error(`第${no}集已存在`)
+    const stamp = this.now().toISOString()
+    const episode = newEpisode(projectId, no, normalizeEpisodeTitle(input.title, no), stamp)
+    document.episodes.push(episode)
+    await this.save(document)
+    return episode
+  }
+
+  /**
+   * 读取一整集（含分段、分镜与两类引用）。
+   * @param episodeId - 集 id。
+   * @returns 集记录。
+   * @throws {Error} 集不存在时。
+   */
+  async getEpisode(episodeId: string): Promise<EpisodeRecord> {
+    const document = await this.load()
+    return this.findEpisode(document, episodeId)
+  }
+
+  /**
+   * 部分更新一集；`script` 传字符串或 `{ text }` 都会刷新 `updatedAt`。
+   * @param episodeId - 集 id。
+   * @param patch - 要改的字段。
+   * @returns 更新后的集。
+   * @throws {Error} 集不存在或字段不合法时。
+   */
+  async updateEpisode(episodeId: string, patch: EpisodePatch): Promise<EpisodeRecord> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const stamp = this.now().toISOString()
+    const remark = patch.remark === undefined ? undefined : normalizeRemark(patch.remark)
+    const updated: EpisodeRecord = {
+      ...current,
+      ...patch.title === undefined ? {} : { title: normalizeEpisodeTitle(patch.title, current.no) },
+      ...patch.remark === undefined ? {} : remark === undefined ? { remark: undefined } : { remark },
+      ...patch.script === undefined ? {} : { script: { text: normalizeScriptText(readScriptText(patch.script)), updatedAt: stamp } },
+      updatedAt: stamp,
+    }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return updated
+  }
+
+  /**
+   * 删除一集；有归属任务时必须 `force`。
+   * @param episodeId - 集 id。
+   * @param force - 有归属任务时是否强制删除。
+   * @returns 被删除的集。
+   * @throws {Error} 集不存在，或存在归属任务且未 `force` 时。
+   */
+  async deleteEpisode(episodeId: string, force = false): Promise<EpisodeRecord> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const related = document.tasks.filter(task => task.episodeId === episodeId)
+    if (related.length > 0 && !force) {
+      throw new Error(`第${current.no}集有 ${related.length} 个关联任务；确认后请传 force`)
+    }
+    document.episodes = document.episodes.filter(episode => episode.id !== episodeId)
+    // 任务账本是历史记录：保留任务，只清掉悬空的集归属，避免按已删除的集继续筛选。
+    document.tasks = document.tasks.map(task => (task.episodeId === episodeId ? { ...task, episodeId: undefined } : task))
+    await this.save(document)
+    return current
+  }
+
+  /**
+   * 重排一个剧集的集顺序，并把集号重编为 1..n；默认标题跟随集号。
+   * @param projectId - 剧集 id。
+   * @param order - 目标集 id 顺序。
+   * @returns 重排后的集。
+   * @throws {Error} 顺序不完整或含未知 id 时。
+   */
+  async reorderEpisodes(projectId: string, order: readonly string[]): Promise<EpisodeRecord[]> {
+    const document = await this.load()
+    this.assertProject(document, projectId)
+    const current = document.episodes.filter(episode => episode.projectId === projectId).sort((left, right) => left.no - right.no)
+    const reordered = applyReorder(current, order, '集')
+    const stamp = this.now().toISOString()
+    const next = reordered.map((episode, index): EpisodeRecord => {
+      const no = index + 1
+      return {
+        ...episode,
+        no,
+        title: episode.title === `第${episode.no}集` ? `第${no}集` : episode.title,
+        updatedAt: stamp,
+      }
+    })
+    document.episodes = document.episodes.map(episode => next.find(candidate => candidate.id === episode.id) ?? episode)
+    await this.save(document)
+    return next
+  }
+
+  /**
+   * 集对剧集资源库的引用：list / add / remove / move（move 是剪切语义，改分类并改顺序）。
+   * @param episodeId - 集 id。
+   * @param action - 动作。
+   * @param input - 资源 id、分类与目标顺序。
+   * @returns 更新后的引用列表（按 order 排序）。
+   * @throws {Error} 集 / 资源不存在，或动作参数不合法时。
+   */
+  async episodeResources(episodeId: string, action: EpisodeRefAction, input: EpisodeRefInput = {}): Promise<EpisodeResourceRef[]> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const resourceId = requireRefId(input.resourceId, 'resourceId')
+    if (action === 'list') return [...current.resourceRefs].sort((left, right) => left.order - right.order)
+    if (action === 'add' || action === 'move') {
+      const resource = document.resources.find(candidate => candidate.id === resourceId && candidate.projectId === current.projectId)
+      if (resource === undefined) throw new Error(`本剧集没有该资源：${resourceId}`)
+    }
+    const existing = current.resourceRefs.find(ref => ref.resourceId === resourceId)
+    if (action === 'add' && existing !== undefined) throw new Error(`该资源已在本集引用中：${resourceId}`)
+    if ((action === 'remove' || action === 'move') && existing === undefined) throw new Error(`该资源不在本集引用中：${resourceId}`)
+    const category = input.category === undefined
+      ? existing?.category ?? resolveRefCategory(document, current.projectId, resourceId)
+      : normalizeEpisodeRefCategory(input.category)
+    const rest = current.resourceRefs.filter(ref => ref.resourceId !== resourceId)
+    const refs = action === 'remove'
+      ? reindexRefs(rest)
+      : arrangeResourceRefs(rest, { resourceId, category }, input.order)
+    const updated: EpisodeRecord = { ...current, resourceRefs: refs, updatedAt: this.now().toISOString() }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return refs
+  }
+
+  /**
+   * 集对全局素材库的引用：list / add / remove / move。
+   * @param episodeId - 集 id。
+   * @param action - 动作。
+   * @param input - 素材 id、分类与目标顺序。
+   * @returns 更新后的引用列表（按 order 排序）。
+   * @throws {Error} 集 / 素材不存在，或动作参数不合法时。
+   */
+  async episodeAssets(episodeId: string, action: EpisodeRefAction, input: EpisodeRefInput = {}): Promise<EpisodeAssetRef[]> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const assetId = requireRefId(input.assetId, 'assetId')
+    if (action === 'list') return [...current.assetRefs].sort((left, right) => left.order - right.order)
+    if ((action === 'add' || action === 'move') && !document.assets.some(candidate => candidate.id === assetId)) {
+      throw new Error(`素材库里没有该素材：${assetId}`)
+    }
+    const existing = current.assetRefs.find(ref => ref.assetId === assetId)
+    if (action === 'add' && existing !== undefined) throw new Error(`该素材已在本集引用中：${assetId}`)
+    if ((action === 'remove' || action === 'move') && existing === undefined) throw new Error(`该素材不在本集引用中：${assetId}`)
+    const category = input.category === undefined
+      ? existing?.category ?? 'ungrouped'
+      : normalizeEpisodeRefCategory(input.category)
+    const rest = current.assetRefs.filter(ref => ref.assetId !== assetId)
+    const refs = action === 'remove'
+      ? reindexAssetRefs(rest)
+      : arrangeAssetRefs(rest, { assetId, category }, input.order)
+    const updated: EpisodeRecord = { ...current, assetRefs: refs, updatedAt: this.now().toISOString() }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return refs
+  }
+
+  /**
+   * 列出集内分段，按集内顺序排序。
+   * @param episodeId - 集 id。
+   * @returns 分段列表。
+   * @throws {Error} 集不存在时。
+   */
+  async listSegments(episodeId: string): Promise<SegmentRecord[]> {
+    const document = await this.load()
+    return sortByOrder(this.findEpisode(document, episodeId).segments)
+  }
+
+  /**
+   * 新建一条分段；顺序缺省追加到末尾。
+   * @param episodeId - 集 id。
+   * @param input - 提示词、时长、模型、技能与引用。
+   * @returns 新建的分段。
+   * @throws {Error} 集不存在或字段不合法时。
+   */
+  async createSegment(episodeId: string, input: SegmentInput = {}): Promise<SegmentRecord> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const imageModel = normalizeOptionalId(input.imageModel, '图片模型')
+    const videoModel = normalizeOptionalId(input.videoModel, '视频模型')
+    const skillId = normalizeOptionalId(input.skillId, 'director 技能')
+    const segment: SegmentRecord = {
+      ...emptySegment(episodeId),
+      order: resolveOrder(input.order, nextOrder(current.segments)),
+      durationSec: normalizeSegmentDuration(input.durationSec),
+      promptText: normalizePromptText(input.promptText),
+      ...imageModel === undefined ? {} : { imageModel },
+      ...videoModel === undefined ? {} : { videoModel },
+      ...skillId === undefined ? {} : { skillId },
+      refs: normalizeSegmentRefs(input.refs),
+    }
+    const segments = insertSegment(current.segments, segment)
+    const updated: EpisodeRecord = { ...current, segments, updatedAt: this.now().toISOString() }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return segments.find(candidate => candidate.id === segment.id) as SegmentRecord
+  }
+
+  /**
+   * 部分更新一条分段；改 `order` 即移动位置。
+   * @param segmentId - 分段 id。
+   * @param patch - 要改的字段。
+   * @returns 更新后的分段。
+   * @throws {Error} 分段不存在或字段不合法时。
+   */
+  async updateSegment(segmentId: string, patch: SegmentPatch): Promise<SegmentRecord> {
+    const document = await this.load()
+    const { episode, segment } = this.findSegment(document, segmentId)
+    const imageModel = normalizeOptionalId(patch.imageModel, '图片模型')
+    const videoModel = normalizeOptionalId(patch.videoModel, '视频模型')
+    const skillId = normalizeOptionalId(patch.skillId, 'director 技能')
+    const next: SegmentRecord = {
+      ...segment,
+      ...patch.promptText === undefined ? {} : { promptText: normalizePromptText(patch.promptText) },
+      ...patch.durationSec === undefined ? {} : { durationSec: normalizeSegmentDuration(patch.durationSec) },
+      ...patch.imageModel === undefined ? {} : { imageModel },
+      ...patch.videoModel === undefined ? {} : { videoModel },
+      ...patch.skillId === undefined ? {} : { skillId },
+      ...patch.refs === undefined ? {} : { refs: normalizeSegmentRefs(patch.refs) },
+    }
+    const rest = episode.segments.filter(candidate => candidate.id !== segmentId)
+    const segments = patch.order === undefined
+      ? sortByOrder([...rest, next])
+      : insertSegment(rest, { ...next, order: resolveOrder(patch.order, rest.length + FIRST_ORDER) })
+    const updated: EpisodeRecord = { ...episode, segments, updatedAt: this.now().toISOString() }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return updated.segments.find(candidate => candidate.id === segmentId) as SegmentRecord
+  }
+
+  /**
+   * 删除一条分段；同一分段下的分镜一并删除。
+   * @param segmentId - 分段 id。
+   * @returns 被删除的分段。
+   * @throws {Error} 分段不存在时。
+   */
+  async deleteSegment(segmentId: string): Promise<SegmentRecord> {
+    const document = await this.load()
+    const { episode, segment } = this.findSegment(document, segmentId)
+    const updated: EpisodeRecord = {
+      ...episode,
+      segments: reindexOrder(episode.segments.filter(candidate => candidate.id !== segmentId)),
+      storyboards: episode.storyboards.filter(storyboard => storyboard.segmentId !== segmentId),
+      updatedAt: this.now().toISOString(),
+    }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return segment
+  }
+
+  /**
+   * 重排集内分段，顺序重编为 1..n。
+   * @param episodeId - 集 id。
+   * @param order - 目标分段 id 顺序。
+   * @returns 重排后的分段。
+   * @throws {Error} 集不存在、顺序不完整或含未知 id 时。
+   */
+  async reorderSegments(episodeId: string, order: readonly string[]): Promise<SegmentRecord[]> {
+    const document = await this.load()
+    const current = this.findEpisode(document, episodeId)
+    const reordered = applyReorder(sortByOrder(current.segments), order, '分段')
+    const segments = reordered.map((segment, index) => ({ ...segment, order: index + 1 }))
+    const updated: EpisodeRecord = { ...current, segments, updatedAt: this.now().toISOString() }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return segments
+  }
+
+  /**
+   * 列出集内分镜。
+   * @param episodeId - 集 id。
+   * @returns 分镜列表。
+   * @throws {Error} 集不存在时。
+   */
+  async listStoryboards(episodeId: string): Promise<StoryboardRecord[]> {
+    const document = await this.load()
+    return [...this.findEpisode(document, episodeId).storyboards]
+  }
+
+  /**
+   * 读取一组分镜。
+   * @param storyboardId - 分镜 id。
+   * @returns 分镜记录。
+   * @throws {Error} 分镜不存在时。
+   */
+  async getStoryboard(storyboardId: string): Promise<StoryboardRecord> {
+    const document = await this.load()
+    for (const episode of document.episodes) {
+      const found = episode.storyboards.find(storyboard => storyboard.id === storyboardId)
+      if (found !== undefined) return found
+    }
+    throw new Error(`未知的分镜：${storyboardId}`)
+  }
+
+  /**
+   * 写入一组分镜：无 `id` 新建，有 `id` 整组替换；同时回填分段的 `storyboardId`。
+   * @param input - 分段 id、可选分镜 id、技能与镜头数组。
+   * @returns 写入后的分镜。
+   * @throws {Error} 分段 / 分镜不存在、跨集写入或镜头不合法时。
+   */
+  async upsertStoryboard(input: StoryboardInput): Promise<StoryboardRecord> {
+    const document = await this.load()
+    const { episode } = this.findSegment(document, input.segmentId)
+    if (input.episodeId !== undefined && input.episodeId !== episode.id) {
+      throw new Error(`分段属于第${episode.no}集，不能写入 ${input.episodeId}`)
+    }
+    const existing = input.id === undefined ? undefined : episode.storyboards.find(storyboard => storyboard.id === input.id)
+    if (input.id !== undefined && existing === undefined) throw new Error(`未知的分镜：${input.id}`)
+    const skillId = normalizeOptionalId(input.skillId, 'reverse 技能')
+    const stamp = this.now().toISOString()
+    const storyboard: StoryboardRecord = {
+      schemaVersion: WORKBENCH_SCHEMA_VERSION,
+      id: existing?.id ?? newWorkbenchId('sb'),
+      episodeId: episode.id,
+      segmentId: input.segmentId,
+      ...skillId === undefined ? {} : { skillId },
+      shots: normalizeShots(input.shots),
+      updatedAt: stamp,
+    }
+    const storyboards = existing === undefined
+      ? [...episode.storyboards, storyboard]
+      : episode.storyboards.map(candidate => (candidate.id === storyboard.id ? storyboard : candidate))
+    const segments = episode.segments.map(candidate => (
+      candidate.id === input.segmentId ? { ...candidate, storyboardId: storyboard.id } : candidate
+    ))
+    const updated: EpisodeRecord = { ...episode, storyboards, segments, updatedAt: stamp }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return storyboard
+  }
+
+  /**
+   * 删除一组分镜，并清掉分段的 `storyboardId` 回填。
+   * @param storyboardId - 分镜 id。
+   * @returns 被删除的分镜。
+   * @throws {Error} 分镜不存在时。
+   */
+  async deleteStoryboard(storyboardId: string): Promise<StoryboardRecord> {
+    const document = await this.load()
+    const episode = document.episodes.find(candidate => candidate.storyboards.some(storyboard => storyboard.id === storyboardId))
+    if (episode === undefined) throw new Error(`未知的分镜：${storyboardId}`)
+    const removed = episode.storyboards.find(storyboard => storyboard.id === storyboardId) as StoryboardRecord
+    const updated: EpisodeRecord = {
+      ...episode,
+      storyboards: episode.storyboards.filter(storyboard => storyboard.id !== storyboardId),
+      segments: episode.segments.map(segment => (
+        segment.storyboardId === storyboardId ? { ...segment, storyboardId: undefined } : segment
+      )),
+      updatedAt: this.now().toISOString(),
+    }
+    this.replaceEpisode(document, updated)
+    await this.save(document)
+    return removed
+  }
+
+  /**
+   * 校验剧集存在。
+   * @param document - 当前文档。
+   * @param projectId - 剧集 id。
+   * @throws {Error} 剧集不存在时。
+   */
+  private assertProject(document: WorkbenchDocument, projectId: string): void {
+    if (!document.projects.some(project => project.id === projectId)) throw new Error(`未知的剧集：${projectId}`)
+  }
+
+  /**
+   * 查找一集。
+   * @param document - 当前文档。
+   * @param episodeId - 集 id。
+   * @returns 集记录。
+   * @throws {Error} 集不存在时。
+   */
+  private findEpisode(document: WorkbenchDocument, episodeId: string): EpisodeRecord {
+    const episode = document.episodes.find(candidate => candidate.id === episodeId)
+    if (episode === undefined) throw new Error(`未知的集：${episodeId}`)
+    return episode
+  }
+
+  /**
+   * 跨集查找一条分段。
+   * @param document - 当前文档。
+   * @param segmentId - 分段 id。
+   * @returns 所属集与分段。
+   * @throws {Error} 分段不存在时。
+   */
+  private findSegment(document: WorkbenchDocument, segmentId: string): { episode: EpisodeRecord; segment: SegmentRecord } {
+    for (const episode of document.episodes) {
+      const segment = episode.segments.find(candidate => candidate.id === segmentId)
+      if (segment !== undefined) return { episode, segment }
+    }
+    throw new Error(`未知的分段：${segmentId}`)
+  }
+
+  /**
+   * 用新记录替换文档里的同一集。
+   * @param document - 当前文档。
+   * @param next - 更新后的集。
+   */
+  private replaceEpisode(document: WorkbenchDocument, next: EpisodeRecord): void {
+    document.episodes = document.episodes.map(episode => (episode.id === next.id ? next : episode))
   }
 
   /**
@@ -1000,6 +1481,7 @@ export class WorkbenchStore {
       nodeCache: raw.nodeCache ?? [],
       resourceUsage: raw.resourceUsage ?? [],
       exportPresets: raw.exportPresets ?? [],
+      episodes: raw.episodes ?? [],
     }
   }
 
@@ -1014,15 +1496,22 @@ export class WorkbenchStore {
   private async readDocument(): Promise<WorkbenchDocument> {
     try {
       const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Record<string, unknown>
-      // 迁移链：只升不降；真发生迁移时先把原文件备份成 .pre-migrate-v<N>
-      const migration = migrateDocument(parsed, this.migrations)
-      if (migration.applied.length > 0) {
-        await copyFile(this.file, `${this.file}.pre-migrate-v${migration.fromVersion}`).catch(() => undefined)
-      }
-      this.cache = this.normalize(migration.document as Partial<WorkbenchDocument>)
-      if (migration.applied.length > 0) {
+      // 预发布阶段只认当前 schema：没有迁移链，也不猜字段。旧版本文件整份留证后
+      // 以空工作台重开——宁可让开发期的数据留在 `.legacy-v<N>` 里，也不要把半懂的
+      // 字段写回磁盘。
+      const declared = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : WORKBENCH_SCHEMA_VERSION
+      if (declared !== WORKBENCH_SCHEMA_VERSION) {
+        const backup = `${this.file}.legacy-v${declared}`
+        await copyFile(this.file, backup).catch(() => undefined)
+        console.warn(
+          `image-video workbench: 数据是 v${declared}，当前只支持 v${WORKBENCH_SCHEMA_VERSION}；`
+          + `已留证到 ${backup}，以空工作台继续`,
+        )
+        this.cache = emptyDocument()
         await this.save(this.cache).catch(() => undefined)
+        return this.cache
       }
+      this.cache = this.normalize(parsed as Partial<WorkbenchDocument>)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         // 商用底线：**数据坏了也不能把用户卡死**。
@@ -1043,10 +1532,7 @@ export class WorkbenchStore {
           { cause: error },
         )
       }
-      this.cache = {
-        schemaVersion: WORKBENCH_SCHEMA_VERSION, projects: [], assets: [], tasks: [], resources: [], workflows: [],
-        runs: [], timelines: [], nodeCache: [], resourceUsage: [], exportPresets: [],
-      }
+      this.cache = emptyDocument()
     }
     return this.cache
   }
@@ -1085,4 +1571,141 @@ export class WorkbenchStore {
  */
 export function resolveWorkbenchDirectory(outputsDir: string): string {
   return join(dirname(outputsDir), 'image-video-workbench')
+}
+
+/**
+ * 按集内顺序号排序。
+ * @param items - 带 `order` 的条目。
+ * @returns 排序后的副本。
+ */
+function sortByOrder<T extends { readonly order: number }>(items: readonly T[]): T[] {
+  return [...items].sort((left, right) => left.order - right.order)
+}
+
+/**
+ * 把分段顺序号重编为 1..n，删段后保持连续。
+ * @param segments - 分段列表。
+ * @returns 重编号后的分段。
+ */
+function reindexOrder(segments: readonly SegmentRecord[]): SegmentRecord[] {
+  return sortByOrder(segments).map((segment, index) => ({ ...segment, order: index + FIRST_ORDER }))
+}
+
+/**
+ * 把一条分段插到目标顺序位置，并重编全部顺序号。
+ * @param segments - 现有分段（不含待插入项）。
+ * @param segment - 待插入分段；其 `order` 是目标位置。
+ * @returns 插入并重编号后的分段。
+ */
+function insertSegment(segments: readonly SegmentRecord[], segment: SegmentRecord): SegmentRecord[] {
+  const sorted = sortByOrder(segments)
+  const index = Math.min(Math.max(segment.order - FIRST_ORDER, 0), sorted.length)
+  return [...sorted.slice(0, index), segment, ...sorted.slice(index)]
+    .map((entry, position) => ({ ...entry, order: position + FIRST_ORDER }))
+}
+
+/**
+ * 校验顺序号。
+ * @param value - 原始输入；缺省用调用方给的位置。
+ * @param fallback - 缺省位置。
+ * @returns 正整数顺序号。
+ * @throws {Error} 非正整数时。
+ */
+function resolveOrder(value: unknown, fallback: number): number {
+  if (value === undefined || value === null) return Math.max(fallback, FIRST_ORDER)
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < FIRST_ORDER) {
+    throw new Error('顺序必须是正整数')
+  }
+  return value
+}
+
+/**
+ * 校验集级引用动作里的对象 id。
+ * @param value - 原始输入。
+ * @param label - 错误信息里的字段名。
+ * @returns 去空白后的 id。
+ * @throws {Error} 非字符串或为空时。
+ */
+function requireRefId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${label} 必须是非空字符串`)
+  return value.trim()
+}
+
+/**
+ * 取出剧本正文：兼容纯字符串与 `{ text }` 两种入参。
+ * @param value - 原始输入。
+ * @returns 待校验的正文值。
+ */
+function readScriptText(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value
+  return (value as { text?: unknown }).text
+}
+
+/**
+ * 按资源自身的分类给出集内引用分类；`brand` 等不可入集的分类落到「未分组」。
+ * @param document - 当前文档。
+ * @param projectId - 剧集 id。
+ * @param resourceId - 资源 id。
+ * @returns 集内引用分类。
+ */
+function resolveRefCategory(document: WorkbenchDocument, projectId: string, resourceId: string): EpisodeRefCategory {
+  const resource = document.resources.find(candidate => candidate.id === resourceId && candidate.projectId === projectId)
+  if (resource === undefined) return DEFAULT_EPISODE_REF_CATEGORY
+  return EPISODE_REF_CATEGORIES.find(category => category === resource.kind) ?? DEFAULT_EPISODE_REF_CATEGORY
+}
+
+/**
+ * 把资源引用顺序号重编为 1..n。
+ * @param refs - 资源引用。
+ * @returns 重编号后的引用。
+ */
+function reindexRefs(refs: readonly EpisodeResourceRef[]): EpisodeResourceRef[] {
+  return sortByOrder(refs).map((ref, index) => ({ ...ref, order: index + FIRST_ORDER }))
+}
+
+/**
+ * 把素材引用顺序号重编为 1..n。
+ * @param refs - 素材引用。
+ * @returns 重编号后的引用。
+ */
+function reindexAssetRefs(refs: readonly EpisodeAssetRef[]): EpisodeAssetRef[] {
+  return sortByOrder(refs).map((ref, index) => ({ ...ref, order: index + FIRST_ORDER }))
+}
+
+/**
+ * 把一个资源引用插到目标顺序位置，并重编全部顺序号。
+ * @param refs - 现有引用（不含待插入项）。
+ * @param ref - 待插入的引用（`order` 由本函数填充）。
+ * @param order - 目标位置。
+ * @returns 插入并重编号后的引用。
+ */
+function arrangeResourceRefs(
+  refs: readonly EpisodeResourceRef[],
+  ref: Pick<EpisodeResourceRef, 'resourceId' | 'category'>,
+  order: unknown,
+): EpisodeResourceRef[] {
+  const sorted = sortByOrder(refs)
+  const target = resolveOrder(order, sorted.length + FIRST_ORDER)
+  const index = Math.min(Math.max(target - FIRST_ORDER, 0), sorted.length)
+  return [...sorted.slice(0, index), { ...ref, order: target }, ...sorted.slice(index)]
+    .map((entry, position) => ({ ...entry, order: position + FIRST_ORDER }))
+}
+
+/**
+ * 把一个素材引用插到目标顺序位置，并重编全部顺序号。
+ * @param refs - 现有引用（不含待插入项）。
+ * @param ref - 待插入的引用（`order` 由本函数填充）。
+ * @param order - 目标位置。
+ * @returns 插入并重编号后的引用。
+ */
+function arrangeAssetRefs(
+  refs: readonly EpisodeAssetRef[],
+  ref: Pick<EpisodeAssetRef, 'assetId' | 'category'>,
+  order: unknown,
+): EpisodeAssetRef[] {
+  const sorted = sortByOrder(refs)
+  const target = resolveOrder(order, sorted.length + FIRST_ORDER)
+  const index = Math.min(Math.max(target - FIRST_ORDER, 0), sorted.length)
+  return [...sorted.slice(0, index), { ...ref, order: target }, ...sorted.slice(index)]
+    .map((entry, position) => ({ ...entry, order: position + FIRST_ORDER }))
 }

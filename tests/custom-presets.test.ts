@@ -52,6 +52,6 @@ describe('custom export presets (A48)', () => {
     const presets = await reopened.listExportPresets()
     expect(presets).toHaveLength(1)
     expect(presets[0]?.name).toBe('持久化')
-    expect(WORKBENCH_SCHEMA_VERSION).toBe(5)
+    expect(WORKBENCH_SCHEMA_VERSION).toBe(1)
   })
 })

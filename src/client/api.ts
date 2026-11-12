@@ -10,12 +10,23 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
 import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
+import type {
+  EpisodeAssetRef, EpisodeInput, EpisodePatch, EpisodeRecord, EpisodeRefAction, EpisodeRefInput,
+  EpisodeResourceRef, SegmentInput, SegmentPatch, SegmentRecord, StoryboardInput, StoryboardRecord,
+} from '../workbench/episodes.ts'
+import type { SkillKind, SkillRecord } from '../workbench/skills.ts'
+import type { EpisodeExportResult } from '../workbench/episode-export.ts'
 import type { PipelineMode, PipelineShot } from '../workbench/pipeline.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { ResourceUsageRecord } from '../workbench/records.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
+// Type-only: the host half owns the auth value shapes; importing them keeps the client
+// face and the dispatcher from drifting (the names never reach the bundle).
+import type {
+  AuthHealthValue, AuthKeyState, AuthLoginValue, AuthProfileValue, AuthProvider, AuthSetKeyValue, AuthTestKeyValue,
+} from '../host/auth.ts'
 
 /** Export parameters the export panel lets the user pick (B6). */
 export interface TimelineExportOptions {
@@ -114,6 +125,9 @@ export interface PromptRecord {
   readonly name: string
   readonly text: string
   readonly tags?: readonly string[]
+  /** 归属剧集 / 集；本集提示词库按 `episodeId` 过滤。 */
+  readonly projectId?: string
+  readonly episodeId?: string
   readonly createdAt?: string
 }
 
@@ -400,14 +414,28 @@ export interface ModelCatalogView {
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
+  /** `auth/health`：凭证缝是否可用、登录态、余额、Key 末四位与服务商清单。 */
+  authHealth: () => Promise<AuthHealthValue>
+  /** `auth/login`：账号登录并自动开通/复用 Key（明文只留在宿主）。 */
+  authLogin: (input: { readonly email: string, readonly password: string, readonly turnstileToken?: string }) => Promise<AuthLoginValue>
+  /** `auth/logout`：清会话并撤销本插件写入的 Key。 */
+  authLogout: () => Promise<{ readonly success: true }>
+  /** `auth/profile`：刷新账号资料（余额 / Key 末四位）。 */
+  authProfile: () => Promise<AuthProfileValue>
+  /** `auth/set-key`：把已有 Key 写进凭证缝。 */
+  authSetKey: (input: { readonly apiKey: string, readonly provider?: AuthProvider, readonly test?: boolean }) => Promise<AuthSetKeyValue>
+  /** `auth/test-key`：只测连通性，不写盘。 */
+  authTestKey: (input: { readonly apiKey?: string, readonly provider?: AuthProvider }) => Promise<AuthTestKeyValue>
+  /** `auth/key-state`：某个服务商的脱敏 Key 状态。 */
+  authKeyState: (provider?: AuthProvider) => Promise<AuthKeyState>
   /** Every project, newest first. */
   listProjects: () => Promise<ProjectRecord[]>
   /** Create a project from a user-supplied name. */
   createProject: (name: string) => Promise<ProjectRecord>
   /** Remove a project (records only; media files stay on disk). */
   removeProject: (id: string) => Promise<boolean>
-  /** One project's assets, newest first. */
-  listAssets: (projectId: string) => Promise<AssetRecord[]>
+  /** 全局素材库（缺省）或某个来源剧集的素材，最新在前。 */
+  listAssets: (projectId?: string) => Promise<AssetRecord[]>
   /** Register an existing output file as an asset of a project. */
   attachAsset: (input: {
     projectId: string
@@ -479,7 +507,65 @@ export interface WorkbenchApi {
     readonly assets: readonly AssetRecord[]
     readonly skipped: readonly { readonly path: string; readonly reason: string }[]
   }>
-  listTasks: (limit?: number) => Promise<TaskRecord[]>
+  listTasks: (limit?: number, projectId?: string, episodeId?: string) => Promise<TaskRecord[]>
+  /** 剧集下的集；空剧集首次访问会自动补建第 1 集。 */
+  listEpisodes: (projectId: string) => Promise<EpisodeRecord[]>
+  /** 新建一集；集号冲突如实报错。 */
+  createEpisode: (projectId: string, input?: EpisodeInput) => Promise<EpisodeRecord>
+  /** 单集详情（含剧本、分段、分镜与两类引用）。 */
+  getEpisode: (id: string) => Promise<EpisodeRecord>
+  /** 修改集标题 / 备注 / 剧本。 */
+  updateEpisode: (id: string, patch: EpisodePatch) => Promise<EpisodeRecord>
+  /** 删除一集；有归属任务时需 `force`，只删元引用并保留下游文件。 */
+  removeEpisode: (id: string, force?: boolean) => Promise<boolean>
+  /** 重排集，集号重编为 1..n。 */
+  reorderEpisodes: (projectId: string, order: readonly string[]) => Promise<EpisodeRecord[]>
+  /** 集级资源库引用（只存 id）。 */
+  episodeResources: (id: string, action: EpisodeRefAction, input?: EpisodeRefInput) => Promise<EpisodeResourceRef[]>
+  /** 全局素材库引用（只存 id）。 */
+  episodeAssets: (id: string, action: EpisodeRefAction, input?: EpisodeRefInput) => Promise<EpisodeAssetRef[]>
+  /** 一集的分段，按顺序号排列。 */
+  listSegments: (episodeId: string) => Promise<SegmentRecord[]>
+  /** 新建分段。 */
+  createSegment: (episodeId: string, input?: SegmentInput) => Promise<SegmentRecord>
+  /** 修改分段；改 `order` 即移动位置。 */
+  updateSegment: (id: string, patch: SegmentPatch) => Promise<SegmentRecord>
+  /** 删除分段（同段分镜一并删除）。 */
+  removeSegment: (id: string) => Promise<SegmentRecord>
+  /** 重排分段。 */
+  reorderSegments: (episodeId: string, order: readonly string[]) => Promise<SegmentRecord[]>
+  /** 一集的分镜（按分段归属）。 */
+  listStoryboards: (episodeId: string) => Promise<StoryboardRecord[]>
+  /** 单组分镜。 */
+  getStoryboard: (id: string) => Promise<StoryboardRecord>
+  /** 保存分镜：无 `id` 新建、有 `id` 整组替换。 */
+  saveStoryboard: (input: StoryboardInput) => Promise<StoryboardRecord>
+  /** 删除一组分镜。 */
+  removeStoryboard: (id: string) => Promise<StoryboardRecord>
+  /** 技能库列表；`kind` 缺省列出两库。 */
+  listSkills: (kind?: SkillKind, enabledOnly?: boolean) => Promise<SkillRecord[]>
+  /** 单条技能。 */
+  getSkill: (id: string) => Promise<SkillRecord>
+  /** 新建 / 修改一条用户技能（内置只读）。 */
+  saveSkill: (input: {
+    readonly id?: string
+    readonly kind: SkillKind
+    readonly name: string
+    readonly description?: string
+    readonly prompt: string
+  }) => Promise<SkillRecord>
+  /** 从本地路径或 https URL 导入技能（.json / .zip / 目录）。 */
+  importSkill: (input: { readonly kind: SkillKind; readonly source: string }) => Promise<SkillRecord>
+  /** 启用 / 禁用技能（内置也可禁用）。 */
+  toggleSkill: (id: string, enabled: boolean) => Promise<SkillRecord>
+  /** 删除用户技能（内置只读）。 */
+  removeSkill: (id: string) => Promise<boolean>
+  /** 在文件管理器里打开技能目录。 */
+  revealSkill: (id: string) => Promise<RevealResultView>
+  /** 导出单集（剧本 + 分段 + 分镜 + 引用素材副本）到输出目录。 */
+  exportEpisode: (episodeId: string) => Promise<EpisodeExportResult>
+  /** 把本集分镜同步成固定的工作流文档（幂等）。 */
+  syncEpisodeWorkflow: (episodeId: string) => Promise<WorkflowRecord>
   /**
    * 在飞生成快照（`F3`）：宿主取消表里还活着的生成，带 `startedAt`。
    * 生成进度条没有百分比时，用它算"已用时"（`生成中 · 12s`）。
@@ -510,6 +596,10 @@ export interface WorkbenchApi {
     readonly wait?: boolean
     /** 显式续写（`B-4`）：紧接参考视频往后拍；缺参考视频时宿主响亮报错。 */
     readonly continuation?: boolean
+    /** 集归属（集重构 M2）：就地生成时把任务挂到集 / 分段 / 镜头。 */
+    readonly episodeId?: string
+    readonly segmentId?: string
+    readonly shotId?: string
   }) => Promise<MediaGenerateResult>
   /**
    * 融合生图（`G3`/`A-4`）：把选中的角色/场景/物品**资源 id**连同提示词交宿主，
@@ -548,17 +638,19 @@ export interface WorkbenchApi {
    * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
    */
-  extractPrompt: (input: { readonly path: string }) => Promise<ExtractedPrompt>
+  extractPrompt: (input: { readonly path: string; readonly skillId?: string }) => Promise<ExtractedPrompt>
   /** 剧本 → 分镜表（`A-7`）。 */
   planStoryboard: (input: { projectId: string; script: string; shots?: number }) => Promise<StoryboardPlan>
-  /** 提示词库列表（`A-5`）。 */
-  listPrompts: () => Promise<PromptRecord[]>
+  /** 提示词库列表（`A-5`）；`episodeId` 只取本集提示词。 */
+  listPrompts: (filter?: { readonly projectId?: string; readonly episodeId?: string }) => Promise<PromptRecord[]>
   /** 存入/更新一条提示词（`A-5`）。 */
   savePrompt: (input: {
     readonly id?: string
     readonly name: string
     readonly text: string
     readonly tags?: readonly string[]
+    readonly projectId?: string
+    readonly episodeId?: string
   }) => Promise<PromptRecord>
   /** 删除一条提示词（`A-5`）。 */
   removePrompt: (id: string) => Promise<boolean>
@@ -669,10 +761,19 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
   }
   return {
     health: () => call<WorkbenchHealth>('health'),
+    authHealth: () => call<AuthHealthValue>('auth/health'),
+    authLogin: input => call<AuthLoginValue>('auth/login', input),
+    authLogout: () => call<{ success: true }>('auth/logout'),
+    authProfile: () => call<AuthProfileValue>('auth/profile'),
+    authSetKey: input => call<AuthSetKeyValue>('auth/set-key', input),
+    authTestKey: input => call<AuthTestKeyValue>('auth/test-key', input),
+    authKeyState: provider => call<AuthKeyState>('auth/key-state', provider === undefined ? {} : { provider }),
     listProjects: async () => (await call<{ projects: ProjectRecord[] }>('projects/list')).projects,
     createProject: async name => (await call<{ project: ProjectRecord }>('projects/create', { name })).project,
     removeProject: async id => (await call<{ removed: boolean }>('projects/remove', { id })).removed,
-    listAssets: async projectId => (await call<{ assets: AssetRecord[] }>('assets/list', { projectId })).assets,
+    listAssets: async projectId => (await call<{ assets: AssetRecord[] }>(
+      'assets/list', projectId === undefined ? {} : { projectId },
+    )).assets,
     attachAsset: input => call<{ asset: AssetRecord; created: boolean }>('assets/attach', input),
     removeAsset: async (id, force) => (await call<{ removed: boolean }>('assets/remove', force === true ? { id, force: true } : { id })).removed,
     removeAssets: input => call<{ removed: number; skipped: Array<{ id: string; reason: string }> }>('assets/remove-many', input),
@@ -696,7 +797,48 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     }>('timelines/render-ratios', input),
     createResource: async input => (await call<{ resource: ResourceRecord }>('resources/create', input)).resource,
     removeResource: async (id, force) => (await call<{ removed: boolean }>('resources/remove', force === true ? { id, force: true } : { id })).removed,
-    listTasks: async limit => (await call<{ tasks: TaskRecord[] }>('tasks/list', { limit })).tasks,
+    listTasks: async (limit, projectId, episodeId) => (await call<{ tasks: TaskRecord[] }>('tasks/list', {
+      ...limit === undefined ? {} : { limit },
+      ...projectId === undefined ? {} : { projectId },
+      ...episodeId === undefined ? {} : { episodeId },
+    })).tasks,
+    listEpisodes: async projectId => (await call<{ episodes: EpisodeRecord[] }>('episodes/list', { projectId })).episodes,
+    createEpisode: async (projectId, input) =>
+      (await call<{ episode: EpisodeRecord }>('episodes/create', { projectId, ...(input ?? {}) })).episode,
+    getEpisode: async id => (await call<{ episode: EpisodeRecord }>('episodes/get', { id })).episode,
+    updateEpisode: async (id, patch) => (await call<{ episode: EpisodeRecord }>('episodes/update', { id, ...patch })).episode,
+    removeEpisode: async (id, force) =>
+      (await call<{ removed: boolean }>('episodes/remove', force === true ? { id, force: true } : { id })).removed,
+    reorderEpisodes: async (projectId, order) =>
+      (await call<{ episodes: EpisodeRecord[] }>('episodes/reorder', { projectId, order })).episodes,
+    episodeResources: async (id, action, input) =>
+      (await call<{ refs: EpisodeResourceRef[] }>('episodes/resources', { id, action, ...(input ?? {}) })).refs,
+    episodeAssets: async (id, action, input) =>
+      (await call<{ refs: EpisodeAssetRef[] }>('episodes/assets', { id, action, ...(input ?? {}) })).refs,
+    listSegments: async episodeId => (await call<{ segments: SegmentRecord[] }>('segments/list', { episodeId })).segments,
+    createSegment: async (episodeId, input) =>
+      (await call<{ segment: SegmentRecord }>('segments/create', { episodeId, ...(input ?? {}) })).segment,
+    updateSegment: async (id, patch) => (await call<{ segment: SegmentRecord }>('segments/update', { id, ...patch })).segment,
+    removeSegment: async id => (await call<{ removed: SegmentRecord }>('segments/remove', { id })).removed,
+    reorderSegments: async (episodeId, order) =>
+      (await call<{ segments: SegmentRecord[] }>('segments/reorder', { episodeId, order })).segments,
+    listStoryboards: async episodeId =>
+      (await call<{ storyboards: StoryboardRecord[] }>('storyboards/list', { episodeId })).storyboards,
+    getStoryboard: async id => (await call<{ storyboard: StoryboardRecord }>('storyboards/get', { id })).storyboard,
+    saveStoryboard: async input => (await call<{ storyboard: StoryboardRecord }>('storyboards/save', input)).storyboard,
+    removeStoryboard: async id => (await call<{ removed: StoryboardRecord }>('storyboards/remove', { id })).removed,
+    listSkills: async (kind, enabledOnly) => (await call<{ skills: SkillRecord[] }>('skills/list', {
+      ...kind === undefined ? {} : { kind },
+      ...enabledOnly === true ? { enabled: true } : {},
+    })).skills,
+    getSkill: async id => (await call<{ skill: SkillRecord }>('skills/get', { id })).skill,
+    saveSkill: async input => (await call<{ skill: SkillRecord }>('skills/save', input)).skill,
+    importSkill: async input => (await call<{ skill: SkillRecord }>('skills/import', input)).skill,
+    toggleSkill: async (id, enabled) => (await call<{ skill: SkillRecord }>('skills/toggle', { id, enabled })).skill,
+    removeSkill: async id => (await call<{ removed: boolean }>('skills/remove', { id })).removed,
+    revealSkill: async id => (await call<{ reveal: RevealResultView }>('skills/reveal', { id })).reveal,
+    exportEpisode: async episodeId => (await call<{ export: EpisodeExportResult }>('episodes/export', { episodeId })).export,
+    syncEpisodeWorkflow: async episodeId => (await call<{ workflow: WorkflowRecord }>('workflows/sync-episode', { episodeId })).workflow,
     listRunningTasks: async () => (await call<{ running: RunningGeneration[] }>('tasks/running')).running,
     probeFfmpeg: async path => (await call<{ ffmpeg: FfmpegProbe }>('media/ffmpeg', path === undefined ? {} : { path })).ffmpeg,
     saveDefaults: async patch => {
@@ -753,7 +895,10 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     composeMedia: input => call<ComposeMediaResult>('media/compose', input),
     extractPrompt: input => call<ExtractedPrompt>('prompts/extract', input),
     planStoryboard: input => call<StoryboardPlan>('storyboard/plan', input),
-    listPrompts: async () => (await call<{ prompts: PromptRecord[] }>('prompts/list')).prompts,
+    listPrompts: async filter => (await call<{ prompts: PromptRecord[] }>('prompts/list', {
+      ...filter?.projectId === undefined ? {} : { projectId: filter.projectId },
+      ...filter?.episodeId === undefined ? {} : { episodeId: filter.episodeId },
+    })).prompts,
     savePrompt: async input => (await call<{ prompt: PromptRecord }>('prompts/save', input)).prompt,
     removePrompt: async id => (await call<{ removed: boolean }>('prompts/remove', { id })).removed,
     listExports: async input => {

@@ -3,15 +3,14 @@
  *
  * 断言：
  * 1. 分类可建/可改/可清/可过滤，且**旧数据（无 folder）自动归为未分类**；
- * 2. schema v4→v5 迁移不丢数据（只升版本，旧资源无需改写）；
+ * 2. 旧版本数据文件（v≠当前 schema）整份留证后以空工作台重开，不做字段猜测式迁移；
  * 3. `resources/plan-redraw` 只做计划：不调模型、缺参考图/缺备注都如实提醒。
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
-import { migrateDocument } from '../src/workbench/migrate.ts'
 import { WORKBENCH_SCHEMA_VERSION } from '../src/workbench/records.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 
@@ -78,19 +77,19 @@ describe('资源分类（folder）', () => {
   })
 })
 
-describe('schema v4 → v5', () => {
-  it('迁移只升版本，旧资源原样保留（无 folder = 未分类）', () => {
-    expect(WORKBENCH_SCHEMA_VERSION).toBe(5)
+describe('旧版本数据文件', () => {
+  it('留证到 .legacy-v<N> 后以空工作台重开，不猜测字段', async () => {
+    const directory = await temp('image-video-legacy-')
     const legacy = {
       schemaVersion: 4,
       projects: [{ id: 'prj-1', name: '旧项目' }],
       resources: [{ id: 'res-1', projectId: 'prj-1', kind: 'role', name: '旧角色', scope: 'project' }],
     }
-    const migrated = migrateDocument(legacy)
-    expect(migrated.fromVersion).toBe(4)
-    expect(migrated.toVersion).toBe(5)
-    expect(migrated.document.schemaVersion).toBe(5)
-    expect((migrated.document.resources as Array<{ id: string; folder?: string }>)[0]!.folder).toBeUndefined()
+    await writeFile(join(directory, 'workbench.json'), JSON.stringify(legacy), 'utf8')
+    const store = new WorkbenchStore({ directory })
+    expect(await store.listProjects()).toEqual([])
+    expect(await readFile(join(directory, 'workbench.json.legacy-v4'), 'utf8')).toContain('旧项目')
+    expect(WORKBENCH_SCHEMA_VERSION).toBe(1)
   })
 })
 

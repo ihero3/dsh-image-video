@@ -7,7 +7,7 @@
  */
 
 /** Schema version stamped into every stored record, so later migrations have a hook. */
-export const WORKBENCH_SCHEMA_VERSION = 5
+export const WORKBENCH_SCHEMA_VERSION = 1
 
 /** One project: the container every asset, task and workflow belongs to. */
 export interface ProjectRecord {
@@ -92,6 +92,10 @@ export interface TaskRecord {
   readonly bytes?: number
   /** Project this task was filed into, once the user registers its output. */
   readonly projectId?: string
+  /** 归属的集 / 分段 / 镜头（可选；旧记录没有）。 */
+  readonly episodeId?: string
+  readonly segmentId?: string
+  readonly shotId?: string
   /** Failure message for `failed` (and the reason for `cancelled`). */
   readonly error?: string
   /** When the call started / last changed. */
@@ -111,7 +115,7 @@ export type MediaKind = 'image' | 'video'
 /** 资源作用域（`R-COL-1`）：V1 只用 `project`，字段先留好。 */
 export type ResourceScope = 'project' | 'team' | 'public'
 
-export type ResourceKind = 'role' | 'scene' | 'prop' | 'brand' | 'style' | 'voice' | 'motion-track'
+export type ResourceKind = 'role' | 'costume' | 'scene' | 'prop' | 'brand' | 'style' | 'voice' | 'motion-track'
 
 /** One reusable creative resource inside a project. */
 /**
@@ -250,12 +254,12 @@ export function normalizeProjectName(value: unknown): string {
  * Validate a resource kind.
  * @param value - raw kind.
  * @returns the kind.
- * @throws {Error} when it is none of the six known kinds.
+ * @throws {Error} when it is none of the eight known kinds.
  */
 export function normalizeResourceKind(value: unknown): ResourceKind {
-  if (value === 'role' || value === 'scene' || value === 'prop'
+  if (value === 'role' || value === 'costume' || value === 'scene' || value === 'prop'
     || value === 'brand' || value === 'style' || value === 'voice' || value === 'motion-track') return value
-  throw new Error('resource kind must be one of role/scene/prop/brand/style/voice/motion-track')
+  throw new Error('resource kind must be one of role/costume/scene/prop/brand/style/voice/motion-track')
 }
 
 /**

@@ -705,7 +705,7 @@ node scripts/diff-ui-baseline.mjs
 - 不引入 Tailwind / UnoCSS / CSS-in-JS 第二套样式语言；
 - 不做宿主级 Toast（R6-3 只做插件内状态栏消息，二期换 sink）；
 - 不改业务逻辑与 API 契约（`docs/API-SURFACE.md` 的 B 申请区不动）；
-- 不造独立品牌 / logo / favicon（`BrandMark` 只用 `currentColor` 或 `--iv-acc` 单色，≥14px，等比缩放，四周留白 ≥ 1/4 边长；命名与 tagline 改动走 owner）；
+- 品牌标只有一枚（`BrandMark`，左栏入口与工作台左上角共用）：石墨灰 `#31363D` 圆角底 + 三根白条 + 产品蓝 `#2F6FED` 三角，24 网格等比缩放，≥16px，四周留白 ≥ 0.5× 条高；不再新增其他品牌图或 favicon；命名与 tagline 改动走 owner；
 - 不新增图标风格（新图标单 path 进 `STROKE`、多元素进 `SHAPES`，禁止外贴异 stroke/异网格/填充图标集；装饰图标保持 `aria-hidden`）。
 
 ---

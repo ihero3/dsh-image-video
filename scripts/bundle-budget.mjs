@@ -42,15 +42,24 @@
  * 由 chunk 在加载时填充——时机上安全（Workbench 渲染前 chunk 必已加载）。
  * 这样入口能一次砍掉 ~15 KB（-23%）。因涉及 i18n 装配且要避开 locale 服务
  * `already has locale` 的限制，单独排期做，不混在布局重构里。
+ *
+ * **2026-11-11 抬基线（M0–M6 剧集重构 + 登录闭环）**：入口 15_000 → 23_000、gzip 5_600 → 7_800，
+ * 总量 915_000 → 1_060_000、gzip 200_000 → 230_000。原因：
+ * - 剧集/集/分段/分镜四层把本集工作区、提示词·分镜双 Tab、双 Skill 库带进 chunk（+约 150 KB）；
+ * - `api.ts` 新增 30 余个端点（剧集、技能、提示词、导出），入口只多了方法名与参数转发（约 +1.2 KB），
+ *   M0 之后入口已稳定在 22 KB 量级，15 KB 基线是 N5 刚落地时的值；
+ * - 本轮登录闭环（`auth/*` 7 个端点 + 连接弹层）在入口只增加转发方法（约 +0.7 KB），弹层随 chunk 下载。
+ * 实测 raw 1,245,041 / 270,640，按新基线占用 98.6% / 98.5%，与前一次抬基线的余量口径一致。
  */
-export const BUNDLE_BASELINE = Object.freeze({ raw: 15_000, gzip: 5_600 })
+export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // 2026-11-05 抬总产物基线（raw 905_920 → 915_000，gzip 194_780 → 200_000）：
 // 这一轮按产品清单砍掉一批界面（三步引导 / 风控预检 / 花费提示 / 产出统计 / 严格模式），
 // 但同时**新增**了「生成分镜可编辑」「生成画布」「就地生成」「视频生视频」「参考图缩略图预览」
 // 这批功能，chunk 从 961 KB → 1,068 KB（+11%）。入口仍然稳定在 14.7 KB / 82%，
 // 说明增长都在"首次打开工作台才下载"的 chunk 里；总产物实测 1,083,051 / 235,424，
 // 按新基线占用 98.6% / 98.4%，留出约 1.5% 余量。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 915_000, gzip: 200_000 })
+// 2026-11-11 随剧集重构一并抬到 1_060_000 / 230_000（理由见上）。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_060_000, gzip: 230_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

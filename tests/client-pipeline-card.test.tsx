@@ -36,6 +36,13 @@ function makeApi(overrides: Partial<WorkbenchApi> = {}): WorkbenchApi {
     runPipeline: vi.fn(),
     listResources: vi.fn(async () => []),
     createResource: vi.fn(async () => ({ id: 'res-new' })),
+    // `C5`：视频 `wait:false` 提交后按任务 id 轮询成片；默认让每条任务都立刻成功
+    listTasks: vi.fn(async () => [
+      { id: 'tsk-video', status: 'succeeded', outputPath: '/tmp/outputs/shot.mp4' },
+      { id: 'tsk-1', status: 'succeeded', outputPath: '/tmp/outputs/shot-1.mp4' },
+      { id: 'tsk-2', status: 'succeeded', outputPath: '/tmp/outputs/shot-2.mp4' },
+      { id: 'tsk-3', status: 'succeeded', outputPath: '/tmp/outputs/shot-3.mp4' },
+    ]),
     generateMedia: vi.fn(async (input: { mediaMode: 'image' | 'video' }) => (
       input.mediaMode === 'video'
         ? { mediaMode: 'video' as const, pending: true, taskId: 'tsk-video' }
@@ -282,6 +289,39 @@ describe('PipelineCard', () => {
     // 第 2 镜被打上失败态，第 3 镜没有开跑
     expect(container.querySelector('[data-pipeline-inline-state="failed"]')?.getAttribute('data-pipeline-inline-row')).toBe('2')
     expect(videoCalls).toBe(2)
+  })
+
+  it('C5：视频 `wait:false` 提交后要等任务落成片，才算这一镜跑完', async () => {
+    let polls = 0
+    const listTasks = vi.fn(async () => {
+      polls += 1
+      return polls < 2
+        ? [{ id: 'tsk-video', status: 'running' }]
+        : [{ id: 'tsk-video', status: 'succeeded', outputPath: '/tmp/outputs/shot.mp4' }]
+    })
+    const api = makeApi({ listTasks: listTasks as unknown as WorkbenchApi['listTasks'] })
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。' } })
+    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
+    await waitFor(() => {
+      expect((container.querySelector('[data-pipeline-inline-row="1"]') as HTMLElement).textContent).toContain('/tmp/outputs/shot.mp4')
+    }, { timeout: 5000 })
+    // 第一次轮询还在跑、第二次才拿到成片——不是"提交成功就收工"
+    expect(polls).toBeGreaterThanOrEqual(2)
+    expect(container.querySelector('[data-pipeline-inline-error]')).toBeNull()
+  })
+
+  it('C5：视频任务失败要停在本镜并给出原因', async () => {
+    const listTasks = vi.fn(async () => [{ id: 'tsk-video', status: 'failed', error: '内容审核未通过' }])
+    const api = makeApi({ listTasks: listTasks as unknown as WorkbenchApi['listTasks'] })
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
+    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
+    await waitFor(() => { expect(container.querySelector('[data-pipeline-inline-error]')).not.toBeNull() })
+    const text = (container.querySelector('[data-pipeline-inline-error]') as HTMLElement).textContent ?? ''
+    expect(text).toContain('#1')
+    expect(text).toContain('内容审核未通过')
+    expect(container.querySelectorAll('[data-pipeline-inline-state="failed"]').length).toBe(1)
   })
 
   it('B6：没先「生成分镜」也能就地生成（客户端按同一纯函数先排版）', async () => {

@@ -43,8 +43,6 @@ export type WorkbenchLocaleKey =
   | 'modulePipelineDesc'
   | 'moduleQuick'
   | 'moduleQuickDesc'
-  | 'moduleAdvanced'
-  | 'moduleAdvancedDesc'
   | 'moduleCollapse'
   | 'moduleExpand'
   | 'modeWorkflow'
@@ -227,12 +225,141 @@ export type WorkbenchLocaleKey =
   | 'filterImage'
   | 'filterVideo'
   | 'kindRole'
+  | 'kindCostume'
   | 'kindScene'
   | 'kindProp'
   | 'kindBrand'
   | 'kindStyle'
   | 'kindVoice'
+  | 'sectionEpisode'
+  | 'episodeNone'
+  | 'episodeNew'
+  | 'episodeRename'
+  | 'episodeRemove'
+  | 'episodeResourcesSelected'
+  | 'episodeResourcesAll'
+  | 'episodeRefsHint'
+  | 'episodeRefsEmpty'
+  | 'episodeRefsBrowse'
+  | 'episodeRefMissing'
+  | 'episodeRefCategory'
+  | 'episodeCategoryUngrouped'
+  | 'episodeAddResource'
+  | 'episodeAddAsset'
+  | 'episodeAssetTag'
+  | 'episodeWorkspaceTitle'
+  | 'episodeScriptSaved'
+  | 'episodeScriptDirty'
+  | 'episodeScriptSaving'
+  | 'episodeScriptFailed'
+  | 'episodeTotalDuration'
+  | 'segmentTitle'
+  | 'segmentAdd'
+  | 'segmentEmpty'
+  | 'segmentName'
+  | 'segmentPromptLabel'
+  | 'segmentPromptPlaceholder'
+  | 'segmentDurationLabel'
+  | 'segmentSkillLabel'
+  | 'segmentSkillDefault'
+  | 'segmentSkillHint'
+  | 'segmentSkillMissing'
+  | 'skillsPaneTitle'
+  | 'skillsPaneDesc'
+  | 'skillKindDirector'
+  | 'skillKindReverse'
+  | 'skillKindDirectorDesc'
+  | 'skillKindReverseDesc'
+  | 'skillImportLabel'
+  | 'skillImportPlaceholder'
+  | 'skillImportAction'
+  | 'skillImportDone'
+  | 'skillImportFailed'
+  | 'skillBuiltin'
+  | 'skillDisabled'
+  | 'skillToggleOn'
+  | 'skillToggleOff'
+  | 'skillRemove'
+  | 'skillReveal'
+  | 'skillEmpty'
+  | 'skillLoadFailed'
+  | 'skillRemoveConfirm'
+  | 'skillRemoved'
+  | 'skillCreateToggle'
+  | 'skillNameLabel'
+  | 'skillNamePlaceholder'
+  | 'skillDescriptionLabel'
+  | 'skillDescriptionPlaceholder'
+  | 'skillPromptLabel'
+  | 'skillPromptPlaceholder'
+  | 'skillSaveAction'
+  | 'skillSaved'
+  | 'skillBuiltinReadonly'
+  | 'skillsHint'
+  | 'skillsRefresh'
+  | 'quickTabProduce'
+  | 'quickTabPrompt'
+  | 'studioTitle'
+  | 'studioDesc'
+  | 'studioSkillLabel'
+  | 'studioSkillDefault'
+  | 'studioSources'
+  | 'studioSourcesHint'
+  | 'studioSourcesEmpty'
+  | 'studioSourceLimit'
+  | 'studioExtractAction'
+  | 'studioExtracting'
+  | 'studioExtracted'
+  | 'studioExtractFailed'
+  | 'studioClearSources'
+  | 'studioNameLabel'
+  | 'studioNamePlaceholder'
+  | 'studioDraftNameSuffix'
+  | 'studioDraftLabel'
+  | 'studioDraftPlaceholder'
+  | 'studioSaveAction'
+  | 'studioSaved'
+  | 'studioSaveFailed'
+  | 'studioApply'
+  | 'studioPromptLibrary'
+  | 'studioPromptEmpty'
+  | 'studioRemovePrompt'
+  | 'studioStoryboard'
+  | 'studioStoryboardEmpty'
+  | 'studioShotApply'
+  | 'studioNoEpisode'
+  | 'studioLoadFailed'
+  | 'shotRefAdd'
+  | 'segmentRefsLabel'
+  | 'episodeSyncWorkflow'
+  | 'episodeSyncWorkflowDone'
+  | 'episodeSyncWorkflowFailed'
+  | 'episodeExport'
+  | 'episodeExportDone'
+  | 'episodeExportFailed'
+  | 'segmentRefsEmpty'
+  | 'segmentAddRef'
+  | 'segmentRefResources'
+  | 'segmentRefAssets'
+  | 'segmentRemove'
+  | 'segmentSaveFailed'
+  | 'segmentAddFailed'
+  | 'segmentRemoveFailed'
+  | 'segmentStoryboardPlan'
+  | 'segmentStoryboardNone'
+  | 'storyboardSave'
+  | 'shotName'
+  | 'shotGenerateImage'
+  | 'shotGenerateVideo'
+  | 'shotGenerating'
+  | 'shotImageDone'
+  | 'shotVideoQueued'
+  | 'shotGenerateFailed'
+  | 'refInsertToken'
+  | 'moveUp'
+  | 'moveDown'
   | 'brandTagline'
+  | 'dockTitle'
   | 'statOutputs'
   | 'statAssets'
   | 'statTasks'
@@ -273,6 +400,7 @@ export type WorkbenchLocaleKey =
   | 'taskErrorHide'
   | 'taskErrorHint'
   | 'railAssets'
+  | 'railSkills'
   | 'railTasks'
   | 'railHealth'
   | 'railDefaults'
@@ -338,6 +466,10 @@ export type WorkbenchLocaleKey =
   | 'pipelineToCanvasHint'
   | 'pipelineInlineRun'
   | 'pipelineInlineRunHint'
+  | 'pipelineInlineVideoFailed'
+  | 'pipelineInlineVideoCancelled'
+  | 'pipelineInlineVideoTimeout'
+  | 'pipelineInlineVideoNoOutput'
   | 'pipelineShotDuration'
   | 'pipelineVideoToVideoNeedsRef'
   | 'pipelineShotEditable'
@@ -427,32 +559,8 @@ export type WorkbenchLocaleKey =
   | 'fusionFailed'
   | 'fusionNeedsPrompt'
   | 'fusionClear'
-  // ---- B-10 提示词工坊（G1，依赖 A-5 prompts/extract） ----
-  | 'promptTitle'
-  | 'promptHint'
-  | 'promptExtract'
-  | 'promptExtracting'
-  | 'promptExtractNeedsAsset'
-  | 'promptExtractDone'
-  | 'promptExtractFailed'
-  | 'promptExtractEmpty'
-  | 'promptDraftLabel'
-  | 'promptNameLabel'
-  | 'promptNamePlaceholder'
-  | 'promptUntitled'
-  | 'promptSave'
-  | 'promptSaveDone'
-  | 'promptSaveFailed'
-  | 'promptNeedsText'
-  | 'promptLibrary'
-  | 'promptLibraryEmpty'
-  | 'promptApply'
+  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
   | 'promptApplyDone'
-  | 'promptRemove'
-  | 'promptSavedCount'
-  | 'promptExtractEmpty'
-  | 'promptNamePlaceholder'
-  | 'promptSave'
   | 'healthSize'
   | 'healthDupes'
   | 'healthStats'
@@ -726,8 +834,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: 'Paste a script: it is split into shots, then images and clips are generated for it.',
   moduleQuick: 'One line, one shot',
   moduleQuickDesc: 'Type one prompt to get a single image or a single clip.',
-  moduleAdvanced: 'Advanced',
-  moduleAdvancedDesc: 'Fusion generation, prompt workshop, shot list and model details — collapsed by default.',
   moduleCollapse: 'Collapse',
   moduleExpand: 'Expand',
   templateQuickImage: 'Quick image',
@@ -956,12 +1062,141 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   filterImage: 'Images',
   filterVideo: 'Videos',
   kindRole: 'Role',
+  kindCostume: 'Costume',
   kindScene: 'Scene',
   kindProp: 'Prop',
   kindBrand: 'Brand',
   kindStyle: 'Style',
   kindVoice: 'Voice',
+  sectionEpisode: 'Episode',
+  episodeNone: 'No episode yet',
+  episodeNew: 'New episode',
+  episodeRename: 'Rename episode',
+  episodeRemove: 'Delete episode',
+  episodeResourcesSelected: 'This episode',
+  episodeResourcesAll: 'All series resources',
+  episodeRefsHint: 'References only — nothing is copied.',
+  episodeRefsEmpty: 'Nothing added to this episode yet.',
+  episodeRefsBrowse: 'Browse all series resources',
+  episodeRefMissing: 'Missing reference',
+  episodeRefCategory: 'Category',
+  episodeCategoryUngrouped: 'Ungrouped',
+  episodeAddResource: 'Add to episode',
+  episodeAddAsset: 'Add asset to episode',
+  episodeAssetTag: 'Asset',
+  episodeWorkspaceTitle: 'Episode workspace',
+  episodeScriptSaved: 'Saved',
+  episodeScriptDirty: 'Unsaved',
+  episodeScriptSaving: 'Saving…',
+  episodeScriptFailed: 'Save failed',
+  episodeTotalDuration: '{n}s total',
+  segmentTitle: 'Segments',
+  segmentAdd: 'Add segment',
+  segmentEmpty: 'No segments yet — add one and write its prompt.',
+  segmentName: 'Segment {n}',
+  segmentPromptLabel: 'Segment prompt',
+  segmentPromptPlaceholder: 'Within these seconds: who, where, what happens…',
+  segmentDurationLabel: 'Seconds',
+  segmentSkillLabel: 'Director skill',
+  segmentSkillDefault: 'Default skill',
+  segmentSkillHint: 'Active director skills from the skill library; with none selected the default skill is used.',
+  segmentSkillMissing: 'Disabled skill',
+  skillsPaneTitle: 'Skill libraries',
+  skillsPaneDesc: 'The director library turns prompts into professional storyboards; the reverse library turns images and short clips into editable prompts.',
+  skillKindDirector: 'Director library',
+  skillKindReverse: 'Reverse library',
+  skillKindDirectorDesc: 'Prompt → professional storyboard',
+  skillKindReverseDesc: 'Image / short clip → editable prompt',
+  skillImportLabel: 'Import skill',
+  skillImportPlaceholder: 'Local path, or https://…/skill.json',
+  skillImportAction: 'Import',
+  skillImportDone: 'Imported {name}',
+  skillImportFailed: 'Import failed',
+  skillBuiltin: 'Built-in',
+  skillDisabled: 'Disabled',
+  skillToggleOn: 'Enable',
+  skillToggleOff: 'Disable',
+  skillRemove: 'Delete',
+  skillReveal: 'Open folder',
+  skillEmpty: 'No skills in this library yet',
+  skillLoadFailed: 'Could not read the skill library',
+  skillRemoveConfirm: 'Delete {name}? A backup is kept under _backup first.',
+  skillRemoved: 'Deleted {name}',
+  skillCreateToggle: 'Create manually',
+  skillNameLabel: 'Name',
+  skillNamePlaceholder: 'e.g. Realistic commercial storyboard',
+  skillDescriptionLabel: 'Description',
+  skillDescriptionPlaceholder: 'What this skill is for (optional)',
+  skillPromptLabel: 'Prompt template',
+  skillPromptPlaceholder: 'Paste the skill prompt…',
+  skillSaveAction: 'Save skill',
+  skillSaved: 'Saved {name}',
+  skillBuiltinReadonly: 'Built-in skills are read-only; they can only be disabled',
+  skillsHint: 'Skills live under skills/ in the workbench data directory; built-in skills are read-only but can be disabled.',
+  skillsRefresh: 'Refresh',
+  quickTabProduce: 'Content production',
+  quickTabPrompt: 'Prompts · storyboard',
+  studioTitle: 'Prompts · storyboard',
+  studioDesc: 'Turn up to 8 images into editable prompts, then save them to this episode.',
+  studioSkillLabel: 'Reverse skill',
+  studioSkillDefault: 'Default Skill',
+  studioSources: 'Input images',
+  studioSourcesHint: 'From this episode and the global media library; at most 8.',
+  studioSourcesEmpty: 'No images yet — generate or register media first.',
+  studioSourceLimit: 'At most {n} input images',
+  studioExtractAction: 'Extract prompts',
+  studioExtracting: 'Extracting…',
+  studioExtracted: 'Extracted {n} prompt(s)',
+  studioExtractFailed: 'Extraction failed',
+  studioClearSources: 'Clear',
+  studioNameLabel: 'Prompt name',
+  studioNamePlaceholder: 'Prompt name shown in the episode library',
+  studioDraftNameSuffix: 'prompt',
+  studioDraftLabel: 'Editable prompt',
+  studioDraftPlaceholder: 'Extracted or hand-written prompt…',
+  studioSaveAction: 'Save to episode',
+  studioSaved: 'Saved {name}',
+  studioSaveFailed: 'Could not save the prompt',
+  studioApply: 'Use in production',
+  studioPromptLibrary: 'Episode prompt library',
+  studioPromptEmpty: 'No prompts saved in this episode yet',
+  studioRemovePrompt: 'Delete',
+  studioStoryboard: 'Storyboard shots',
+  studioStoryboardEmpty: 'No storyboard for this episode yet',
+  studioShotApply: 'Use shot prompt',
+  studioNoEpisode: 'Create an episode first',
+  studioLoadFailed: 'Could not load the prompt studio',
+  shotRefAdd: 'Pick image / video for this shot',
+  episodeSyncWorkflow: 'Sync to workflow',
+  episodeSyncWorkflowDone: 'Storyboard synced to {name}',
+  episodeSyncWorkflowFailed: 'Sync failed',
+  episodeExport: 'Export this episode',
+  episodeExportDone: 'Episode exported to {path}',
+  episodeExportFailed: 'Export failed',
+  segmentRefsLabel: 'References',
+  segmentRefsEmpty: 'No references — pick from this episode’s resources or assets.',
+  segmentAddRef: 'Add reference',
+  segmentRefResources: 'Series resources',
+  segmentRefAssets: 'Assets',
+  segmentRemove: 'Delete segment',
+  segmentSaveFailed: 'Segment save failed',
+  segmentAddFailed: 'Could not add the segment',
+  segmentRemoveFailed: 'Could not delete the segment',
+  segmentStoryboardPlan: 'Generate storyboard',
+  segmentStoryboardNone: 'No storyboard yet — generate one from this segment’s prompt.',
+  storyboardSave: 'Save storyboard',
+  shotName: 'Shot {n}',
+  shotGenerateImage: 'Generate image',
+  shotGenerateVideo: 'Generate video',
+  shotGenerating: 'Generating…',
+  shotImageDone: 'Shot {n} image generated.',
+  shotVideoQueued: 'Shot {n} video queued — follow the task list.',
+  shotGenerateFailed: 'Generation failed',
+  refInsertToken: 'Append [@{n}] to the prompt',
+  moveUp: 'Move up',
+  moveDown: 'Move down',
   brandTagline: 'Media production workbench',
+  dockTitle: 'Media studio',
   statOutputs: 'Outputs',
   statAssets: 'Assets',
   statTasks: 'Tasks',
@@ -1002,6 +1237,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   taskErrorHide: 'Hide reason',
   taskErrorHint: 'Show the upstream error for this failed task',
   railAssets: 'Media assets',
+  railSkills: 'Skill libraries',
   railTasks: 'Tasks',
   railHealth: 'Library health',
   railDefaults: 'Effective defaults',
@@ -1067,6 +1303,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineToCanvasHint: 'Only lays the shots out on the canvas — nothing starts until you run it there',
   pipelineInlineRun: 'Generate here',
   pipelineInlineRunHint: 'Generates shot by shot right here, without opening the canvas',
+  pipelineInlineVideoFailed: 'Shot video failed',
+  pipelineInlineVideoCancelled: 'Shot video was cancelled',
+  pipelineInlineVideoTimeout: 'Timed out waiting for the shot video',
+  pipelineInlineVideoNoOutput: 'The shot video task finished without a file',
   pipelineShotDuration: 'Shot seconds',
   pipelineVideoToVideoNeedsRef: 'Video → video needs a reference clip first',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
@@ -1147,29 +1387,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   fusionNeedsPrompt: 'Write a prompt first',
   fusionClear: 'Clear selection',
 
-  // ---- B-10 prompt studio (G1, needs A-5 prompts/extract) ----
-  promptTitle: 'Prompt studio',
-  promptHint: 'Extract a structured prompt from a selected image, edit it, then save it to the prompt library. Needs the host endpoint prompts/extract (A-5).',
-  promptExtract: 'Extract prompt',
-  promptExtracting: 'Extracting…',
-  promptExtractNeedsAsset: 'Select an image asset first',
-  promptExtractDone: 'Prompt extracted — edit it below',
-  promptExtractFailed: 'Extraction failed',
-  promptExtractEmpty: 'The extractor returned nothing — try another image',
-  promptDraftLabel: 'Extracted prompt (editable)',
-  promptNameLabel: 'Prompt name',
-  promptNamePlaceholder: 'e.g. soft cinematic portrait',
-  promptUntitled: 'Untitled prompt',
-  promptSave: 'Save to library',
-  promptSaveDone: 'Saved to the prompt library',
-  promptSaveFailed: 'Could not save',
-  promptNeedsText: 'Nothing to save yet',
-  promptLibrary: 'Prompt library',
-  promptLibraryEmpty: 'No saved prompts yet',
-  promptApply: 'Use in form',
+  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
   promptApplyDone: 'Loaded into the prompt box',
-  promptRemove: 'Delete prompt',
-  promptSavedCount: '{n} prompts',
   healthSize: 'Size report',
   healthDupes: 'Duplicates',
   healthStats: 'Per-series',
@@ -1528,8 +1747,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: '贴一段剧本：自动拆成分镜，再逐镜出图、出视频。',
   moduleQuick: '一句话出一镜',
   moduleQuickDesc: '写一句提示词，出一张图或一段视频。',
-  moduleAdvanced: '高级设置',
-  moduleAdvancedDesc: '融合生图、提示词工坊、分镜与模型能力——默认收起，需要时再展开。',
   moduleCollapse: '收起',
   moduleExpand: '展开',
   templateQuickImage: '快速出图',
@@ -1758,12 +1975,141 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   filterImage: '只看图片',
   filterVideo: '只看视频',
   kindRole: '角色',
+  kindCostume: '服装',
   kindScene: '场景',
   kindProp: '道具',
   kindBrand: '品牌',
   kindStyle: '风格',
   kindVoice: '音色',
-  brandTagline: '媒体创作工作台',
+  sectionEpisode: '集',
+  episodeNone: '暂无集',
+  episodeNew: '新建集',
+  episodeRename: '重命名集',
+  episodeRemove: '删除集',
+  episodeResourcesSelected: '本集已选',
+  episodeResourcesAll: '剧集全部资源',
+  episodeRefsHint: '只存引用，不复制本体',
+  episodeRefsEmpty: '本集还没有选素材或资源',
+  episodeRefsBrowse: '去剧集全部里选',
+  episodeRefMissing: '引用已失效',
+  episodeRefCategory: '分类',
+  episodeCategoryUngrouped: '未分组',
+  episodeAddResource: '加入本集',
+  episodeAddAsset: '把素材加入本集',
+  episodeAssetTag: '素材',
+  episodeWorkspaceTitle: '本集工作区',
+  episodeScriptSaved: '已保存',
+  episodeScriptDirty: '未保存',
+  episodeScriptSaving: '保存中…',
+  episodeScriptFailed: '保存失败',
+  episodeTotalDuration: '总时长 {n} 秒',
+  segmentTitle: '分段',
+  segmentAdd: '新建分段',
+  segmentEmpty: '还没有分段——先新建一段并写下提示词。',
+  segmentName: '第 {n} 段',
+  segmentPromptLabel: '分段提示词',
+  segmentPromptPlaceholder: '这几秒里：谁、在哪、发生什么…',
+  segmentDurationLabel: '秒数',
+  segmentSkillLabel: '导演 Skill',
+  segmentSkillDefault: '默认 Skill',
+  segmentSkillHint: '只列出技能库里启用中的导演 Skill；不选时使用默认 Skill。',
+  segmentSkillMissing: '已停用',
+  skillsPaneTitle: '技能库',
+  skillsPaneDesc: '导演库把提示词生成为专业分镜；逆向库把图片或短视频提取成可编辑提示词。',
+  skillKindDirector: '导演库',
+  skillKindReverse: '逆向库',
+  skillKindDirectorDesc: '提示词 → 专业分镜',
+  skillKindReverseDesc: '图片 / 短视频 → 可编辑提示词',
+  skillImportLabel: '导入技能',
+  skillImportPlaceholder: '本地路径，或 https://…/skill.json',
+  skillImportAction: '导入',
+  skillImportDone: '已导入 {name}',
+  skillImportFailed: '导入失败',
+  skillBuiltin: '内置',
+  skillDisabled: '已禁用',
+  skillToggleOn: '启用',
+  skillToggleOff: '禁用',
+  skillRemove: '删除',
+  skillReveal: '打开目录',
+  skillEmpty: '这个库还没有技能',
+  skillLoadFailed: '技能库读取失败',
+  skillRemoveConfirm: '删除技能 {name}？（会先备份到 _backup）',
+  skillRemoved: '已删除 {name}',
+  skillCreateToggle: '手动新建',
+  skillNameLabel: '名称',
+  skillNamePlaceholder: '例如：写实广告分镜',
+  skillDescriptionLabel: '说明',
+  skillDescriptionPlaceholder: '这个技能用来做什么（可选）',
+  skillPromptLabel: '提示词模板',
+  skillPromptPlaceholder: '粘贴技能正文…',
+  skillSaveAction: '保存技能',
+  skillSaved: '已保存 {name}',
+  skillBuiltinReadonly: '内置技能只读，只能禁用',
+  skillsHint: '技能保存在工作台数据目录的 skills/ 下；内置技能只读但可以禁用。',
+  skillsRefresh: '刷新',
+  quickTabProduce: '内容生产',
+  quickTabPrompt: '提示词·分镜',
+  studioTitle: '提示词·分镜',
+  studioDesc: '最多选择 8 张图，经逆向 Skill 提取成可编辑提示词，并存进本集提示词库。',
+  studioSkillLabel: '逆向 Skill',
+  studioSkillDefault: '默认 Skill',
+  studioSources: '输入图',
+  studioSourcesHint: '来自本集素材与全局素材；最多 8 张。',
+  studioSourcesEmpty: '还没有图片：先生成或登记素材。',
+  studioSourceLimit: '最多选择 {n} 张输入图',
+  studioExtractAction: '提取提示词',
+  studioExtracting: '提取中…',
+  studioExtracted: '已提取 {n} 条提示词',
+  studioExtractFailed: '提取失败',
+  studioClearSources: '清空',
+  studioNameLabel: '提示词名称',
+  studioNamePlaceholder: '显示在本集提示词库里的名称',
+  studioDraftNameSuffix: '提示词',
+  studioDraftLabel: '可编辑提示词',
+  studioDraftPlaceholder: '提取结果或手写提示词…',
+  studioSaveAction: '存入本集',
+  studioSaved: '已保存 {name}',
+  studioSaveFailed: '提示词保存失败',
+  studioApply: '带入生成',
+  studioPromptLibrary: '本集提示词库',
+  studioPromptEmpty: '本集还没有保存提示词',
+  studioRemovePrompt: '删除',
+  studioStoryboard: '分镜镜头',
+  studioStoryboardEmpty: '本集还没有分镜',
+  studioShotApply: '带入镜头提示词',
+  studioNoEpisode: '请先新建一集',
+  studioLoadFailed: '提示词·分镜读取失败',
+  shotRefAdd: '为本镜选择图片 / 视频',
+  episodeSyncWorkflow: '同步到工作流',
+  episodeSyncWorkflowDone: '分镜已同步到 {name}',
+  episodeSyncWorkflowFailed: '同步失败',
+  episodeExport: '导出本集',
+  episodeExportDone: '本集已导出到 {path}',
+  episodeExportFailed: '导出失败',
+  segmentRefsLabel: '引用',
+  segmentRefsEmpty: '还没有引用——从本集资源或素材里选。',
+  segmentAddRef: '添加引用',
+  segmentRefResources: '剧集资源',
+  segmentRefAssets: '素材',
+  segmentRemove: '删除分段',
+  segmentSaveFailed: '分段保存失败',
+  segmentAddFailed: '新建分段失败',
+  segmentRemoveFailed: '删除分段失败',
+  segmentStoryboardPlan: '生成分镜脚本',
+  segmentStoryboardNone: '还没有分镜——用本段提示词生成一份。',
+  storyboardSave: '保存分镜',
+  shotName: '镜头 {n}',
+  shotGenerateImage: '生成图片',
+  shotGenerateVideo: '生成视频',
+  shotGenerating: '生成中…',
+  shotImageDone: '镜头 {n} 图片已生成。',
+  shotVideoQueued: '镜头 {n} 视频已提交，去任务列表看进度。',
+  shotGenerateFailed: '生成失败',
+  refInsertToken: '把 [@{n}] 追加到提示词',
+  moveUp: '上移',
+  moveDown: '下移',
+  brandTagline: '三视创作工作台',
+  dockTitle: '三视创作',
   statOutputs: '输出产物',
   statAssets: '媒体素材',
   statTasks: '生成任务',
@@ -1804,6 +2150,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   taskErrorHide: '收起原因',
   taskErrorHint: '展开这条任务失败的上游原文',
   railAssets: '媒体素材',
+  railSkills: '技能库',
   railTasks: '生成任务',
   railHealth: '素材库体检',
   railDefaults: '生效默认值',
@@ -1869,6 +2216,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineToCanvasHint: '只把分镜铺到画布，不开始生成；你在画布确认后再点生成',
   pipelineInlineRun: '就地生成',
   pipelineInlineRunHint: '不跳画布，直接按分镜逐镜出图 / 出视频',
+  pipelineInlineVideoFailed: '本镜视频生成失败',
+  pipelineInlineVideoCancelled: '本镜视频已取消',
+  pipelineInlineVideoTimeout: '等本镜视频超时',
+  pipelineInlineVideoNoOutput: '本镜视频任务结束但没有产物文件',
   pipelineShotDuration: '本镜时长(秒)',
   pipelineVideoToVideoNeedsRef: '视频生视频要先选一段参考视频',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
@@ -1949,29 +2300,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   fusionNeedsPrompt: '先写一段提示词',
   fusionClear: '清空选择',
 
-  // ---- B-10 提示词工坊（G1，依赖 A-5 prompts/extract） ----
-  promptTitle: '提示词工坊',
-  promptHint: '从选中的图片提取结构化提示词，可编辑后存入提示词库。依赖宿主端点 prompts/extract（A-5）。',
-  promptExtract: '提取提示词',
-  promptExtracting: '提取中…',
-  promptExtractNeedsAsset: '先选一张图片素材',
-  promptExtractDone: '已提取，可在下方编辑',
-  promptExtractFailed: '提取失败',
-  promptExtractEmpty: '提取结果为空，换一张图试试',
-  promptDraftLabel: '提取结果（可编辑）',
-  promptNameLabel: '提示词名称',
-  promptNamePlaceholder: '例如：柔和电影感人像',
-  promptUntitled: '未命名提示词',
-  promptSave: '存入提示词库',
-  promptSaveDone: '已存入提示词库',
-  promptSaveFailed: '存入失败',
-  promptNeedsText: '还没有可保存的内容',
-  promptLibrary: '提示词库',
-  promptLibraryEmpty: '提示词库还是空的',
-  promptApply: '带入生成表单',
+  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
   promptApplyDone: '已带入提示词框',
-  promptRemove: '删除提示词',
-  promptSavedCount: '{n} 条提示词',
   healthSize: '体积排行',
   healthDupes: '重复素材',
   healthStats: '剧集统计',

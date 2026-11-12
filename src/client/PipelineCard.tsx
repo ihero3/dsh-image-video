@@ -22,10 +22,11 @@ import { useEffect, useMemo, useState } from 'react'
 import type { MediaGenerateResult, PipelineResult, PipelineRunInput, WorkbenchApi } from './api.ts'
 import type { ResourceKind, ResourceRecord } from '../workbench/records.ts'
 import {
-  DEFAULT_SHOT_DURATION, MAX_SHOT_DURATION, MIN_SHOT_DURATION, planPipeline,
-  type PipelineMode, type PipelineShot,
+  MAX_SHOT_DURATION, MIN_SHOT_DURATION, planPipeline,
+  type PipelineShot,
 } from '../workbench/pipeline.ts'
 import { Icon } from './icons.tsx'
+import { useWorkbenchField } from './workbench-store.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 
 /** 卡片 props：注入 api / 词典 / 当前项目 / 起跑后的回调。 */
@@ -51,14 +52,49 @@ export interface PipelineCardProps {
   readonly selectedAsset?: { readonly path: string; readonly kind: string }
 }
 
-/** 表单默认值：分镜 4、图生视频（可控性最好）；每镜时长取域口径（`B4`：6 秒）。 */
-const DEFAULT_SHOTS = 4
+/** 表单默认值（分镜 4、图生视频、每镜 6 秒）由 `workbench-store` 持有，面板重挂载后沿用。 */
 /** 剧本输入框行数（`B1`：产品要求 6 行，一整段剧本不用先滚）。 */
 const SCRIPT_ROWS = 6
 /** 分镜上限：与域侧 `planPipeline` 的 `MAX_SHOTS` 一致。 */
 const MAX_SHOTS = 60
 /** 视频画幅：与编排缺省口径一致（`PipelineOptions.ratio` 缺省 16:9）。 */
 const DEFAULT_RATIO = '16:9'
+/** 就地生成等成片：每条任务账本的轮询间隔。 */
+const TASK_POLL_INTERVAL_MS = 1000
+/** 就地生成等成片：单条视频最多等 15 分钟，超时按失败停下，绝不静默跳下一镜。 */
+const TASK_POLL_ATTEMPTS = 900
+
+/**
+ * 等一条异步视频任务落终态（`C5`）。
+ *
+ * `wait:false` 只代表提交成功；就地生成必须拿到成片路径才算这一镜跑完，
+ * 否则串行推进与「第几镜失败」都会失真。任务账本按剧集过滤后按任务 id 找回。
+ * @param api - 工作台 API。
+ * @param taskId - `media/generate` 返回的任务 id。
+ * @param projectId - 任务归属的剧集。
+ * @param t - 词典（错误文案）。
+ * @returns 成片路径。
+ * @throws {Error} 任务失败、取消、没有产物路径或等待超时。
+ */
+async function awaitVideoTask(
+  api: WorkbenchApi,
+  taskId: string,
+  projectId: string,
+  t: (key: WorkbenchLocaleKey) => string,
+): Promise<string> {
+  for (let attempt = 0; attempt < TASK_POLL_ATTEMPTS; attempt += 1) {
+    const tasks = await api.listTasks(50, projectId)
+    const task = tasks.find(candidate => candidate.id === taskId)
+    if (task?.status === 'succeeded') {
+      if (task.outputPath === undefined || task.outputPath === '') throw new Error(t('pipelineInlineVideoNoOutput'))
+      return task.outputPath
+    }
+    if (task?.status === 'failed') throw new Error(`${t('pipelineInlineVideoFailed')}：${task.error ?? ''}`)
+    if (task?.status === 'cancelled') throw new Error(t('pipelineInlineVideoCancelled'))
+    await new Promise(resolve => setTimeout(resolve, TASK_POLL_INTERVAL_MS))
+  }
+  throw new Error(t('pipelineInlineVideoTimeout'))
+}
 
 /**
  * 用户对某一镜的手工改动（`B5`）：画面提示词 / 视频提示词 / 本镜时长各自独立，
@@ -73,11 +109,11 @@ interface ShotEdit {
 /** 就地生成里一镜的运行状态（`B6`，串行推进的可视化）。 */
 interface InlineRow {
   readonly index: number
-  /** `pending` 未开始 / `image` 图已出 / `submitted` 视频已提交 / `failed` 失败。 */
+  /** `pending` 未开始 / `image` 图已出 / `submitted` 视频已成片 / `failed` 失败。 */
   readonly status: 'pending' | 'image' | 'submitted' | 'failed'
-  /** 产物路径（宿主同步返回时才有）。 */
+  /** 产物路径（宿主同步返回，或 `C5` 等到任务成片后回填）。 */
   readonly path?: string
-  /** 异步视频任务 id（宿主 `wait:false` 时返回）。 */
+  /** 异步视频任务 id（等成片期间先展示，便于对账）。 */
   readonly taskId?: string
   readonly error?: string
 }
@@ -89,19 +125,19 @@ interface InlineRow {
  */
 export function PipelineCard(props: PipelineCardProps) {
   const { api, t, projectId, injectScript } = props
-  const [script, setScript] = useState('')
+  const [script, setScript] = useWorkbenchField(api, 'pipelineScript')
   // `T9`：外部注入的剧本变化时覆盖（空串不覆盖，避免把用户正在写的内容清掉）
   useEffect(() => {
     if (injectScript === undefined || injectScript.trim() === '') return
     setScript(injectScript)
   }, [injectScript])
-  const [mode, setMode] = useState<PipelineMode>('image-to-video')
-  const [shots, setShots] = useState(DEFAULT_SHOTS)
-  const [duration, setDuration] = useState(DEFAULT_SHOT_DURATION)
+  const [mode, setMode] = useWorkbenchField(api, 'pipelineMode')
+  const [shots, setShots] = useWorkbenchField(api, 'pipelineShots')
+  const [duration, setDuration] = useWorkbenchField(api, 'pipelineDuration')
   /** `B2`：视频生视频（复刻）的参考片；只有该模式会用。 */
-  const [referenceVideo, setReferenceVideo] = useState('')
+  const [referenceVideo, setReferenceVideo] = useWorkbenchField(api, 'pipelineReferenceVideo')
   // `B-18`：手动挑选物料——把指定资源 id 强制塞进流水线（留空则剧本自动匹配）。
-  const [manualPick, setManualPick] = useState<readonly string[]>([])
+  const [manualPick, setManualPick] = useWorkbenchField(api, 'pipelineManualPick')
   const [resources, setResources] = useState<readonly ResourceRecord[]>([])
   useEffect(() => {
     let stale = false
@@ -335,9 +371,14 @@ export function PipelineCard(props: PipelineCardProps) {
           // `B2`：复刻模式把参考片按既有 `media[]` 契约透传（不另立参数）
           ...mode === 'video-to-video' ? { media: [{ video: reference, type: 'reference_video' }] } : {},
         })
-        if (video.path !== undefined) updateInlineRow(shot.index, { status: 'submitted', path: video.path })
-        else if (video.taskId !== undefined) updateInlineRow(shot.index, { status: 'submitted', taskId: video.taskId })
-        else throw new Error(t('generateFailed'))
+        if (video.path !== undefined) {
+          updateInlineRow(shot.index, { status: 'submitted', path: video.path })
+        } else if (video.taskId !== undefined) {
+          updateInlineRow(shot.index, { status: 'submitted', taskId: video.taskId })
+          // `C5`：提交成功不等于出片——等这条任务落成片再进下一镜
+          const path = await awaitVideoTask(api, video.taskId, projectId as string, t)
+          updateInlineRow(shot.index, { status: 'submitted', path })
+        } else throw new Error(t('generateFailed'))
       }
       setInlineStage(undefined)
     } catch (cause) {

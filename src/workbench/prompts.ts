@@ -22,6 +22,10 @@ export interface PromptRecord {
   readonly source: 'manual' | 'extract' | 'template'
   /** Optional structure captured by extraction (style/subject/material/detail). */
   readonly fields?: Readonly<Record<string, string>>
+  /** 归属剧集；缺省为全局提示词（旧工坊留下的记录保持全局）。 */
+  readonly projectId?: string
+  /** 归属集：本集提示词库按它过滤。 */
+  readonly episodeId?: string
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -50,8 +54,12 @@ export class PromptLibrary {
     this.#now = options.now ?? (() => new Date())
   }
 
-  /** Read the library (missing/corrupt file reads as empty). */
-  async list(): Promise<PromptRecord[]> {
+  /**
+   * Read the library (missing/corrupt file reads as empty).
+   * @param filter - `episodeId` 只要本集提示词；`projectId` 只要该剧集的提示词；缺省返回全部。
+   * @returns 提示词（新的在前）。
+   */
+  async list(filter: { readonly projectId?: string; readonly episodeId?: string } = {}): Promise<PromptRecord[]> {
     try {
       const raw = await readFile(this.#file, 'utf8')
       const parsed = JSON.parse(raw) as Partial<PromptFile>
@@ -61,6 +69,8 @@ export class PromptLibrary {
         && typeof (entry as PromptRecord).id === 'string'
         && typeof (entry as PromptRecord).name === 'string'
         && typeof (entry as PromptRecord).text === 'string')
+        .filter(entry => filter.episodeId === undefined || entry.episodeId === filter.episodeId)
+        .filter(entry => filter.projectId === undefined || entry.projectId === filter.projectId)
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     } catch {
       return []
@@ -74,6 +84,8 @@ export class PromptLibrary {
     text: string
     source?: PromptRecord['source']
     fields?: Readonly<Record<string, string>>
+    projectId?: string
+    episodeId?: string
   }): Promise<PromptRecord> {
     const prompts = await this.list()
     const name = input.name.trim()
@@ -88,6 +100,12 @@ export class PromptLibrary {
       text,
       source: input.source ?? existing?.source ?? 'manual',
       ...input.fields === undefined ? (existing?.fields === undefined ? {} : { fields: existing.fields }) : { fields: input.fields },
+      ...(input.projectId ?? existing?.projectId) === undefined
+        ? {}
+        : { projectId: input.projectId ?? existing?.projectId },
+      ...(input.episodeId ?? existing?.episodeId) === undefined
+        ? {}
+        : { episodeId: input.episodeId ?? existing?.episodeId },
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }

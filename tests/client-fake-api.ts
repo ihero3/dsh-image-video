@@ -19,6 +19,8 @@ import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
+import type { EpisodeRecord, EpisodeRefCategory, SegmentRecord, SegmentRef, ShotRecord, StoryboardRecord } from '../src/workbench/episodes.ts'
+import type { SkillRecord } from '../src/workbench/skills.ts'
 
 /** Host-supplied dropdown values (the browser bundle carries none of these). */
 export const OPTIONS = {
@@ -77,11 +79,20 @@ export function fakeApi(options: {
   projectStats?: AssetProjectStats
   /** `B-16`：导出历史初始内容（测试替身）。 */
   exports?: ExportRecord[]
+  /** 集（剧集四层结构）初始内容（测试替身）。 */
+  episodes?: EpisodeRecord[]
+  /** 双技能库初始内容（测试替身）。 */
+  skills?: SkillRecord[]
 } = {}) {
   const projects: ProjectRecord[] = []
   const assets: AssetRecord[] = [...(options.assets ?? [])]
   const tasks: TaskRecord[] = [...(options.tasks ?? [])]
   const resources: ResourceRecord[] = []
+  /** 集（剧集四层结构）：默认空，测试需要时显式给。 */
+  const episodeRecords: EpisodeRecord[] = [...(options.episodes ?? [])]
+  /** 双技能库（内存态）。 */
+  const skillRecords: SkillRecord[] = [...(options.skills ?? [])]
+  let skillSequence = skillRecords.length
   const workflows: WorkflowRecord[] = [...(options.workflows ?? [])]
   const runs: WorkflowRunRecord[] = [...(options.runs ?? [])]
   const timelines: TimelineRecord[] = [...(options.timelines ?? [])]
@@ -104,8 +115,15 @@ export function fakeApi(options: {
   const extractInputs: Array<{ path?: string }> = []
   /** `B-15`：`planStoryboard` 收到的入参（测试断言用）。 */
   const storyboardPayloads: Array<{ projectId: string; script: string; shots?: number }> = []
-  /** `B-4`：`generateMedia` 收到的入参（含续写意图，测试断言用）。 */
-  const generatePayloads: Array<{ mediaMode: 'image' | 'video'; prompt: string; continuation?: boolean }> = []
+  /** `B-4`：`generateMedia` 收到的入参（含续写意图与集归属，测试断言用）。 */
+  const generatePayloads: Array<{
+    mediaMode: 'image' | 'video'
+    prompt: string
+    continuation?: boolean
+    episodeId?: string
+    segmentId?: string
+    shotId?: string
+  }> = []
   /** `B-6`：`modelsCatalog` 返回的卡片（测试替身，固定两份）。 */
   const modelCards: Array<{ id: string; name: string }> = [
     { id: 'm1', name: 'Model One' },
@@ -132,7 +150,13 @@ export function fakeApi(options: {
   importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),
   // `A149`：工作台内生成（测试替身）。图片立即"登记"一张素材；视频返回 pending + taskId。
   generateMedia: async input => {
-    generatePayloads.push({ mediaMode: input.mediaMode, prompt: input.prompt, ...input.continuation === true ? { continuation: true } : {} })
+    generatePayloads.push({
+      mediaMode: input.mediaMode, prompt: input.prompt,
+      ...input.continuation === true ? { continuation: true } : {},
+      ...input.episodeId === undefined ? {} : { episodeId: input.episodeId },
+      ...input.segmentId === undefined ? {} : { segmentId: input.segmentId },
+      ...input.shotId === undefined ? {} : { shotId: input.shotId },
+    })
     if (input.mediaMode === 'video') {
       const task = {
         schemaVersion: 4, id: 'tsk-generate-video', kind: 'video', status: 'running',
@@ -168,7 +192,12 @@ export function fakeApi(options: {
     extractInputs.push(input)
     return { style: 'cinematic', subject: 'a courier in the rain', material: 'neon reflections', details: 'shallow depth of field' }
   },
-  listPrompts: async () => { calls.push('prompts/list'); return [...prompts] },
+  listPrompts: async filter => {
+    calls.push('prompts/list')
+    return prompts
+      .filter(record => filter?.episodeId === undefined || record.episodeId === filter.episodeId)
+      .filter(record => filter?.projectId === undefined || record.projectId === filter.projectId)
+  },
   savePrompt: async input => {
     calls.push('prompts/save')
     const existing = input.id === undefined ? undefined : prompts.find(record => record.id === input.id)
@@ -184,6 +213,8 @@ export function fakeApi(options: {
     const record: PromptRecord = {
       id: `prm-${promptSequence}`, name: input.name, text: input.text,
       ...input.tags === undefined ? {} : { tags: input.tags },
+      ...input.projectId === undefined ? {} : { projectId: input.projectId },
+      ...input.episodeId === undefined ? {} : { episodeId: input.episodeId },
       createdAt: '2026-10-22T00:00:00.000Z',
     }
     prompts.unshift(record)
@@ -263,6 +294,24 @@ export function fakeApi(options: {
         ...options.defaultsSources === undefined ? {} : { defaultsSources: options.defaultsSources },
       }
     },
+    // auth/*：默认是「未登录、凭证缝可用、一个服务商」。连接弹层的用例按需覆盖。
+    authHealth: async () => ({
+      ready: true, credentials: true, signedIn: false, hasKey: false, provider: 'threevideo',
+      providers: [{ id: 'threevideo', label: 'Threevideo', settable: true, testable: true }],
+    }),
+    authLogin: async input => ({
+      success: true, email: input.email, username: 'tester', balance: 12,
+      hasKey: true, keyLast4: 'abcd', credentialsWritten: true,
+    }),
+    authLogout: async () => ({ success: true }),
+    authProfile: async () => ({
+      signedIn: true, email: 'tester@example.com', username: 'tester', balance: 12, hasKey: true, keyLast4: 'abcd',
+    }),
+    authSetKey: async input => ({
+      success: true, provider: input.provider ?? 'threevideo', keyLast4: 'wxyz', configured: true,
+    }),
+    authTestKey: async () => ({ valid: true, testable: true }),
+    authKeyState: async provider => ({ provider: provider ?? 'threevideo', configured: false }),
     listProjects: async () => { calls.push('projects/list'); return [...projects] },
     createProject: async (name) => {
       calls.push('projects/create')
@@ -281,9 +330,10 @@ export function fakeApi(options: {
       projects.splice(index, 1)
       return true
     },
-    listAssets: async (projectId) => {
+    listAssets: async projectId => {
       calls.push('assets/list')
-      return assets.filter(asset => asset.projectId === projectId)
+      // 素材库全局：缺省参数返回全部（与宿主一致）
+      return projectId === undefined ? assets : assets.filter(asset => asset.projectId === projectId)
     },
     attachAsset: async input => {
       calls.push('assets/attach')
@@ -377,6 +427,282 @@ export function fakeApi(options: {
       return true
     },
     listTasks: async () => { calls.push('tasks/list'); return [...tasks] },
+    listEpisodes: async projectId => episodeRecords.filter(episode => episode.projectId === projectId),
+    createEpisode: async (projectId, input) => {
+      const no = episodeRecords.filter(episode => episode.projectId === projectId).length + 1
+      const created: EpisodeRecord = {
+        schemaVersion: 1, id: `ep-${episodeRecords.length + 1}`, projectId, no,
+        title: (input?.title as string | undefined) ?? `Episode ${no}`,
+        script: { text: '', updatedAt: '2026-11-09T00:00:00.000Z' },
+        segments: [], storyboards: [], resourceRefs: [], assetRefs: [],
+        createdAt: '2026-11-09T00:00:00.000Z', updatedAt: '2026-11-09T00:00:00.000Z',
+      }
+      episodeRecords.push(created)
+      return created
+    },
+    getEpisode: async id => {
+      const found = episodeRecords.find(episode => episode.id === id)
+      if (found === undefined) throw new Error(`未知的集：${id}`)
+      return found
+    },
+    updateEpisode: async (id, patch) => {
+      const index = episodeRecords.findIndex(episode => episode.id === id)
+      if (index < 0) throw new Error(`未知的集：${id}`)
+      const current = episodeRecords[index]!
+      const text = typeof patch.script === 'object' && patch.script !== null
+        ? String((patch.script as { text?: unknown }).text ?? '')
+        : current.script.text
+      const updated: EpisodeRecord = {
+        ...current,
+        ...typeof patch.title === 'string' ? { title: patch.title } : {},
+        script: { text, updatedAt: '2026-11-09T00:00:00.000Z' },
+      }
+      episodeRecords[index] = updated
+      return updated
+    },
+    removeEpisode: async (id, force) => {
+      const index = episodeRecords.findIndex(episode => episode.id === id)
+      if (index < 0) return false
+      if (!force && tasks.some(task => task.episodeId === id)) throw new Error('有 1 个关联任务')
+      episodeRecords.splice(index, 1)
+      return true
+    },
+    reorderEpisodes: async (projectId, order) => {
+      const scoped = episodeRecords.filter(episode => episode.projectId === projectId)
+      return order.map((id, index) => {
+        const found = scoped.find(episode => episode.id === id)
+        if (found === undefined) throw new Error(`未知的集：${id}`)
+        const updated = { ...found, no: index + 1 }
+        episodeRecords[episodeRecords.indexOf(found)] = updated
+        return updated
+      })
+    },
+    episodeResources: async (id, action, input) => {
+      const episode = await api.getEpisode(id)
+      const refs = [...episode.resourceRefs]
+      if (action === 'list') return refs
+      if (action === 'add' && input?.resourceId !== undefined) {
+        refs.push({
+          resourceId: String(input.resourceId),
+          category: (input.category as EpisodeRefCategory | undefined) ?? 'ungrouped',
+          order: refs.length + 1,
+        })
+      }
+      if (action === 'remove') {
+        const kept = refs.filter(ref => ref.resourceId !== input?.resourceId)
+        episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, resourceRefs: kept }
+        return kept
+      }
+      episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, resourceRefs: refs }
+      return refs
+    },
+    episodeAssets: async (id, action, input) => {
+      const episode = await api.getEpisode(id)
+      const refs = [...episode.assetRefs]
+      if (action === 'list') return refs
+      if (action === 'add' && input?.assetId !== undefined) {
+        refs.push({
+          assetId: String(input.assetId),
+          category: (input.category as EpisodeRefCategory | undefined) ?? 'ungrouped',
+          order: refs.length + 1,
+        })
+      }
+      if (action === 'remove') {
+        const kept = refs.filter(ref => ref.assetId !== input?.assetId)
+        episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, assetRefs: kept }
+        return kept
+      }
+      episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, assetRefs: refs }
+      return refs
+    },
+    listSegments: async episodeId => (await api.getEpisode(episodeId)).segments,
+    createSegment: async (episodeId, input) => {
+      const episode = await api.getEpisode(episodeId)
+      const segment: SegmentRecord = {
+        schemaVersion: 1, id: `seg-${episode.segments.length + 1}`, episodeId,
+        order: episode.segments.length + 1,
+        durationSec: Number(input?.durationSec ?? 5),
+        promptText: String(input?.promptText ?? ''),
+        refs: [],
+      }
+      episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, segments: [...episode.segments, segment] }
+      return segment
+    },
+    updateSegment: async (id, patch) => {
+      for (const [index, episode] of episodeRecords.entries()) {
+        const segment = episode.segments.find(candidate => candidate.id === id)
+        if (segment === undefined) continue
+        const updated: SegmentRecord = {
+          ...segment,
+          ...typeof patch.promptText === 'string' ? { promptText: patch.promptText } : {},
+          ...typeof patch.durationSec === 'number' ? { durationSec: patch.durationSec } : {},
+          ...typeof patch.imageModel === 'string' ? { imageModel: patch.imageModel === '' ? undefined : patch.imageModel } : {},
+          ...typeof patch.videoModel === 'string' ? { videoModel: patch.videoModel === '' ? undefined : patch.videoModel } : {},
+          ...typeof patch.skillId === 'string' ? { skillId: patch.skillId === '' ? undefined : patch.skillId } : {},
+          ...patch.refs === undefined ? {} : { refs: patch.refs },
+        }
+        episodeRecords[index] = {
+          ...episode,
+          segments: episode.segments.map(candidate => (candidate.id === id ? updated : candidate)),
+        }
+        return updated
+      }
+      throw new Error(`未知的分段：${id}`)
+    },
+    removeSegment: async id => {
+      for (const [index, episode] of episodeRecords.entries()) {
+        const segment = episode.segments.find(candidate => candidate.id === id)
+        if (segment === undefined) continue
+        episodeRecords[index] = {
+          ...episode,
+          segments: episode.segments.filter(candidate => candidate.id !== id),
+          storyboards: episode.storyboards.filter(candidate => candidate.segmentId !== id),
+        }
+        return segment
+      }
+      throw new Error(`未知的分段：${id}`)
+    },
+    reorderSegments: async (episodeId, order) => {
+      const episode = await api.getEpisode(episodeId)
+      const segments = order.map((id, index) => {
+        const found = episode.segments.find(segment => segment.id === id)
+        if (found === undefined) throw new Error(`未知的分段：${id}`)
+        return { ...found, order: index + 1 }
+      })
+      episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, segments }
+      return segments
+    },
+    listStoryboards: async episodeId => (await api.getEpisode(episodeId)).storyboards,
+    getStoryboard: async id => {
+      for (const episode of episodeRecords) {
+        const found = episode.storyboards.find(storyboard => storyboard.id === id)
+        if (found !== undefined) return found
+      }
+      throw new Error(`未知的分镜：${id}`)
+    },
+    saveStoryboard: async input => {
+      const episode = await api.getEpisode(
+        episodeRecords.find(candidate => candidate.segments.some(segment => segment.id === input.segmentId))?.id ?? '',
+      )
+      // `.shots` 是宿主侧的 JSON 入参：替身按 `ShotRecord` 字段收窄，非法项直接丢弃。
+      const shots: ShotRecord[] = Array.isArray(input.shots)
+        ? input.shots.flatMap((item, index): ShotRecord[] => {
+            if (typeof item !== 'object' || item === null) return []
+            const entry = item as Record<string, unknown>
+            const refs: SegmentRef[] = Array.isArray(entry.refs)
+              ? entry.refs.flatMap((ref, position): SegmentRef[] => {
+                  if (typeof ref !== 'object' || ref === null) return []
+                  const value = ref as Record<string, unknown>
+                  const kind: SegmentRef['kind'] | undefined = value.kind === 'resource' ? 'resource' : value.kind === 'asset' ? 'asset' : undefined
+                  if (kind === undefined || typeof value.id !== 'string') return []
+                  return [{ kind, id: value.id, order: typeof value.order === 'number' ? value.order : position + 1 }]
+                })
+              : []
+            return [{
+              id: typeof entry.id === 'string' ? entry.id : `shot-${index + 1}`,
+              order: typeof entry.order === 'number' ? entry.order : index + 1,
+              durationSec: typeof entry.durationSec === 'number' ? entry.durationSec : 5,
+              imagePrompt: typeof entry.imagePrompt === 'string' ? entry.imagePrompt : '',
+              videoPrompt: typeof entry.videoPrompt === 'string' ? entry.videoPrompt : '',
+              ...typeof entry.imageModel === 'string' ? { imageModel: entry.imageModel } : {},
+              ...typeof entry.videoModel === 'string' ? { videoModel: entry.videoModel } : {},
+              refs,
+            }]
+          })
+        : []
+      const storyboard: StoryboardRecord = {
+        schemaVersion: 1, id: input.id ?? `sb-${episode.storyboards.length + 1}`,
+        episodeId: episode.id, segmentId: input.segmentId,
+        ...typeof input.skillId === 'string' ? { skillId: input.skillId } : {},
+        shots,
+        updatedAt: '2026-11-09T00:00:00.000Z',
+      }
+      episodeRecords[episodeRecords.indexOf(episode)] = {
+        ...episode,
+        storyboards: [...episode.storyboards.filter(candidate => candidate.id !== storyboard.id), storyboard],
+      }
+      return storyboard
+    },
+    removeStoryboard: async id => {
+      for (const [index, episode] of episodeRecords.entries()) {
+        const found = episode.storyboards.find(storyboard => storyboard.id === id)
+        if (found === undefined) continue
+        episodeRecords[index] = {
+          ...episode,
+          storyboards: episode.storyboards.filter(candidate => candidate.id !== id),
+        }
+        return found
+      }
+      throw new Error(`未知的分镜：${id}`)
+    },
+    listSkills: async (kind, enabledOnly) => skillRecords.filter(skill =>
+      (kind === undefined || skill.kind === kind) && (enabledOnly !== true || skill.enabled)),
+    getSkill: async id => {
+      const found = skillRecords.find(skill => skill.id === id)
+      if (found === undefined) throw new Error(`未知的技能：${id}`)
+      return found
+    },
+    saveSkill: async input => {
+      const now = '2026-11-09T00:00:00.000Z'
+      const record: SkillRecord = {
+        schemaVersion: 1, id: input.id ?? `skl-${skillSequence += 1}`, kind: input.kind,
+        name: input.name, description: input.description ?? '', prompt: input.prompt,
+        builtin: false, enabled: true, createdAt: now, updatedAt: now,
+      }
+      const index = skillRecords.findIndex(skill => skill.id === record.id)
+      if (index >= 0) skillRecords[index] = record
+      else skillRecords.push(record)
+      return record
+    },
+    importSkill: async input => {
+      const now = '2026-11-09T00:00:00.000Z'
+      const name = input.source.split(/[\\/]/).filter(Boolean).pop() ?? 'imported'
+      const record: SkillRecord = {
+        schemaVersion: 1, id: `skl-${skillSequence += 1}`, kind: input.kind,
+        name, description: '', prompt: 'imported skill prompt', builtin: false, enabled: true,
+        source: input.source, createdAt: now, updatedAt: now,
+      }
+      skillRecords.push(record)
+      return record
+    },
+    toggleSkill: async (id, enabled) => {
+      const index = skillRecords.findIndex(skill => skill.id === id)
+      const found = skillRecords[index]
+      if (found === undefined) throw new Error(`未知的技能：${id}`)
+      const updated = { ...found, enabled }
+      skillRecords[index] = updated
+      return updated
+    },
+    removeSkill: async id => {
+      const found = skillRecords.find(skill => skill.id === id)
+      if (found === undefined) throw new Error(`未知的技能：${id}`)
+      if (found.builtin) throw new Error('内置技能只读：不能删除，只能禁用')
+      skillRecords.splice(skillRecords.indexOf(found), 1)
+      return true
+    },
+    revealSkill: async id => ({ ok: true, path: `/tmp/skills/${id}` }),
+    exportEpisode: async episodeId => {
+      calls.push('episodes/export')
+      return {
+        manifestPath: `/tmp/outputs/episodes/${episodeId}/episode.json`,
+        manifest: {
+          formatVersion: 1, plugin: 'dsh-image-video', exportedAt: '2026-11-09T00:00:00.000Z', projectId: 'prj-1',
+          episode: { id: episodeId, no: 1, title: '第1集', script: '', durationSec: 0 },
+          segments: [], files: [], missing: [],
+        },
+      }
+    },
+    syncEpisodeWorkflow: async episodeId => {
+      calls.push('workflows/sync-episode')
+      const existing = workflows.find(item => item.id === `wfl-ep-${episodeId}`)
+      if (existing !== undefined) return existing
+      const created: WorkflowRecord = {
+        schemaVersion: 1, id: `wfl-ep-${episodeId}`, projectId: 'prj-1', name: '第1集 分镜',
+        nodes: [], edges: [], createdAt: '2026-11-09T00:00:00.000Z', updatedAt: '2026-11-09T00:00:00.000Z',
+      }
+      workflows.push(created)
+      return created
+    },
     // `F3`：在飞生成快照（宿主注册表口径，带 startedAt）
     listRunningTasks: async () => { calls.push('tasks/running'); return [...runningGenerations] },
     runWorkflow: async (workflowId, only) => {
@@ -665,7 +991,7 @@ export function fakeApi(options: {
       }
     },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords, generatePayloads, modelCards, ratioPayloads, redrawPayloads, riskPayloads, pipelinePayloads }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords, generatePayloads, modelCards, ratioPayloads, redrawPayloads, riskPayloads, pipelinePayloads, episodes: episodeRecords, skills: skillRecords }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */

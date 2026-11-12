@@ -82,14 +82,18 @@ describe('图标风格契约', () => {
     }
   })
 
-  it('品牌标是唯一的填充标，且同样使用 24 网格', () => {
+  it('品牌标是石墨灰底 + 三根白条 + 产品蓝三角的 24 网格标', () => {
     const view = render(<BrandMark />)
     const svg = view.container.querySelector('svg')!
     expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
-    expect(svg.getAttribute('fill')).toBe('currentColor')
+    expect(svg.getAttribute('width')).toBe('22')
     expect(svg.getAttribute('aria-hidden')).toBe('true')
-    // 填充标不该带描边属性，否则会在 24 网格上二次加粗
+    // 品牌标自带配色，不参与描边体系
     expect(svg.getAttribute('stroke')).toBeNull()
+    // 底 + 三根白条
+    expect(svg.querySelectorAll('rect')).toHaveLength(4)
+    expect(svg.querySelector('rect')!.getAttribute('fill')).toBe('#31363D')
+    expect(svg.querySelector('path')!.getAttribute('fill')).toBe('#2F6FED')
   })
 
   it('默认尺寸 14px，与 11–12px 正文搭配', () => {
@@ -336,8 +340,7 @@ describe('视觉层级契约（R7）', () => {
 
   it('[hidden] 例外：设了 display 的容器必须显式写回 display:none（2026-11-05 真实缺陷）', () => {
     // 起因：.iv-module-body{display:flex} 没配 [hidden] 例外，作者样式盖掉了 UA 的
-    // [hidden]{display:none} —— 模块①②点"收起"只是状态变了、内容照旧铺着，看着像没反应。
+    // [hidden]{display:none} —— 模块点"收起"只是状态变了、内容照旧铺着，看着像没反应。
     expect(WORKBENCH_STYLE).toContain('.iv-module-body[hidden]{display:none}')
-    expect(WORKBENCH_STYLE).toContain('.iv-advanced[hidden]{display:none}')
   })
 })

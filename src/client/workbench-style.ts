@@ -91,6 +91,7 @@ export const WORKBENCH_STYLE = `
      只写 height:100% 时宽度会收缩到内容最小宽（实测 8px，整个工作台被压成一条竖线，
      看起来就是"插件打不开"）。width:100% + min-width:0 让它在任何宿主布局下都撑满可用宽度。 */
   display:flex;flex-direction:column;width:100%;min-width:0;height:100%;box-sizing:border-box;overflow:hidden;
+  position:relative;container-type:inline-size;container-name:iv-panel;
   font:inherit;color:var(--iv-tx);font-size:var(--iv-fs-root);line-height:1.5;
 }
 .iv *,.iv *::before,.iv *::after{box-sizing:border-box}
@@ -113,8 +114,6 @@ export const WORKBENCH_STYLE = `
 .iv-top{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5);padding:7px 10px;
   background:var(--iv-panel);border-bottom:1px solid var(--iv-line);flex:none}
 .iv-brand{display:flex;align-items:center;gap:var(--iv-sp-4);min-width:0}
-.iv-mark{width:22px;height:22px;border-radius:var(--iv-r);display:grid;place-items:center;color:var(--iv-on-acc);
-  background:linear-gradient(135deg,var(--iv-acc),var(--iv-acc-deep))}
 .iv-brand-text{display:flex;flex-direction:column;min-width:0;line-height:1.25}
 .iv-brand-name{font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);letter-spacing:.01em;white-space:nowrap}
 .iv-brand-sub{font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-medium);letter-spacing:.11em;color:var(--iv-tx3);white-space:nowrap;text-transform:uppercase}
@@ -130,33 +129,76 @@ export const WORKBENCH_STYLE = `
 .iv-rename .iv-btn{height:26px;padding:0 11px;font-size:var(--iv-fs-body)}
 .iv-rename .iv-btn--acc{min-width:52px}
 
-/* ============ 应用外壳：左图标栏 + 主区 ============ */
-.iv-body{display:grid;grid-template-columns:42px minmax(0,1fr);flex:1;min-height:0}
-.iv-rail{display:flex;flex-direction:column;align-items:center;gap:var(--iv-sp-2);padding:7px 0;
-  background:var(--iv-panel);border-right:1px solid var(--iv-line)}
-.iv-rail-btn{width:28px;height:28px;display:grid;place-items:center;border-radius:var(--iv-r);
-  border:1px solid transparent;background:transparent;color:var(--iv-tx3);cursor:pointer;position:relative}
-.iv-rail-btn:hover{background:var(--iv-panel-3);color:var(--iv-tx2)}
-/* 快捷入口（素材/任务/默认值）按下即反馈：即使目标已在视口内，也看得出"点到了" */
-.iv-rail-btn:active{transform:scale(.93);color:var(--iv-acc);background:var(--iv-acc-soft)}
-.iv-rail-btn:active .iv-rail-tip{opacity:1}
-.iv-rail-btn.on{background:var(--iv-panel-3);color:var(--iv-acc)}
-.iv-rail-btn.on::before{content:"";position:absolute;left:-7px;top:6px;bottom:6px;width:2px;
-  border-radius:var(--iv-r-xs);background:var(--iv-acc)}
-.iv-rail-tip{position:absolute;left:34px;top:50%;transform:translateY(-50%);white-space:nowrap;z-index:var(--iv-z-tip);
-  background:var(--iv-panel-3);border:1px solid var(--iv-line-2);border-radius:var(--iv-r-sm);padding:2px 8px;
-  font-size:var(--iv-fs-meta);color:var(--iv-tx);opacity:0;pointer-events:none;transition:opacity var(--iv-dur-2)}
-.iv-rail-btn:hover .iv-rail-tip{opacity:1}
-.iv-rail-sep{width:16px;border-top:1px solid var(--iv-line);margin:4px 0;flex:none}
-.iv-rail-bottom{margin-top:auto}
+/* ============ 应用外壳：顶栏模式导航 + 主区 + 展示列 ============ */
+/* 主面板占满整块区域：body 是「创作区 1fr + 展示列 380px」两栏 */
+.iv-body{display:grid;grid-template-columns:minmax(0,1fr) 380px;flex:1;min-height:0;min-width:0}
+/* 展示列常态在 DOM 里（关掉只加 --off 变 display:none），所以收起时按 --off 把宽度还给主区，只留一条展开窄条 */
+.iv-body:has(> .iv-dock-col--off){grid-template-columns:minmax(0,1fr) 26px}
 .iv-main{min-width:0;overflow:auto;scrollbar-gutter:stable;display:flex;flex-direction:column}
 
-/* ============ 应用外壳：状态栏 ============ */
-.iv-status{display:flex;align-items:center;gap:var(--iv-sp-6);height:23px;padding:0 10px;flex:none;
-  background:var(--iv-panel);border-top:1px solid var(--iv-line);font-size:var(--iv-fs-meta);color:var(--iv-tx3)}
-.iv-status b{color:var(--iv-tx2);font-weight:var(--iv-fw-medium);font-variant-numeric:tabular-nums}
-.iv-status .dot{width:6px;height:6px;border-radius:50%;background:var(--iv-ok);flex:none}
-.iv-status-right{margin-left:auto;display:flex;gap:var(--iv-sp-6);align-items:center}
+/* 顶栏：模式分段控件 + 右侧工具 */
+.iv-modes{display:flex;align-items:center;gap:var(--iv-sp-1);padding:2px;border-radius:var(--iv-r-sm);
+  background:var(--iv-panel-2);flex:none}
+.iv-modes-btn{height:24px;padding:0 10px;border-radius:calc(var(--iv-r-sm) - 2px);display:inline-flex;
+  align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-meta);color:var(--iv-tx3);background:transparent;
+  border:0;cursor:pointer;white-space:nowrap;transition:background var(--iv-dur-1),color var(--iv-dur-1)}
+.iv-modes-btn:hover{color:var(--iv-tx)}
+.iv-modes-btn.on{background:var(--iv-panel);color:var(--iv-tx);font-weight:var(--iv-fw-medium);
+  box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.iv-top-tools{display:flex;align-items:center;gap:var(--iv-sp-1);flex:none}
+.iv-btn--on{background:var(--iv-acc-soft)!important;color:var(--iv-acc)!important}
+.iv-top-stats{display:flex;align-items:center;gap:var(--iv-sp-4);font-size:var(--iv-fs-meta);color:var(--iv-tx3);flex:none}
+.iv-top-stats b{color:var(--iv-tx2);font-weight:var(--iv-fw-medium);font-variant-numeric:tabular-nums}
+
+/* 展示列：竖排 5 块，独立滚动 */
+.iv-dock-col{min-width:0;display:flex;flex-direction:column;min-height:0;
+  border-left:1px solid var(--iv-line);background:var(--iv-panel)}
+.iv-dock-col--off{display:none}
+/* 收起后的常驻窄条：留在原位，点一下就展开回来，不用回到顶栏按钮 */
+.iv-dock-rail{min-width:0;display:flex;border-left:1px solid var(--iv-line);background:var(--iv-panel)}
+.iv-dock-rail-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:var(--iv-sp-3);
+  padding:10px 0;border:0;background:transparent;color:var(--iv-tx3);cursor:pointer;font:inherit;
+  transition:background var(--iv-dur-2) ease,color var(--iv-dur-2) ease}
+.iv-dock-rail-btn:hover{background:var(--iv-panel-3);color:var(--iv-tx)}
+.iv-dock-rail-btn:focus-visible{outline:2px solid var(--iv-acc);outline-offset:-2px}
+.iv-dock-rail-title{writing-mode:vertical-rl;font-size:var(--iv-fs-micro);letter-spacing:.4px;
+  text-transform:uppercase;white-space:nowrap}
+.iv-dock-rail-btn .iv-ico{transform:rotate(180deg)}
+/* 整行就是一个收起按钮：标题 + 右端箭头，点哪都能收 */
+.iv-dock-head{flex:none;display:flex;align-items:center;gap:var(--iv-sp-3);padding:0 10px;height:34px;width:100%;
+  border:0;border-bottom:1px solid var(--iv-line);background:transparent;color:inherit;font:inherit;text-align:left;
+  cursor:pointer;transition:background var(--iv-dur-2) ease,color var(--iv-dur-2) ease}
+.iv-dock-head:hover{background:var(--iv-panel-3);color:var(--iv-tx)}
+.iv-dock-head:focus-visible{outline:2px solid var(--iv-acc);outline-offset:-2px}
+.iv-dock-title{font-size:var(--iv-fs-micro);color:var(--iv-tx3);letter-spacing:.4px;text-transform:uppercase}
+.iv-dock-head .iv-ico{margin-left:auto;color:var(--iv-tx3)}
+.iv-dock{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:var(--iv-sp-3);
+  padding:var(--iv-sp-3);align-items:stretch}
+.iv-dock > .iv-pane{flex:none}
+.iv-dock .iv-pane-body{max-height:none}
+/* 展示列块折叠：标题行常驻，其余兄弟节点压到零高（PaneBoundary 健康时零包裹，head 是直接子节点）。
+   不用 display:none：折叠块里的行仍要能被用例与读屏软件按角色找到，只是视觉上收起。 */
+.iv-pane--folded{overflow:hidden}
+.iv-pane--folded > .iv-pane-head ~ *{height:0;max-height:0;margin:0;padding:0;border:0;opacity:0;
+  overflow:hidden;pointer-events:none}
+.iv-pane-fold .iv-ico{transition:transform var(--iv-dur-2) ease}
+.iv-pane-fold[aria-expanded="false"] .iv-ico{transform:rotate(-90deg)}
+/* 预览舞台：固定高度，媒体按 contain 收进框内，不再被图片原始比例撑高 */
+.iv-dock-preview{height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  border-radius:var(--iv-r-sm);background:var(--iv-monitor)}
+.iv-dock-preview .iv-empty{height:100%}
+.iv-dock .iv-dock-preview img,.iv-dock .iv-dock-preview video{width:100%;height:100%;object-fit:contain;
+  border-radius:var(--iv-r-sm);background:transparent}
+
+/* 窄档（面板 <900）：展示列变浮层，由顶栏按钮开合 */
+@container iv-panel (max-width:900px){
+  .iv-body{grid-template-columns:minmax(0,1fr)}
+  /* 窄档没有常驻列：收起时不留窄条，宽度全给主区（展开仍走顶栏按钮） */
+  .iv-body:has(> .iv-dock-col--off){grid-template-columns:minmax(0,1fr)}
+  .iv-dock-rail{display:none}
+  .iv-dock-col{position:absolute;right:8px;top:52px;bottom:8px;width:min(360px,calc(100% - 16px));z-index:var(--iv-z-tip);
+    border:1px solid var(--iv-line-2);border-radius:var(--iv-r-xl);box-shadow:var(--iv-shadow-3);overflow:hidden}
+}
 
 /* ============ 控件 ============ */
 .iv-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--iv-sp-2);height:23px;padding:0 9px;
@@ -337,7 +379,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 
 /* ============ 面板 ============ */
 .iv-page{display:flex;flex-direction:column;gap:var(--iv-sp-5);padding:10px;flex:none}
-.iv-dock{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:var(--iv-sp-5);padding:0 10px 10px;align-items:start}
 /* 停靠区顺序按「用户动线」排：先选料（资源）→ 看效果（预览）→ 素材库 → 交付（导出历史）→ 任务；
    用 order 排而不是搬 JSX：大块 JSX 移动易错，且面板内容与顺序无关。 */
 .iv-dock > [data-dock-order="1"]{order:1}
@@ -452,15 +493,11 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-model-pick{display:flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
 .iv-create .iv-notice{margin:0}
 .iv-asset-search{min-width:120px;max-width:220px;flex:1}
-/* T8 高级抽屉：默认收起，展开后按原顺序排列（不改变块内部布局） */
 /* T10 任务失败原文：等宽、可换行、限高（长报错不撑爆面板） */
 .iv-task-error{margin:var(--iv-sp-3) 0 0;padding:var(--iv-sp-4);max-height:160px;overflow:auto;
   border-radius:var(--iv-r-sm);border:1px solid var(--iv-line);background:var(--iv-panel-2);
   font-family:var(--iv-mono);
   font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:pre-wrap;word-break:break-word;flex-basis:100%}
-.iv-advanced{display:flex;flex-direction:column;gap:var(--iv-sp-6);margin-top:var(--iv-sp-4);
-  padding-top:var(--iv-sp-5);border-top:1px solid var(--iv-line)}
-.iv-advanced[hidden]{display:none}
 .iv-preview-actions{display:flex;flex-wrap:wrap;gap:var(--iv-sp-3);margin-top:var(--iv-sp-4)}
 .iv-failure-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-4);
   margin-top:var(--iv-sp-4);padding:var(--iv-sp-4) var(--iv-sp-5);border-radius:var(--iv-r);
@@ -486,8 +523,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-module{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0;
   padding-top:var(--iv-sp-5);border-top:1px solid color-mix(in srgb,var(--iv-line) 75%,transparent)}
 .iv-modules > .iv-module:first-child{padding-top:0;border-top:0}
-/* 高级设置：默认收起，用虚线分隔强调"可以不管它"，仍然不填底色 */
-.iv-module--quiet{border-top-style:dashed}
 /* 模块标题行整行可点：收起/展开不只靠右边那枚小按钮（用户 2026-11-05）
    —— 用 <button> 承载整行，所以要把按钮默认样式清干净，只保留布局 */
 .iv-module-head{display:flex;align-items:flex-start;gap:var(--iv-sp-4);min-width:0;width:100%;
@@ -501,7 +536,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* 模块内容容器：收起时用 hidden 属性整块隐藏（不是卸载，避免状态丢失）。
    **必须显式写 [hidden] 例外**：作者样式的 display:flex 会覆盖 UA 的
    [hidden]{display:none}，少了这条的话"收起"只是状态变了、内容照样铺在页面上
-   （2026-11-05 真实缺陷：①② 点了没反应，③ 因为 .iv-advanced[hidden] 老规则才正常）。 */
+   （2026-11-05 真实缺陷：模块点"收起"没反应，就是少了这条 [hidden] 例外）。 */
 .iv-module-body{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0}
 .iv-module-body[hidden]{display:none}
 /* 模块级收起/展开：贴在标题行最右（用户要求"对齐最右边"） */
@@ -747,14 +782,12 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 @media (max-width:768px){
 .iv{padding:6px;font-size:var(--iv-fs-body)}
 .iv-top{padding:6px 8px;gap:var(--iv-sp-3)}
-.iv-rail{width:42px}
-.iv-dock{grid-template-columns:1fr;max-height:44vh;overflow:auto}
 .iv-pane-head{padding:6px 8px}
 .iv-create{padding:10px}
 .iv-steps{flex-wrap:wrap}
 .iv-toolbar{flex-wrap:wrap}
 }
-/* B-9 融合生图 / B-10 提示词工坊 */
+/* B-9 融合生图 / 提示词·分镜 / 技能库 */
 .iv-fusion-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:space-between}
 .iv-fusion-group{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap}
 .iv-prompt-lib{display:flex;flex-direction:column;gap:var(--iv-sp-2)}
@@ -816,6 +849,21 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-help-list li{display:flex;gap:var(--iv-sp-5);justify-content:space-between;font-size:var(--iv-fs-body);color:var(--iv-tx2)}
 .iv-help-list b{color:var(--iv-tx);font-weight:var(--iv-fw-medium);text-align:right;font-variant-numeric:tabular-nums}
 .iv-help-actions{display:flex;justify-content:flex-end}
+
+/* ============ 连接弹层（账号登录 / 自带 Key） ============ */
+.iv-connect{width:min(480px,100%)}
+.iv-connect-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--iv-sp-4)}
+.iv-connect-head h4{margin:0 0 var(--iv-sp-1)}
+.iv-connect-head p{margin:0}
+.iv-connect-tabs{display:flex;gap:var(--iv-sp-1);padding:3px;border-radius:var(--iv-r-sm);background:var(--iv-panel-2)}
+.iv-connect-tabs .iv-modes-btn{flex:1;justify-content:center}
+.iv-connect-body{display:flex;flex-direction:column;gap:var(--iv-sp-4)}
+.iv-connect-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);font-size:var(--iv-fs-body);color:var(--iv-tx3)}
+.iv-connect-actions{display:flex;gap:var(--iv-sp-3)}
+.iv-connect-status{display:flex;align-items:baseline;gap:var(--iv-sp-3);margin:0;font-size:var(--iv-fs-strong)}
+.iv-connect-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--iv-sp-1) var(--iv-sp-4);margin:0;font-size:var(--iv-fs-body)}
+.iv-connect-facts dt{color:var(--iv-tx3)}
+.iv-connect-facts dd{margin:0;color:var(--iv-tx);font-variant-numeric:tabular-nums}
 
 /* ============ B-3 融合生图参数化 ============ */
 .iv-param-row{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;align-items:center}

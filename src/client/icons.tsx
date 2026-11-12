@@ -18,6 +18,7 @@ export type IconName =
   | 'eye' | 'user' | 'play' | 'filter' | 'upload' | 'link' | 'box' | 'script'
   | 'storyboard' | 'input' | 'subtitle' | 'music' | 'motion' | 'sparkles' | 'tag'
   | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron' | 'undo' | 'redo' | 'clipboard' | 'help'
+  | 'shirt'
 
 /** 单路径图标：一个 `d` 讲完（圆用小圆弧拼）；多元素图形见 {@link SHAPES}。 */
 const STROKE: Partial<Record<IconName, string>> = {
@@ -50,6 +51,7 @@ const STROKE: Partial<Record<IconName, string>> = {
   motion: 'M3 16.4c2-8.4 4-8.4 6 0s4 8.4 6 0 4-8.4 6 0',
   sparkles: 'M11.6 3.8 13.3 8 17.6 9.8 13.3 11.6 11.6 15.8 9.9 11.6 5.6 9.8 9.9 8zM18.4 15.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
   tag: 'M4 4.6h6.6l9 9-6.6 6.6-9-9zM7.4 8.4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+  shirt: 'M9 4.5 5 6.5 3.8 10.3l3.2 1V19h10v-7.7l3.2-1L18.8 6.5 15 4.5 13.4 6.2a2 2 0 0 1-2.8 0z',
   search: 'M10.6 17a6.4 6.4 0 1 0 0-12.8 6.4 6.4 0 0 0 0 12.8M15.4 15.4 20 20',
   copy: 'M8.6 8.6h10v10h-10zM5.4 15.4v-10h10',
   pause: 'M8.6 5v14M15.4 5v14',
@@ -126,11 +128,15 @@ export function Icon({ name, size = 14, className }: IconProps): ReactNode {
   )
 }
 
-/** 品牌标（填充三角，放在渐变底标里用）。 */
-export function BrandMark({ size = 14 }: { size?: number }): ReactNode {
+/** 品牌标：石墨灰圆角底 + 三根白条 + 产品蓝三角（24 网格，按 `size` 等比缩放）。 */
+export function BrandMark({ size = 22 }: { size?: number }): ReactNode {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-      <path d="M8.6 5.2 19 12 8.6 18.8z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect width="24" height="24" rx="5.6" fill="#31363D" />
+      <rect x="6.4" y="4.4" width="7.6" height="2.6" rx="1.3" fill="#FFFFFF" />
+      <rect x="6.4" y="9.7" width="7.6" height="2.6" rx="1.3" fill="#FFFFFF" />
+      <rect x="6.4" y="15" width="7.6" height="2.6" rx="1.3" fill="#FFFFFF" />
+      <path d="M16.8 7.4 22 12l-5.2 4.6z" fill="#2F6FED" />
     </svg>
   )
 }

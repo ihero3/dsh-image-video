@@ -8,7 +8,7 @@
  * 2. 界面上不出现 `[data-generate-risk]` 提示条，也不再有 `data-generate-blocked`；
  * 3. 生成按钮只由"没提示词 / 没剧集 / 正在生成"三种状态禁用，不受风控影响。
  *
- * 融合生图（高级抽屉）里的风控是另一条路径，由 `client-fusion-*` 覆盖，不在这里断言。
+ * 融合生图（模块 ② 内）里的风控是另一条路径，由 `client-fusion-*` 覆盖，不在这里断言。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'

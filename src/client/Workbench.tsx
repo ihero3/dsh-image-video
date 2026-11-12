@@ -14,8 +14,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the right pane's seat declarations (the framework-bound `useTabInfo`).
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// Type-only: the main-panel slot declarations this body registers under.
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type { AssetRecord, ProjectRecord, ResourceKind, ResourceRecord, ResourceUsageRecord, TaskRecord, TaskStatus } from '../workbench/records.ts'
 import { newWorkbenchId } from '../workbench/records.ts'
 import type { WorkbenchOptions } from '../workbench-contract.ts'
@@ -41,11 +41,18 @@ import {
   nudgeDeltaForKey, resizeClipLeft, resizeClipRight,
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
-import type { ExtractedPrompt, ExportRecord, MediaReference, PromptRecord, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import { EPISODE_REF_CATEGORIES } from '../workbench/episodes.ts'
+import type {
+  EpisodeRecord, EpisodeRefCategory,
+} from '../workbench/episodes.ts'
+import type { SkillRecord } from '../workbench/skills.ts'
+import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
 import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
+import { useWorkbenchField } from './workbench-store.ts'
+import { isInteractiveTarget, toggleWindowFullscreen } from './window-fullscreen.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
 import { AssetHealthPanel } from './panels/AssetHealthPanel.tsx'
@@ -55,7 +62,14 @@ import { RatioSlicesPanel } from './panels/RatioSlicesPanel.tsx'
 import { ResourceFoldersPanel } from './panels/ResourceFoldersPanel.tsx'
 import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
 import { TaskCard } from './panels/TaskCard.tsx'
+import { EpisodeWorkspace } from './panels/EpisodeWorkspace.tsx'
+import { PromptStudioPanel } from './panels/PromptStudioPanel.tsx'
+import { SkillLibraryPanel } from './panels/SkillLibraryPanel.tsx'
 import { ExportHistoryPanel } from './panels/ExportHistoryPanel.tsx'
+import { GuideOverlay } from './screens/GuideOverlay.tsx'
+import { en as guideEn, GUIDE_NS, zh as guideZh } from './screens/guide-locales.ts'
+import { ConnectDialog } from './auth/ConnectDialog.tsx'
+import { AUTH_NS, authEn, authZh } from './auth/locales.ts'
 
 /** Injected share the client plugin binds once. */
 export interface WorkbenchInjected {
@@ -68,14 +82,18 @@ export interface WorkbenchInjected {
    * 旧宿主/测试替身不提供时跳过：`t` 仍能从入口壳字典取那 2 条，其余键名会原样显示。
    */
   registerDictionaries?: (dicts: { zh: Record<string, string>, en: Record<string, string> }) => void
+  /** 注册界面里的小字典（引导页等）：ns → 词典，随 fiber 卸载。 */
+  registerExtraLocale?: (ns: string, dicts: { zh: Record<string, string>, en: Record<string, string> }) => void
+  /** 按命名空间取一个 `t`（用于引导页这种独立 ns 的组件）。 */
+  bindLocale?: (ns: string) => (key: string) => string
 }
 
 /** The three modes the workbench offers. */
 export type WorkbenchMode = 'quick' | 'workflow' | 'timeline'
 
-/** Props the right-pane seat binds for this body. */
+/** Props the main-panel seat binds for this body. */
 export type WorkbenchProps =
-  PropsRuntime<'sidebar.right.pane.tab'>
+  PropsRuntime<'main'>
   & InjectFace<WorkbenchInjected>
   & PropsLocale<typeof NS>
   & {
@@ -120,7 +138,7 @@ const MODE_ICONS: Record<WorkbenchMode, IconName> = {
 
 /** Resource kind → icon (resource library rows). */
 const RESOURCE_ICONS: Record<ResourceKind, IconName> = {
-  'role': 'user', 'scene': 'image', 'prop': 'box', 'brand': 'tag',
+  'role': 'user', 'costume': 'shirt', 'scene': 'image', 'prop': 'box', 'brand': 'tag',
   'style': 'sparkles', 'voice': 'music', 'motion-track': 'motion',
 }
 
@@ -265,6 +283,7 @@ function trackKindKey(kind: TrackKind): WorkbenchLocaleKey {
 function kindKey(kind: ResourceKind): WorkbenchLocaleKey {
   switch (kind) {
     case 'role': return 'kindRole'
+    case 'costume': return 'kindCostume'
     case 'scene': return 'kindScene'
     case 'prop': return 'kindProp'
     case 'brand': return 'kindBrand'
@@ -272,6 +291,11 @@ function kindKey(kind: ResourceKind): WorkbenchLocaleKey {
     case 'motion-track': return 'resourceMotionTrack'
     case 'voice': return 'kindVoice'
   }
+}
+
+/** 集内引用分类的文案键：`ungrouped` 单独一条，其余复用资源分类标签。 */
+function episodeCategoryKey(category: EpisodeRefCategory): WorkbenchLocaleKey {
+  return category === 'ungrouped' ? 'episodeCategoryUngrouped' : kindKey(category)
 }
 
 /** Localized label for one task status. */
@@ -295,20 +319,6 @@ function clockTime(iso: string): string {
 /** File name of an absolute path. */
 function baseName(path: string): string {
   return path.split('/').pop() ?? path
-}
-
-/**
- * `B-10`：把宿主返回的结构化提示词拼成一段可编辑文本。
- * 宿主给了整段 `text` 就优先用它；否则按 主体→风格→材质→细节 拼接，缺字段跳过。
- * 各字段都为空时返回空串——界面据此提示"提取结果为空"，绝不编造内容。
- */
-function composeExtractedPrompt(prompt: ExtractedPrompt): string {
-  const whole = prompt.text?.trim()
-  if (whole !== undefined && whole !== '') return whole
-  return [prompt.subject, prompt.style, prompt.material, prompt.details]
-    .map(part => part?.trim() ?? '')
-    .filter(part => part !== '')
-    .join(', ')
 }
 
 /** `B-9`：在选中的资源 id 列表里切换一个 id（保持追加顺序）。 */
@@ -374,14 +384,34 @@ function emptyTimeline(project: ProjectRecord): TimelineRecord {
 /** 界面字典（完整 zh/en）：由入口在 chunk 加载后注册，见 {@link WorkbenchInjected.registerDictionaries}。 */
 export const workbenchDictionaries = { zh, en }
 
+/**
+ * 顶栏与参数条的双击：落在空白处切换窗口全屏，落在控件上保持控件自身的双击行为。
+ * @param event - 条带上的双击事件。
+ */
+function onWindowStripDoubleClick(event: ReactMouseEvent<HTMLElement>): void {
+  if (!isInteractiveTarget(event.target)) toggleWindowFullscreen()
+}
+
 export function Workbench(props: WorkbenchProps): ReactNode {
-  const { api, kind, t, useTabInfo, maintenancePanes, registerDictionaries, autoCreateSeries } = props
+  const { api, kind, t, maintenancePanes, registerDictionaries, registerExtraLocale, bindLocale, autoCreateSeries } = props
   // N5：chunk 已经载入 → 把完整字典交回入口注册。用 layout effect 保证在首次绘制前完成，
   // 不会出现"闪一下键名"。重复挂载幂等（入口侧只注册一次）。
   useLayoutEffect(() => { registerDictionaries?.(workbenchDictionaries) }, [registerDictionaries])
+  // 引导页用自己的命名空间：随 chunk 一起注册，入口不必背这份体积
+  const guideRegistered = useRef(false)
+  useLayoutEffect(() => {
+    if (guideRegistered.current) return
+    guideRegistered.current = true
+    registerExtraLocale?.(GUIDE_NS, { zh: guideZh, en: guideEn })
+    // 连接弹层的字典同样随 chunk 注册；注册口按 ns 幂等，面板重挂载不会重复注册
+    registerExtraLocale?.(AUTH_NS, { zh: authZh, en: authEn })
+  }, [registerExtraLocale])
   // 运维面板（素材库体检 / 诊断）默认不渲染：用户看不懂也用不上，只留给排障与回归测试
   const showMaintenancePanes = maintenancePanes === true
-  const { sidebar, tab } = useTabInfo()
+  // 主面板不再由右栏 seat 提供 tab 信息；测试替身仍可注入 useTabInfo，读到就用它。
+  const tabInfo = (props as { useTabInfo?: () => { sidebar?: { fullscreen?: boolean }; tab?: { visible?: boolean } } }).useTabInfo?.()
+  const sidebarFullscreen = tabInfo?.sidebar?.fullscreen === true
+  const tabVisible = tabInfo?.tab?.visible !== false
 
   // 设计系统样式表：挂载时注入一次（幂等，与 xyflow 官方样式同一机制）。
   useWorkbenchStyle()
@@ -390,7 +420,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const apiRef = useRef(api)
   apiRef.current = api
 
-  const [mode, setMode] = useState<WorkbenchMode>('quick')
+  const [mode, setMode] = useWorkbenchField(api, 'mode')
   // 工作流文档：画布维度的单一事实源（`T4-1`）。持久化随后端端点接入。
   const [workflow, setWorkflow] = useState<WorkflowRecord | undefined>(undefined)
   const [workflowState, setWorkflowState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
@@ -421,10 +451,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // B6 导出成功后「登记到素材库」的反馈。
   const [assetRegistered, setAssetRegistered] = useState(false)
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
-  const [activeId, setActiveId] = useState<string | undefined>(undefined)
+  const [activeId, setActiveId] = useWorkbenchField(api, 'activeId')
   const [assets, setAssets] = useState<readonly AssetRecord[]>([])
   const [outputs, setOutputs] = useState<readonly OutputFile[]>([])
-  const [tasks, setTasksRaw] = useState<readonly TaskRecord[]>([])
+  const [tasks, setTasksRaw] = useWorkbenchField(api, 'tasks')
   const setTasks = (value: readonly TaskRecord[]): void => {
     setTasksRaw(value)
   }
@@ -438,7 +468,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [assetQuery, setAssetQuery] = useState('')
   const [assetSort, setAssetSort] = useState<'newest' | 'oldest' | 'largest' | 'name'>('newest')
   // `B-7`：素材多选（批量删除 `assets/remove-many` / 批量引用到提示词）
-  const [selectedAssetIds, setSelectedAssetIds] = useState<readonly string[]>([])
+  const [selectedAssetIds, setSelectedAssetIds] = useWorkbenchField(api, 'selectedAssetIds')
   // 批量删除被宿主拒（素材被引用）后，亮出"仍要删除"让用户明确承担后果
   const [bulkForceIds, setBulkForceIds] = useState<readonly string[] | undefined>(undefined)
   // `G2` 物料库分栏：角色/场景/物品三个常驻栏 + 「其他」下拉（其余 kind）。
@@ -451,7 +481,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [metaName, setMetaName] = useState('')
   const [metaNote, setMetaNote] = useState('')
   /** 资源列表里的"当前选中"（视觉高亮；与素材选中是两件事）。 */
-  const [selectedResourceId, setSelectedResourceId] = useState<string | undefined>(undefined)
+  const [selectedResourceId, setSelectedResourceId] = useWorkbenchField(api, 'selectedResourceId')
   /** 哪一行展开了「详情」（使用记录 / 编辑 / 参考图 / 删除都收在里面，默认收起）。 */
   const [expandedResourceId, setExpandedResourceId] = useState<string | undefined>(undefined)
   /** 分类 + 重绘计划是高级功能：默认收起，别和新手抢注意力。 */
@@ -466,7 +496,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [renameValue, setRenameValue] = useState('')
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'dirty' | 'failed'>('saved')
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
-  const [previewPath, setPreviewPath] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
+  const [previewPath, setPreviewPath] = useWorkbenchField(api, 'previewPath')
   const [name, setName] = useState('')
   const [confirming, setConfirming] = useState<string | undefined>(undefined)
   // 被引用的素材/资源：首次删除被拒后，亮出"仍要删除"（force）让用户明确承担后果
@@ -475,18 +505,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [notice, setNotice] = useState<{ text: string; tone: 'info' | 'error' } | undefined>(undefined)
 
   // `A149`：快速创作里直接生成（图片同步；视频 wait:false + 轮询任务；可取消）
-  const [generatePrompt, setGeneratePrompt] = useState('')
+  const [generatePrompt, setGeneratePrompt] = useWorkbenchField(api, 'generatePrompt')
   const [generating, setGenerating] = useState<'image' | 'video' | undefined>(undefined)
   const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
   // `F2`：多参考图（**按序**）：首图=底图，其余=风格/脸部参考。
   // 图片走 `images[]`（≥2 张）或 `image`（1 张，兼容 A151）；视频首帧取第一张。
-  const [generateImages, setGenerateImages] = useState<readonly string[]>([])
+  const [generateImages, setGenerateImages] = useWorkbenchField(api, 'generateImages')
   // 参考图 chip 的拖拽排序：拖着的位置 → 落点（鼠标用户；键盘用前移/后移按钮）
   const [refDragFrom, setRefDragFrom] = useState<number | undefined>(undefined)
   const [refDropAt, setRefDropAt] = useState<number | undefined>(undefined)
   // `G4`：视频生成的尾帧图 / 参考视频 / 真人勾选——随请求透传 `media[]` 与 `realPerson`。
-  const [generateLastFrame, setGenerateLastFrame] = useState<string | undefined>(undefined)
-  const [generateRefVideo, setGenerateRefVideo] = useState<string | undefined>(undefined)
+  const [generateLastFrame, setGenerateLastFrame] = useWorkbenchField(api, 'generateLastFrame')
+  const [generateRefVideo, setGenerateRefVideo] = useWorkbenchField(api, 'generateRefVideo')
   const [generateRealPerson, setGenerateRealPerson] = useState(false)
   // `B-4`：视频续写显式模式——开启后必须有参考视频，缺则拒绝（不静默降级）。
   const [generateContinuation, setGenerateContinuation] = useState(false)
@@ -494,26 +524,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generateStartedAt, setGenerateStartedAt] = useState<number | undefined>(undefined)
   const [runningGenerations, setRunningGenerations] = useState<readonly RunningGeneration[]>([])
   // `F1`：面板内就地可改的生成参数（初始值取生效默认值；改了就用改后的）
-  const [generateSize, setGenerateSize] = useState('')
-  const [generateAspect, setGenerateAspect] = useState('')
-  const [generateDuration, setGenerateDuration] = useState('')
+  const [generateSize, setGenerateSize] = useWorkbenchField(api, 'generateSize')
+  const [generateAspect, setGenerateAspect] = useWorkbenchField(api, 'generateAspect')
+  const [generateDuration, setGenerateDuration] = useWorkbenchField(api, 'generateDuration')
   // `T2`：单次生成可指定模型（空 = 宿主默认）；图片/视频各记一份，互不覆盖。
-  const [generateImageModel, setGenerateImageModel] = useState('')
-  const [generateVideoModel, setGenerateVideoModel] = useState('')
+  const [generateImageModel, setGenerateImageModel] = useWorkbenchField(api, 'generateImageModel')
+  const [generateVideoModel, setGenerateVideoModel] = useWorkbenchField(api, 'generateVideoModel')
   // `T3`：本次生成结果——生成完就地展示，不用滚到底部停靠区找（结构与 previewPath 同构）。
-  const [lastResult, setLastResult] = useState<{ path: string; kind: 'image' | 'video' } | undefined>(undefined)
+  const [lastResult, setLastResult] = useWorkbenchField(api, 'lastResult')
   // `T4`：失败的「下一步」——错误条旁边直接给可点的补救动作，而不是只留一行报错。
   // `T5`：快速路径的风控预检（与融合生图同源）——block 直接禁生成，warn 只提醒不拦。
-  // `T8` 高级抽屉：融合生图 / 提示词工坊 / 剧本分镜 / 模型能力卡默认收起。
   // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
   /**
-   * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
-   * 收起就把整块内容一起藏起来（③ 默认收起，因为它是低频高级工具）。
+   * 模块级收起（用户 2026-11-05）：①② 两个模块都在标题行**最右**有一个"收起/展开"，
+   * 收起就把整块内容一起藏起来。
    */
-  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; advanced: boolean }>({ pipeline: true, quick: true, advanced: false })
-  const toggleModule = (key: 'pipeline' | 'quick' | 'advanced'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
+  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean }>({ pipeline: true, quick: true })
+  // 展示列开合（宽档两栏 / 窄档浮层，见样式表容器查询）
+  const [dockOpen, setDockOpen] = useWorkbenchField(api, 'dockOpen')
+  // 展示列各块的收起态：高频块（预览）默认展开，低频块（资源/导出/任务）默认收起。
+  const [dockFolded, setDockFolded] = useState<{ resources: boolean, preview: boolean, exports: boolean, tasks: boolean }>({
+    resources: true, preview: false, exports: true, tasks: true,
+  })
+  const toggleDockFold = (key: keyof typeof dockFolded): void => {
+    setDockFolded(current => ({ ...current, [key]: !current[key] }))
+  }
+  // 首次使用引导：只在「宿主连上了、但一对模型都没接」时自动弹；用户说过「稍后再说」就不再打扰
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [guideDismissed, setGuideDismissed] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(false)
+  const toggleModule = (key: 'pipeline' | 'quick'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
   // `T9` 分镜 → 一键成片直通：把剧本「推」给 PipelineCard。
   // 用递增 seq 包一层，保证**同一段脚本连点两次也能再次触发**（value 变化才触发 effect）。
   const [pipelineInject, setPipelineInject] = useState<{ seq: number; script: string } | undefined>(undefined)
@@ -536,11 +578,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [composeRisk, setComposeRisk] = useState<PromptRiskView | undefined>(undefined)
   const [composeRiskBusy, setComposeRiskBusy] = useState(false)
   const [composing, setComposing] = useState(false)
-  // `B-10` 提示词工坊（`A-5` `prompts/*`）：提取结果 / 名称 / 库 / 运行态。
-  const [promptDraft, setPromptDraft] = useState('')
-  const [promptName, setPromptName] = useState('')
-  const [prompts, setPrompts] = useState<readonly PromptRecord[]>([])
-  const [extracting, setExtracting] = useState(false)
+
   // `B-15` 分镜工坊（`A-7` `storyboard/plan`）：剧本 → 可编辑镜头表。
   const [storyboardScript, setStoryboardScript] = useState('')
   const [storyboardTarget, setStoryboardTarget] = useState('')
@@ -551,6 +589,31 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [exportsTick, setExportsTick] = useState(0)
   // `B-17` 帮助浮层（快捷键 + 模式说明）。
   const [helpOpen, setHelpOpen] = useState(false)
+
+  // 集：剧集下的第二层实体。`activeEpisodeId` 指向当前正在编辑的集；
+  // 资源面板的「本集已选 / 剧集全部」由 `episodeResourceView` 切换。
+  const [episodes, setEpisodes] = useState<readonly EpisodeRecord[]>([])
+  const [activeEpisodeId, setActiveEpisodeId] = useWorkbenchField(api, 'activeEpisodeId')
+  const [episodeResourceView, setEpisodeResourceView] = useState<'selected' | 'all'>('selected')
+  const [episodeRenaming, setEpisodeRenaming] = useState(false)
+  const [episodeRenameValue, setEpisodeRenameValue] = useState('')
+  /** 主区标签页：内容生产（生成） / 提示词·分镜（逆向解析与本集提示词库）。 */
+  const [quickTab, setQuickTab] = useWorkbenchField(api, 'quickTab')
+  // 导演库里启用中的技能：分段的 Skill 选择器只列这些（技能管理页改动后一起刷新）。
+  const [directorSkills, setDirectorSkills] = useState<readonly SkillRecord[]>([])
+
+  /** 拉取启用中的导演 Skill；失败时退回默认 Skill，不阻断主链路。 */
+  const reloadDirectorSkills = useCallback(async (): Promise<void> => {
+    try {
+      setDirectorSkills(await apiRef.current.listSkills('director', true))
+    } catch {
+      setDirectorSkills([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void reloadDirectorSkills()
+  }, [reloadDirectorSkills])
 
   /**
    * 两个阻断式浮层的焦点管理（R6-3）：打开移入、Tab 循环、Esc 关闭、关闭后归还。
@@ -1429,6 +1492,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       || (resource.note ?? '').includes(resourceNeedle)),
   )
 
+  // ---- 集：当前集、集内引用与增删移 ------------------------------------------
+  /** 当前集；`episodes/list` 已返回完整记录，无需再拉详情。 */
+  const activeEpisode = episodes.find(episode => episode.id === activeEpisodeId)
+  /** 本集引用的资源；资源已从资源库删除时解析为 undefined，界面灰显。 */
+  const episodeResourceRows = (activeEpisode?.resourceRefs ?? []).map(ref => ({
+    ref,
+    resource: resources.find(resource => resource.id === ref.resourceId),
+  }))
+  /** 本集引用的素材；素材记录被删时同样灰显。 */
+  const episodeAssetRows = (activeEpisode?.assetRefs ?? []).map(ref => ({
+    ref,
+    asset: assets.find(asset => asset.id === ref.assetId),
+  }))
+
   // `B-9` 融合生图：选中资源的参考图预览——去重、按角色→场景→物品的顺序、封顶 6 张。
   // 这只是**本地预览**；真正用哪几张由宿主 `media/compose` 解析（缺图会降级为纯文生）。
   const composeSelection = [...composeRoles, ...composeScenes, ...composeProps]
@@ -1505,69 +1582,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }
 
-  // `B-10` 提示词库：全局库，挂载时拉一次；端点未落地（A-5 未实现）时保持空库，不打断其它面板。
-  useEffect(() => {
-    let stale = false
-    void (async () => {
-      try {
-        const rows = await apiRef.current.listPrompts()
-        if (!stale) setPrompts(rows)
-      } catch {
-        // 空库展示即可，真实错误在用户点「提取」时会如实弹出
-      }
-    })()
-    return () => { stale = true }
-  }, [])
-
-  /** `B-10`：从选中的图片素材提取结构化提示词（不可用则如实报错，不伪造结果）。 */
-  const runExtractPrompt = async (): Promise<void> => {
-    if (selectedAsset === undefined || selectedAsset.kind !== 'image') {
-      setNotice({ text: t('promptExtractNeedsAsset'), tone: 'error' })
-      return
-    }
-    setExtracting(true)
-    try {
-      const extracted = await apiRef.current.extractPrompt({ path: selectedAsset.path })
-      const text = composeExtractedPrompt(extracted)
-      setPromptDraft(text)
-      if (promptName.trim() === '') setPromptName(baseName(selectedAsset.path))
-      if (text === '') {
-        setNotice({ text: t('promptExtractEmpty'), tone: 'error' })
-      } else {
-        setNotice({ text: t('promptExtractDone'), tone: 'info' })
-      }
-    } catch (error) {
-      setNotice({ text: `${t('promptExtractFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    } finally {
-      setExtracting(false)
-    }
-  }
-
-  /** `B-10`：把提取/编辑后的结果存入提示词库。 */
-  const savePromptDraft = async (): Promise<void> => {
-    const text = promptDraft.trim()
-    if (text === '') { setNotice({ text: t('promptNeedsText'), tone: 'error' }); return }
-    const name = promptName.trim() === '' ? t('promptUntitled') : promptName.trim()
-    try {
-      const saved = await apiRef.current.savePrompt({ name, text })
-      setPrompts(current => [saved, ...current.filter(record => record.id !== saved.id)])
-      setNotice({ text: t('promptSaveDone'), tone: 'info' })
-    } catch (error) {
-      setNotice({ text: `${t('promptSaveFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    }
-  }
-
-  /** `B-10`：删除一条提示词。 */
-  const removePromptRecord = async (id: string): Promise<void> => {
-    try {
-      await apiRef.current.removePrompt(id)
-      setPrompts(current => current.filter(record => record.id !== id))
-    } catch (error) {
-      setNotice({ text: `${t('promptSaveFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    }
-  }
-
-  /** `B-10`：把库里的提示词一键带入生成表单。 */
+  /** 把提示词一键带入生成表单（提示词·分镜页与分镜镜头共用）。 */
   const applyPrompt = (text: string): void => {
     setGeneratePrompt(text)
     setNotice({ text: t('promptApplyDone'), tone: 'info' })
@@ -1818,6 +1833,136 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setResources(await apiRef.current.listResources(projectId))
   }, [])
 
+  /**
+   * 拉取一个剧集的集列表，并把当前集落到「上次打开的那一集」。
+   * 记住上次打开的集只是便利功能：无痕模式下 localStorage 抛错时退回第一集。
+   */
+  const loadEpisodes = useCallback(async (projectId: string) => {
+    const list = await apiRef.current.listEpisodes(projectId)
+    setEpisodes(list)
+    setActiveEpisodeId(previous => {
+      if (previous !== undefined && list.some(episode => episode.id === previous)) return previous
+      if (list.length === 0) return undefined
+      let remembered: string | undefined
+      try {
+        remembered = localStorage.getItem(`image-video:episode:${projectId}`) ?? undefined
+      } catch {
+        // 无痕模式 / 存储被禁用时忽略：记住上次打开只是便利功能
+        remembered = undefined
+      }
+      return list.find(episode => episode.id === remembered)?.id ?? list[0]!.id
+    })
+  }, [])
+
+  /** 记住当前剧集最近打开的一集，切回来时直接续上。 */
+  useEffect(() => {
+    if (activeId === undefined || activeEpisodeId === undefined) return
+    try {
+      localStorage.setItem(`image-video:episode:${activeId}`, activeEpisodeId)
+    } catch {
+      // 存储不可用时忽略：只影响"记住上次打开"
+    }
+  }, [activeId, activeEpisodeId])
+
+  /** 用宿主最新记录替换列表里的那一集（引用增删移后刷新）。 */
+  const refreshEpisode = async (episodeId: string): Promise<void> => {
+    const updated = await apiRef.current.getEpisode(episodeId)
+    setEpisodes(current => current.map(episode => (episode.id === episodeId ? updated : episode)))
+  }
+
+  /** 跑一次集级写操作，成功后刷新该集。 */
+  const runEpisodeAction = (episodeId: string, action: () => Promise<unknown>): void => {
+    void run(async () => {
+      await action()
+      await refreshEpisode(episodeId)
+    })
+  }
+
+  const addEpisodeResource = (resourceId: string): void => {
+    if (activeEpisode === undefined) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeResources(activeEpisode.id, 'add', { resourceId }))
+  }
+
+  const addEpisodeAsset = (assetId: string): void => {
+    if (activeEpisode === undefined) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeAssets(activeEpisode.id, 'add', { assetId }))
+  }
+
+  const removeEpisodeResource = (resourceId: string): void => {
+    if (activeEpisode === undefined) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeResources(activeEpisode.id, 'remove', { resourceId }))
+  }
+
+  const removeEpisodeAsset = (assetId: string): void => {
+    if (activeEpisode === undefined) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeAssets(activeEpisode.id, 'remove', { assetId }))
+  }
+
+  /** 集内引用上移/下移一格：顺序号从 1 开始，越界即忽略。 */
+  const moveEpisodeResource = (resourceId: string, delta: number): void => {
+    if (activeEpisode === undefined) return
+    const target = activeEpisode.resourceRefs.find(ref => ref.resourceId === resourceId)
+    if (target === undefined) return
+    const order = target.order + delta
+    if (order < 1 || order > activeEpisode.resourceRefs.length) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeResources(activeEpisode.id, 'move', { resourceId, order }))
+  }
+
+  const moveEpisodeAsset = (assetId: string, delta: number): void => {
+    if (activeEpisode === undefined) return
+    const target = activeEpisode.assetRefs.find(ref => ref.assetId === assetId)
+    if (target === undefined) return
+    const order = target.order + delta
+    if (order < 1 || order > activeEpisode.assetRefs.length) return
+    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeAssets(activeEpisode.id, 'move', { assetId, order }))
+  }
+
+  /** 改变一条集内引用的分类（资源分类或素材分类）。 */
+  const setEpisodeRefCategory = (
+    kind: 'resource' | 'asset', id: string, category: EpisodeRefCategory,
+  ): void => {
+    if (activeEpisode === undefined) return
+    runEpisodeAction(activeEpisode.id, () => (kind === 'resource'
+      ? apiRef.current.episodeResources(activeEpisode.id, 'move', { resourceId: id, category })
+      : apiRef.current.episodeAssets(activeEpisode.id, 'move', { assetId: id, category })))
+  }
+
+  const createEpisode = (): void => {
+    if (activeId === undefined) return
+    void run(async () => {
+      const created = await apiRef.current.createEpisode(activeId)
+      await loadEpisodes(activeId)
+      setActiveEpisodeId(created.id)
+    })
+  }
+
+  const saveEpisodeRename = (): void => {
+    if (activeEpisode === undefined) return
+    const title = episodeRenameValue.trim()
+    if (title === '') return
+    void run(async () => {
+      await apiRef.current.updateEpisode(activeEpisode.id, { title })
+      setEpisodeRenaming(false)
+      if (activeId !== undefined) await loadEpisodes(activeId)
+    })
+  }
+
+  /** 删除当前集：第一次点只是确认；宿主要求 `force` 时再点强制删除。 */
+  const removeActiveEpisode = (force: boolean): void => {
+    if (activeEpisode === undefined || activeId === undefined) return
+    void run(async () => {
+      try {
+        await apiRef.current.removeEpisode(activeEpisode.id, force)
+        setConfirming(undefined)
+        setForceTarget(undefined)
+      } catch (error) {
+        if (!force) setForceTarget(activeEpisode.id)
+        throw error
+      }
+      await loadEpisodes(activeId)
+    })
+  }
+
   // ============ B-7 素材批量操作 ============
   /** 多选当前仍存在的素材（已删掉的自动退出选择，计数不会虚高）。 */
   const selectedAssets = assets.filter(asset => selectedAssetIds.includes(asset.id))
@@ -1962,7 +2107,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   exportRecordIdRef.current = exportRecordId
   useUnifiedPolling({
     active: pollingActive,
-    enabled: tab.visible,
+    enabled: tabVisible,
     onTick: () => {
       void (async () => {
         try {
@@ -2008,15 +2153,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   useEffect(() => {
     void (async () => {
       setSelectedId(undefined)
-      if (activeId === undefined) { setAssets([]); setResources([]); return }
+      if (activeId === undefined) {
+        setAssets([])
+        setResources([])
+        setEpisodes([])
+        setActiveEpisodeId(undefined)
+        return
+      }
       try {
-        setAssets(await apiRef.current.listAssets(activeId))
+        // 素材库全局可见：不按来源剧集过滤
+        setAssets(await apiRef.current.listAssets())
         await loadResources(activeId)
+        await loadEpisodes(activeId)
       } catch (error) {
         setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
       }
     })()
-  }, [activeId, loadResources])
+  }, [activeId, loadResources, loadEpisodes])
 
   const styleLabelKeys: Record<string, WorkbenchLocaleKey> = {
     photo: 'optStylePhoto', illustration: 'optStyleIllustration',
@@ -2118,24 +2271,52 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       ? `${health.version} · ${health.provider}`
       : t('healthFailed')
 
+  // ---- 首次使用：宿主连上了、且用户没说过「稍后再说」→ 弹一次引导 ----
+  useEffect(() => {
+    if (health.status !== 'ok' || guideDismissed) return
+    let seen = false
+    try { seen = localStorage.getItem('image-video:guide-done') === '1' } catch { seen = true }
+    if (!seen) setGuideOpen(true)
+  }, [health.status, guideDismissed])
+  const closeGuide = (): void => {
+    setGuideOpen(false)
+    setGuideDismissed(true)
+    try { localStorage.setItem('image-video:guide-done', '1') } catch { /* 无痕模式忽略 */ }
+  }
+
+  // ---- 引导页派生值 ----
+  const guideT = (key: string): string => (bindLocale?.('image-video-guide') ?? ((k: string) => k))(key)
+  // 连接弹层的文案独立命名空间（由上面的 layout effect 随 chunk 注册）
+  const authT = (key: string): string => (bindLocale?.(AUTH_NS) ?? ((k: string) => k))(key)
+  const guideFfmpeg = ffmpeg === undefined ? undefined : { ok: ffmpeg.available, path: ffmpeg.path, message: ffmpeg.message }
+  const guideOutputsDir = health.status === 'ok' ? (health as { outputsDir?: string }).outputsDir ?? '' : ''
+  const guideModels: readonly { id: string; label: string }[] = (health.status === 'ok' ? health.options?.imageProviders ?? [] : [])
+    .map(id => ({ id, label: id }))
+
   return (
     <div
       className="iv"
       data-workbench-kind={kind}
-      data-workbench-visible={tab.visible ? 'true' : 'false'}
+      data-workbench-visible={tabVisible ? 'true' : 'false'}
       data-workbench-refreshed={String(refreshTick)}
-      data-workbench-fullscreen={sidebar.fullscreen ? 'true' : 'false'}
+      data-workbench-fullscreen={sidebarFullscreen ? 'true' : 'false'}
       data-workbench-health={health.status}
       data-workbench-save={saveState}
       data-workbench-projects={String(projects.length)}
       data-workbench-assets={String(assets.length)}
       data-workbench-tasks={String(tasks.length)}
       data-workbench-resources={String(resources.length)}
+      data-workbench-episodes={String(episodes.length)}
+      data-workbench-episode={activeEpisodeId ?? ''}
     >
       {/* ============ 顶栏：品牌 / 剧集 / 状态 / 操作 ============ */}
-      <header className="iv-top">
+      <header
+        className="iv-top"
+        data-workbench-header="true"
+        onDoubleClick={onWindowStripDoubleClick}
+      >
         <div className="iv-brand">
-          <span className="iv-mark"><BrandMark size={12} /></span>
+          <BrandMark size={22} />
           <span className="iv-brand-text">
             <span className="iv-brand-name">dsh-image-video</span>
             <span className="iv-brand-sub">{t('brandTagline')}</span>
@@ -2217,8 +2398,149 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </button>
             )
             : null}
+          {activeId === undefined ? null : (
+            <span className="iv-episode" data-workbench-episode-picker="true">
+              <span className="iv-micro">{t('sectionEpisode')}</span>
+              {episodes.length === 0
+                ? <span className="iv-meta">{t('episodeNone')}</span>
+                : (
+                  <select
+                    className="iv-select"
+                    aria-label={t('sectionEpisode')}
+                    data-episode-select="true"
+                    value={activeEpisodeId ?? ''}
+                    onChange={event => { setActiveEpisodeId(event.target.value); setEpisodeRenaming(false) }}
+                    style={{ maxWidth: '150px' }}
+                  >
+                    {episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}
+                  </select>
+                )}
+              <button
+                type="button"
+                className="iv-btn iv-btn--ghost iv-btn--sm"
+                data-episode-create="true"
+                disabled={busy}
+                title={t('episodeNew')}
+                onClick={createEpisode}
+              >
+                <Icon name="plus" size={11} />{t('episodeNew')}
+              </button>
+              {activeEpisode === undefined || episodeRenaming ? null : (
+                <button
+                  type="button"
+                  className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                  data-episode-rename="true"
+                  aria-label={t('episodeRename')}
+                  title={t('episodeRename')}
+                  onClick={() => { setEpisodeRenaming(true); setEpisodeRenameValue(activeEpisode.title) }}
+                >
+                  <Icon name="pencil" size={12} />
+                </button>
+              )}
+              {activeEpisode === undefined ? null : (
+                <button
+                  type="button"
+                  className={`iv-btn iv-btn--icon iv-btn--sm${confirming === activeEpisode.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                  data-episode-remove="true"
+                  aria-label={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
+                  title={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
+                  disabled={busy}
+                  onClick={() => {
+                    if (confirming !== activeEpisode.id) { setConfirming(activeEpisode.id); setForceTarget(undefined); return }
+                    removeActiveEpisode(forceTarget === activeEpisode.id)
+                  }}
+                >
+                  <Icon name={confirming === activeEpisode.id ? 'alert' : 'trash'} size={12} />
+                </button>
+              )}
+              {forceTarget === activeEpisodeId && activeEpisode !== undefined
+                ? (
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--danger iv-btn--sm"
+                    data-episode-force-remove="true"
+                    disabled={busy}
+                    onClick={() => { removeActiveEpisode(true) }}
+                  >
+                    {t('forceRemove')}
+                  </button>
+                )
+                : null}
+            </span>
+          )}
         </div>
+        <nav className="iv-modes" aria-label={t('tabTitle')}>
+          {MODES.map(candidate => (
+            <button
+              key={candidate}
+              type="button"
+              className={`iv-modes-btn${candidate === mode ? ' on' : ''}`}
+              aria-label={t(MODE_KEYS[candidate])}
+              aria-pressed={candidate === mode}
+              onClick={() => { setMode(candidate) }}
+            >
+              <Icon name={MODE_ICONS[candidate]} size={12} />
+              {t(MODE_KEYS[candidate])}
+            </button>
+          ))}
+        </nav>
+
+        <div className="iv-top-tools">
+          <button
+            type="button"
+            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${connectOpen ? ' iv-btn--on' : ''}`}
+            aria-label={authT('dialogTitle')}
+            aria-expanded={connectOpen}
+            data-workbench-connect-toggle="true"
+            title={authT('dialogTitle')}
+            onClick={() => { setConnectOpen(open => !open) }}
+          >
+            <Icon name="link" />
+          </button>
+          <button
+            type="button"
+            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${helpOpen ? ' iv-btn--on' : ''}`}
+            aria-label={t('railHelp')}
+            aria-expanded={helpOpen}
+            data-workbench-help-toggle="true"
+            title={t('railHelp')}
+            onClick={() => { setHelpOpen(open => !open) }}
+          >
+            <Icon name="help" />
+          </button>
+          <button
+            type="button"
+            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+            aria-label={t('railDefaults')}
+            title={t('railDefaults')}
+            onClick={() => {
+              if (defaultsDraft === undefined && defaultRows.length > 0) {
+                setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value])))
+              }
+              document.querySelector('[data-workbench-defaults]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+            }}
+          >
+            <Icon name="sliders" />
+          </button>
+          <button
+            type="button"
+            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
+            aria-label={t('tabTitle')}
+            aria-pressed={dockOpen}
+            title={t('tabTitle')}
+            data-workbench-dock-toggle="true"
+            onClick={() => { setDockOpen(open => !open) }}
+          >
+            <Icon name="layers" />
+          </button>
+        </div>
+
         <div className="iv-top-meta">
+          <span className="iv-top-stats" data-workbench-stats="true">
+            <span>{t('statOutputs')} <b>{outputs.length}</b></span>
+            <span>{t('statAssets')} <b>{assets.length}</b></span>
+            <span>{t('statTasks')} <b>{tasks.length}</b></span>
+          </span>
           <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
             <i className="iv-dot" aria-hidden="true" />
             {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
@@ -2316,11 +2638,41 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         )
         : null}
 
+      {/* ============ 集改名行 ============ */}
+      {episodeRenaming && activeEpisode !== undefined
+        ? (
+          <div className="iv-rename" data-episode-rename-row="true">
+            <Icon name="pencil" />
+            <input
+              className="iv-input"
+              aria-label={t('episodeRename')}
+              value={episodeRenameValue}
+              onChange={event => { setEpisodeRenameValue(event.target.value) }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') saveEpisodeRename()
+                if (event.key === 'Escape') setEpisodeRenaming(false)
+              }}
+            />
+            <button
+              type="button"
+              className="iv-btn iv-btn--acc iv-btn--sm"
+              disabled={busy || episodeRenameValue.trim() === ''}
+              onClick={saveEpisodeRename}
+            >
+              {t('save')}
+            </button>
+            <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => setEpisodeRenaming(false)}>
+              {t('cancel')}
+            </button>
+          </div>
+        )
+        : null}
+
       {/* ============ 默认值摘要条 + 弹层 ============ */}
       {defaultRows.length === 0
         ? null
         : (
-          <div className="iv-defaults" data-workbench-defaults="true">
+          <div className="iv-defaults" data-workbench-defaults="true" onDoubleClick={onWindowStripDoubleClick}>
             <span className="iv-micro">{t('defaultsTitle')}</span>
             {defaultRows.map(row => (
               <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
@@ -2476,84 +2828,62 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
       {/* ============ 身体：左图标栏 + 主区 ============ */}
       <div className="iv-body">
-        <nav className="iv-rail" aria-label={t('tabTitle')}>
-          {MODES.map(candidate => (
-            <button
-              key={candidate}
-              type="button"
-              className={`iv-rail-btn${candidate === mode ? ' on' : ''}`}
-              aria-pressed={candidate === mode}
-              aria-label={t(MODE_KEYS[candidate])}
-              onClick={() => { setMode(candidate) }}
-            >
-              <Icon name={MODE_ICONS[candidate]} size={15} />
-              <span className="iv-rail-tip">{t(MODE_KEYS[candidate])}</span>
-            </button>
-          ))}
-          <span className="iv-rail-sep" aria-hidden="true" />
-          <button
-            type="button"
-            className="iv-rail-btn"
-            aria-label={t('railAssets')}
-            onClick={() => { scrollToPane('paneAssets') }}
-          >
-            <Icon name="layers" size={15} />
-            <span className="iv-rail-tip">{t('railAssets')}</span>
-          </button>
-          <button
-            type="button"
-            className="iv-rail-btn"
-            aria-label={t('railTasks')}
-            onClick={() => { scrollToPane('paneTasks') }}
-          >
-            <Icon name="clock" size={15} />
-            <span className="iv-rail-tip">{t('railTasks')}</span>
-          </button>
-          <button
-            type="button"
-            className="iv-rail-btn"
-            aria-label={t('railExports')}
-            onClick={() => { scrollToPane('paneExports') }}
-          >
-            <Icon name="download" size={15} />
-            <span className="iv-rail-tip">{t('railExports')}</span>
-          </button>
-          <div className="iv-rail-bottom">
-            <button
-              type="button"
-              className="iv-rail-btn"
-              aria-label={t('railHelp')}
-              aria-expanded={helpOpen}
-              data-workbench-help-toggle="true"
-              onClick={() => { setHelpOpen(open => !open) }}
-            >
-              <Icon name="help" size={15} />
-              <span className="iv-rail-tip">{t('railHelp')}</span>
-            </button>
-            <button
-              type="button"
-              className="iv-rail-btn"
-              aria-label={t('railDefaults')}
-              onClick={() => {
-                if (defaultsDraft === undefined && defaultRows.length > 0) {
-                  setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value])))
-                }
-                document.querySelector('[data-workbench-defaults]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-              }}
-            >
-              <Icon name="sliders" size={15} />
-              <span className="iv-rail-tip">{t('railDefaults')}</span>
-            </button>
-          </div>
-        </nav>
 
         <main className="iv-main">
           {/* ============ 模式页 ============ */}
           <section className="iv-page" aria-label={t(MODE_KEYS[mode])}>
             {mode === 'quick'
               ? (
+                <>
                 <section className="iv-pane" data-workbench-pane="paneCreate">
                   <PaneBoundary label={t('modeQuick')} t={t}>
+                  {/* 两等宽标签页：内容生产 / 提示词·分镜 */}
+                  <div className="iv-quick-tabs" role="tablist" data-quick-tabs="true">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={quickTab === 'produce'}
+                      className={`iv-btn${quickTab === 'produce' ? ' iv-btn--acc' : ''}`}
+                      style={{ flex: 1 }}
+                      data-quick-tab="produce"
+                      onClick={() => { setQuickTab('produce') }}
+                    >
+                      {t('quickTabProduce')}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={quickTab === 'prompt'}
+                      className={`iv-btn${quickTab === 'prompt' ? ' iv-btn--acc' : ''}`}
+                      style={{ flex: 1 }}
+                      data-quick-tab="prompt"
+                      onClick={() => { setQuickTab('prompt') }}
+                    >
+                      {t('quickTabPrompt')}
+                    </button>
+                  </div>
+                  {quickTab === 'produce'
+                    ? (<>
+                  {activeProject === undefined || activeEpisode === undefined
+                    ? null
+                    : (
+                      <EpisodeWorkspace
+                        api={apiRef.current}
+                        t={t}
+                        projectId={activeProject.id}
+                        episode={activeEpisode}
+                        resources={resources}
+                        assets={assets}
+                        options={options}
+                        skills={directorSkills}
+                        onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
+                        onMediaGenerated={async () => {
+                          setAssets(await apiRef.current.listAssets())
+                          await loadTasks()
+                        }}
+                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                      />
+                    )}
                   <div className="iv-modules" data-quick-modules="true">
                   {/* 模块 1：剧本成片（一键成片）——"一段剧本，自动拆成分镜并出图出片" */}
                   <section className="iv-module" data-module="pipeline">
@@ -2586,7 +2916,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   />
 
                   {/* `D3` 手动分镜：和“自动拆镜”是同一件事的两个档位（自动 / 手动），
-                      所以并进模块 ①，不再单独放在高级抽屉里。默认收起。 */}
+                      所以并进模块 ①。默认收起。 */}
                   <details className="iv-vonly" data-storyboard-entry="true">
                     <summary className="iv-vonly-head">{t('storyboardTitle')}</summary>
                     <div className="iv-vonly-body">
@@ -3203,8 +3533,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   </div>
 
-                    {/* `D1` 融合生图进主路径：本质是"用剧集设定拼一段提示词"，属于单条生成的一种输入方式，
-                        不再埋在高级抽屉里；默认收起，避免和普通提示词输入抢位置。 */}
+                    {/* `D1` 融合生图进主路径：本质是"用剧集设定拼一段提示词"，属于单条生成的一种输入方式；
+                        默认收起，避免和普通提示词输入抢位置。 */}
                     <details className="iv-vonly" data-fusion-entry="true">
                       <summary className="iv-vonly-head">{t('fusionEntry')} · {t('fusionEntryHint')}</summary>
                       <div className="iv-vonly-body">
@@ -3396,119 +3726,37 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </details>
                     </div>
                   </section>
-
-                  {/* 模块 3：高级设置（融合生图 / 提示词工坊 / 剧本分镜 / 模型能力）——默认收起 */}
-                  <section className="iv-module iv-module--quiet" data-module="advanced">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="advanced"
-                      data-advanced-toggle="true"
-                      aria-expanded={openModules.advanced}
-                      aria-label={`${openModules.advanced ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleAdvanced')}`}
-                      onClick={() => { toggleModule('advanced') }}
-                    >
-                      <span className="iv-module-n">3</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="advanced">{t('moduleAdvanced')}</span>
-                        <span className="iv-meta">{t('moduleAdvancedDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.advanced ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body iv-advanced" data-module-body="advanced"
-                      data-advanced-open={openModules.advanced ? 'true' : 'false'} hidden={!openModules.advanced}>
-                    {/* `B-9` 融合生图（G3）：选角色/场景/物品 → 参考图预览 → 调 media/compose */}
-                    {/* `B-10` 提示词工坊（G1）：选中图片 → 提取 → 编辑 → 入库 → 带入表单 */}
-                    <div className="iv-prompt-studio" data-prompt-studio="true">
-                      <div className="iv-fusion-head">
-                        <span className="iv-chip"><Icon name="sparkles" size={11} />{t('promptTitle')}</span>
-                        <span className="iv-meta">{t('promptSavedCount').replace('{n}', String(prompts.length))}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--sm"
-                          data-prompt-extract="true"
-                          disabled={extracting || selectedAsset === undefined || selectedAsset.kind !== 'image'}
-                          onClick={() => { void runExtractPrompt() }}
-                        >
-                          {extracting ? t('promptExtracting') : t('promptExtract')}
-                        </button>
-                        <span className="iv-meta" data-prompt-source="true">
-                          {selectedAsset === undefined || selectedAsset.kind !== 'image'
-                            ? t('promptExtractNeedsAsset')
-                            : baseName(selectedAsset.path)}
-                        </span>
-                      </div>
-                      <div style={{ display: 'grid', gap: 'var(--iv-sp-2)' }}>
-                        <span className="iv-meta">{t('promptDraftLabel')}</span>
-                        <textarea
-                          className="iv-input"
-                          rows={2}
-                          value={promptDraft}
-                          data-prompt-draft="true"
-                          onChange={event => setPromptDraft(event.target.value)}
-                          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <input
-                          className="iv-input"
-                          style={{ width: '160px' }}
-                          aria-label={t('promptNameLabel')}
-                          placeholder={t('promptNamePlaceholder')}
-                          value={promptName}
-                          data-prompt-name="true"
-                          onChange={event => setPromptName(event.target.value)}
-                        />
-                        <button
-                          type="button"
-                          className="iv-btn iv-btn--acc iv-btn--sm"
-                          data-prompt-save="true"
-                          disabled={promptDraft.trim() === ''}
-                          onClick={() => { void savePromptDraft() }}
-                        >
-                          {t('promptSave')}
-                        </button>
-                      </div>
-                      <div className="iv-prompt-lib" data-prompt-library="true">
-                        <span className="iv-meta">{t('promptLibrary')}</span>
-                        {prompts.length === 0
-                          ? <span className="iv-meta">{t('promptLibraryEmpty')}</span>
-                          : prompts.map(record => (
-                              <div className="iv-prompt-row" key={record.id} data-prompt-item={record.id}>
-                                <span className="iv-ellipsis" title={record.text}>{record.name}</span>
-                                <button
-                                  type="button"
-                                  className="iv-btn iv-btn--ghost iv-btn--sm"
-                                  data-prompt-apply={record.id}
-                                  onClick={() => applyPrompt(record.text)}
-                                >
-                                  {t('promptApply')}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="iv-btn iv-btn--icon iv-btn--sm"
-                                  aria-label={`${t('promptRemove')} ${record.name}`}
-                                  data-prompt-remove={record.id}
-                                  onClick={() => { void removePromptRecord(record.id) }}
-                                >
-                                  <Icon name="x" size={11} />
-                                </button>
-                              </div>
-                            ))}
-                      </div>
-                      <span className="iv-meta">{t('promptHint')}</span>
-                    </div>
-                    {/* `D3` 分镜工坊已并入模块 ① 的「手动分镜」（见上方 data-storyboard-entry） */}
-                    {outputs.length === 0 ? <p className="iv-meta">{t('noOutputs')}</p> : null}
-                    </div>
-                  </section>
                   </div>
+                    </>)
+                    : (
+                      <PromptStudioPanel
+                        api={apiRef.current}
+                        t={t}
+                        projectId={activeProject?.id ?? ''}
+                        episode={activeEpisode}
+                        assets={assets}
+                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                        onApplyPrompt={(text) => {
+                          applyPrompt(text)
+                          // 带入后切回内容生产页，让用户直接看到已填好的提示词
+                          setQuickTab('produce')
+                        }}
+                      />
+                    )}
                   </PaneBoundary>
                 </section>
+                {/* 技能管理页：导演库 / 逆向库分开管理，内置只读可禁用 */}
+                <section className="iv-pane" data-workbench-pane="paneSkills">
+                  <PaneBoundary label={t('skillsPaneTitle')} t={t}>
+                    <SkillLibraryPanel
+                      api={apiRef.current}
+                      t={t}
+                      onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                      onSkillsChanged={reloadDirectorSkills}
+                    />
+                  </PaneBoundary>
+                </section>
+                </>
               )
               : null}
 
@@ -4210,8 +4458,39 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               )
               : null}
           </section>
+        </main>
 
-          {/* ============ 下部停靠区：5 个用户面板（顺序见 data-dock-order / 样式表） ============ */}
+        {/* ============ 展示列：预览 / 素材 / 资源 / 导出 / 任务 ============ */}
+        {dockOpen
+          ? null
+          : (
+            <aside className="iv-dock-rail" data-workbench-dock-rail="true">
+              <button
+                type="button"
+                className="iv-dock-rail-btn"
+                data-workbench-dock-expand="true"
+                aria-label={`${t('moduleExpand')} ${t('dockTitle')}`}
+                title={t('moduleExpand')}
+                onClick={() => { setDockOpen(true) }}
+              >
+                <span className="iv-dock-rail-title">{t('dockTitle')}</span>
+                <Icon name="chevron" size={12} />
+              </button>
+            </aside>
+          )}
+        <aside className={`iv-dock-col${dockOpen ? '' : ' iv-dock-col--off'}`}>
+          <button
+            type="button"
+            className="iv-dock-head"
+            data-workbench-dock-collapse="true"
+            aria-label={`${t('moduleCollapse')} ${t('dockTitle')}`}
+            title={t('moduleCollapse')}
+            onClick={() => { setDockOpen(false) }}
+          >
+            <span className="iv-dock-title">{t('dockTitle')}</span>
+            <Icon name="chevron" size={12} />
+          </button>
+          {/* 5 个用户面板：顺序见 data-dock-order / 样式表 */}
           <div className="iv-dock">
             {/* B-11 素材库体检 pane：运维用途（体积排行/去重/项目统计），对创作没有价值 → 默认不展示 */}
             {showMaintenancePanes
@@ -4233,11 +4512,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               : null}
 
             {/* B-16 导出历史 pane（A-11 exports/*） */}
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneExports" data-dock-order="4" data-workbench-planned="false">
+            <section
+              className={`iv-pane iv-pane--quiet${dockFolded.exports ? ' iv-pane--folded' : ''}`}
+              data-workbench-pane="paneExports"
+              data-dock-order="4"
+              data-workbench-planned="false"
+            >
               <PaneBoundary label={t('paneExports')} t={t}>
                 <div className="iv-pane-head">
                   <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
                   <h3 className="iv-pane-title">{t('paneExports')}</h3>
+                  <div className="iv-pane-actions">
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                      data-dock-fold="exports"
+                      aria-expanded={!dockFolded.exports}
+                      aria-label={dockFolded.exports ? t('moduleExpand') : t('moduleCollapse')}
+                      title={dockFolded.exports ? t('moduleExpand') : t('moduleCollapse')}
+                      onClick={() => { toggleDockFold('exports') }}
+                    >
+                      <Icon name="chevron" size={12} />
+                    </button>
+                  </div>
                 </div>
                 <ExportHistoryPanel
                   api={apiRef.current}
@@ -4523,6 +4820,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <span className="iv-meta">{formatBytes(asset.bytes)}</span>
                       </button>
                       <div className="iv-row-actions">
+                        {/* 集：把这条全局素材加进当前集（只存引用 id） */}
+                        {activeEpisode === undefined
+                          || episodeAssetRows.some(row => row.ref.assetId === asset.id)
+                          ? null
+                          : (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                              data-episode-add-asset={asset.id}
+                              aria-label={`${t('episodeAddAsset')} ${baseName(asset.path)}`}
+                              title={t('episodeAddAsset')}
+                              disabled={busy}
+                              onClick={event => {
+                                event.stopPropagation()
+                                addEpisodeAsset(asset.id)
+                              }}
+                            >
+                              <Icon name="layers" size={12} />
+                            </button>
+                          )}
                         <button
                           type="button"
                           className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
@@ -4591,11 +4908,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="panePreview" data-dock-order="2" data-workbench-planned="false">
+            <section
+              className={`iv-pane${dockFolded.preview ? ' iv-pane--folded' : ''}`}
+              data-workbench-pane="panePreview"
+              data-dock-order="2"
+              data-workbench-planned="false"
+            >
               <PaneBoundary label={t('panePreview')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
                 <h3 className="iv-pane-title">{t('panePreview')}</h3>
+                <div className="iv-pane-actions">
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                    data-dock-fold="preview"
+                    aria-expanded={!dockFolded.preview}
+                    aria-label={dockFolded.preview ? t('moduleExpand') : t('moduleCollapse')}
+                    title={dockFolded.preview ? t('moduleExpand') : t('moduleCollapse')}
+                    onClick={() => { toggleDockFold('preview') }}
+                  >
+                    <Icon name="chevron" size={12} />
+                  </button>
+                </div>
               </div>
               <>
                 {hostIsLoopback
@@ -4611,27 +4946,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span>{t('hostHintRemote')}</span>
                     </p>
                   )}
-                {previewTarget === undefined
-                  ? (
-                    <div className="iv-empty">
-                      <span className="iv-empty-tile"><Icon name="eye" size={17} /></span>
-                      <strong>{t('previewEmpty')}</strong>
-                    </div>
-                  )
-                  : previewTarget.kind === 'video'
+                <div className="iv-dock-preview" data-dock-preview="true">
+                  {previewTarget === undefined
                     ? (
-                      <video
-                        key={previewTarget.path}
-                        src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
-                        controls
-                      />
+                      <div className="iv-empty">
+                        <span className="iv-empty-tile"><Icon name="eye" size={17} /></span>
+                        <strong>{t('previewEmpty')}</strong>
+                      </div>
                     )
-                    : (
-                      <img
-                        alt={baseName(previewTarget.path)}
-                        src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
-                      />
-                    )}
+                    : previewTarget.kind === 'video'
+                      ? (
+                        <video
+                          key={previewTarget.path}
+                          src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
+                          controls
+                        />
+                      )
+                      : (
+                        <img
+                          alt={baseName(previewTarget.path)}
+                          src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
+                        />
+                      )}
+                </div>
                 {/* `T7` 从预览直接送往生成位：省掉「回素材区选中 → 回上方面板」的往返 */}
                 {previewTarget === undefined
                   ? null
@@ -4683,7 +5020,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane" data-workbench-pane="paneResources" data-dock-order="1" data-workbench-planned="false">
+            <section
+              className={`iv-pane${dockFolded.resources ? ' iv-pane--folded' : ''}`}
+              data-workbench-pane="paneResources"
+              data-dock-order="1"
+              data-workbench-planned="false"
+            >
               <PaneBoundary label={resourcePaneTitle} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
@@ -4698,9 +5040,49 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     value={resourceFilter}
                     onChange={event => { setResourceFilter(event.target.value) }}
                   />
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                    data-dock-fold="resources"
+                    aria-expanded={!dockFolded.resources}
+                    aria-label={dockFolded.resources ? t('moduleExpand') : t('moduleCollapse')}
+                    title={dockFolded.resources ? t('moduleExpand') : t('moduleCollapse')}
+                    onClick={() => { toggleDockFold('resources') }}
+                  >
+                    <Icon name="chevron" size={12} />
+                  </button>
                 </div>
               </div>
+              {activeEpisode === undefined ? null : (
+                <div className="iv-tabs" role="tablist" aria-label={t('episodeResourcesSelected')}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={episodeResourceView === 'selected'}
+                    className={`iv-tab${episodeResourceView === 'selected' ? ' on' : ''}`}
+                    data-episode-resource-view="selected"
+                    onClick={() => { setEpisodeResourceView('selected') }}
+                  >
+                    <Icon name="check" size={11} />
+                    {t('episodeResourcesSelected')}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={episodeResourceView === 'all'}
+                    className={`iv-tab${episodeResourceView === 'all' ? ' on' : ''}`}
+                    data-episode-resource-view="all"
+                    onClick={() => { setEpisodeResourceView('all') }}
+                  >
+                    <Icon name="layers" size={11} />
+                    {t('episodeResourcesAll')}
+                  </button>
+                </div>
+              )}
               <>
+                {activeEpisode === undefined || episodeResourceView === 'all'
+                  ? (
+                    <>
                 {/* `G2` 物料库分栏：角色/场景/物品三栏 + 「其他」下拉（其余 kind 各一栏） */}
                 <div className="iv-tabs" role="tablist" aria-label={t('resourceLibraries')}>
                   {(['role', 'scene', 'prop'] as const).map(kind => (
@@ -4992,6 +5374,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         )
                       })()}
                       <div className="iv-row-actions">
+                        {/* 集：把这个剧集资源加进当前集（只存引用 id） */}
+                        {activeEpisode === undefined
+                          || episodeResourceRows.some(row => row.ref.resourceId === resource.id)
+                          ? null
+                          : (
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                              data-episode-add-resource={resource.id}
+                              aria-label={`${t('episodeAddResource')} · ${resource.name}`}
+                              title={t('episodeAddResource')}
+                              disabled={busy}
+                              onClick={event => {
+                                event.stopPropagation()
+                                addEpisodeResource(resource.id)
+                              }}
+                            >
+                              <Icon name="layers" size={12} />
+                            </button>
+                          )}
                         {/* `B-8`：把选中素材挂到这个资源（"归到该角色"） */}
                         <button
                           type="button"
@@ -5108,6 +5510,149 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     )
                   }} />
                 )}
+                    </>
+                  )
+                  : (
+                    <div className="iv-episode-refs" data-episode-refs="true">
+                      <div className="iv-hint">
+                        <span className="iv-micro">{episodeResourceView === 'selected' ? t('episodeResourcesSelected') : t('episodeResourcesAll')}</span>
+                        <span className="iv-meta">{t('episodeRefsHint')}</span>
+                      </div>
+                      {episodeResourceRows.length === 0 && episodeAssetRows.length === 0
+                        ? (
+                          <div className="iv-empty" data-episode-refs-empty="true">
+                            <span className="iv-empty-tile"><Icon name="layers" size={17} /></span>
+                            <strong>{t('episodeRefsEmpty')}</strong>
+                            <button
+                              type="button"
+                              className="iv-btn iv-btn--ghost iv-btn--sm"
+                              onClick={() => { setEpisodeResourceView('all') }}
+                            >
+                              {t('episodeRefsBrowse')}
+                            </button>
+                          </div>
+                        )
+                        : (
+                          <ul className="iv-list">
+                            {episodeResourceRows.map(({ ref, resource }) => (
+                              <li
+                                key={`res-${ref.resourceId}`}
+                                className="iv-row"
+                                data-episode-resource-ref={ref.resourceId}
+                                data-missing={resource === undefined ? 'true' : undefined}
+                              >
+                                <span className="iv-tile">
+                                  <Icon name={resource === undefined ? 'alert' : RESOURCE_ICONS[resource.kind]} size={13} />
+                                </span>
+                                <span className="iv-row-main iv-ellipsis">
+                                  {resource === undefined
+                                    ? `${t('episodeRefMissing')} · ${ref.resourceId}`
+                                    : `${t(kindKey(resource.kind))} · ${resource.name}`}
+                                </span>
+                                <select
+                                  className="iv-select"
+                                  aria-label={t('episodeRefCategory')}
+                                  value={ref.category}
+                                  onChange={event => {
+                                    setEpisodeRefCategory('resource', ref.resourceId, event.target.value as EpisodeRefCategory)
+                                  }}
+                                  style={{ maxWidth: '90px' }}
+                                >
+                                  {EPISODE_REF_CATEGORIES.map(category => (
+                                    <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
+                                  ))}
+                                </select>
+                                <span className="iv-row-actions">
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    aria-label={t('moveUp')}
+                                    disabled={busy || ref.order <= 1}
+                                    onClick={() => { moveEpisodeResource(ref.resourceId, -1) }}
+                                  >↑</button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    aria-label={t('moveDown')}
+                                    disabled={busy || ref.order >= episodeResourceRows.length}
+                                    onClick={() => { moveEpisodeResource(ref.resourceId, 1) }}
+                                  >↓</button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    data-episode-remove-resource={ref.resourceId}
+                                    aria-label={t('remove')}
+                                    disabled={busy}
+                                    onClick={() => { removeEpisodeResource(ref.resourceId) }}
+                                  >
+                                    <Icon name="x" size={11} />
+                                  </button>
+                                </span>
+                              </li>
+                            ))}
+                            {episodeAssetRows.map(({ ref, asset }) => (
+                              <li
+                                key={`ast-${ref.assetId}`}
+                                className="iv-row"
+                                data-episode-asset-ref={ref.assetId}
+                                data-missing={asset === undefined ? 'true' : undefined}
+                              >
+                                <span className="iv-tile">
+                                  <Icon
+                                    name={asset === undefined ? 'alert' : asset.kind === 'video' ? 'video' : 'image'}
+                                    size={13}
+                                  />
+                                </span>
+                                <span className="iv-row-main iv-ellipsis">
+                                  {asset === undefined
+                                    ? `${t('episodeRefMissing')} · ${ref.assetId}`
+                                    : `${t('episodeAssetTag')} · ${baseName(asset.path)}`}
+                                </span>
+                                <select
+                                  className="iv-select"
+                                  aria-label={t('episodeRefCategory')}
+                                  value={ref.category}
+                                  onChange={event => {
+                                    setEpisodeRefCategory('asset', ref.assetId, event.target.value as EpisodeRefCategory)
+                                  }}
+                                  style={{ maxWidth: '90px' }}
+                                >
+                                  {EPISODE_REF_CATEGORIES.map(category => (
+                                    <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
+                                  ))}
+                                </select>
+                                <span className="iv-row-actions">
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    aria-label={t('moveUp')}
+                                    disabled={busy || ref.order <= 1}
+                                    onClick={() => { moveEpisodeAsset(ref.assetId, -1) }}
+                                  >↑</button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    aria-label={t('moveDown')}
+                                    disabled={busy || ref.order >= episodeAssetRows.length}
+                                    onClick={() => { moveEpisodeAsset(ref.assetId, 1) }}
+                                  >↓</button>
+                                  <button
+                                    type="button"
+                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                    data-episode-remove-asset={ref.assetId}
+                                    aria-label={t('remove')}
+                                    disabled={busy}
+                                    onClick={() => { removeEpisodeAsset(ref.assetId) }}
+                                  >
+                                    <Icon name="x" size={11} />
+                                  </button>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                    </div>
+                  )}
               </>
               {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补）
                   —— 属辅助动作，放在三栏物料库之后，不再抢在面板标题前面 */}
@@ -5127,11 +5672,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneTasks" data-dock-order="5" data-workbench-planned="false">
+            <section
+              className={`iv-pane iv-pane--quiet${dockFolded.tasks ? ' iv-pane--folded' : ''}`}
+              data-workbench-pane="paneTasks"
+              data-dock-order="5"
+              data-workbench-planned="false"
+            >
               <PaneBoundary label={t('paneTasks')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
                 <h3 className="iv-pane-title">{t('paneTasks')}</h3>
+                <div className="iv-pane-actions">
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                    data-dock-fold="tasks"
+                    aria-expanded={!dockFolded.tasks}
+                    aria-label={dockFolded.tasks ? t('moduleExpand') : t('moduleCollapse')}
+                    title={dockFolded.tasks ? t('moduleExpand') : t('moduleCollapse')}
+                    onClick={() => { toggleDockFold('tasks') }}
+                  >
+                    <Icon name="chevron" size={12} />
+                  </button>
+                </div>
               </div>
               <>
                 {tasks.length === 0
@@ -5228,21 +5791,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               )
               : null}
           </div>
-        </main>
+        </aside>
       </div>
 
-      {/* ============ 底部状态栏 ============ */}
-      <footer className="iv-status">
-        <span className="dot" aria-hidden="true" />
-        <span><b>{t('statusReady')}</b></span>
-        <span>{t('statOutputs')} <b>{outputs.length}</b></span>
-        <span>{t('statAssets')} <b>{assets.length}</b></span>
-        <span>{t('statTasks')} <b>{tasks.length}</b></span>
-        <div className="iv-status-right">
-          <span>{hostIsLoopback ? '127.0.0.1' : window.location?.hostname ?? ''}</span>
-          <span className="iv-mono">{kind}</span>
-        </div>
-      </footer>
 
       {/*
         常驻播报区：可见的提示条只负责"看得到"，读屏由这里统一播报（同一句话只播一次）。
@@ -5262,6 +5813,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       >
         {notice?.text ?? ''}
       </div>
+
+      {/* ============ 首次使用引导（独立安装后的三步检查表）============ */}
+      {guideOpen && !guideDismissed
+        ? (
+          <GuideOverlay
+            t={guideT}
+            ffmpeg={guideFfmpeg}
+            outputsDir={guideOutputsDir}
+            models={guideModels}
+            onOpenConnect={() => { setGuideOpen(false); setConnectOpen(true) }}
+            onDone={(choice) => {
+              // 引导页只承诺「进入工作台」；顺手把用户选的默认值写进运行时覆盖，
+              // 写失败不拦路（下一次打开默认值编辑器还能改）。没选的项不提交，
+              // 免得空串被宿主当成非法值整包拒掉。
+              const patch: Record<string, string> = {}
+              if (choice.imageModel !== '') patch.imageProvider = choice.imageModel
+              if (choice.videoModel !== '') patch.videoProvider = choice.videoModel
+              if (choice.imageSize !== '') patch.imageSize = choice.imageSize
+              const saved = Object.keys(patch).length === 0
+                ? Promise.resolve()
+                : api.saveDefaults(patch).catch(() => undefined)
+              void saved.finally(closeGuide)
+            }}
+            onDismiss={closeGuide}
+          />
+        )
+        : null}
+
+      {/* ============ 连接弹层（账号登录 / 自带 Key，auth/* 端点）============ */}
+      {connectOpen ? <ConnectDialog api={api} t={authT} onClose={() => { setConnectOpen(false) }} /> : null}
 
       {/* ============ B-17 帮助浮层（快捷键 + 模式说明）============ */}
       {helpOpen
