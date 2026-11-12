@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [1.0.2-workbench-80] - 2026-11-12
+
+### 按 0.3.1 用户排障报告修正错误提示与升级说明（2026-11-12）
+
+背景：用户在 DSH Desktop 0.2.1-rc.3 上装 0.3.1（纯后端版本）后「界面里什么都没有」，配好 Key 又只得到原始 HTTP 报错。1.0.1 已补前端工作台与凭证引用，本轮补齐「装完不知道怎么配」「配了 key 却看不懂报错」两类反馈。
+
+- **模型不可用给出下一步**：HTTP 400/404 且服务端说明该模型对当前分组不可用（实测 `Model "qwen-image-3.0" is not available for this group`）时，提示改为「模型不可用（HTTP N）：当前 API Key 所属分组未开通该模型……请改 defaultImageModel / defaultVideoModel，或到服务商后台开通」，并保留服务端原文与 URL。判定只认模型语境，任务级 404（按 `request_id` 反查不到）不受影响。
+- **该错误参与候选回退**：按「该候选无法服务此请求」处理，有其它已配置候选时继续尝试下一家；没有候选时把这条可操作提示直接抛给用户。
+- **加载即警告无凭证**：四个服务商都没有 `apiKey` / `apiKeyEnv` 时，`apply()` 打一条 warn，指明去工作台「连接服务」或 patch 里补凭证——不再只有调用时才失败。
+- 文档：README 增加「桌面端界面（1.0 起）」「从 0.3.x 升级」对照表、「baseURL 与聚合器域名」（默认 `https://www.threevideo.com/v1`，不跨域名猜测或回退），排错表补两条。
+- 测试：`tests/http-client.test.ts` +2（分组未开通映射 / 任务级 404 不误判）。
+
 ### 顶栏双击切换窗口全屏（2026-11-12）
 
 - 工作台头部条带（`data-workbench-header`）与「当前生效参数」条（`data-workbench-defaults`）都当窗口标题条用：双击空白处进入原生全屏，再双击一次恢复原窗口尺寸；走浏览器 Fullscreen API，桌面宿主（Electron）与 Web 同一套代码，不新增宿主 IPC。

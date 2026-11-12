@@ -120,3 +120,26 @@ describe('isModelNotAcceptedError（候选回退判定）', () => {
     expect(isModelNotAcceptedError('string error')).toBe(false)
   })
 })
+
+describe('模型不可用（分组未开通该模型）', () => {
+  it('404 + "is not available for this group" → 换模型/开通模型的可操作提示，保留原文', () => {
+    const e = classifyErrorForTest(404, {
+      error: { message: 'Model "qwen-image-3.0" is not available for this group' },
+    }, 'https://www.threevideo.com/v1/images/generations')
+    expect(e.kind).toBe('task')
+    expect(e.retryable).toBe(false)
+    expect(e.status).toBe(404)
+    expect(e.message).toContain('模型不可用')
+    expect(e.message).toContain('defaultImageModel')
+    // 原文保留，用户/售后能对着服务商后台核对
+    expect(e.message).toContain('qwen-image-3.0')
+    // 语义是「该候选无法服务此请求」，允许换下一候选；没有候选时这条提示直接给用户
+    expect(isModelNotAcceptedError(e)).toBe(true)
+  })
+
+  it('任务级 404（按 request_id 反查不到）不误判成模型问题', () => {
+    const e = classifyErrorForTest(404, { error: { message: 'task not found' } }, '/x')
+    expect(e.message).toContain('任务报错')
+    expect(e.message).not.toContain('模型不可用')
+  })
+})

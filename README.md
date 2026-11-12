@@ -71,6 +71,27 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 
 > 构建产物 `lib/` 已随仓库提交，安装过程不执行任何构建脚本，无需 pnpm 的 `allowBuilds` 授权。
 
+### 1.1 桌面端界面（1.0 起）
+
+1.0 起插件带前端工作台（`package.json` 的 `dsh.client`，Web 与 Desktop 共用同一份产物）：
+
+- 侧栏入口「三视dsh-image-video」打开创作工作台：剧集 / 素材 / 任务 / 导出，以及对话里的生成结果卡；
+- 工作台右上角的**连接服务**（链条图标）就是填 Key 的地方：账号登录，或「自带 Key」页签粘贴后点「测试连接」；界面只显示余额与 Key 末四位，明文不下发；
+- 头部条带与「当前生效参数」条都当窗口标题条用：双击空白处进入 / 退出全屏。
+
+0.3.x 是纯后端插件，没有前端产物，所以「已安装插件」里只有一行开关、界面里什么都不会多出来——那不是安装失败。
+
+### 1.2 从 0.3.x 升级
+
+| 差异 | 0.3.1 | 1.0.x |
+|---|---|---|
+| 界面 | 无前端产物，只有「已安装插件」里一行开关 | 工作台 + 连接弹层（`dsh.client`） |
+| 凭证 | 只能明文写 `apiKey`，读不到宿主凭证库 | 支持 `apiKeyEnv` 引用（如桌面端登录写入的 `THREEVIDEO_API_KEY`），明文 `apiKey` 仍优先 |
+| 服务商 | 仅聚合器 | 聚合器（默认）+ wanx / minimax / seedance 直连，按模型家族自动路由 |
+| 未配 Key 时 | 每次调用才在本地抛错 | 调用同样响亮失败，且**插件加载时就 warn 一次**，指明去「连接服务」或 patch 里补凭证 |
+
+`apiKey` / `baseURL` / `defaultImageModel` 等字段名未变，旧配置可原样沿用。
+
 ### 2. 配置 API Key
 
 在 profile 的 `cordis.patch.yml` 中覆盖默认配置（`~/.dsh/profiles/<profile>/cordis.patch.yml`）：
@@ -298,6 +319,10 @@ dsh-image-video/
 
 候选服务商过滤按「明文或引用任一非空」判定，只声明引用的服务商不会被跳过。
 
+### baseURL 与聚合器域名
+
+`threevideo.baseURL` 留空时用默认端点 `https://www.threevideo.com/v1`。历史配置里可能写过同一聚合器方的其它域名（如 `https://api.threerouter.com/v1`、`https://www.threerouter.com/v1`），直接填进 `baseURL` 即可。插件不做跨域名猜测或回退：Key 只发给你配置的那一个地址，能生成哪些模型取决于该 Key 所属分组在服务商后台的开通情况。
+
 ### 媒体模式注入（`mediaMode`）
 
 桌面 composer 的媒体 tab 通过回环路由 `POST /image-video/defaults` 写入 `mediaMode`（`text` / `image` / `video`）。当它为 `image` / `video` 时，插件在 `agent/pre-step` 监听里向本步追加一条插件来源的指令消息（`source.kind = 'image-video.media-mode'`），要求模型直接调用对应生成工具、并告知当前生效的尺寸/风格/比例/时长；`text` 与未设置不注入。门控：只在 `next()` 成功且本步确实带来新的用户输入时注入（工具循环的后续步不重复），子代理（`origin === 'subagent'`）不继承主会话的媒体模式。
@@ -344,6 +369,8 @@ dsh-image-video/
 | `network` | 网络抖动、5xx 服务端错误 | 是 |
 
 可重试错误按指数退避重试，次数由 `retryTimes` 控制。
+
+服务端在创建任务前说明「该模型对当前分组不可用」（如 `Model "qwen-image-3.0" is not available for this group`）时，提示会换成可操作版本：指出分组未开通该模型、建议改 `defaultImageModel` / `defaultVideoModel` 或到服务商后台开通，并保留服务端原文供核对。这类错误同时视为「该候选无法服务此请求」，会按候选序列换下一家（见「模型家族路由」）。
 
 ## 开发 & 测试
 
@@ -393,6 +420,8 @@ dsh --profile <profile> --dump-config | grep -A3 "dsh-image-video"
 | vitest 里 fetch 真实发网请求 | 用 `vi.stubGlobal('fetch', ...)`，`afterEach` 调 `vi.unstubAllGlobals()` |
 | DSH 启动报 `cannot find module dsh-image-video` | 若用 `link:` 本地路径安装，改过 `src/` 后需跑 `pnpm run build` 让 `lib/` 与源码同步；从 git/npm 安装无需构建，产物已随包提交 |
 | 生成图片但对话无内嵌渲染 | 确认 profile 包含 `attachment-local`；图片文件始终可在 `outputs/` 查看 |
+| 装了插件但界面里没有入口 / 调用报「没有任何已配置 API Key 的服务商」 | 0.3.x 没有前端产物；1.0.x 请在工作台右上角「连接服务」里填 Key，或在 `cordis.patch.yml` 配 `apiKey` / `apiKeyEnv`。插件加载时也会 warn 这一条 |
+| `模型不可用（HTTP 404）：…未开通该模型` | 该 Key 所属分组没开通这个模型：换 `defaultImageModel` / `defaultVideoModel`（或在调用参数里指定 `model`），或到服务商后台为当前分组开通 |
 | `size is not in the correct format` | 百炼接口要求 `*` 分隔（如 `1024*1024`），不是 `x`；插件已自动转换 |
 
 ## 服务商 API 参考

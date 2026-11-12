@@ -174,6 +174,8 @@ export function apply(ctx: Context, config: Config): void {
   // 模型/目录」只能靠推断的问题。
   const keyState = (provider: Provider): string =>
     hasConfiguredCredentials(config, provider) ? '已配置' : '未配置'
+  const configuredProviders = (['threevideo', 'wanx', 'minimax', 'seedance'] as const)
+    .filter(provider => hasConfiguredCredentials(config, provider))
   ctx.logger.info(
     `dsh-image-video 生效配置：provider=${config.provider}`
     + ` defaultVideoProvider=${config.defaultVideoProvider || '(跟随激活服务商)'}`
@@ -187,6 +189,17 @@ export function apply(ctx: Context, config: Config): void {
     + ` outputsDir=${outputsDir}`
     + ` keys{threevideo=${keyState('threevideo')}, wanx=${keyState('wanx')}, minimax=${keyState('minimax')}, seedance=${keyState('seedance')}}`,
   )
+
+  // 四个服务商都没有凭证：工具仍会注册成功，但每次调用都在本地直接失败
+  // （候选服务商全被跳过）。这条警告在加载时就说明「装了 ≠ 能用」与去哪里补
+  // 凭证，避免用户把它当成安装失败。
+  if (configuredProviders.length === 0) {
+    ctx.logger.warn(
+      'dsh-image-video：四个服务商都没有配置 API Key，generate_image / generate_video 每次调用都会直接失败。'
+      + '请在工作台右上角「连接服务」里登录或填入自己的 Key，'
+      + '或在 cordis.patch.yml 里为 threevideo / wanx / minimax / seedance 设置 apiKey 或 apiKeyEnv。',
+    )
+  }
 
   // 任务管理器：构造时通过 ctx.effect() 注册卸载清理函数，
   // 插件卸载时自动取消所有排队任务、清理轮询定时器。

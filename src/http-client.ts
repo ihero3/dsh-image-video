@@ -236,7 +236,33 @@ function classifyHttpError(status: number, data: unknown, url: string, retryAfte
   if (status >= 500) {
     return new GenerationError('network', `服务端错误（HTTP ${status}），将重试。${errMsg}`, true, status, undefined, code)
   }
+  if (isModelUnavailableMessage(errMsg)) {
+    return new GenerationError(
+      'task',
+      `模型不可用（HTTP ${status}）：当前 API Key 所属分组未开通该模型，请改用已开通的模型`
+      + `（设置 defaultImageModel / defaultVideoModel，或在调用参数里指定 model），`
+      + `或到服务商后台为当前分组开通该模型。服务端原文：${errMsg}，URL: ${url}`,
+      false, status, undefined, code,
+    )
+  }
   return new GenerationError('task', `任务报错（HTTP ${status}）：${errMsg || '服务端返回错误'}，URL: ${url}`, false, status, undefined, code)
+}
+
+/**
+ * 判定服务端是否在说「这个模型当前不可用」：分组未开通该模型 / 模型不存在。
+ * 这类 400/404 的原文通常只有 `Model "x" is not available for this group`，
+ * 用户看不出下一步该做什么，所以单独换成「改模型或开通模型」的提示；原文保留在
+ * message 末尾供追溯。
+ *
+ * 只认模型语境的报错：`task not found` 这类任务级 404（按 request_id 反查）语义
+ * 完全不同，不能被改写成模型问题。
+ */
+function isModelUnavailableMessage(message: string): boolean {
+  if (/no available media generation channels|无可用渠道/i.test(message)) return true
+  // 模型名通常带点（如 qwen-image-3.0），因此不能按句读切分，改用有界距离约束。
+  const modelFirst = /(model|模型)[\s\S]{0,120}?(not[_\s]+(?:available|found|exist)|do(?:es)?[_\s]?not[_\s]+exist|unknown|invalid|不存在|未找到|未开通|无效|不可用)/i
+  const keywordFirst = /(不存在|未找到|未开通|无效|不可用)[\s\S]{0,40}?(模型|model)/i
+  return modelFirst.test(message) || keywordFirst.test(message)
 }
 
 /**
