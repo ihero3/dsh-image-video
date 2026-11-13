@@ -180,6 +180,45 @@ describe('本集工作区（剧本 → 分段 → 分镜）', () => {
     })
   })
 
+  it('auto-splits the script with the chosen text model and inherits the module image model', async () => {
+    const { host, view } = await renderWorkspace()
+    const auto = view.container.querySelector('[data-segment-auto]') as HTMLButtonElement
+    // 未选文本模型时不能拆段（宿主没有可用的默认文本模型）
+    expect(auto.disabled).toBe(true)
+
+    const textModel = view.container.querySelector('[data-script-text-model]') as HTMLSelectElement
+    await waitFor(() => { expect([...textModel.options].map(option => option.value)).toContain('fake::fake-text') })
+    fireEvent.change(textModel, { target: { value: 'fake::fake-text' } })
+
+    const imagePicker = view.container.querySelector('[data-script-selectors] [data-model-picker="image"] select') as HTMLSelectElement
+    await waitFor(() => { expect([...imagePicker.options].some(option => option.value !== '')).toBe(true) })
+    const imageModel = [...imagePicker.options].find(option => option.value !== '')!.value
+    fireEvent.change(imagePicker, { target: { value: imageModel } })
+
+    fireEvent.change(view.container.querySelector('[data-episode-script]') as HTMLTextAreaElement, {
+      target: { value: '第一场：雨夜街头\n\n第二场：清晨客厅' },
+    })
+    fireEvent.click(auto)
+
+    await waitFor(() => { expect(host.episodes[0]?.segments).toHaveLength(3) })
+    const created = host.episodes[0]?.segments.slice(1) ?? []
+    expect(created.map(segment => segment.promptText)).toEqual(['第一场：雨夜街头', '第二场：清晨客厅'])
+    expect(created.every(segment => segment.imageModel === imageModel)).toBe(true)
+    expect(view.container.textContent).toContain(en.scriptSplitDone.replace('{n}', '2'))
+  })
+
+  it('gives a manually added segment the module image model', async () => {
+    const { host, view } = await renderWorkspace()
+    const imagePicker = view.container.querySelector('[data-script-selectors] [data-model-picker="image"] select') as HTMLSelectElement
+    await waitFor(() => { expect([...imagePicker.options].some(option => option.value !== '')).toBe(true) })
+    const imageModel = [...imagePicker.options].find(option => option.value !== '')!.value
+    fireEvent.change(imagePicker, { target: { value: imageModel } })
+
+    fireEvent.click(view.container.querySelector('[data-segment-add]') as HTMLElement)
+    await waitFor(() => { expect(host.episodes[0]?.segments).toHaveLength(2) })
+    expect(host.episodes[0]?.segments[1]?.imageModel).toBe(imageModel)
+  })
+
   it('adds an episode reference, inserts [@n] into the prompt, and reorders it', async () => {
     const { host, view } = await renderWorkspace({
       resourceRefs: [{ resourceId: 'res-1', category: 'role', order: 1 }],

@@ -19,8 +19,11 @@
         # 激活的生成服务商，threevideo（默认，图片+视频） | wanx | seedance
         provider: threevideo
         # Threevideo 凭证；provider=threevideo 时使用（图片+视频统一入口）
+        # apiKeyEnv 指向上游登录写入的凭证引用：不内联明文，登录/填 Key 后即生效。
+        # 缺这一行时插件读不到凭证缝里的 Key，生成与模型目录探测都会报「未配置 API Key」。
         threevideo:
           apiKey: ''
+          apiKeyEnv: THREEVIDEO_API_KEY
           baseURL: ''
         # 万象（阿里云百炼）凭证；provider=wanx 时使用
         wanx:

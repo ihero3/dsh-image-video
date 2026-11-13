@@ -57,6 +57,29 @@ export type AuthLocaleKey =
   | 'noProviders'
   | 'accountTabHint'
   | 'apiKeyTabHint'
+  | 'brandTitle'
+  | 'registerAccount'
+  | 'registerHint'
+  | 'signedInNotice'
+  | 'signedInNoKeyNotice'
+  | 'apiKeyReady'
+  | 'apiKeyNotReady'
+  | 'settingsAction'
+  | 'shareInvite'
+  | 'inviteCopied'
+  | 'copyFailed'
+  | 'providerStatusTitle'
+  | 'statusReady'
+  | 'statusConfigured'
+  | 'statusMissing'
+  | 'testDetail'
+  | 'localEndpointLabel'
+  | 'localEndpointHint'
+  | 'localEndpointInvalid'
+  | 'saveSettings'
+  | 'restoreDefaults'
+  | 'restoreDone'
+  | 'settingsSaved'
 
 /** 中文文案。 */
 export const authZh: Record<AuthLocaleKey, string> = {
@@ -101,6 +124,29 @@ export const authZh: Record<AuthLocaleKey, string> = {
   noProviders: '宿主还没有下发可用的服务商。',
   accountTabHint: '登录后会按当前服务商自动创建或复用一把 Key，并写入凭证缝。',
   apiKeyTabHint: 'Key 只写进宿主凭证缝，界面不会回显或保存明文。',
+  brandTitle: '{provider} · 1$ ≈ 30M token',
+  registerAccount: '注册',
+  registerHint: '登录后自动申请并配置 API Key，长期有效。',
+  signedInNotice: '已登录 {provider}，API Key 已自动配置。',
+  signedInNoKeyNotice: '已登录 {provider}，但还没有可用的 API Key。',
+  apiKeyReady: 'API Key 已就绪',
+  apiKeyNotReady: 'API Key 未就绪',
+  settingsAction: '设置',
+  shareInvite: '分享邀请链接',
+  inviteCopied: '邀请链接已复制。',
+  copyFailed: '复制失败，请手动复制链接。',
+  providerStatusTitle: '服务商状态',
+  statusReady: '连接正常，Key 可用',
+  statusConfigured: 'Key 已配置（末四位 {last4}）',
+  statusMissing: '未配置',
+  testDetail: '配置已长期保存，重启后仍然有效。',
+  localEndpointLabel: '本地模型地址',
+  localEndpointHint: 'OpenAI 兼容根地址，可改成自己的 IP 和端口。',
+  localEndpointInvalid: '本地模型地址必须是 http:// 或 https:// 链接。',
+  saveSettings: '保存配置',
+  restoreDefaults: '恢复默认',
+  restoreDone: '已恢复默认配置。',
+  settingsSaved: '配置已保存。',
 }
 
 /** 英文文案。 */
@@ -146,6 +192,29 @@ export const authEn: Record<AuthLocaleKey, string> = {
   noProviders: 'The host has not announced any usable provider yet.',
   accountTabHint: 'After sign-in the host creates or reuses a key for the current provider and stores it in the credential seam.',
   apiKeyTabHint: 'The key is written into the host credential seam only; the UI never echoes or keeps the plaintext.',
+  brandTitle: '{provider} · 1$ ≈ 30M token',
+  registerAccount: 'Sign up',
+  registerHint: 'Sign in to have an API key provisioned and stored — it stays valid until you remove it.',
+  signedInNotice: 'Signed in to {provider}. The API key was configured automatically.',
+  signedInNoKeyNotice: 'Signed in to {provider}, but no usable API key is configured yet.',
+  apiKeyReady: 'API key ready',
+  apiKeyNotReady: 'API key missing',
+  settingsAction: 'Settings',
+  shareInvite: 'Share invite link',
+  inviteCopied: 'Invite link copied.',
+  copyFailed: 'Copy failed — please copy the link manually.',
+  providerStatusTitle: 'Provider status',
+  statusReady: 'Connection OK — key works',
+  statusConfigured: 'Key configured (ends in {last4})',
+  statusMissing: 'Not configured',
+  testDetail: 'Saved permanently — still valid after a restart.',
+  localEndpointLabel: 'Local model endpoint',
+  localEndpointHint: 'OpenAI-compatible base URL; change the host and port as needed.',
+  localEndpointInvalid: 'The local endpoint must be an http:// or https:// URL.',
+  saveSettings: 'Save settings',
+  restoreDefaults: 'Restore defaults',
+  restoreDone: 'Default settings restored.',
+  settingsSaved: 'Settings saved.',
 }
 
 // 把本命名空间并进 locale 的类型表：入口可 `ctx.locale.register(AUTH_NS, { zh: authZh, en: authEn })`，

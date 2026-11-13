@@ -5,9 +5,8 @@
  * 不走 Harness 的 CSS 打包链，所以样式内嵌成字符串、由 {@link useAuthStyle} 注入一次。
  * 单独成文件（不并进工作台样式表）是为了让登录弹层独立于右栏工作台存在。
  *
- * 颜色全部取自宿主设计令牌（`--dsw-alias-*`），取不到时退到与文字同源的
- * `color-mix(currentColor …)`，浅色/深色主题都成立；若工作台样式表已在页面上，
- * 则优先复用它的 `--iv-*` 变量，保证两个浮层观感一致。
+ * 视觉参照：白色卡片、16px 圆角、黑色主按钮、绿色成功条、宽松留白。
+ * 颜色优先复用工作台 `--iv-*` 变量；工作台未加载时退回宿主令牌，浅色/深色主题都成立。
  *
  * @module dsh-image-video/client/auth-style
  */
@@ -17,25 +16,27 @@ import { useEffect } from 'react'
 export const AUTH_STYLE_ID = 'dsh-image-video-auth-style'
 
 /** 样式表版本戳：同 id 但版本不同就整表覆盖，避免热替换后旧规则给新结构定位。 */
-export const AUTH_STYLE_VERSION = '2026-11-11.1'
+export const AUTH_STYLE_VERSION = '2026-11-13.1'
 
 /** 连接弹层样式表（类名统一 `iva-` 前缀，作用域根为 `.iva`）。 */
 export const AUTH_STYLE = `
 .iva-backdrop{
-  --iva-panel:var(--iv-panel,var(--dsw-alias-bg-layer-1,color-mix(in srgb,currentColor 6%,transparent)));
-  --iva-surface:var(--iv-surface,color-mix(in srgb,var(--dsw-alias-bg-layer-2,color-mix(in srgb,currentColor 8%,transparent)) 96%,currentColor));
-  --iva-line:var(--iv-line,var(--dsw-alias-border-l2,color-mix(in srgb,currentColor 14%,transparent)));
-  --iva-line-strong:var(--iv-line-2,var(--dsw-alias-border-l3,color-mix(in srgb,currentColor 24%,transparent)));
+  --iva-panel:var(--iv-panel,var(--dsw-alias-bg-layer-1,#fff));
+  --iva-surface:var(--iv-panel,var(--dsw-alias-bg-layer-1,#fff));
+  --iva-fill:color-mix(in srgb,currentColor 4%,transparent);
+  --iva-line:var(--iv-line,var(--dsw-alias-border-l2,color-mix(in srgb,currentColor 12%,transparent)));
+  --iva-line-strong:var(--iv-line-2,var(--dsw-alias-border-l3,color-mix(in srgb,currentColor 20%,transparent)));
   --iva-tx:var(--iv-tx,var(--dsw-alias-label-primary,currentColor));
-  --iva-tx2:var(--iv-tx2,var(--dsw-alias-label-secondary,color-mix(in srgb,currentColor 76%,transparent)));
-  --iva-tx3:var(--iv-tx3,var(--dsw-alias-label-tertiary,color-mix(in srgb,currentColor 52%,transparent)));
+  --iva-tx2:var(--iv-tx2,var(--dsw-alias-label-secondary,color-mix(in srgb,currentColor 72%,transparent)));
+  --iva-tx3:var(--iv-tx3,var(--dsw-alias-label-tertiary,color-mix(in srgb,currentColor 50%,transparent)));
+  --iva-solid:var(--iv-solid,var(--dsw-alias-label-primary,currentColor));
+  --iva-on-solid:var(--iv-on-solid,var(--dsw-alias-label-primary-foreground,#fff));
   --iva-acc:var(--iv-acc,var(--dsw-alias-button-info-fill,#4176e6));
-  --iva-acc-hover:var(--iv-acc-deep,var(--dsw-alias-button-info-hover,#3f57d6));
-  --iva-on-acc:var(--iv-on-acc,var(--dsw-alias-label-primary-foreground,#fff));
-  --iva-ok:var(--iv-ok,var(--dsw-alias-state-success-primary,#2ba471));
+  --iva-ok:var(--iv-ok,var(--dsw-alias-state-success-primary,#12a150));
+  --iva-ok-soft:var(--iv-ok-soft,color-mix(in srgb,var(--iva-ok) 12%,transparent));
   --iva-danger:var(--iv-danger,var(--dsw-alias-state-error-primary,#e5534b));
   --iva-danger-soft:var(--iv-danger-soft,color-mix(in srgb,var(--iva-danger) 10%,transparent));
-  --iva-r:var(--iv-r,6px);
+  --iva-r:10px;
   --iva-mono:var(--iv-mono,var(--dsh-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace));
   position:fixed;
   inset:0;
@@ -44,101 +45,123 @@ export const AUTH_STYLE = `
   align-items:center;
   justify-content:center;
   padding:16px;
-  background:color-mix(in srgb,var(--dsw-alias-bg-layer-1,#000) 42%,transparent);
+  background:color-mix(in srgb,#0b0d12 34%,transparent);
+  backdrop-filter:blur(2px);
 }
 .iva{
   box-sizing:border-box;
-  width:min(420px,100%);
-  max-height:min(640px,calc(100vh - 32px));
+  width:min(392px,100%);
+  max-height:min(680px,calc(100vh - 32px));
   overflow:auto;
   display:flex;
   flex-direction:column;
-  gap:10px;
-  padding:14px;
-  border:1px solid var(--iva-line-strong);
-  border-radius:calc(var(--iva-r) + 2px);
+  gap:14px;
+  padding:22px;
+  border:1px solid var(--iva-line);
+  border-radius:18px;
   background:var(--iva-surface);
   color:var(--iva-tx);
   font-size:13px;
-  line-height:1.45;
-  box-shadow:0 18px 48px color-mix(in srgb,#000 26%,transparent);
+  line-height:1.5;
+  box-shadow:0 24px 60px color-mix(in srgb,#0b0d12 22%,transparent),0 2px 6px color-mix(in srgb,#0b0d12 8%,transparent);
 }
 .iva *{box-sizing:border-box}
-.iva-header{display:flex;align-items:flex-start;gap:8px}
-.iva-heading{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
-.iva-title{margin:0;font-size:15px;font-weight:600}
-.iva-subtitle{margin:0;font-size:12px;color:var(--iva-tx2)}
+.iva-header{display:flex;align-items:flex-start;gap:10px}
+.iva-heading{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.iva-title{margin:0;font-size:17px;font-weight:650;line-height:1.35}
+.iva-subtitle{margin:0;font-size:12px;color:var(--iva-tx3);line-height:1.55}
 .iva-close{
   flex:none;
-  width:24px;height:24px;
+  width:28px;height:28px;
   display:inline-flex;align-items:center;justify-content:center;
-  border:1px solid transparent;border-radius:var(--iva-r);
+  margin:-2px -2px 0 0;
+  border:1px solid transparent;border-radius:8px;
   background:transparent;color:var(--iva-tx3);
-  font-size:14px;line-height:1;cursor:pointer;
+  font-size:16px;line-height:1;cursor:pointer;
 }
-.iva-close:hover{background:color-mix(in srgb,currentColor 8%,transparent);color:var(--iva-tx)}
-.iva-tabs{display:flex;gap:4px;padding:3px;border:1px solid var(--iva-line);border-radius:var(--iva-r);background:color-mix(in srgb,currentColor 4%,transparent)}
+.iva-close:hover{background:var(--iva-fill);color:var(--iva-tx)}
+.iva-close:focus-visible{outline:2px solid var(--iva-acc);outline-offset:1px}
+.iva-tabs{display:flex;gap:3px;padding:3px;border-radius:11px;background:var(--iva-fill)}
 .iva-tab{
   flex:1;min-width:0;
-  padding:6px 8px;
-  border:0;border-radius:calc(var(--iva-r) - 2px);
+  height:32px;padding:0 8px;
+  border:0;border-radius:8px;
   background:transparent;color:var(--iva-tx2);
-  font-size:12px;font-weight:600;cursor:pointer;
+  font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;
 }
 .iva-tab:hover{color:var(--iva-tx)}
-.iva-tab[aria-selected="true"]{background:var(--iva-surface);color:var(--iva-tx);box-shadow:0 1px 2px color-mix(in srgb,#000 18%,transparent)}
+.iva-tab[aria-selected="true"]{background:var(--iva-surface);color:var(--iva-tx);box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 12%,transparent)}
 .iva-tab:focus-visible{outline:2px solid var(--iva-acc);outline-offset:1px}
-.iva-body{display:flex;flex-direction:column;gap:10px}
-.iva-form{display:flex;flex-direction:column;gap:8px}
-.iva-field{display:flex;flex-direction:column;gap:4px}
+.iva-body{display:flex;flex-direction:column;gap:14px}
+.iva-form{display:flex;flex-direction:column;gap:12px}
+.iva-field{display:flex;flex-direction:column;gap:6px}
 .iva-label{font-size:12px;font-weight:600;color:var(--iva-tx2)}
 .iva-input,.iva-select{
   width:100%;
-  height:30px;
-  padding:0 8px;
+  height:40px;
+  padding:0 12px;
   border:1px solid var(--iva-line-strong);
-  border-radius:var(--iva-r);
+  border-radius:10px;
   background:var(--iva-panel);
   color:var(--iva-tx);
   font-size:13px;
   font-family:inherit;
 }
-.iva-input:focus-visible,.iva-select:focus-visible{outline:2px solid var(--iva-acc);outline-offset:0;border-color:var(--iva-acc)}
+.iva-input::placeholder{color:var(--iva-tx3)}
+.iva-input:focus-visible,.iva-select:focus-visible{outline:2px solid color-mix(in srgb,var(--iva-acc) 55%,transparent);outline-offset:0;border-color:var(--iva-acc)}
 .iva-input--mono{font-family:var(--iva-mono);letter-spacing:.02em}
-.iva-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.iva-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .iva-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  height:30px;padding:0 12px;
-  border:1px solid var(--iva-line-strong);border-radius:var(--iva-r);
+  height:38px;padding:0 14px;
+  border:1px solid var(--iva-line-strong);border-radius:10px;
   background:var(--iva-panel);color:var(--iva-tx);
-  font-size:12.5px;font-weight:600;cursor:pointer;
+  font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
+  text-decoration:none;
 }
-.iva-btn:hover:not(:disabled){background:color-mix(in srgb,currentColor 7%,transparent)}
+.iva-btn:hover:not(:disabled){background:var(--iva-fill)}
 .iva-btn:focus-visible{outline:2px solid var(--iva-acc);outline-offset:1px}
 .iva-btn:disabled{opacity:.55;cursor:not-allowed}
-.iva-btn--primary{border-color:transparent;background:var(--iva-acc);color:var(--iva-on-acc)}
-.iva-btn--primary:hover:not(:disabled){background:var(--iva-acc-hover)}
+.iva-btn--primary{border-color:transparent;background:var(--iva-solid);color:var(--iva-on-solid)}
+.iva-btn--primary:hover:not(:disabled){background:color-mix(in srgb,var(--iva-solid) 88%,transparent)}
+.iva-btn--block{width:100%;height:42px}
 .iva-btn--ghost{border-color:transparent;background:transparent;color:var(--iva-tx2)}
-.iva-btn--danger{color:var(--iva-danger);border-color:color-mix(in srgb,var(--iva-danger) 36%,transparent)}
+.iva-btn--danger{color:var(--iva-danger);border-color:transparent;background:transparent}
 .iva-btn--danger:hover:not(:disabled){background:var(--iva-danger-soft)}
-.iva-status{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  padding:8px 10px;
-  border:1px solid var(--iva-line);border-radius:var(--iva-r);
-  background:color-mix(in srgb,currentColor 4%,transparent);
-}
-.iva-status-main{display:flex;flex-direction:column;gap:1px;min-width:0}
-.iva-status-label{font-size:11px;color:var(--iva-tx3)}
-.iva-status-value{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.iva-status-key{font-family:var(--iva-mono);font-size:11.5px;color:var(--iva-tx2);text-align:right;white-space:nowrap}
-.iva-keyline{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--iva-tx2)}
-.iva-dot{width:7px;height:7px;border-radius:50%;background:var(--iva-tx3);flex:none}
-.iva-dot--on{background:var(--iva-ok)}
-.iva-error,.iva-notice,.iva-hint{border-radius:var(--iva-r);font-size:12px}
-.iva-error{padding:7px 9px;border:1px solid color-mix(in srgb,var(--iva-danger) 34%,transparent);background:var(--iva-danger-soft);color:var(--iva-danger)}
-.iva-notice{padding:7px 9px;border:1px solid color-mix(in srgb,var(--iva-ok) 32%,transparent);background:color-mix(in srgb,var(--iva-ok) 10%,transparent);color:var(--iva-tx)}
-.iva-hint{margin:0;color:var(--iva-tx3);line-height:1.5}
+.iva-hint{margin:0;color:var(--iva-tx3);font-size:11.5px;line-height:1.6;text-align:center}
+.iva-hint--left{text-align:left}
 .iva-muted{color:var(--iva-tx3)}
+.iva-banner{
+  display:flex;align-items:flex-start;gap:8px;
+  margin:0;padding:11px 12px;
+  border-radius:10px;
+  background:var(--iva-ok-soft);
+  color:var(--iva-ok);
+  font-size:12.5px;font-weight:600;line-height:1.5;
+}
+.iva-banner::before{content:"✓";flex:none;font-weight:700}
+.iva-profile{display:flex;flex-direction:column;gap:14px}
+.iva-profile-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.iva-email{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650}
+.iva-amount{flex:none;font-size:22px;font-weight:650;letter-spacing:-.01em}
+.iva-profile-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:var(--iva-tx3)}
+.iva-ok-text{color:var(--iva-ok);font-weight:600}
+.iva-status-list{display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid var(--iva-line)}
+.iva-status-heading{margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--iva-tx3)}
+.iva-status-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;font-size:12px}
+.iva-status-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.iva-status-text{flex:none;color:var(--iva-tx3);text-align:right}
+.iva-status-text--ok{color:var(--iva-ok);font-weight:600}
+.iva-notice{
+  margin:0;padding:9px 11px;
+  border:1px solid color-mix(in srgb,var(--iva-ok) 28%,transparent);
+  border-radius:9px;
+  background:var(--iva-ok-soft);
+  color:var(--iva-tx);
+  font-size:12px;line-height:1.65;
+  white-space:pre-line;
+}
+.iva-notice--error{border-color:color-mix(in srgb,var(--iva-danger) 30%,transparent);background:var(--iva-danger-soft);color:var(--iva-danger)}
 .iva-spinner{width:12px;height:12px;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 30%,transparent);border-top-color:currentColor;animation:iva-spin .8s linear infinite}
 @keyframes iva-spin{to{transform:rotate(360deg)}}
 @media (max-width:480px){

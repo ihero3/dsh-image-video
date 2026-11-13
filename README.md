@@ -92,7 +92,7 @@ dsh plugin --profile <profile> add github:ihero3/dsh-image-video
 
 `apiKey` / `baseURL` / `defaultImageModel` 等字段名未变，旧配置可原样沿用；0.3.x 的 `provider: threerouter` 与 `threerouter: { apiKey }` 从 1.0.4 起在加载时自动归一为 `threevideo`，无需手改。
 
-> 反过来注意：**0.3.1 无法读取新配置**。如果「已安装插件」里显示的版本是 0.3.x 而 patch 里已写 `provider: threevideo`，启用时会报 `ValidationError ... expected "threerouter" ... but got "threevideo"`。请升级到 1.0.4（0.3.1 已标记 deprecated），升级后旧值同样可用。
+> 反过来注意：**0.3.1 无法读取新配置**。如果「已安装插件」里显示的版本是 0.3.x 而 patch 里已写 `provider: threevideo`，启用时会报 `ValidationError ... expected "threerouter" ... but got "threevideo"`。请升级到 1.0.5（0.3.1 已标记 deprecated），升级后旧值同样可用。
 
 ### 2. 配置 API Key
 

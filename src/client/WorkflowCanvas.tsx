@@ -28,6 +28,7 @@ import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 import { Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
+import { useModernTheme } from './modern-theme.ts'
 import { useHistoryStack } from './use-history-stack.ts'
 
 /** 画布节点携带的数据（xyflow 要求可索引）。 */
@@ -823,6 +824,7 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
 export function WorkflowCanvas(props: WorkflowCanvasProps): JSX.Element {
   useCanvasStyle()
   useWorkbenchStyle()
+  useModernTheme()
   return (
     <ReactFlowProvider>
       <CanvasSurface {...props} />

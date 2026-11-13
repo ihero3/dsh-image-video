@@ -26,6 +26,7 @@ import type { OutputFile } from '../workbench/outputs.ts'
 // face and the dispatcher from drifting (the names never reach the bundle).
 import type {
   AuthHealthValue, AuthKeyState, AuthLoginValue, AuthProfileValue, AuthProvider, AuthSetKeyValue, AuthTestKeyValue,
+  AuthEndpointValue, AuthResetValue, AuthInviteValue,
 } from '../host/auth.ts'
 
 /** Export parameters the export panel lets the user pick (B6). */
@@ -411,6 +412,47 @@ export interface ModelCatalogView {
   }
 }
 
+/** 文本模型选项（剧本模块的「模型」选择器；来自宿主 `ctx.llm`）。 */
+export interface TextModelOption {
+  /** 服务商路由键（请求时原样回传）。 */
+  readonly provider: string
+  /** 服务商显示名（分组用）。 */
+  readonly providerName: string
+  /** 模型 id（请求时原样回传）。 */
+  readonly id: string
+  /** 模型显示名。 */
+  readonly name: string
+}
+
+/** 文本模型目录：成功的服务商合并成一张表，失败的服务商单独报告。 */
+export interface TextModelCatalog {
+  readonly models: readonly TextModelOption[]
+  readonly failures: ReadonlyArray<{ readonly provider: string; readonly message: string }>
+}
+
+/** 自动拆段的入参：剧本可显式给（未必已自动保存），模型与默认值来自模块级选择。 */
+export interface SplitEpisodeInput {
+  readonly episodeId: string
+  /** 文本模型的服务商路由键。 */
+  readonly provider: string
+  /** 文本模型 id。 */
+  readonly model: string
+  /** 剧本正文；缺省用集记录里已保存的剧本。 */
+  readonly script?: string
+  /** 新分段继承的图片模型。 */
+  readonly imageModel?: string
+  /** 新分段继承的视频模型。 */
+  readonly videoModel?: string
+  /** 新分段继承的导演 Skill。 */
+  readonly skillId?: string
+}
+
+/** 自动拆段的结果：新建的分段与最新集记录。 */
+export interface SplitEpisodeResult {
+  readonly episode: EpisodeRecord
+  readonly created: readonly SegmentRecord[]
+}
+
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
@@ -422,12 +464,18 @@ export interface WorkbenchApi {
   authLogout: () => Promise<{ readonly success: true }>
   /** `auth/profile`：刷新账号资料（余额 / Key 末四位）。 */
   authProfile: () => Promise<AuthProfileValue>
-  /** `auth/set-key`：把已有 Key 写进凭证缝。 */
-  authSetKey: (input: { readonly apiKey: string, readonly provider?: AuthProvider, readonly test?: boolean }) => Promise<AuthSetKeyValue>
+  /** `auth/set-key`：把已有 Key 写进凭证缝（本地模型可只保存接口地址）。 */
+  authSetKey: (input: { readonly apiKey: string, readonly provider?: AuthProvider, readonly test?: boolean, readonly baseUrl?: string }) => Promise<AuthSetKeyValue>
   /** `auth/test-key`：只测连通性，不写盘。 */
-  authTestKey: (input: { readonly apiKey?: string, readonly provider?: AuthProvider }) => Promise<AuthTestKeyValue>
+  authTestKey: (input: { readonly apiKey?: string, readonly provider?: AuthProvider, readonly baseUrl?: string }) => Promise<AuthTestKeyValue>
   /** `auth/key-state`：某个服务商的脱敏 Key 状态。 */
   authKeyState: (provider?: AuthProvider) => Promise<AuthKeyState>
+  /** `auth/set-endpoint`：长期保存服务商接口根地址（如本地模型）。 */
+  authSetEndpoint: (input: { readonly provider: AuthProvider, readonly baseUrl: string }) => Promise<AuthEndpointValue>
+  /** `auth/reset`：恢复默认配置（清接口地址与已存 Key，不影响登录态）。 */
+  authReset: (input?: { readonly provider?: AuthProvider }) => Promise<AuthResetValue>
+  /** `auth/invite-link`：注册 / 邀请链接。 */
+  authInviteLink: () => Promise<AuthInviteValue>
   /** Every project, newest first. */
   listProjects: () => Promise<ProjectRecord[]>
   /** Create a project from a user-supplied name. */
@@ -534,6 +582,10 @@ export interface WorkbenchApi {
   removeSegment: (id: string) => Promise<SegmentRecord>
   /** 重排分段。 */
   reorderSegments: (episodeId: string, order: readonly string[]) => Promise<SegmentRecord[]>
+  /** 可用的文本模型（剧本模块的「模型」选择器）；宿主未装配文本模型服务时如实报错。 */
+  listTextModels: () => Promise<TextModelCatalog>
+  /** 调文本模型把剧本拆成分段并落库（新建，不覆盖已有分段）。 */
+  splitEpisode: (input: SplitEpisodeInput) => Promise<SplitEpisodeResult>
   /** 一集的分镜（按分段归属）。 */
   listStoryboards: (episodeId: string) => Promise<StoryboardRecord[]>
   /** 单组分镜。 */
@@ -768,6 +820,9 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     authSetKey: input => call<AuthSetKeyValue>('auth/set-key', input),
     authTestKey: input => call<AuthTestKeyValue>('auth/test-key', input),
     authKeyState: provider => call<AuthKeyState>('auth/key-state', provider === undefined ? {} : { provider }),
+    authSetEndpoint: input => call<AuthEndpointValue>('auth/set-endpoint', input),
+    authReset: input => call<AuthResetValue>('auth/reset', input ?? {}),
+    authInviteLink: () => call<AuthInviteValue>('auth/invite-link', {}),
     listProjects: async () => (await call<{ projects: ProjectRecord[] }>('projects/list')).projects,
     createProject: async name => (await call<{ project: ProjectRecord }>('projects/create', { name })).project,
     removeProject: async id => (await call<{ removed: boolean }>('projects/remove', { id })).removed,
@@ -822,6 +877,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     removeSegment: async id => (await call<{ removed: SegmentRecord }>('segments/remove', { id })).removed,
     reorderSegments: async (episodeId, order) =>
       (await call<{ segments: SegmentRecord[] }>('segments/reorder', { episodeId, order })).segments,
+    listTextModels: () => call<TextModelCatalog>('llm/models'),
+    splitEpisode: input => call<SplitEpisodeResult>('episodes/split', input),
     listStoryboards: async episodeId =>
       (await call<{ storyboards: StoryboardRecord[] }>('storyboards/list', { episodeId })).storyboards,
     getStoryboard: async id => (await call<{ storyboard: StoryboardRecord }>('storyboards/get', { id })).storyboard,

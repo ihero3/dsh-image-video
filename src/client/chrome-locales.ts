@@ -30,7 +30,7 @@ export type ChromeLocaleKey =
 /** 入口壳中文文案。 */
 export const chromeZh: Record<ChromeLocaleKey, string> = {
   panelLabel: '三视dsh-image-video',
-  tabTitle: 'dsh-image-video 工作台',
+  tabTitle: 'Three Video 工作台',
   relocatedTitle: '工作台已经搬到左栏',
   relocatedBody: '从这个右栏页签改成了和「插件」「自动化任务」一样的主面板，整块区域都归它使用。点击下面按钮直接打开。',
   relocatedAction: '打开工作台',
@@ -39,7 +39,7 @@ export const chromeZh: Record<ChromeLocaleKey, string> = {
 /** 入口壳英文文案。 */
 export const chromeEn: Record<ChromeLocaleKey, string> = {
   panelLabel: 'dsh-image-video',
-  tabTitle: 'dsh-image-video workbench',
+  tabTitle: 'Three Video workbench',
   relocatedTitle: 'The workbench moved to the sidebar',
   relocatedBody: 'It is now a main panel like Plugins and Scheduled tasks, and owns the whole centre area. Use the button below to open it.',
   relocatedAction: 'Open workbench',

@@ -59,7 +59,15 @@ export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // 说明增长都在"首次打开工作台才下载"的 chunk 里；总产物实测 1,083,051 / 235,424，
 // 按新基线占用 98.6% / 98.4%，留出约 1.5% 余量。
 // 2026-11-11 随剧集重构一并抬到 1_060_000 / 230_000（理由见上）。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_060_000, gzip: 230_000 })
+// 2026-11-13 剧本模块改为并列模块③（模型 / Skill 选择 + 自动拆段 + 文本模型目录）：
+// 总产物 1_272_832 / 275_302，超出原预算 raw 832 B，按「功能增长、非打包失控」抬基线到
+// 1_065_000 / 232_000（预算 1_278_000 / 278_400，实测占 99.6% / 98.9%）。
+// 2026-11-13 全插件视觉统一：新增 modern-theme.ts 主题层（约 9.2 KB CSS，gzip 1.9 KB）
+// 并挂到工作台 / 画布 / 引导层三个入口。这一轮开工前实测已是 1_293_726 / 281_914
+// （剧本模块③ 之后的界面增长未同步基线，已超原预算 15_726 B / 3_514 B），改造后
+// 1_305_537 / 284_867。属可解释的界面增长而非打包失控，按规则抬基线到
+// 1_105_000 / 242_000（预算 1_326_000 / 290_400，实测占 98.5% / 98.1%）。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_105_000, gzip: 242_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

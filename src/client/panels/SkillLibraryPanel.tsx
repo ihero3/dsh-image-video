@@ -139,8 +139,24 @@ export function SkillLibraryPanel(props: SkillLibraryPanelProps) {
 
   return (
     <div className="iv-skill-library" data-skill-library="true">
-      <div className="iv-fusion-head">
-        <span className="iv-chip"><Icon name="sparkles" size={11} />{t('skillsPaneTitle')}</span>
+      <span className="iv-meta">{t('skillsPaneDesc')}</span>
+
+      <div className="iv-skill-bar">
+        <div className="iv-skill-tabs" role="tablist" aria-label={t('skillsPaneTitle')}>
+          {(['director', 'reverse'] as const).map(candidate => (
+            <button
+              key={candidate}
+              type="button"
+              role="tab"
+              aria-selected={kind === candidate}
+              className={`iv-btn iv-btn--sm${kind === candidate ? ' iv-btn--acc' : ''}`}
+              data-skill-kind-tab={candidate}
+              onClick={() => { setKind(candidate) }}
+            >
+              {t(KIND_META[candidate].label)}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -150,23 +166,6 @@ export function SkillLibraryPanel(props: SkillLibraryPanelProps) {
         >
           {t('skillsRefresh')}
         </button>
-      </div>
-      <span className="iv-meta">{t('skillsPaneDesc')}</span>
-
-      <div className="iv-skill-tabs" role="tablist" aria-label={t('skillsPaneTitle')}>
-        {(['director', 'reverse'] as const).map(candidate => (
-          <button
-            key={candidate}
-            type="button"
-            role="tab"
-            aria-selected={kind === candidate}
-            className={`iv-btn iv-btn--sm${kind === candidate ? ' iv-btn--acc' : ''}`}
-            data-skill-kind-tab={candidate}
-            onClick={() => { setKind(candidate) }}
-          >
-            {t(KIND_META[candidate].label)}
-          </button>
-        ))}
       </div>
       <span className="iv-meta" data-skill-kind-desc="true">{t(KIND_META[kind].desc)}</span>
 

@@ -10,7 +10,7 @@
  * 每个文件各抄一遍 200 行的假 API——两份假宿主漂移比没有复用更糟。
  */
 import type { ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
@@ -146,7 +146,22 @@ export function fakeApi(options: {
   let counter = 0
   const api: WorkbenchApi = {
   // `A152`：批量登记 / 批量导入（测试替身）
-  attachAssets: async input => ({ created: input.items.length, assets: [] }),
+  attachAssets: async input => {
+    calls.push('assets/attach-many')
+    const created: AssetRecord[] = []
+    for (const item of input.items) {
+      if (item.kind !== 'image' && item.kind !== 'video') continue
+      if (assets.some(asset => asset.projectId === input.projectId && asset.path === item.path)) continue
+      counter += 1
+      const asset: AssetRecord = {
+        schemaVersion: 1, id: `ast-${counter}`, projectId: input.projectId, kind: item.kind,
+        path: item.path, bytes: item.bytes ?? 0, createdAt: `2026-10-14T02:00:0${counter}.000Z`,
+      }
+      assets.push(asset)
+      created.push(asset)
+    }
+    return { created: created.length, assets: created }
+  },
   importMedia: async input => ({ imported: input.paths.length, assets: [], skipped: [] }),
   // `A149`：工作台内生成（测试替身）。图片立即"登记"一张素材；视频返回 pending + taskId。
   generateMedia: async input => {
@@ -312,6 +327,9 @@ export function fakeApi(options: {
     }),
     authTestKey: async () => ({ valid: true, testable: true }),
     authKeyState: async provider => ({ provider: provider ?? 'threevideo', configured: false }),
+    authSetEndpoint: async input => ({ provider: input.provider, baseUrl: input.baseUrl }),
+    authReset: async input => ({ success: true, provider: input?.provider ?? 'threevideo', configured: false }),
+    authInviteLink: async () => ({ url: 'https://example.com/register' }),
     listProjects: async () => { calls.push('projects/list'); return [...projects] },
     createProject: async (name) => {
       calls.push('projects/create')
@@ -523,6 +541,9 @@ export function fakeApi(options: {
         order: episode.segments.length + 1,
         durationSec: Number(input?.durationSec ?? 5),
         promptText: String(input?.promptText ?? ''),
+        ...typeof input?.imageModel === 'string' && input.imageModel !== '' ? { imageModel: input.imageModel } : {},
+        ...typeof input?.videoModel === 'string' && input.videoModel !== '' ? { videoModel: input.videoModel } : {},
+        ...typeof input?.skillId === 'string' && input.skillId !== '' ? { skillId: input.skillId } : {},
         refs: [],
       }
       episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, segments: [...episode.segments, segment] }
@@ -571,6 +592,25 @@ export function fakeApi(options: {
       })
       episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, segments }
       return segments
+    },
+    // 文本模型目录恒有一条：让剧本模块的「模型」下拉在测试里可选，不依赖宿主 llm。
+    listTextModels: async () => ({
+      models: [{ provider: 'fake', providerName: 'Fake', id: 'fake-text', name: 'Fake text' }],
+      failures: [],
+    }),
+    // 拆段夹具：按空行切分剧本，逐段建记录（真实拆段由宿主调模型完成）。
+    splitEpisode: async input => {
+      const chunks = (input.script ?? '').split(/\n{2,}/).map(part => part.trim()).filter(part => part !== '')
+      const created: SegmentRecord[] = []
+      for (const chunk of chunks) {
+        created.push(await api.createSegment(input.episodeId, {
+          promptText: chunk,
+          imageModel: input.imageModel ?? '',
+          videoModel: input.videoModel ?? '',
+          skillId: input.skillId ?? '',
+        }))
+      }
+      return { episode: await api.getEpisode(input.episodeId), created }
     },
     listStoryboards: async episodeId => (await api.getEpisode(episodeId)).storyboards,
     getStoryboard: async id => {
@@ -1018,6 +1058,19 @@ export async function createProject(host: ReturnType<typeof fakeApi>, name: stri
   fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: name } })
   fireEvent.click(screen.getByRole('button', { name: en.create }))
   await waitFor(() => { expect(host.projects).toHaveLength(1) })
+}
+
+/**
+ * 素材面工具栏里的刷新按钮：顶栏也有一个同名的刷新，所以按面板范围取。
+ * @param container - 渲染容器（通常是 `view.container`）。
+ * @returns 可点击的素材面刷新按钮（等到它可用再返回）。
+ */
+export async function refreshAssets(container: HTMLElement): Promise<HTMLButtonElement> {
+  const pane = container.querySelector<HTMLElement>('[data-workbench-pane=paneAssets]')
+  if (pane === null) throw new Error('assets pane is not rendered')
+  const button = within(pane).getByRole<HTMLButtonElement>('button', { name: en.refresh })
+  await waitFor(() => { expect(button.disabled).toBe(false) })
+  return button
 }
 
 /**

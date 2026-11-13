@@ -65,7 +65,7 @@ export const WORKBENCH_STYLE = `
   --iv-warn-soft:color-mix(in srgb,var(--iv-warn) 11%,transparent);
   --iv-danger-soft:color-mix(in srgb,var(--iv-danger) 10%,transparent);
   --iv-monitor:#0a0b0d;
-  --iv-r:5px;
+  --iv-r:8px;
   --iv-mono:var(--dsh-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
   /* ---- 间距：2px 偶数节奏，6 档。组件内微间距也用同一套，避免"再来一个 7px" ---- */
   --iv-sp-1:2px;--iv-sp-2:4px;--iv-sp-3:6px;--iv-sp-4:8px;--iv-sp-5:10px;--iv-sp-6:12px;
@@ -74,8 +74,8 @@ export const WORKBENCH_STYLE = `
   --iv-fs-root:12px;--iv-fs-metric:16px;--iv-fs-title:13px;--iv-fs-lead:14px;--iv-fs-strong:12px;
   --iv-fs-body:11px;--iv-fs-meta:10.5px;--iv-fs-micro:9px;--iv-fs-tick:8px;
   --iv-fw-regular:400;--iv-fw-medium:600;--iv-fw-bold:700;
-  /* ---- 圆角：5px 是默认档（--iv-r），以下为其余五档 ---- */
-  --iv-r-xs:3px;--iv-r-sm:4px;--iv-r-lg:6px;--iv-r-xl:10px;--iv-r-pill:999px;
+  /* ---- 圆角：8px 是默认档（--iv-r），以下为其余五档 ---- */
+  --iv-r-xs:4px;--iv-r-sm:6px;--iv-r-lg:10px;--iv-r-xl:14px;--iv-r-pill:999px;
   /* ---- 层级：只在插件自己的层叠上下文内有效（portal 出去要另算） ---- */
   --iv-z-sticky:2;--iv-z-playhead:5;--iv-z-tip:40;--iv-z-overlay:60;
   /* ---- 动效：100/120/300ms 三档；prefers-reduced-motion 下统一关掉 ---- */
@@ -119,6 +119,8 @@ export const WORKBENCH_STYLE = `
 .iv-brand-sub{font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-medium);letter-spacing:.11em;color:var(--iv-tx3);white-space:nowrap;text-transform:uppercase}
 .iv-top-sep{width:1px;height:18px;background:var(--iv-line-2);flex:none}
 .iv-proj{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3);min-width:0}
+/* 剧集（父级）与集（子级）是两块独立分组，顶栏列间距 + 竖线把它们分开 */
+.iv-episode{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3);min-width:0}
 .iv-newform{display:flex;align-items:center;gap:var(--iv-sp-2)}
 .iv-newform .iv-input{width:108px}
 .iv-top-meta{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
@@ -147,8 +149,6 @@ export const WORKBENCH_STYLE = `
   box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .iv-top-tools{display:flex;align-items:center;gap:var(--iv-sp-1);flex:none}
 .iv-btn--on{background:var(--iv-acc-soft)!important;color:var(--iv-acc)!important}
-.iv-top-stats{display:flex;align-items:center;gap:var(--iv-sp-4);font-size:var(--iv-fs-meta);color:var(--iv-tx3);flex:none}
-.iv-top-stats b{color:var(--iv-tx2);font-weight:var(--iv-fw-medium);font-variant-numeric:tabular-nums}
 
 /* 展示列：竖排 5 块，独立滚动 */
 .iv-dock-col{min-width:0;display:flex;flex-direction:column;min-height:0;
@@ -207,13 +207,12 @@ export const WORKBENCH_STYLE = `
   transition:background var(--iv-dur-2) ease,border-color var(--iv-dur-2) ease,color var(--iv-dur-2) ease}
 .iv-btn:hover:not(:disabled){border-color:color-mix(in srgb,currentColor 35%,transparent);color:var(--iv-tx);background:var(--iv-panel-3)}
 .iv-btn:disabled{opacity:.42;cursor:not-allowed}
-.iv-btn--acc{background:var(--iv-acc);border-color:transparent;color:var(--iv-on-acc);font-weight:var(--iv-fw-medium);
-  box-shadow:var(--iv-shadow-acc)}
-.iv-btn--acc:hover:not(:disabled){background:var(--iv-acc-deep);color:var(--iv-on-acc);border-color:transparent;
-  box-shadow:var(--iv-shadow-acc-hover)}
+.iv-btn--acc{background:var(--iv-solid);border-color:transparent;color:var(--iv-on-solid);font-weight:var(--iv-fw-medium);
+  box-shadow:0 1px 2px color-mix(in srgb,var(--iv-solid) 26%,transparent)}
+.iv-btn--acc:hover:not(:disabled){background:var(--iv-solid-hover);color:var(--iv-on-solid);border-color:transparent;
+  box-shadow:0 2px 6px color-mix(in srgb,var(--iv-solid) 28%,transparent)}
 .iv-btn--acc:active:not(:disabled){box-shadow:none}
-.iv-btn--acc:disabled{background:color-mix(in srgb,var(--iv-acc) 16%,transparent);box-shadow:none;
-  color:color-mix(in srgb,var(--iv-acc) 55%,transparent)}
+.iv-btn--acc:disabled{background:var(--iv-panel-3);box-shadow:none;color:var(--iv-tx3)}
 .iv-btn--danger{color:var(--iv-danger);border-color:color-mix(in srgb,var(--iv-danger) 45%,transparent);background:var(--iv-danger-soft)}
 .iv-btn--danger:hover:not(:disabled){background:color-mix(in srgb,var(--iv-danger) 16%,transparent);border-color:var(--iv-danger);color:var(--iv-danger)}
 .iv-btn--ghost{background:transparent;border-color:transparent;color:var(--iv-tx3)}
@@ -388,6 +387,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-dock > [data-dock-order="5"]{order:5}
 .iv-dock > [data-dock-order="6"]{order:6}
 .iv-dock > [data-dock-order="7"]{order:7}
+.iv-dock > [data-dock-order="8"]{order:8}
 .iv-pane{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0;border:1px solid var(--iv-line);
   border-radius:var(--iv-r-lg);background:var(--iv-panel);padding:var(--iv-sp-4) var(--iv-sp-5);scroll-margin:var(--iv-sp-5)}
 /* 左栏快捷入口点击后的确认高亮：一次性脉冲，避免"点了没反应"的错觉 */
@@ -401,6 +401,11 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-pane-tile{width:22px;height:22px;border-radius:var(--iv-r);display:grid;place-items:center;flex:none;
   color:var(--iv-acc);background:var(--iv-acc-soft);border:1px solid color-mix(in srgb,var(--iv-acc) 24%,transparent)}
 .iv-pane-title{margin:0;display:inline-flex;align-items:center;font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);letter-spacing:.01em}
+/* 标题本身就是折叠按钮：点模块名（连图标）也能展开/收起，不必只瞄那个小箭头 */
+.iv-pane-toggle{display:inline-flex;align-items:center;gap:var(--iv-sp-4);margin:0;padding:0;border:0;
+  background:transparent;color:inherit;font:inherit;letter-spacing:inherit;cursor:pointer;text-align:left;min-width:0}
+.iv-pane-toggle:hover{color:var(--iv-acc)}
+.iv-pane-toggle:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px;border-radius:var(--iv-r-xs)}
 /* 次要停靠面板降权：底色退到 surface、边框减淡（保留边界，不做无框） */
 .iv-pane--quiet{background:var(--iv-surface);border-color:color-mix(in srgb,var(--iv-line) 55%,transparent)}
 .iv-pane-actions{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
@@ -425,6 +430,14 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-card-head strong{font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium)}
 .iv-card-body,.iv-card-note{min-width:0}
 .iv-pane img,.iv-pane video{width:100%;border-radius:var(--iv-r-sm);display:block;background:var(--iv-monitor)}
+/* 素材列表缩略图：图片与视频首帧统一成 72×48 的小图，压过上面 .iv-pane img 的满宽规则 */
+.iv-pane .iv-asset-thumb{position:relative;flex:none;display:block;width:72px;height:48px;overflow:hidden;
+  border:1px solid var(--iv-line-2);border-radius:var(--iv-r-xs);background:var(--iv-monitor);line-height:0}
+.iv-pane .iv-asset-thumb img,.iv-pane .iv-asset-thumb video{width:100%;height:100%;object-fit:cover;
+  display:block;border-radius:0}
+.iv-asset-thumb-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;
+  width:22px;height:22px;padding-left:2px;border-radius:50%;color:#fff;background:color-mix(in srgb,#000 58%,transparent);
+  box-shadow:0 0 0 1px color-mix(in srgb,#fff 72%,transparent),0 1px 4px color-mix(in srgb,#000 45%,transparent)}
 .iv-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
 .iv-count{margin-left:auto;font-size:var(--iv-fs-meta);color:var(--iv-tx3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .iv-progress{height:3px;border-radius:var(--iv-r-xs);background:var(--iv-panel-3);overflow:hidden;min-width:70px;flex:1}
@@ -790,6 +803,11 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* B-9 融合生图 / 提示词·分镜 / 技能库 */
 .iv-fusion-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:space-between}
 .iv-fusion-group{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap}
+.iv-skill-bar{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;justify-content:space-between}
+.iv-skill-tabs{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap}
+/* 技能库在展示列（窄栏）里：行内名称与操作按钮放不下时换行，不做横向滚动 */
+.iv-skill-library{min-width:0}
+.iv-skill-library .iv-prompt-row{flex-wrap:wrap;row-gap:var(--iv-sp-2)}
 .iv-prompt-lib{display:flex;flex-direction:column;gap:var(--iv-sp-2)}
 .iv-prompt-row{display:flex;align-items:center;gap:var(--iv-sp-3);padding:3px 0;border-top:1px solid var(--iv-line)}
 .iv-prompt-row .iv-ellipsis{flex:1;min-width:0}

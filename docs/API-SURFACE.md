@@ -8,13 +8,16 @@
 | 端点 | 入参 | 出参 | 备注 |
 | --- | --- | --- | --- |
 | `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`options` 是编辑器白名单 |
-| `auth/health` | — | `{ready,credentials,signedIn,email?,username?,balance?,hasKey,keyLast4?,provider,providers[{id,label,settable,testable}]}` | 登录闭环的宿主状态；`credentials:false` 表示宿主管不到凭证缝（登录仍可建立会话，但写不进 Key）；**App 明文永不下发** |
+| `auth/health` | — | `{ready,credentials,signedIn,email?,username?,balance?,hasKey,keyLast4?,provider,providerLabel?,providers[{id,label,settable,testable,endpointEditable?}],providerStates?,lastProvider?,local?,registerUrl?,inviteUrl?}` | 登录闭环的宿主状态；`providerStates` 供界面逐行展示「{服务商} 连接正常 / Key 已配置 / 未配置」，其中 `verified` 来自长期配置，关闭弹层或重启后仍在；`registerUrl` 是上游首页（注册按钮直接跳转），`inviteUrl` 是带邀请码的注册页；**App 明文永不下发** |
 | `auth/login` | `{email,password,turnstileToken?}` | `{success,email,username,balance,hasKey,keyLast4?,credentialsWritten,affCode?}` | 账号登录 → 自动创建/复用 Key → 写凭证缝；同一条通道按 `auth/` 前缀分流 |
-| `auth/logout` | — | `{success}` | 清本插件的会话记录（`image-video/auth`）并撤销本插件写入的 Key |
+| `auth/logout` | — | `{success}` | 清本插件的会话记录（`image-video/auth`）、撤销本插件写入的 Key，并把默认服务商移出「已验证」列表 |
 | `auth/profile` | — | `{signedIn,email,username,balance,hasKey,keyLast4?,affCode?}` | 刷新账号资料；未登录时 `auth/not-signed-in` |
-| `auth/set-key` | `{apiKey,provider?,test?}` | `{success,provider,keyLast4,configured}` | 自带 Key 写凭证缝（`test:true` 先探活）；只回末四位 |
-| `auth/test-key` | `{apiKey?,provider?}` | `{valid,testable,reason?}` | 只做连通性测试，不写盘；`testable:false` 表示该服务商没有已知探测端点 |
+| `auth/set-key` | `{apiKey,provider?,test?,baseUrl?}` | `{success,provider,keyLast4,configured,baseUrl?}` | 自带 Key 写凭证缝（`test:true` 先探活）；`baseUrl` 一并长期保存；本地模型允许空 Key 只存地址；只回末四位 |
+| `auth/test-key` | `{apiKey?,provider?,baseUrl?}` | `{valid,testable,reason?,provider?,providerLabel?}` | 只做连通性测试，不写盘；`baseUrl` 可临时覆盖探测地址；成功的服务商会写进长期「已验证」集合，重开弹层仍显示「连接正常」；`testable:false` 表示该服务商没有已知探测端点 |
 | `auth/key-state` | `{provider?}` | `{provider,configured,last4?,source?}` | 脱敏 Key 状态（有没有 / 末四位 / 来源层） |
+| `auth/set-endpoint` | `{provider,baseUrl}` | `{provider,baseUrl}` | 长期保存 OpenAI 兼容接口根（如本地模型 `http://127.0.0.1:11434/v1`）；只接受 http(s)，自动去掉末尾斜杠 |
+| `auth/reset` | `{provider?}` | `{success,provider,configured}` | 恢复默认配置：清该服务商的接口地址、已存 Key 与「已验证」状态；**不影响登录态** |
+| `auth/invite-link` | — | `{url}` | 注册 / 邀请链接；登录后自动带上邀请码 |
 | `projects/list` / `create` / `remove` / `rename` | 见 TASKS | project 记录 | 删除会级联资源/时间轴/运行记录 |
 | `assets/probe` | `{path}` | `{path,spec{width?,height?,fps?,durationMs?,hasAudio}}` | `A44` 素材探测：**只允许 outputs 目录内或已登记素材**（防任意路径读取） |
 | `assets/list` / `attach` / `remove` / `quick-add` | — | asset / `{removed}` / `{projectId,asset,timelineId?}` | `remove` 未带 `force` 时对被引用素材报错并列出引用位置；`quick-add` 供对话卡片使用 |
@@ -188,6 +191,7 @@
 | `episodes/update` | `{id,title?,remark?,script?}` | `{episode}`（`script` 可传正文或 `{text}`；`remark:null` 清空备注） |
 | `episodes/remove` | `{id,force?}` | `{removed}`（有归属任务时需 `force`；只删元引用，`outputs` 文件保留） |
 | `episodes/reorder` | `{projectId,order}` | `{episodes}`（集号重编为 1..n） |
+| `episodes/split` | `{episodeId,provider,model,script?,imageModel?,videoModel?,skillId?}` | `{episode,created}`（把剧本交给所选文本模型按剧情拆段并逐段落库；`script` 缺省用已保存的正文，新段继承传入的模型/Skill；输出不可解析或宿主无文本模型时如实报错，已落库的段保留） |
 | `episodes/resources` | `{id,action,resourceId?,category?,order?}` | `{refs}`（`action` = `list/add/remove/move`；剧集级资源库引用，只存 id） |
 | `episodes/assets` | `{id,action,assetId?,category?,order?}` | `{refs}`（全局素材库引用，只存 id） |
 | `episodes/export` | `{episodeId}` | `{export}`（只导这一集：`outputs/episodes/<id>/episode.json` + `files/` 里被本集镜头引用的素材副本；缺失文件记进 `missing`） |
@@ -200,6 +204,12 @@
 | `storyboards/get` | `{id}` | `{storyboard}` |
 | `storyboards/save` | `{segmentId,id?,episodeId?,skillId?,shots}` | `{storyboard}`（无 `id` 新建、有 `id` 整组替换；回填分段的 `storyboardId`） |
 | `storyboards/remove` | `{id}` | `{removed}`（清掉分段的 `storyboardId` 回填） |
+
+### 文本模型（剧本自动拆段）
+
+| 端点 | 参数 | 返回 |
+| --- | --- | --- |
+| `llm/models` | — | `{models,failures}`（宿主 `ctx.llm` 的服务商目录；每项含 `provider/providerName/id/name`；单个服务商取目录失败只记进 `failures`，不拖垮其它） |
 
 ### 双技能库（导演库 / 逆向库）
 

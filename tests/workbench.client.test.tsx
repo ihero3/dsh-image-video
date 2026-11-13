@@ -10,7 +10,7 @@
  * the real-transport test.
  */
 import { cleanup } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
@@ -18,10 +18,10 @@ import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflo
 import type { TimelineRecord } from '../src/workbench/timeline.ts'
 import {
   OUTPUT_IMAGE, OUTPUT_VIDEO, clientProps, createProject, fakeApi,
-  fireEvent, render, screen, waitFor,
+  fireEvent, refreshAssets, render, screen, waitFor,
 } from './client-fake-api.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('workbench skeleton', () => {
   it('renders the header, three modes and four panes', async () => {
@@ -89,16 +89,16 @@ describe('workbench project and asset flow', () => {
     expect([...picker.querySelectorAll('option')].some(option => option.textContent === '我的第一个项目')).toBe(true)
   })
 
-  it('registers the newest unregistered output as an asset and previews it', async () => {
+  it('refreshes the assets pane by registering every output and previews one', async () => {
     const host = fakeApi()
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await screen.findByText(en.projectNone)
     await createProject(host, '素材项目')
 
-    fireEvent.click(await screen.findByRole('button', { name: en.registerLatest }))
-    await waitFor(() => { expect(host.assets).toHaveLength(1) })
-    expect(host.assets[0]?.path).toBe(OUTPUT_IMAGE.path)
-    expect(view.container.querySelector('[data-workbench-assets]')?.getAttribute('data-workbench-assets')).toBe('1')
+    fireEvent.click(await refreshAssets(view.container))
+    await waitFor(() => { expect(host.assets).toHaveLength(2) })
+    expect(host.assets.map(asset => asset.path)).toEqual([OUTPUT_IMAGE.path, OUTPUT_VIDEO.path])
+    expect(view.container.querySelector('[data-workbench-assets]')?.getAttribute('data-workbench-assets')).toBe('2')
 
     // 点素材行 → 预览面用只读媒体路由渲染该文件
     fireEvent.click(await screen.findByRole('button', { name: `${en.panePreview} shot.png` }))
@@ -106,20 +106,79 @@ describe('workbench project and asset flow', () => {
     expect(image.getAttribute('src')).toBe('/outputs/shot.png')
   })
 
+  it('gives image and video assets the same fixed-size thumbnail', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '缩略图项目')
+    fireEvent.click(await refreshAssets(view.container))
+    await waitFor(() => { expect(host.assets).toHaveLength(2) })
+
+    const pane = view.container.querySelector('[data-workbench-pane=paneAssets]')
+    const thumbs = pane?.querySelectorAll('.iv-asset-thumb') ?? []
+    // 图片走 <img>，视频取首帧走 <video>，两者同一个缩略图容器
+    expect(thumbs).toHaveLength(2)
+    expect(pane?.querySelector('.iv-asset-thumb img')?.getAttribute('src')).toBe('/outputs/shot.png')
+    expect(pane?.querySelector('.iv-asset-thumb video')?.getAttribute('src')).toBe('/outputs/clip.mp4#t=0.1')
+  })
+
+  it('lets the pane title toggle the fold, not just the tiny chevron', async () => {
+    const host = fakeApi()
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const toggle = await waitFor(() => {
+      const found = view.container.querySelector<HTMLElement>('[data-pane-toggle=assets]')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    const pane = () => view.container.querySelector('[data-workbench-pane=paneAssets]')
+    expect(toggle.textContent).toContain(en.paneAssets)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    // 点标题（含图标）收起；再点一次展开
+    fireEvent.click(toggle)
+    expect(pane()?.className).toContain('iv-pane--folded')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle.querySelector('.iv-pane-tile') ?? toggle)
+    expect(pane()?.className).not.toContain('iv-pane--folded')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('imports picked files through the desktop host path bridge', async () => {
+    vi.stubGlobal('__DSH_HOST_PATHS__', { pathFor: () => '/Users/me/pics/imported.png' })
+    const host = fakeApi()
+    const importSpy = vi.fn(host.api.importMedia)
+    host.api.importMedia = importSpy
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '导入项目')
+    // 等当前项目就绪（刷新按钮可用即可），否则导入会因为 activeProject 未定而静默跳过
+    await refreshAssets(view.container)
+
+    const input = view.container.querySelector<HTMLInputElement>('[data-workbench-pane=paneAssets] input[type=file]')
+    expect(input).toBeTruthy()
+    // Electron 32+ 的 File 没有 path，必须走桥；这里模拟壳给出的真实路径
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'imported.png', { type: 'image/png' })], configurable: true })
+    fireEvent.change(input!)
+
+    await waitFor(() => { expect(importSpy).toHaveBeenCalledTimes(1) })
+    expect(importSpy.mock.calls[0]![0].paths).toEqual(['/Users/me/pics/imported.png'])
+    expect(await screen.findByText(new RegExp(en.importDone), { selector: '.iv-notice span' })).toBeTruthy()
+  })
+
   it('removes an asset only after the confirmation click', async () => {
     const host = fakeApi()
-    render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await screen.findByText(en.projectNone)
     await createProject(host, '待删除')
-    fireEvent.click(await screen.findByRole('button', { name: en.registerLatest }))
-    await waitFor(() => { expect(host.assets).toHaveLength(1) })
+    fireEvent.click(await refreshAssets(view.container))
+    await waitFor(() => { expect(host.assets).toHaveLength(2) })
 
     // 素材的删除按钮带文件名，便于与项目级删除区分
     fireEvent.click(screen.getByRole('button', { name: `${en.remove} shot.png` }))
     expect(host.calls).not.toContain('assets/remove')
     fireEvent.click(screen.getByRole('button', { name: `${en.confirmRemove} shot.png` }))
     await waitFor(() => { expect(host.calls).toContain('assets/remove') })
-    expect(host.assets).toHaveLength(0)
+    expect(host.assets).toHaveLength(1)
   })
 
   it('lists recorded generations and files one into the active project', async () => {
@@ -444,8 +503,8 @@ describe('workbench project and asset flow', () => {
     const panes = [...view.container.querySelectorAll('.iv-dock [data-workbench-pane]')]
     // DOM 顺序不动，视觉顺序由 data-dock-order 决定（改顺序不用搬大块 JSX）
     expect(panes.map(pane => pane.getAttribute('data-workbench-pane')))
-      .toEqual(['paneExports', 'paneAssets', 'panePreview', 'paneResources', 'paneTasks'])
-    expect(panes.map(pane => pane.getAttribute('data-dock-order'))).toEqual(['4', '3', '2', '1', '5'])
+      .toEqual(['paneExports', 'paneAssets', 'paneSkills', 'panePreview', 'paneResources', 'paneTasks'])
+    expect(panes.map(pane => pane.getAttribute('data-dock-order'))).toEqual(['5', '3', '4', '2', '1', '6'])
     // 两个运维面板（素材库体检 / 诊断）默认不展示：对创作没有价值
     expect(view.container.querySelector('[data-workbench-pane="paneHealth"]')).toBeNull()
     expect(view.container.querySelector('[data-workbench-pane="paneDiagnostics"]')).toBeNull()
@@ -645,7 +704,7 @@ describe('workbench project and asset flow', () => {
     }, { timeout: 4000 })
   })
 
-  it('merges duplicate asset records from the assets pane', async () => {
+  it('merges duplicate asset records when the assets pane refreshes', async () => {
     const duplicate = (id: string): AssetRecord => ({
       schemaVersion: 1, id, projectId: 'prj-1', kind: 'image', path: '/tmp/outputs/dup.png',
       bytes: 1024, createdAt: '2026-10-14T00:00:00.000Z',
@@ -660,10 +719,12 @@ describe('workbench project and asset flow', () => {
       expect(view.container.querySelector('[data-workbench-assets]')?.getAttribute('data-workbench-assets')).toBe('2')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: en.compactAssets }))
+    fireEvent.click(await refreshAssets(view.container))
     await waitFor(() => { expect(host.calls).toContain('maintenance/compact') })
-    expect(host.assets).toHaveLength(1)
-    expect(await screen.findByText(new RegExp(en.compacted), { selector: '.iv-notice span' })).toBeTruthy()
+    // 重复记录合并成一条，目录里另外两个产物也一并登记进来
+    expect(host.assets.filter(asset => asset.path === '/tmp/outputs/dup.png')).toHaveLength(1)
+    expect(host.assets).toHaveLength(3)
+    expect(await screen.findByText(new RegExp(en.refreshAssetsDone.replace('{created}', '2').replace('{removed}', '1')), { selector: '.iv-notice span' })).toBeTruthy()
   })
 
   it('filters assets by media kind', async () => {
@@ -712,16 +773,13 @@ describe('workbench project and asset flow', () => {
 
   it('shows an informational notice without the failure prefix', async () => {
     const host = fakeApi()
-    render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await screen.findByText(en.projectNone)
     await createProject(host, '提示项目')
-    // 两条产出都登记完，再点一次 → 纯信息提示
-    fireEvent.click(await screen.findByRole('button', { name: en.registerLatest }))
-    await waitFor(() => { expect(host.assets).toHaveLength(1) })
-    fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
+    // 刷新是纯信息提示：登记几条、合并几条，不是失败
+    fireEvent.click(await refreshAssets(view.container))
     await waitFor(() => { expect(host.assets).toHaveLength(2) })
-    fireEvent.click(screen.getByRole('button', { name: en.registerLatest }))
-    const info = await screen.findByText(new RegExp(en.alreadyRegistered), { selector: '.iv-notice span' })
+    const info = await screen.findByText(new RegExp(en.refreshAssetsDone.replace('{created}', '2').replace('{removed}', '0')), { selector: '.iv-notice span' })
     expect(info.textContent).not.toContain(en.failed)
   })
 

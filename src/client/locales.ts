@@ -10,9 +10,7 @@ export type WorkbenchLocaleKey =
   | 'resourceReference'
   | 'resourceUseSelected'
   | 'resourceClear'
-  | 'attachAll'
   | 'skippedCount'
-  | 'attachAllDone'
   | 'importFiles'
   | 'importDone'
   | 'importUnsupported'
@@ -41,6 +39,23 @@ export type WorkbenchLocaleKey =
   | 'modeQuick'
   | 'modulePipeline'
   | 'modulePipelineDesc'
+  | 'moduleScript'
+  | 'moduleScriptDesc'
+  | 'scriptTextModel'
+  | 'scriptTextModelEmpty'
+  | 'scriptImageModel'
+  | 'scriptVideoModel'
+  | 'scriptDirectorSkill'
+  | 'scriptFollowDefault'
+  | 'scriptSplit'
+  | 'scriptSplitting'
+  | 'scriptSplitHint'
+  | 'scriptSplitNeedsModel'
+  | 'scriptSplitNeedsScript'
+  | 'scriptSplitDone'
+  | 'scriptSplitFailed'
+  | 'scriptModelsFailed'
+  | 'loginThreeView'
   | 'moduleQuick'
   | 'moduleQuickDesc'
   | 'moduleCollapse'
@@ -62,8 +77,8 @@ export type WorkbenchLocaleKey =
   | 'remove'
   | 'confirmRemove'
   | 'refresh'
+  | 'refreshAssetsDone'
   | 'noOutputs'
-  | 'registerLatest'
   | 'noAssets'
   | 'previewEmpty'
   | 'busy'
@@ -158,8 +173,6 @@ export type WorkbenchLocaleKey =
   | 'issueRequired'
   | 'validationOk'
   | 'validationTitle'
-  | 'compacted'
-  | 'compactAssets'
   | 'paneCanvas'
   | 'canvasEdgesCount'
   | 'canvasNodesCount'
@@ -358,11 +371,9 @@ export type WorkbenchLocaleKey =
   | 'refInsertToken'
   | 'moveUp'
   | 'moveDown'
+  | 'brandName'
   | 'brandTagline'
   | 'dockTitle'
-  | 'statOutputs'
-  | 'statAssets'
-  | 'statTasks'
   | 'statResources'
   | 'generateParamAuto'
   | 'generateImageModel'
@@ -792,7 +803,7 @@ export { NS } from './locale-ns.ts'
 
 /** English copy. */
 export const en: Record<WorkbenchLocaleKey, string> = {
-  tabTitle: 'dsh-image-video workbench',
+  tabTitle: 'Three Video workbench',
   guideDescription: 'Series, media assets and generation tasks for image and video work.',
   sectionProject: 'Series',
   pipelineTitle: 'One-click film: script → shots → image → video',
@@ -832,6 +843,23 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modeQuick: 'Quick create',
   modulePipeline: 'Script → film',
   modulePipelineDesc: 'Paste a script: it is split into shots, then images and clips are generated for it.',
+  moduleScript: 'Script · segments',
+  moduleScriptDesc: 'Write the full script, pick a text model and skill, then split it into segments automatically or by hand.',
+  scriptTextModel: 'Text model',
+  scriptTextModelEmpty: 'Not selected',
+  scriptImageModel: 'Image model',
+  scriptVideoModel: 'Video model',
+  scriptDirectorSkill: 'Director skill',
+  scriptFollowDefault: 'Use default',
+  scriptSplit: 'Auto-split',
+  scriptSplitting: 'Splitting…',
+  scriptSplitHint: 'Split by plot with the selected text model',
+  scriptSplitNeedsModel: 'The host provides no text model, so segments cannot be generated automatically.',
+  scriptSplitNeedsScript: 'Write a script before auto-splitting.',
+  scriptSplitDone: 'Created {n} segments',
+  scriptSplitFailed: 'Auto-split failed',
+  scriptModelsFailed: 'Could not load the text model catalog',
+  loginThreeView: 'Sign in to Three Video',
   moduleQuick: 'One line, one shot',
   moduleQuickDesc: 'Type one prompt to get a single image or a single clip.',
   moduleCollapse: 'Collapse',
@@ -845,7 +873,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   resourceReference: 'Reference (makeup shot)',
   resourceUseSelected: 'Use selected asset',
   resourceFilterEmpty: 'No resource matches the filter — clear it to see all.',
-  resourceUseSelectedHint: 'Pick one asset in “Media assets” first',
+  resourceUseSelectedHint: 'Pick one asset in the “Assets” pane first',
   resourceEdit: 'Edit name and note',
   resourceEditSave: 'Save',
   resourceNoteHint: 'Note is the appearance description used by the redraw plan',
@@ -854,9 +882,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   resourceClear: 'Clear',
 
-  attachAll: 'Register all new',
   skippedCount: 'skipped',
-  attachAllDone: 'Registered',
   importFiles: 'Import files…',
   importDone: 'Imported',
   importUnsupported: 'Cannot read file paths here — importing needs the desktop app.',
@@ -879,7 +905,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   modeWorkflow: 'Workflow',
   modeTimeline: 'Timeline',
-  paneAssets: 'Media assets',
+  paneAssets: 'Assets',
   paneResources: 'Resources',
   paneResourcesNamed: '{series} resources',
   panePreview: 'Preview',
@@ -894,8 +920,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   remove: 'Remove',
   confirmRemove: 'Confirm remove',
   refresh: 'Refresh',
+  refreshAssetsDone: 'Refreshed · registered {created} · merged {removed}',
   noOutputs: 'No media in the output directory yet',
-  registerLatest: 'Register latest output',
   noAssets: 'No assets in this series yet',
   previewEmpty: 'Select an asset to preview it',
   busy: 'Working…',
@@ -995,8 +1021,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   issueRequired: 'required parameter is empty',
   validationOk: 'Graph is runnable',
   validationTitle: 'Graph check',
-  compacted: 'Merged duplicate records',
-  compactAssets: 'Merge duplicate records',
   paneCanvas: 'Workflow canvas',
   canvasEdgesCount: 'links',
   canvasNodesCount: 'nodes',
@@ -1195,11 +1219,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   refInsertToken: 'Append [@{n}] to the prompt',
   moveUp: 'Move up',
   moveDown: 'Move down',
+  brandName: 'Three Video',
   brandTagline: 'Media production workbench',
   dockTitle: 'Media studio',
-  statOutputs: 'Outputs',
-  statAssets: 'Assets',
-  statTasks: 'Tasks',
   statResources: 'Resources',
   generateParamAuto: 'Auto (use current defaults)',
   generateImageModel: 'Image model',
@@ -1705,7 +1727,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineMatchedTitle: '匹配到的物料',
   pipelineMatchedItem: '{name} · {kind}',
 
-  tabTitle: 'dsh-image-video 工作台',
+  tabTitle: 'Three Video 工作台',
   guideDescription: '图片与视频创作的剧集、媒体素材与生成任务。',
   sectionProject: '剧集',
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
@@ -1745,6 +1767,23 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modeQuick: '快速创作',
   modulePipeline: '剧本 → 成片',
   modulePipelineDesc: '贴一段剧本：自动拆成分镜，再逐镜出图、出视频。',
+  moduleScript: '剧本 · 分段',
+  moduleScriptDesc: '写整段剧本，选文本模型与导演 Skill，自动或手动拆成分段。',
+  scriptTextModel: '文本模型',
+  scriptTextModelEmpty: '未选择',
+  scriptImageModel: '图像模型',
+  scriptVideoModel: '视频模型',
+  scriptDirectorSkill: '导演 Skill',
+  scriptFollowDefault: '跟随默认',
+  scriptSplit: '自动生成分段',
+  scriptSplitting: '拆分中…',
+  scriptSplitHint: '用所选文本模型按剧情拆成分段',
+  scriptSplitNeedsModel: '宿主没有提供文本模型，无法自动生成分段。',
+  scriptSplitNeedsScript: '先写一段剧本再自动拆段。',
+  scriptSplitDone: '已生成 {n} 个分段',
+  scriptSplitFailed: '自动拆段失败',
+  scriptModelsFailed: '读取文本模型目录失败',
+  loginThreeView: '登录三视',
   moduleQuick: '一句话出一镜',
   moduleQuickDesc: '写一句提示词，出一张图或一段视频。',
   moduleCollapse: '收起',
@@ -1758,7 +1797,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   resourceReference: '参考图（定妆照）',
   resourceUseSelected: '用选中素材',
   resourceFilterEmpty: '没有匹配的资源——清空筛选看看全部。',
-  resourceUseSelectedHint: '先在右侧「媒体素材」里点一张图',
+  resourceUseSelectedHint: '先在右侧「素材」里点一张图',
   resourceEdit: '编辑名称与备注',
   resourceEditSave: '保存',
   resourceNoteHint: '备注就是重绘计划用的「外观描述」',
@@ -1767,9 +1806,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   resourceClear: '清除',
 
-  attachAll: '登记全部未登记',
   skippedCount: '跳过',
-  attachAllDone: '已登记',
   importFiles: '导入文件…',
   importDone: '已导入',
   importUnsupported: '这里拿不到文件路径——批量导入需在桌面应用里使用。',
@@ -1792,7 +1829,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   modeWorkflow: '专业工作流',
   modeTimeline: '时间轴精剪',
-  paneAssets: '媒体素材',
+  paneAssets: '素材',
   paneResources: '创作资源',
   paneResourcesNamed: '{series}资源',
   panePreview: '预览',
@@ -1807,8 +1844,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   remove: '删除',
   confirmRemove: '确认删除',
   refresh: '刷新',
+  refreshAssetsDone: '已刷新 · 登记 {created} · 整理重复记录 {removed}',
   noOutputs: 'outputs 目录里还没有产物',
-  registerLatest: '登记最新产物',
   noAssets: '这个剧集还没有素材',
   previewEmpty: '选中素材后可在此预览',
   busy: '处理中…',
@@ -1908,8 +1945,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   issueRequired: '必填参数为空',
   validationOk: '图可运行',
   validationTitle: '图校验',
-  compacted: '已整理重复记录',
-  compactAssets: '整理重复记录',
   paneCanvas: '工作流画布',
   canvasEdgesCount: '条连线',
   canvasNodesCount: '个节点',
@@ -2108,11 +2143,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   refInsertToken: '把 [@{n}] 追加到提示词',
   moveUp: '上移',
   moveDown: '下移',
+  brandName: 'Three Video',
   brandTagline: '三视创作工作台',
   dockTitle: '三视创作',
-  statOutputs: '输出产物',
-  statAssets: '媒体素材',
-  statTasks: '生成任务',
   statResources: '创作资源',
   generateParamAuto: '自动（跟随当前生效值）',
   generateImageModel: '图像模型',

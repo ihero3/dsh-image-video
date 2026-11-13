@@ -36,6 +36,7 @@ import { findDuplicateAssets } from '../workbench/duplicates.ts'
 import { sha256File } from '../workbench/package.ts'
 import { listDiagnosticLogs } from './diagnostics-log.ts'
 import { createAuthRpcHandler } from './auth.ts'
+import { createAuthSettingsStore } from './auth-settings.ts'
 import { summarizePreflight } from './assembly.ts'
 import { formatDuration, predictRenderMs } from '../media/render-predict.ts'
 import { inspectProjectPackage } from '../workbench/package.ts'
@@ -55,7 +56,7 @@ import {
   IMAGE_SIZE_OPTIONS, IMAGE_STYLE_OPTIONS, MAX_VIDEO_DURATION, MIN_VIDEO_DURATION, PROVIDERS, VIDEO_ASPECT_RATIOS,
 } from '../runtime-defaults.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
-import { listOutputs, type OutputFile } from '../workbench/outputs.ts'
+import { listOutputs, renameGeneratedOutput, type OutputFile } from '../workbench/outputs.ts'
 import { sep } from 'node:path'
 import { dirname, resolve } from 'node:path'
 import { stat, unlink } from 'node:fs/promises'
@@ -73,7 +74,10 @@ import type { RenderRegistry } from '../media/render-registry.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
 } from '../workbench/records.ts'
-import type { EpisodeRefAction, EpisodeRefInput, SegmentInput } from '../workbench/episodes.ts'
+import type { EpisodeRecord, EpisodeRefAction, EpisodeRefInput, SegmentInput, SegmentRecord } from '../workbench/episodes.ts'
+import { buildSplitInput, parseSplitProposals, SCRIPT_SPLIT_SYSTEM } from '../workbench/script-split.ts'
+import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmRuntime } from '@deepseek-ai/dsh-llm'
 
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
@@ -113,6 +117,22 @@ const MAX_BULK_ATTACH = 200
 const IMPORTABLE_EXTENSIONS: Readonly<Record<string, 'image' | 'video'>> = {
   '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.webp': 'image', '.gif': 'image',
   '.mp4': 'video', '.mov': 'video', '.webm': 'video',
+}
+
+/**
+ * 解析生成产物的命名上下文：当前剧集名 + 选中集数。
+ * 项目已被删除时返回 undefined，让产物保持生成工具的原始文件名。
+ */
+async function resolveOutputNaming(
+  store: WorkbenchStore,
+  projectId: string,
+  episodeId: string | undefined,
+): Promise<{ projectName: string; episodeNo?: number } | undefined> {
+  const project = (await store.listProjects()).find(candidate => candidate.id === projectId)
+  if (project === undefined) return undefined
+  if (episodeId === undefined) return { projectName: project.name }
+  const episode = (await store.listEpisodes(projectId)).find(candidate => candidate.id === episodeId)
+  return episode === undefined ? { projectName: project.name } : { projectName: project.name, episodeNo: episode.no }
 }
 
 export interface WorkbenchRpcDeps {
@@ -157,6 +177,11 @@ export interface WorkbenchRpcDeps {
   defaultSources?: () => NonNullable<WorkbenchHealth['defaultsSources']>
   /** 默认值编辑器的可选项；缺省时不带该字段。 */
   options?: () => WorkbenchOptions
+  /**
+   * 文本模型服务（`ctx.llm`）：剧本自动拆段用。
+   * 缺省时 `llm/models` 与 `episodes/split` 如实报错，界面降级为手动加段。
+   */
+  readonly llm?: LlmRuntime
 }
 
 /**
@@ -303,9 +328,9 @@ function skillLibraryFor(deps: WorkbenchRpcDeps): SkillLibrary {
 }
 
 export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHandler {
-  return async (endpoint, payload) => {
+  return async (endpoint, payload, signal) => {
     try {
-      const value = await answer(deps, endpoint, payload)
+      const value = await answer(deps, endpoint, payload, signal)
       return { ok: true, value }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -329,6 +354,7 @@ export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHan
  * @param deps - host facts.
  * @param endpoint - channel-relative endpoint.
  * @param payload - raw request payload.
+ * @param signal - caller cancellation, forwarded to model calls.
  * @returns the endpoint's value.
  */
 /** 探测缓存 TTL：同一实例 60 秒内不重复打服务商（刷新按钮显式绕开）。 */
@@ -359,7 +385,68 @@ async function liveCatalog(deps: WorkbenchRpcDeps, refresh: boolean): Promise<Mo
   return { probe, targets: compareCardsAgainstRegistry(modelCards(), probe) }
 }
 
-async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown): Promise<unknown> {
+/** 拆段请求的输出上限：一段 2–3 句提示词，40 段也远低于该预算。 */
+const SPLIT_MAX_TOKENS = 4096
+
+/**
+ * 调所选文本模型把剧本拆成分段，并逐段落库。
+ *
+ * 剧本优先取载荷里的 `script`（用户可能还没等自动保存），缺省才回到集记录。
+ * 新分段继承模块级选择：图片模型 / 视频模型 / 导演技能。
+ * @param deps - RPC 依赖（含文本模型服务）。
+ * @param payload - 载荷：episodeId / provider / model / script / 三类默认值。
+ * @param signal - 取消信号，透传给模型调用。
+ * @returns 新建立的分段与最新集记录。
+ * @throws {Error} 缺文本模型服务、剧本为空或超长、模型输出无法解析、落库失败时。
+ */
+async function splitEpisode(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<{ episode: EpisodeRecord, created: readonly SegmentRecord[] }> {
+  const llm = deps.llm
+  if (llm === undefined) throw new Error('当前宿主未提供文本模型服务，无法自动拆段')
+  const episodeId = text(payload, 'episodeId')
+  const provider = text(payload, 'provider')
+  const model = text(payload, 'model')
+  const episode = await deps.store.getEpisode(episodeId)
+  const supplied = optionalText(payload, 'script')
+  const input = buildSplitInput(supplied === undefined || supplied.trim() === '' ? episode.script.text : supplied)
+  const prepared = await llm.prepareCall({ provider, model, maxTokens: SPLIT_MAX_TOKENS }, signal)
+  const options: GenerateOptions = {
+    ...prepared.config,
+    messages: [createUserMessage({ content: [{ type: 'text', text: input }], source: { kind: 'user' } })],
+    system: SCRIPT_SPLIT_SYSTEM,
+    ...signal === undefined ? {} : { signal },
+  }
+  const assembler = new BlockAssembler()
+  for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+  const raw = assembler.blocks()
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+  const proposals = parseSplitProposals(raw)
+  const imageModel = optionalText(payload, 'imageModel')
+  const videoModel = optionalText(payload, 'videoModel')
+  const skillId = optionalText(payload, 'skillId')
+  const created: SegmentRecord[] = []
+  try {
+    for (const proposal of proposals) {
+      created.push(await deps.store.createSegment(episodeId, {
+        promptText: proposal.promptText,
+        ...proposal.durationSec === undefined ? {} : { durationSec: proposal.durationSec },
+        ...imageModel === undefined || imageModel === '' ? {} : { imageModel },
+        ...videoModel === undefined || videoModel === '' ? {} : { videoModel },
+        ...skillId === undefined || skillId === '' ? {} : { skillId },
+      }))
+    }
+  } catch (error) {
+    throw new Error(`已创建 ${created.length} 段后失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  return { episode: await deps.store.getEpisode(episodeId), created }
+}
+
+async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
   switch (endpoint) {
     case 'health': {
       const value: WorkbenchHealth = {
@@ -609,6 +696,28 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { removed: await deps.store.deleteSegment(text(payload, 'id')) }
     case 'segments/reorder':
       return { segments: await deps.store.reorderSegments(text(payload, 'episodeId'), stringArray(payload, 'order')) }
+    // 剧本自动拆段：交给所选文本模型按剧情/场景切分，并逐段落库。
+    case 'episodes/split':
+      return await splitEpisode(deps, payload, signal)
+    // 文本模型目录：剧本模块「模型」选择器的候选（宿主 ctx.llm，与图片/视频服务商无关）。
+    case 'llm/models': {
+      const llm = deps.llm
+      if (llm === undefined) throw new Error('当前宿主未提供文本模型服务')
+      const models: Array<{ provider: string; providerName: string; id: string; name: string }> = []
+      const failures: Array<{ provider: string; message: string }> = []
+      for (const provider of llm.listProviders()) {
+        try {
+          const listed = await llm.listModels(provider.id)
+          for (const entry of listed) {
+            models.push({ provider: provider.id, providerName: provider.name, id: entry.id, name: entry.name })
+          }
+        } catch (error) {
+          // 单个服务商的目录不可用不该拖垮其它服务商：如实记下原因，界面只列成功的那部分
+          failures.push({ provider: provider.id, message: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      return { models, failures }
+    }
     case 'storyboards/list':
       return { storyboards: await deps.store.listStoryboards(text(payload, 'episodeId')) }
     case 'storyboards/get':
@@ -1140,22 +1249,28 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         const value = await tool.execute(args, { signal: controller.signal })
         const outcome = extractOutcome(value)
         if (outcome.outputPath === undefined) throw new Error('生成工具没有返回产物路径')
+        const generatedPath = outcome.outputPath
+        // 命名规则：<剧集名>-E<集数>-<序号>；旧文件不改名，序号每集从 001 递增
+        const naming = tracked ? await resolveOutputNaming(deps.store, projectId as string, taskEpisodeId) : undefined
+        const outputPath = naming === undefined
+          ? generatedPath
+          : await renameGeneratedOutput(generatedPath, naming).catch(() => generatedPath)
         let asset: unknown
         if (tracked) {
           asset = (await deps.store.attachAsset({
-            projectId: projectId as string, path: outcome.outputPath, kind: mediaMode,
+            projectId: projectId as string, path: outputPath, kind: mediaMode,
             ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
             provider: deps.provider, prompt,
           })).asset
         }
         if (task !== undefined) {
           await deps.store.updateTask(task.id, {
-            status: 'succeeded', outputPath: outcome.outputPath,
+            status: 'succeeded', outputPath,
             ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
           })
         }
         return {
-          mediaMode, path: outcome.outputPath,
+          mediaMode, path: outputPath,
           ...outcome.bytes === undefined ? {} : { bytes: outcome.bytes },
           ...asset === undefined ? {} : { asset },
           ...task === undefined ? {} : { taskId: task.id },
@@ -1758,10 +1873,16 @@ export function registerWorkbenchRpc(ctx: Context, deps: WorkbenchRpcDeps): void
     // nothing to lift, so the channel simply never exists.
     if (connection === undefined) return () => {}
     try {
-      const workbench = createWorkbenchHandler(deps)
+      // 文本模型服务是可选的：宿主没装配 ctx.llm 时客户端会收到明确报错，手动加段照常可用。
+      const workbench = createWorkbenchHandler({ ...deps, llm: deps.llm ?? ctx.get('llm') })
       // 同一个通道按前缀分流：`auth/*` 走登录闭环 dispatcher，其余仍是工作台端点。
       // 共用一条通道让浏览器半边只持有一个 ConnectionHandle（凭证明文只在宿主内流转）。
-      const auth = createAuthRpcHandler(ctx)
+      // 长期配置（接口地址 / 最近服务商）落在工作台数据目录：重启后仍然有效，无过期。
+      // 测试或裸上下文里目录可能缺失，此时退化成进程内配置而不是让通道注册失败。
+      const directory = deps.store?.directory
+      const auth = createAuthRpcHandler(ctx, typeof directory === 'string' && directory !== ''
+        ? { settings: createAuthSettingsStore(join(directory, 'auth-settings.json')) }
+        : {})
       const remove = connection.rpc.handle(WORKBENCH_RPC_CHANNEL, async (endpoint, payload, signal, peer) =>
         endpoint.startsWith('auth/') ? auth(endpoint, payload) : workbench(endpoint, payload, signal, peer))
       status = { channel: WORKBENCH_RPC_CHANNEL, registered: true, awaiting: false }

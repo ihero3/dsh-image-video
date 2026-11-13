@@ -84,4 +84,97 @@ describe('connect dialog', () => {
     renderDialog(apiWith({ authHealth: async () => { throw new Error('no channel') } }))
     expect(await screen.findByText(new RegExp(authEn.hostUnavailable))).toBeTruthy()
   })
+
+  it('offers registration and the auto-provision hint when signed out', async () => {
+    renderDialog(apiWith({
+      authHealth: async () => ({
+        ready: true, credentials: true, signedIn: false, hasKey: false, provider: 'threevideo',
+        providerLabel: 'Threevideo',
+        providers: [{ id: 'threevideo', label: 'Threevideo', settable: true, testable: true }],
+        registerUrl: 'https://example.com/register',
+      }),
+    }))
+    const register = await screen.findByRole('link', { name: authEn.registerAccount })
+    expect(register.getAttribute('href')).toBe('https://example.com/register')
+    expect(screen.getByText(authEn.registerHint)).toBeTruthy()
+  })
+
+  it('lists provider names with their key status on separate lines', async () => {
+    renderDialog(apiWith({
+      authHealth: async () => ({
+        ready: true, credentials: true, signedIn: false, hasKey: true, provider: 'threevideo',
+        providerLabel: 'Threevideo', keyLast4: 'abcd',
+        providers: [
+          { id: 'threevideo', label: 'Threevideo', settable: true, testable: true },
+          { id: 'wanx', label: 'Wanx', settable: true, testable: true },
+          { id: 'minimax', label: 'MiniMax', settable: true, testable: false },
+        ],
+        providerStates: [
+          { id: 'threevideo', label: 'Threevideo', keyConfigured: true, last4: 'abcd', testable: true, verified: true, baseUrl: 'https://example.com/v1' },
+          { id: 'wanx', label: 'Wanx', keyConfigured: true, last4: 'wxyz', testable: true, baseUrl: 'https://example.com/wanx' },
+          { id: 'minimax', label: 'MiniMax', keyConfigured: false, testable: false, baseUrl: '' },
+        ],
+      }),
+    }))
+    fireEvent.click(await screen.findByRole('tab', { name: authEn.tabApiKey }))
+    expect((await screen.findAllByText('Threevideo')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('MiniMax').length).toBeGreaterThan(0)
+    // 已验证连通的服务商重开弹层仍然显示「连接正常」，并排在已配置项之前
+    expect(screen.getByText(authEn.statusReady)).toBeTruthy()
+    expect(screen.getByText(authEn.statusConfigured.replace('{last4}', 'wxyz'))).toBeTruthy()
+    expect(screen.getAllByText(authEn.statusMissing).length).toBeGreaterThan(0)
+  })
+
+  it('saves the editable local endpoint without requiring a key', async () => {
+    const authSetKey = vi.fn(async () => ({
+      success: true as const, provider: 'local' as const, keyLast4: '', configured: true as const,
+      baseUrl: 'http://192.168.1.5:8000/v1',
+    }))
+    renderDialog(apiWith({
+      authSetKey,
+      authHealth: async () => ({
+        ready: true, credentials: true, signedIn: false, hasKey: false, provider: 'threevideo',
+        providerLabel: 'Threevideo',
+        providers: [
+          { id: 'threevideo', label: 'Threevideo', settable: true, testable: true },
+          { id: 'local', label: 'Local model', settable: true, testable: true, endpointEditable: true },
+        ],
+        providerStates: [
+          { id: 'threevideo', label: 'Threevideo', keyConfigured: false, testable: true, baseUrl: 'https://example.com/v1' },
+          { id: 'local', label: 'Local model', keyConfigured: false, testable: true, baseUrl: 'http://127.0.0.1:11434/v1' },
+        ],
+        local: { baseUrl: 'http://127.0.0.1:11434/v1', defaultBaseUrl: 'http://127.0.0.1:11434/v1' },
+      }),
+    }))
+    fireEvent.click(await screen.findByRole('tab', { name: authEn.tabApiKey }))
+    fireEvent.change(await screen.findByLabelText(authEn.providerLabel), { target: { value: 'local' } })
+    const endpoint = await screen.findByLabelText(authEn.localEndpointLabel)
+    await waitFor(() => expect((endpoint as HTMLInputElement).value).toBe('http://127.0.0.1:11434/v1'))
+    fireEvent.change(endpoint, { target: { value: 'http://192.168.1.5:8000/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: authEn.saveSettings }))
+    expect(await screen.findByText(authEn.settingsSaved)).toBeTruthy()
+    expect(authSetKey).toHaveBeenCalledWith({
+      apiKey: '', provider: 'local', baseUrl: 'http://192.168.1.5:8000/v1',
+    })
+  })
+
+  it('renders the signed-in profile card with balance, settings and sign out', async () => {
+    renderDialog(apiWith({
+      authHealth: async () => ({
+        ready: true, credentials: true, signedIn: true, hasKey: true, provider: 'threevideo',
+        providerLabel: 'Threevideo', email: 'user@example.com', balance: 148.92, keyLast4: 'abcd',
+        providers: [{ id: 'threevideo', label: 'Threevideo', settable: true, testable: true }],
+        providerStates: [
+          { id: 'threevideo', label: 'Threevideo', keyConfigured: true, last4: 'abcd', testable: true, baseUrl: 'https://example.com/v1' },
+        ],
+      }),
+    }))
+    expect(await screen.findByText('user@example.com')).toBeTruthy()
+    expect(screen.getByText('$148.92')).toBeTruthy()
+    expect(screen.getByText(authEn.signedInNotice.replace('{provider}', 'Threevideo'))).toBeTruthy()
+    expect(screen.getByText(authEn.apiKeyReady)).toBeTruthy()
+    expect(screen.getByRole('button', { name: authEn.settingsAction })).toBeTruthy()
+    expect(screen.getByRole('button', { name: authEn.shareInvite })).toBeTruthy()
+    expect(screen.getByRole('button', { name: authEn.signOut })).toBeTruthy()
+  })
 })

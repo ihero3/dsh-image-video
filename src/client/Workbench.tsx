@@ -46,11 +46,12 @@ import type {
   EpisodeRecord, EpisodeRefCategory,
 } from '../workbench/episodes.ts'
 import type { SkillRecord } from '../workbench/skills.ts'
-import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, StoryboardShot, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, StoryboardShot, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
 import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
+import { useModernTheme } from './modern-theme.ts'
 import { useWorkbenchField } from './workbench-store.ts'
 import { isInteractiveTarget, toggleWindowFullscreen } from './window-fullscreen.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
@@ -415,6 +416,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   // 设计系统样式表：挂载时注入一次（幂等，与 xyflow 官方样式同一机制）。
   useWorkbenchStyle()
+  // 统一视觉主题层：纯增量覆盖，把所有面板的字体 / tab / 按钮 / 输入框对齐到连接弹层风格。
+  useModernTheme()
 
   // 注入面通过 ref 固定：座位可能每次渲染给出新实例，写进依赖数组会自我循环。
   const apiRef = useRef(api)
@@ -538,15 +541,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
   /**
-   * 模块级收起（用户 2026-11-05）：①② 两个模块都在标题行**最右**有一个"收起/展开"，
+   * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
    * 收起就把整块内容一起藏起来。
    */
-  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean }>({ pipeline: true, quick: true })
+  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; script: boolean }>({ pipeline: true, quick: true, script: true })
   // 展示列开合（宽档两栏 / 窄档浮层，见样式表容器查询）
   const [dockOpen, setDockOpen] = useWorkbenchField(api, 'dockOpen')
   // 展示列各块的收起态：高频块（预览）默认展开，低频块（资源/导出/任务）默认收起。
-  const [dockFolded, setDockFolded] = useState<{ resources: boolean, preview: boolean, exports: boolean, tasks: boolean }>({
-    resources: true, preview: false, exports: true, tasks: true,
+  const [dockFolded, setDockFolded] = useState<{ resources: boolean, preview: boolean, assets: boolean, skills: boolean, exports: boolean, tasks: boolean }>({
+    resources: true, preview: false, assets: false, skills: false, exports: true, tasks: true,
   })
   const toggleDockFold = (key: keyof typeof dockFolded): void => {
     setDockFolded(current => ({ ...current, [key]: !current[key] }))
@@ -555,7 +558,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [guideOpen, setGuideOpen] = useState(false)
   const [guideDismissed, setGuideDismissed] = useState(false)
   const [connectOpen, setConnectOpen] = useState(false)
-  const toggleModule = (key: 'pipeline' | 'quick'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
+  /** 顶栏登录状态：未查到/未登录都显示「登录三视」，登录后显示用户名（或邮箱）。 */
+  const [authLabel, setAuthLabel] = useState<{ signedIn: boolean, label?: string } | undefined>(undefined)
+
+  /** 拉一次登录状态；登录弹层关闭后再拉一次，让顶栏立刻换文案。 */
+  const loadAuthLabel = useCallback(async (): Promise<void> => {
+    try {
+      const health = await apiRef.current.authHealth()
+      setAuthLabel({ signedIn: health.signedIn, label: health.username ?? health.email })
+    } catch {
+      // 宿主没提供登录服务：保持「未登录」外观，点开弹层能看到具体原因
+      setAuthLabel({ signedIn: false })
+    }
+  }, [])
+
+  useEffect(() => { void loadAuthLabel() }, [loadAuthLabel])
+  const toggleModule = (key: 'pipeline' | 'quick' | 'script'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
   // `T9` 分镜 → 一键成片直通：把剧本「推」给 PipelineCard。
   // 用递增 seq 包一层，保证**同一段脚本连点两次也能再次触发**（value 变化才触发 effect）。
   const [pipelineInject, setPipelineInject] = useState<{ seq: number; script: string } | undefined>(undefined)
@@ -614,6 +632,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   useEffect(() => {
     void reloadDirectorSkills()
   }, [reloadDirectorSkills])
+
+  // 剧本模块：文本模型目录（拆段用）与三个"新分段默认值"（图像模型 / 视频模型 / 导演 Skill）。
+  // 目录按需拉一次；宿主没装配文本模型时接口会报错，这里只提示不阻断手动加段。
+  const [scriptModels, setScriptModels] = useState<readonly TextModelOption[]>([])
+  const [scriptTextModel, setScriptTextModel] = useState('')
+  const [scriptImageModel, setScriptImageModel] = useState('')
+  const [scriptVideoModel, setScriptVideoModel] = useState('')
+  const [scriptSkillId, setScriptSkillId] = useState('')
+  const scriptModelsLoaded = useRef(false)
+
+  useEffect(() => {
+    if (scriptModelsLoaded.current || quickTab !== 'produce') return
+    scriptModelsLoaded.current = true
+    void apiRef.current.listTextModels()
+      .then(catalog => { setScriptModels(catalog.models) })
+      .catch((error: unknown) => {
+        // 目录拉取失败（宿主未装配文本模型）不重试：手动加段照常可用，重试留给下次挂载
+        setNotice({
+          text: `${t('scriptModelsFailed')}：${error instanceof Error ? error.message : String(error)}`,
+          tone: 'error',
+        })
+      })
+  }, [quickTab, t])
+
+  /** 文本模型下拉值 `provider::id` → 拆段入参；未选时返回 undefined。 */
+  const scriptTextModelChoice = ((): { provider: string; model: string } | undefined => {
+    const separator = scriptTextModel.indexOf('::')
+    if (separator <= 0) return undefined
+    const provider = scriptTextModel.slice(0, separator)
+    const model = scriptTextModel.slice(separator + 2)
+    return model === '' ? undefined : { provider, model }
+  })()
 
   /**
    * 两个阻断式浮层的焦点管理（R6-3）：打开移入、Tab 循环、Esc 关闭、关闭后归还。
@@ -712,6 +762,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         mediaMode,
         prompt,
         projectId: activeId,
+        // 产物按「剧集名-E集数-序号」命名，因此要把当前选中的集带过去
+        ...activeEpisodeId === undefined ? {} : { episodeId: activeEpisodeId },
         // `F2`：1 张走单图字段（工具侧 image 优先于 images，别两个一起发）；
         // ≥2 张才发按序 `images`（首图=底图，其余=风格/脸部参考）。
         ...references.length === 0
@@ -1419,9 +1471,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   const selectedAsset = assets.find(asset => asset.id === selectedId)
   // 预览目标：已登记的素材优先，其次是"从任务行直接看产出"的临时目标
-  // `A152`：最新产物里尚未登记进当前项目的那些（按钮上直接显示数量）
-  const registeredPaths = new Set(assets.map(asset => asset.path))
-  const pendingOutputs = outputs.filter(output => !registeredPaths.has(output.path))
 
   // 本地产物体积：切项目/新增产物后重取（只读统计，失败静默——不影响素材列表）
   useEffect(() => {
@@ -2318,7 +2367,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         <div className="iv-brand">
           <BrandMark size={22} />
           <span className="iv-brand-text">
-            <span className="iv-brand-name">dsh-image-video</span>
+            <span className="iv-brand-name">{t('brandName')}</span>
             <span className="iv-brand-sub">{t('brandTagline')}</span>
           </span>
         </div>
@@ -2338,6 +2387,50 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
               </select>
             )}
+          {activeProject === undefined || renaming ? null : (
+            <button
+              type="button"
+              className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+              aria-label={t('rename')}
+              title={t('rename')}
+              onClick={() => { setRenaming(true); setRenameValue(activeProject.name); setSaveState('saved') }}
+            >
+              <Icon name="pencil" size={12} />
+            </button>
+          )}
+          {activeProject === undefined ? null : (
+            <>
+              <button
+                type="button"
+                className={`iv-btn iv-btn--icon iv-btn--sm${confirming === activeProject.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                aria-label={confirming === activeProject.id ? t('confirmRemove') : t('remove')}
+                title={confirming === activeProject.id ? t('confirmRemove') : t('remove')}
+                disabled={busy}
+                onClick={() => {
+                  if (confirming !== activeProject.id) { setConfirming(activeProject.id); return }
+                  void run(async () => {
+                    await apiRef.current.removeProject(activeProject.id)
+                    await loadProjects()
+                  })
+                }}
+              >
+                <Icon name={confirming === activeProject.id ? 'alert' : 'trash'} size={12} />
+              </button>
+              {confirming === activeProject.id
+                ? (
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                    aria-label={t('cancel')}
+                    title={t('cancel')}
+                    onClick={() => { setConfirming(undefined); setForceTarget(undefined) }}
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                )
+                : null}
+            </>
+          )}
           <span className="iv-newform">
             <input
               className="iv-input"
@@ -2398,8 +2491,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </button>
             )
             : null}
-          {activeId === undefined ? null : (
-            <span className="iv-episode" data-workbench-episode-picker="true">
+        </div>
+        {activeId === undefined ? null : (
+          <>
+            <span className="iv-top-sep" aria-hidden="true" />
+            <div className="iv-episode" data-workbench-episode-picker="true">
               <span className="iv-micro">{t('sectionEpisode')}</span>
               {episodes.length === 0
                 ? <span className="iv-meta">{t('episodeNone')}</span>
@@ -2415,16 +2511,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {episodes.map(episode => <option key={episode.id} value={episode.id}>{episode.title}</option>)}
                   </select>
                 )}
-              <button
-                type="button"
-                className="iv-btn iv-btn--ghost iv-btn--sm"
-                data-episode-create="true"
-                disabled={busy}
-                title={t('episodeNew')}
-                onClick={createEpisode}
-              >
-                <Icon name="plus" size={11} />{t('episodeNew')}
-              </button>
               {activeEpisode === undefined || episodeRenaming ? null : (
                 <button
                   type="button"
@@ -2438,21 +2524,46 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 </button>
               )}
               {activeEpisode === undefined ? null : (
-                <button
-                  type="button"
-                  className={`iv-btn iv-btn--icon iv-btn--sm${confirming === activeEpisode.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
-                  data-episode-remove="true"
-                  aria-label={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
-                  title={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
-                  disabled={busy}
-                  onClick={() => {
-                    if (confirming !== activeEpisode.id) { setConfirming(activeEpisode.id); setForceTarget(undefined); return }
-                    removeActiveEpisode(forceTarget === activeEpisode.id)
-                  }}
-                >
-                  <Icon name={confirming === activeEpisode.id ? 'alert' : 'trash'} size={12} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className={`iv-btn iv-btn--icon iv-btn--sm${confirming === activeEpisode.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
+                    data-episode-remove="true"
+                    aria-label={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
+                    title={confirming === activeEpisode.id ? t('confirmRemove') : t('episodeRemove')}
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirming !== activeEpisode.id) { setConfirming(activeEpisode.id); setForceTarget(undefined); return }
+                      removeActiveEpisode(forceTarget === activeEpisode.id)
+                    }}
+                  >
+                    <Icon name={confirming === activeEpisode.id ? 'alert' : 'trash'} size={12} />
+                  </button>
+                  {confirming === activeEpisode.id
+                    ? (
+                      <button
+                        type="button"
+                        className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                        aria-label={t('cancel')}
+                        title={t('cancel')}
+                        onClick={() => { setConfirming(undefined); setForceTarget(undefined) }}
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    )
+                    : null}
+                </>
               )}
+              <button
+                type="button"
+                className="iv-btn iv-btn--sm"
+                data-episode-create="true"
+                disabled={busy}
+                title={t('episodeNew')}
+                onClick={createEpisode}
+              >
+                <Icon name="plus" size={11} />{t('episodeNew')}
+              </button>
               {forceTarget === activeEpisodeId && activeEpisode !== undefined
                 ? (
                   <button
@@ -2466,9 +2577,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </button>
                 )
                 : null}
-            </span>
-          )}
-        </div>
+            </div>
+          </>
+        )}
+        <span className="iv-top-sep" aria-hidden="true" />
         <nav className="iv-modes" aria-label={t('tabTitle')}>
           {MODES.map(candidate => (
             <button
@@ -2485,17 +2597,46 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           ))}
         </nav>
 
+        <div className="iv-top-meta">
+          <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
+            <i className="iv-dot" aria-hidden="true" />
+            {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
+          </span>
+          <span
+            className={`iv-chip${health.status === 'ok' ? ' iv-chip--ok' : health.status === 'checking' ? '' : ' iv-chip--err'}`}
+            title={health.status === 'failed' ? health.message : undefined}
+          >
+            <i className="iv-dot" aria-hidden="true" />
+            {healthText}
+          </span>
+          <button
+            type="button"
+            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+            aria-label={t('refresh')}
+            title={t('refresh')}
+            disabled={busy}
+            onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
+          >
+            <Icon name="refresh" />
+          </button>
+        </div>
+
+        {/* 登录 / 帮助 / 工作台：吸附在最右侧，替换掉原「输出产物 / 素材 / 任务」三个统计块的位置。 */}
         <div className="iv-top-tools">
           <button
             type="button"
-            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${connectOpen ? ' iv-btn--on' : ''}`}
+            className={`iv-btn iv-btn--sm iv-btn--ghost${connectOpen ? ' iv-btn--on' : ''}`}
             aria-label={authT('dialogTitle')}
             aria-expanded={connectOpen}
             data-workbench-connect-toggle="true"
+            data-connect-signed-in={authLabel?.signedIn === true ? 'true' : 'false'}
             title={authT('dialogTitle')}
             onClick={() => { setConnectOpen(open => !open) }}
           >
-            <Icon name="link" />
+            <Icon name="link" size={12} />
+            {authLabel?.signedIn === true && authLabel.label !== undefined && authLabel.label !== ''
+              ? authLabel.label
+              : t('loginThreeView')}
           </button>
           <button
             type="button"
@@ -2510,20 +2651,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-            aria-label={t('railDefaults')}
-            title={t('railDefaults')}
-            onClick={() => {
-              if (defaultsDraft === undefined && defaultRows.length > 0) {
-                setDefaultsDraft(Object.fromEntries(defaultRows.map(row => [row.field, row.value])))
-              }
-              document.querySelector('[data-workbench-defaults]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-            }}
-          >
-            <Icon name="sliders" />
-          </button>
-          <button
-            type="button"
             className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
             aria-label={t('tabTitle')}
             aria-pressed={dockOpen}
@@ -2532,65 +2659,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             onClick={() => { setDockOpen(open => !open) }}
           >
             <Icon name="layers" />
-          </button>
-        </div>
-
-        <div className="iv-top-meta">
-          <span className="iv-top-stats" data-workbench-stats="true">
-            <span>{t('statOutputs')} <b>{outputs.length}</b></span>
-            <span>{t('statAssets')} <b>{assets.length}</b></span>
-            <span>{t('statTasks')} <b>{tasks.length}</b></span>
-          </span>
-          <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
-            <i className="iv-dot" aria-hidden="true" />
-            {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
-          </span>
-          <span
-            className={`iv-chip${health.status === 'ok' ? ' iv-chip--ok' : health.status === 'checking' ? '' : ' iv-chip--err'}`}
-            title={health.status === 'failed' ? health.message : undefined}
-          >
-            <i className="iv-dot" aria-hidden="true" />
-            {healthText}
-          </span>
-          {activeProject === undefined || renaming ? null : (
-            <button
-              type="button"
-              className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-              aria-label={t('rename')}
-              title={t('rename')}
-              onClick={() => { setRenaming(true); setRenameValue(activeProject.name); setSaveState('saved') }}
-            >
-              <Icon name="pencil" />
-            </button>
-          )}
-          {activeProject === undefined ? null : (
-            <button
-              type="button"
-              className={`iv-btn iv-btn--icon iv-btn--sm${confirming === activeProject.id ? ' iv-btn--danger' : ' iv-btn--ghost'}`}
-              aria-label={confirming === activeProject.id ? t('confirmRemove') : t('remove')}
-              title={confirming === activeProject.id ? t('confirmRemove') : t('remove')}
-              disabled={busy}
-              onClick={() => {
-                if (confirming !== activeProject.id) { setConfirming(activeProject.id); return }
-                setConfirming(undefined)
-                void run(async () => {
-                  await apiRef.current.removeProject(activeProject.id)
-                  await loadProjects()
-                })
-              }}
-            >
-              <Icon name={confirming === activeProject.id ? 'alert' : 'trash'} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-            aria-label={t('refresh')}
-            title={t('refresh')}
-            disabled={busy}
-            onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
-          >
-            <Icon name="refresh" />
           </button>
         </div>
       </header>
@@ -2864,26 +2932,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </div>
                   {quickTab === 'produce'
                     ? (<>
-                  {activeProject === undefined || activeEpisode === undefined
-                    ? null
-                    : (
-                      <EpisodeWorkspace
-                        api={apiRef.current}
-                        t={t}
-                        projectId={activeProject.id}
-                        episode={activeEpisode}
-                        resources={resources}
-                        assets={assets}
-                        options={options}
-                        skills={directorSkills}
-                        onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
-                        onMediaGenerated={async () => {
-                          setAssets(await apiRef.current.listAssets())
-                          await loadTasks()
-                        }}
-                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                      />
-                    )}
                   <div className="iv-modules" data-quick-modules="true">
                   {/* 模块 1：剧本成片（一键成片）——"一段剧本，自动拆成分镜并出图出片" */}
                   <section className="iv-module" data-module="pipeline">
@@ -3726,6 +3774,102 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </details>
                     </div>
                   </section>
+
+                  {/* 模块 3：剧本与分段——与模块 ①② 并列的第三块，同样可收起/展开。
+                      模型与 Skill 在这里选，新分段继承；拆段由宿主调文本模型完成。 */}
+                  <section className="iv-module" data-module="script">
+                    <button
+                      type="button"
+                      className="iv-module-head"
+                      data-module-toggle="script"
+                      aria-expanded={openModules.script}
+                      aria-label={`${openModules.script ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleScript')}`}
+                      onClick={() => { toggleModule('script') }}
+                    >
+                      <span className="iv-module-n">3</span>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="script">{t('moduleScript')}</span>
+                        <span className="iv-meta">{t('moduleScriptDesc')}</span>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.script ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
+                    </button>
+                    <div className="iv-module-body" data-module-body="script" hidden={!openModules.script}>
+                      {activeProject === undefined || activeEpisode === undefined
+                        ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
+                        : (
+                          <>
+                            <div className="iv-sb-row" data-script-selectors="true">
+                              <label className="iv-sb-field">
+                                <span className="iv-meta">{t('scriptTextModel')}</span>
+                                <select
+                                  className="iv-select iv-select--sm"
+                                  aria-label={t('scriptTextModel')}
+                                  data-script-text-model="true"
+                                  value={scriptTextModel}
+                                  onChange={event => { setScriptTextModel(event.target.value) }}
+                                >
+                                  <option value="">{t('scriptTextModelEmpty')}</option>
+                                  {scriptModels.map(model => (
+                                    <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                                      {model.providerName} · {model.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="iv-sb-field">
+                                <span className="iv-meta">{t('scriptImageModel')}</span>
+                                <ModelPicker
+                                  api={apiRef.current} t={t} mediaMode="image"
+                                  value={scriptImageModel} onChange={setScriptImageModel}
+                                />
+                              </label>
+                              <label className="iv-sb-field">
+                                <span className="iv-meta">{t('scriptVideoModel')}</span>
+                                <ModelPicker
+                                  api={apiRef.current} t={t} mediaMode="video"
+                                  value={scriptVideoModel} onChange={setScriptVideoModel}
+                                />
+                              </label>
+                              <label className="iv-sb-field">
+                                <span className="iv-meta">{t('scriptDirectorSkill')}</span>
+                                <select
+                                  className="iv-select iv-select--sm"
+                                  aria-label={t('scriptDirectorSkill')}
+                                  data-script-skill="true"
+                                  value={scriptSkillId}
+                                  onChange={event => { setScriptSkillId(event.target.value) }}
+                                >
+                                  <option value="">{t('scriptFollowDefault')}</option>
+                                  {directorSkills.map(skill => (
+                                    <option key={skill.id} value={skill.id}>{skill.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+                            <EpisodeWorkspace
+                              api={apiRef.current}
+                              t={t}
+                              projectId={activeProject.id}
+                              episode={activeEpisode}
+                              resources={resources}
+                              assets={assets}
+                              options={options}
+                              skills={directorSkills}
+                              textModel={scriptTextModelChoice}
+                              defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
+                              onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
+                              onMediaGenerated={async () => {
+                                setAssets(await apiRef.current.listAssets())
+                                await loadTasks()
+                              }}
+                              onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                            />
+                          </>
+                        )}
+                    </div>
+                  </section>
                   </div>
                     </>)
                     : (
@@ -3743,17 +3887,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         }}
                       />
                     )}
-                  </PaneBoundary>
-                </section>
-                {/* 技能管理页：导演库 / 逆向库分开管理，内置只读可禁用 */}
-                <section className="iv-pane" data-workbench-pane="paneSkills">
-                  <PaneBoundary label={t('skillsPaneTitle')} t={t}>
-                    <SkillLibraryPanel
-                      api={apiRef.current}
-                      t={t}
-                      onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                      onSkillsChanged={reloadDirectorSkills}
-                    />
                   </PaneBoundary>
                 </section>
                 </>
@@ -4490,12 +4623,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <span className="iv-dock-title">{t('dockTitle')}</span>
             <Icon name="chevron" size={12} />
           </button>
-          {/* 5 个用户面板：顺序见 data-dock-order / 样式表 */}
+          {/* 用户面板：顺序见 data-dock-order / 样式表 */}
           <div className="iv-dock">
             {/* B-11 素材库体检 pane：运维用途（体积排行/去重/项目统计），对创作没有价值 → 默认不展示 */}
             {showMaintenancePanes
               ? (
-              <section className="iv-pane" data-workbench-pane="paneHealth" data-dock-order="6" data-workbench-planned="false">
+              <section className="iv-pane" data-workbench-pane="paneHealth" data-dock-order="7" data-workbench-planned="false">
               <PaneBoundary label={t('paneHealth')} t={t}>
                 <div className="iv-pane-head">
                   <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
@@ -4515,13 +4648,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <section
               className={`iv-pane iv-pane--quiet${dockFolded.exports ? ' iv-pane--folded' : ''}`}
               data-workbench-pane="paneExports"
-              data-dock-order="4"
+              data-dock-order="5"
               data-workbench-planned="false"
             >
               <PaneBoundary label={t('paneExports')} t={t}>
                 <div className="iv-pane-head">
-                  <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
-                  <h3 className="iv-pane-title">{t('paneExports')}</h3>
+                  <h3 className="iv-pane-title">
+                    <button
+                      type="button"
+                      className="iv-pane-toggle"
+                      data-pane-toggle="exports"
+                      aria-expanded={!dockFolded.exports}
+                      onClick={() => { toggleDockFold('exports') }}
+                    >
+                      <span className="iv-pane-tile"><Icon name="download" size={13} /></span>
+                      {t('paneExports')}
+                    </button>
+                  </h3>
                   <div className="iv-pane-actions">
                     <button
                       type="button"
@@ -4554,45 +4697,69 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
-            <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneAssets" data-dock-order="3" data-workbench-planned="false">
+            <section className={`iv-pane iv-pane--quiet${dockFolded.assets ? ' iv-pane--folded' : ''}`} data-workbench-pane="paneAssets" data-dock-order="3" data-workbench-planned="false">
               <PaneBoundary label={t('paneAssets')} t={t}>
               <div className="iv-pane-head">
-                <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
-                <h3 className="iv-pane-title">{t('paneAssets')}</h3>
+                <h3 className="iv-pane-title">
+                  <button
+                    type="button"
+                    className="iv-pane-toggle"
+                    data-pane-toggle="assets"
+                    aria-expanded={!dockFolded.assets}
+                    onClick={() => { toggleDockFold('assets') }}
+                  >
+                    <span className="iv-pane-tile"><Icon name="layers" size={13} /></span>
+                    {t('paneAssets')}
+                  </button>
+                </h3>
                 <div className="iv-pane-actions">
-                  <select
-                    className="iv-select"
-                    aria-label={t('filterAll')}
-                    value={assetFilter}
-                    onChange={event => { setAssetFilter(event.target.value as 'all' | 'image' | 'video') }}
+                  <button
+                    type="button"
+                    className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                    data-dock-fold="assets"
+                    aria-expanded={!dockFolded.assets}
+                    aria-label={dockFolded.assets ? t('moduleExpand') : t('moduleCollapse')}
+                    title={dockFolded.assets ? t('moduleExpand') : t('moduleCollapse')}
+                    onClick={() => { toggleDockFold('assets') }}
                   >
-                    <option value="all">{t('filterAll')}</option>
-                    <option value="image">{t('filterImage')}</option>
-                    <option value="video">{t('filterVideo')}</option>
-                  </select>
-                  {/* `T6` 搜索：匹配文件名/提示词/模型名 */}
-                  <input
-                    className="iv-input iv-asset-search"
-                    type="search"
-                    placeholder={t('assetSearchPlaceholder')}
-                    aria-label={t('assetSearchPlaceholder')}
-                    data-asset-search="true"
-                    value={assetQuery}
-                    onChange={event => { setAssetQuery(event.target.value) }}
-                  />
-                  <select
-                    className="iv-select"
-                    aria-label={t('assetSortLabel')}
-                    data-asset-sort="true"
-                    value={assetSort}
-                    onChange={event => { setAssetSort(event.target.value as typeof assetSort) }}
-                  >
-                    <option value="newest">{t('assetSortNewest')}</option>
-                    <option value="oldest">{t('assetSortOldest')}</option>
-                    <option value="largest">{t('assetSortLargest')}</option>
-                    <option value="name">{t('assetSortName')}</option>
-                  </select>
+                    <Icon name="chevron" size={12} />
+                  </button>
                 </div>
+              </div>
+              {/* 筛选/搜索/排序放在表头下方：标题行只留图标、名称和折叠箭头，和相邻面板对齐 */}
+              <div className="iv-toolbar iv-asset-controls">
+                <select
+                  className="iv-select"
+                  aria-label={t('filterAll')}
+                  value={assetFilter}
+                  onChange={event => { setAssetFilter(event.target.value as 'all' | 'image' | 'video') }}
+                >
+                  <option value="all">{t('filterAll')}</option>
+                  <option value="image">{t('filterImage')}</option>
+                  <option value="video">{t('filterVideo')}</option>
+                </select>
+                {/* `T6` 搜索：匹配文件名/提示词/模型名 */}
+                <input
+                  className="iv-input iv-asset-search"
+                  type="search"
+                  placeholder={t('assetSearchPlaceholder')}
+                  aria-label={t('assetSearchPlaceholder')}
+                  data-asset-search="true"
+                  value={assetQuery}
+                  onChange={event => { setAssetQuery(event.target.value) }}
+                />
+                <select
+                  className="iv-select"
+                  aria-label={t('assetSortLabel')}
+                  data-asset-sort="true"
+                  value={assetSort}
+                  onChange={event => { setAssetSort(event.target.value as typeof assetSort) }}
+                >
+                  <option value="newest">{t('assetSortNewest')}</option>
+                  <option value="oldest">{t('assetSortOldest')}</option>
+                  <option value="largest">{t('assetSortLargest')}</option>
+                  <option value="name">{t('assetSortName')}</option>
+                </select>
               </div>
               <div className="iv-storage" data-asset-storage="true">
                 <span className="iv-meta">
@@ -4622,55 +4789,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <button
                   type="button"
                   className="iv-btn iv-btn--sm"
-                  disabled={busy || activeProject === undefined || outputs.length === 0}
+                  data-asset-refresh="true"
+                  disabled={busy || activeProject === undefined}
                   onClick={() => {
                     void run(async () => {
                       const project = activeProject
                       if (project === undefined) return
+                      // 刷新 = 重扫 outputs 目录 + 登记全部未登记产物 + 合并重复记录：
+                      // 一次让目录里现有的文件全部出现在素材列表，不再分三个按钮各做一半
+                      const scanned = await apiRef.current.listOutputs()
+                      setOutputs(scanned)
                       const known = new Set(assets.map(asset => asset.path))
-                      const candidate = outputs.find(output => !known.has(output.path))
-                      if (candidate === undefined) {
-                        // 目录里全登记过了 vs 目录里根本没有产物，是两件事（都是信息，不是失败）
-                        setNotice({
-                          text: assets.length === 0 ? t('noOutputs') : t('alreadyRegistered'),
-                          tone: 'info',
-                        })
-                        return
-                      }
-                      const attached = await apiRef.current.attachAsset({
-                        projectId: project.id, path: candidate.path, kind: candidate.kind, bytes: candidate.bytes,
-                      })
-                      if (!attached.created) setNotice({ text: t('alreadyRegistered'), tone: 'info' })
+                      const pending = scanned.filter(output => !known.has(output.path))
+                      const created = pending.length === 0
+                        ? 0
+                        : (await apiRef.current.attachAssets({
+                          projectId: project.id,
+                          items: pending.map(output => ({ path: output.path, kind: output.kind, bytes: output.bytes })),
+                        })).created
+                      const removed = await apiRef.current.compactAssets()
                       setAssets(await apiRef.current.listAssets(project.id))
+                      setNotice({
+                        text: t('refreshAssetsDone')
+                          .replace('{created}', String(created))
+                          .replace('{removed}', String(removed)),
+                        tone: 'info',
+                      })
                     })
                   }}
                 >
-                  <Icon name="plus" />{t('registerLatest')}
-                </button>
-                <button
-                  type="button"
-                  className="iv-btn iv-btn--sm"
-                  disabled={busy || activeProject === undefined || pendingOutputs.length === 0}
-                  title={t('attachAll')}
-                  onClick={() => {
-                    void run(async () => {
-                      const project = activeProject
-                      if (project === undefined) return
-                      if (pendingOutputs.length === 0) {
-                        setNotice({ text: t('alreadyRegistered'), tone: 'info' })
-                        return
-                      }
-                      // `A152`：一次登记全部未登记产物（不再"点一次登记一个"、也不必猜下一个是谁）
-                      const result = await apiRef.current.attachAssets({
-                        projectId: project.id,
-                        items: pendingOutputs.map(output => ({ path: output.path, kind: output.kind, bytes: output.bytes })),
-                      })
-                      setAssets(await apiRef.current.listAssets(project.id))
-                      setNotice({ text: `${t('attachAllDone')}：${result.created}`, tone: 'info' })
-                    })
-                  }}
-                >
-                  <Icon name="plus" />{`${t('attachAll')} (${pendingOutputs.length})`}
+                  <Icon name="refresh" />{t('refresh')}
                 </button>
                 <label className="iv-btn iv-btn--sm" style={{ cursor: 'pointer' }} title={t('importFiles')}>
                   <Icon name="plus" />{t('importFiles')}
@@ -4681,9 +4829,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     style={{ display: 'none' }}
                     onChange={event => {
                       const files = [...(event.target.files ?? [])] as Array<File & { path?: string }>
+                      // Electron 32+ 的 File 上没有 path，桌面壳把真实路径放在 __DSH_HOST_PATHS__ 里
+                      const bridge = (globalThis as { __DSH_HOST_PATHS__?: { pathFor(file: File): string } }).__DSH_HOST_PATHS__
                       const paths = files
-                        .map(file => file.path)
-                        .filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+                        .map(file => bridge?.pathFor(file) ?? file.path ?? '')
+                        .filter(entry => entry !== '')
                       event.target.value = ''
                       if (paths.length === 0) {
                         setNotice({ text: t('importUnsupported'), tone: 'error' })
@@ -4692,8 +4842,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       void run(async () => {
                         const project = activeProject
                         if (project === undefined) return
+                        // 宿主把文件复制进 outputs 目录并登记成素材，返回后本地列表立刻刷新
                         const result = await apiRef.current.importMedia({ projectId: project.id, paths })
                         setAssets(await apiRef.current.listAssets(project.id))
+                        setOutputs(await apiRef.current.listOutputs())
                         setNotice({
                           text: `${t('importDone')}：${result.imported}${result.skipped.length > 0 ? ` · ${t('skippedCount')} ${result.skipped.length}` : ''}`,
                           tone: 'info',
@@ -4702,24 +4854,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     }}
                   />
                 </label>
-                <button
-                  type="button"
-                  className="iv-btn iv-btn--sm"
-                  disabled={busy || activeProject === undefined}
-                  aria-label={t('compactAssets')}
-                  title={t('compactAssets')}
-                  onClick={() => {
-                    void run(async () => {
-                      const project = activeProject
-                      if (project === undefined) return
-                      const removed = await apiRef.current.compactAssets()
-                      setAssets(await apiRef.current.listAssets(project.id))
-                      setNotice({ text: `${t('compacted')} · ${removed}`, tone: 'info' })
-                    })
-                  }}
-                >
-                  <Icon name="copy" />{t('compactAssets')}
-                </button>
               </div>
               {/* `B-7` 批量操作条：有选中才出现；删除走 assets/remove-many，引用走 F2 参考图列表 */}
               {selectedAssets.length === 0
@@ -4798,17 +4932,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           onChange={() => { toggleAssetSelection(asset.id) }}
                         />
                       </label>
-                      {asset.kind === 'image'
-                        ? (
-                          <img
-                            className="iv-thumb"
-                            src={`/outputs/${encodeURIComponent(baseName(asset.path))}`}
-                            alt=""
-                          />
-                        )
-                        : (
-                          <span className="iv-tile iv-tile--video"><Icon name="video" size={13} /></span>
-                        )}
+                      {/* 图片与视频统一用 72×48 缩略图：视频没有封面文件，取首帧（#t=0.1 让浏览器先画一帧） */}
+                      <span className="iv-asset-thumb">
+                        {asset.kind === 'image'
+                          ? <img src={`/outputs/${encodeURIComponent(baseName(asset.path))}`} alt="" loading="lazy" />
+                          : (
+                            <video
+                              src={`/outputs/${encodeURIComponent(baseName(asset.path))}#t=0.1`}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              aria-hidden="true"
+                            />
+                          )}
+                        {asset.kind === 'video'
+                          ? <span className="iv-asset-thumb-badge"><Icon name="play" size={12} /></span>
+                          : null}
+                      </span>
                       <button
                         type="button"
                         className="iv-row-btn"
@@ -4908,6 +5048,50 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               </PaneBoundary>
             </section>
 
+            {/* 技能库：与素材库同级的整体模块，紧跟在媒体素材下面（导演库 / 逆向库，内置只读可禁用） */}
+            <section
+              className={`iv-pane iv-pane--quiet${dockFolded.skills ? ' iv-pane--folded' : ''}`}
+              data-workbench-pane="paneSkills"
+              data-dock-order="4"
+              data-workbench-planned="false"
+            >
+              <PaneBoundary label={t('skillsPaneTitle')} t={t}>
+                <div className="iv-pane-head">
+                  <h3 className="iv-pane-title">
+                    <button
+                      type="button"
+                      className="iv-pane-toggle"
+                      data-pane-toggle="skills"
+                      aria-expanded={!dockFolded.skills}
+                      onClick={() => { toggleDockFold('skills') }}
+                    >
+                      <span className="iv-pane-tile"><Icon name="sparkles" size={13} /></span>
+                      {t('skillsPaneTitle')}
+                    </button>
+                  </h3>
+                  <div className="iv-pane-actions">
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
+                      data-dock-fold="skills"
+                      aria-expanded={!dockFolded.skills}
+                      aria-label={dockFolded.skills ? t('moduleExpand') : t('moduleCollapse')}
+                      title={dockFolded.skills ? t('moduleExpand') : t('moduleCollapse')}
+                      onClick={() => { toggleDockFold('skills') }}
+                    >
+                      <Icon name="chevron" size={12} />
+                    </button>
+                  </div>
+                </div>
+                <SkillLibraryPanel
+                  api={apiRef.current}
+                  t={t}
+                  onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                  onSkillsChanged={reloadDirectorSkills}
+                />
+              </PaneBoundary>
+            </section>
+
             <section
               className={`iv-pane${dockFolded.preview ? ' iv-pane--folded' : ''}`}
               data-workbench-pane="panePreview"
@@ -4916,8 +5100,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             >
               <PaneBoundary label={t('panePreview')} t={t}>
               <div className="iv-pane-head">
-                <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
-                <h3 className="iv-pane-title">{t('panePreview')}</h3>
+                <h3 className="iv-pane-title">
+                  <button
+                    type="button"
+                    className="iv-pane-toggle"
+                    data-pane-toggle="preview"
+                    aria-expanded={!dockFolded.preview}
+                    onClick={() => { toggleDockFold('preview') }}
+                  >
+                    <span className="iv-pane-tile"><Icon name="eye" size={13} /></span>
+                    {t('panePreview')}
+                  </button>
+                </h3>
                 <div className="iv-pane-actions">
                   <button
                     type="button"
@@ -5028,8 +5222,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             >
               <PaneBoundary label={resourcePaneTitle} t={t}>
               <div className="iv-pane-head">
-                <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
-                <h3 className="iv-pane-title" data-resource-pane-title="true">{resourcePaneTitle}</h3>
+                <h3 className="iv-pane-title" data-resource-pane-title="true">
+                  <button
+                    type="button"
+                    className="iv-pane-toggle"
+                    data-pane-toggle="resources"
+                    aria-expanded={!dockFolded.resources}
+                    onClick={() => { toggleDockFold('resources') }}
+                  >
+                    <span className="iv-pane-tile"><Icon name="tag" size={13} /></span>
+                    {resourcePaneTitle}
+                  </button>
+                </h3>
                 <div className="iv-pane-actions">
                   <input
                     className="iv-input"
@@ -5675,13 +5879,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <section
               className={`iv-pane iv-pane--quiet${dockFolded.tasks ? ' iv-pane--folded' : ''}`}
               data-workbench-pane="paneTasks"
-              data-dock-order="5"
+              data-dock-order="6"
               data-workbench-planned="false"
             >
               <PaneBoundary label={t('paneTasks')} t={t}>
               <div className="iv-pane-head">
-                <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
-                <h3 className="iv-pane-title">{t('paneTasks')}</h3>
+                <h3 className="iv-pane-title">
+                  <button
+                    type="button"
+                    className="iv-pane-toggle"
+                    data-pane-toggle="tasks"
+                    aria-expanded={!dockFolded.tasks}
+                    onClick={() => { toggleDockFold('tasks') }}
+                  >
+                    <span className="iv-pane-tile"><Icon name="clock" size={13} /></span>
+                    {t('paneTasks')}
+                  </button>
+                </h3>
                 <div className="iv-pane-actions">
                   <button
                     type="button"
@@ -5741,7 +5955,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {/* 诊断 pane：运维用途（输出占用/渲染队列/近期错误），对创作没有价值 → 默认不展示 */}
             {showMaintenancePanes
               ? (
-              <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneDiagnostics" data-dock-order="7" data-workbench-planned="false">
+              <section className="iv-pane iv-pane--quiet" data-workbench-pane="paneDiagnostics" data-dock-order="8" data-workbench-planned="false">
               <PaneBoundary label={t('paneDiagnostics')} t={t}>
               <div className="iv-pane-head">
                 <span className="iv-pane-tile"><Icon name="sliders" size={13} /></span>
@@ -5842,7 +6056,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         : null}
 
       {/* ============ 连接弹层（账号登录 / 自带 Key，auth/* 端点）============ */}
-      {connectOpen ? <ConnectDialog api={api} t={authT} onClose={() => { setConnectOpen(false) }} /> : null}
+      {connectOpen ? <ConnectDialog api={api} t={authT} onClose={() => { setConnectOpen(false); void loadAuthLabel() }} /> : null}
 
       {/* ============ B-17 帮助浮层（快捷键 + 模式说明）============ */}
       {helpOpen

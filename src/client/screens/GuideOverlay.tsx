@@ -22,6 +22,7 @@
 import { useId, useRef, useState, type MouseEvent } from 'react'
 import { useDialogFocus } from '../use-dialog-focus.ts'
 import { useGuideStyle } from './guide-style.ts'
+import { useModernTheme } from '../modern-theme.ts'
 import type { GuideLocaleKey } from './guide-locales.ts'
 
 /** ffmpeg 探测结果（`undefined` = 还没探测完）。 */
@@ -78,6 +79,8 @@ export function GuideOverlay({
   onDismiss,
 }: GuideOverlayProps) {
   useGuideStyle()
+  // 统一视觉主题层：引导层单独挂载时也能拿到弹框风格的字体 / 按钮 / 输入框。
+  useModernTheme()
 
   const panelRef = useRef<HTMLDivElement>(null)
   // 组件出现即打开；关闭由外层卸载（不在这里维护 open 状态，避免两份真值）。

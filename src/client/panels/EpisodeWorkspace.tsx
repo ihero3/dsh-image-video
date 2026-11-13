@@ -32,6 +32,14 @@ export interface EpisodeWorkspaceProps {
   readonly options: WorkbenchOptions | undefined
   /** 导演库里启用中的技能（分段的 Skill 选择器）。 */
   readonly skills: readonly SkillRecord[]
+  /** 模块级选中的文本模型（自动拆段用）；`undefined` 表示宿主没有可用模型。 */
+  readonly textModel: { readonly provider: string; readonly model: string } | undefined
+  /** 新分段继承的默认值（模块级的图像模型 / 视频模型 / 导演 Skill）。 */
+  readonly defaults: {
+    readonly imageModel?: string
+    readonly videoModel?: string
+    readonly skillId?: string
+  }
   /** 集记录在宿主侧变化后刷新（剧本、分段、分镜都走这里）。 */
   readonly onEpisodeChanged: () => Promise<void>
   /** 生成了新素材 / 新任务后刷新素材库与任务列表。 */
@@ -142,7 +150,7 @@ function refChips(
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, options, skills, onEpisodeChanged, onMediaGenerated, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, options, skills, textModel, defaults, onEpisodeChanged, onMediaGenerated, onNotice } = props
 
   const [scriptDraft, setScriptDraft] = useState(episode.script.text)
   const [scriptSavedText, setScriptSavedText] = useState(episode.script.text)
@@ -150,6 +158,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   const [segments, setSegments] = useState<readonly SegmentRecord[]>(episode.segments)
   const [storyboards, setStoryboards] = useState<readonly StoryboardRecord[]>(episode.storyboards)
   const [busy, setBusy] = useState(false)
+  /** 自动拆段进行中：与单段保存互斥，避免模型跑着时用户又新建分段。 */
+  const [splitting, setSplitting] = useState(false)
   const [planningId, setPlanningId] = useState<string | undefined>(undefined)
   const [generatingShotId, setGeneratingShotId] = useState<string | undefined>(undefined)
   /** 宿主最后确认过的分段；脚本/分段被父级刷新时用来避免覆盖正在输入的内容。 */
@@ -243,16 +253,57 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     }
   }
 
+  /** 新分段继承的模块级选择；空串表示"不指定"，交给宿主默认值。 */
+  const inherited = (): { imageModel?: string; videoModel?: string; skillId?: string } => ({
+    ...defaults.imageModel === undefined || defaults.imageModel === '' ? {} : { imageModel: defaults.imageModel },
+    ...defaults.videoModel === undefined || defaults.videoModel === '' ? {} : { videoModel: defaults.videoModel },
+    ...defaults.skillId === undefined || defaults.skillId === '' ? {} : { skillId: defaults.skillId },
+  })
+
   /** 新建分段：追加到集末尾，并默认选中它。 */
   const addSegment = async (): Promise<void> => {
     setBusy(true)
     try {
-      await api.createSegment(episode.id, {})
+      await api.createSegment(episode.id, inherited())
       await onEpisodeChanged()
     } catch (error) {
       onNotice(`${t('segmentAddFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * 自动拆段：把当前剧本（含未保存的输入）交给所选文本模型，按剧情拆成若干分段。
+   *
+   * 拆段与落库都在宿主侧一次完成；失败时已新建的分段仍然存在，因此先尽力刷新再报错。
+   */
+  const autoSplit = async (): Promise<void> => {
+    if (textModel === undefined) {
+      onNotice(t('scriptSplitNeedsModel'), 'error')
+      return
+    }
+    if (scriptDraft.trim() === '') {
+      onNotice(t('scriptSplitNeedsScript'), 'error')
+      return
+    }
+    setSplitting(true)
+    try {
+      const result = await api.splitEpisode({
+        episodeId: episode.id,
+        provider: textModel.provider,
+        model: textModel.model,
+        script: scriptDraft,
+        ...inherited(),
+      })
+      await onEpisodeChanged()
+      onNotice(t('scriptSplitDone').replace('{n}', String(result.created.length)), 'info')
+    } catch (error) {
+      // 拆段可能已经落了部分分段：刷新让界面与宿主一致，刷新自身失败不覆盖原始错误
+      await onEpisodeChanged().catch(() => { /* 下一次轮询会补上 */ })
+      onNotice(`${t('scriptSplitFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+    } finally {
+      setSplitting(false)
     }
   }
 
@@ -861,15 +912,27 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
       </label>
       <div className="iv-sb-head">
         <span className="iv-micro">{t('segmentTitle')}</span>
-        <button
-          type="button"
-          className="iv-btn iv-btn--ghost iv-btn--sm"
-          data-segment-add="true"
-          disabled={busy}
-          onClick={() => { void addSegment() }}
-        >
-          <Icon name="plus" size={11} />{t('segmentAdd')}
-        </button>
+        <span className="iv-sb-count">
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-segment-auto="true"
+            disabled={busy || splitting || textModel === undefined || scriptDraft.trim() === ''}
+            title={textModel === undefined ? t('scriptSplitNeedsModel') : t('scriptSplitHint')}
+            onClick={() => { void autoSplit() }}
+          >
+            <Icon name="sparkles" size={11} />{splitting ? t('scriptSplitting') : t('scriptSplit')}
+          </button>
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-segment-add="true"
+            disabled={busy || splitting}
+            onClick={() => { void addSegment() }}
+          >
+            <Icon name="plus" size={11} />{t('segmentAdd')}
+          </button>
+        </span>
       </div>
       <div className="iv-row" data-episode-actions="true">
         <button

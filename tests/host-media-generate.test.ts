@@ -3,7 +3,7 @@
  *
  * 用假生成工具断言契约，**不调用真实生成**（不花钱）。
  */
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -73,6 +73,39 @@ describe('media/generate (A145)', () => {
     const done = tasks.tasks.find(task => task.status === 'succeeded' && task.outputPath === result.path)
     expect(done?.kind).toBe('image')
     void store
+  })
+
+  it('names generated files after the series and episode, numbering per episode', async () => {
+    let count = 0
+    const { ok, store, outputsDir, project } = await harness({
+      image: {
+        async execute() {
+          count += 1
+          const localPath = join(outputsDir, `1792171131781-0${count}.png`)
+          await writeFile(localPath, 'x')
+          return { localPath, bytes: 1 }
+        },
+      },
+    })
+    // 旧的时间戳命名文件保持原样，也不参与新序号计数
+    await writeFile(join(outputsDir, '1792171131781-legacy.png'), 'x')
+    const episode = await store.createEpisode(project.id, { no: 3 })
+    const otherEpisode = await store.createEpisode(project.id, { no: 4 })
+
+    const first = await ok<{ path: string }>('media/generate', {
+      mediaMode: 'image', prompt: 'a', projectId: project.id, episodeId: episode.id,
+    })
+    const second = await ok<{ path: string }>('media/generate', {
+      mediaMode: 'image', prompt: 'b', projectId: project.id, episodeId: episode.id,
+    })
+    const other = await ok<{ path: string }>('media/generate', {
+      mediaMode: 'image', prompt: 'c', projectId: project.id, episodeId: otherEpisode.id,
+    })
+    expect(first.path).toBe(join(outputsDir, '生成测试-E03-001.png'))
+    expect(second.path).toBe(join(outputsDir, '生成测试-E03-002.png'))
+    // 每集独立从 001 开始
+    expect(other.path).toBe(join(outputsDir, '生成测试-E04-001.png'))
+    expect((await readdir(outputsDir))).toContain('1792171131781-legacy.png')
   })
 
   it('generates a video and passes video-specific params through', async () => {

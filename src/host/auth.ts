@@ -19,15 +19,21 @@
  * - `auth/login`     `{ email, password, turnstileToken? }` → 登录并自动创建/复用 Key、写凭证缝
  * - `auth/logout`    清会话记录并撤销本插件写入的 Key
  * - `auth/profile`   刷新并返回已登录账号资料（余额 / Key 末四位）
- * - `auth/set-key`   `{ apiKey, provider?, test? }` → 自带 Key 写凭证缝
- * - `auth/test-key`  `{ apiKey?, provider? }` → 只做连通性测试，不写盘
+ * - `auth/set-key`   `{ apiKey, provider?, test?, baseUrl? }` → 自带 Key 写凭证缝（本地模型可只存地址）
+ * - `auth/test-key`  `{ apiKey?, provider?, baseUrl? }` → 只做连通性测试，不写盘
  * - `auth/key-state` `{ provider? }` → 脱敏的 Key 状态（有没有、末四位、来源层）
+ * - `auth/set-endpoint` `{ provider, baseUrl }` → 长期保存自定义接口根地址（如本地模型）
+ * - `auth/reset`     `{ provider? }` → 恢复默认配置：清接口地址与已存 Key（不影响登录态）
+ * - `auth/invite-link` `{}` → 注册 / 邀请链接（登录后带上邀请码）
+ *
+ * 所有配置都写入磁盘且**不设过期**：只有退出登录、`auth/reset` 或手动删除才会清除。
  *
  * @module dsh-image-video/host/auth
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
+import type { AuthSettingsStore } from './auth-settings.ts'
 
 /** Threevideo 站点根地址。 */
 export const THREEVIDEO_BASE_URL = 'https://www.threevideo.com'
@@ -38,14 +44,20 @@ export const THREEVIDEO_OPENAI_BASE = `${THREEVIDEO_BASE_URL}/v1`
 /** 生成工具按引用名解析的 Key 引用（默认服务商 threevideo）。 */
 export const THREEVIDEO_API_KEY_ENV = 'THREEVIDEO_API_KEY'
 
+/** 本地 OpenAI 兼容服务的默认接口根（Ollama 默认端口）。 */
+export const LOCAL_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
+
+/** 本地服务的凭证引用名（本地服务通常不校验 Key，留空也可用）。 */
+export const LOCAL_API_KEY_ENV = 'LOCAL_MODEL_API_KEY'
+
 /**
  * 本插件的登录会话记录。`scope` 必须是本插件注册名，`id` 由本插件自选，
  * 与兄弟插件的 `threevideo-integration/session` 互不相干。
  */
 export const IMAGE_VIDEO_AUTH_SESSION_KEY = credentialKey('image-video', 'auth')
 
-/** 本插件支持的服务商标识（与 `Config.provider` 同一套枚举）。 */
-export type AuthProvider = 'threevideo' | 'wanx' | 'minimax' | 'seedance'
+/** 本插件支持的服务商标识（与 `Config.provider` 同一套枚举，外加本地模型服务）。 */
+export type AuthProvider = 'threevideo' | 'wanx' | 'minimax' | 'seedance' | 'local'
 
 /**
  * 服务商默认凭证引用。部署若把 `Config.*.apiKeyEnv` 指向别的名字，入口可用
@@ -56,6 +68,7 @@ export const DEFAULT_PROVIDER_API_KEY_REFS: Readonly<Record<AuthProvider, string
   wanx: 'DASHSCOPE_API_KEY',
   minimax: 'MINIMAX_API_KEY',
   seedance: 'ARK_API_KEY',
+  local: LOCAL_API_KEY_ENV,
 }
 
 /** 服务商在「自带 Key」页签里的展示信息。 */
@@ -68,6 +81,26 @@ export interface AuthProviderInfo {
   settable: boolean
   /** 是否支持连通性测试（有已知的探测端点）。 */
   testable: boolean
+  /** 是否允许在界面里改写接口根地址（本地模型为 true）。 */
+  endpointEditable?: boolean
+}
+
+/** 单个服务商的就绪状态（`auth/health` 下发，界面按行展示）。 */
+export interface AuthProviderState {
+  /** 服务商标识。 */
+  id: AuthProvider
+  /** 展示名。 */
+  label: string
+  /** 是否已保存 Key（本地服务可以没有 Key）。 */
+  keyConfigured: boolean
+  /** Key 末四位（脱敏）。 */
+  last4?: string
+  /** 是否有已知探测端点。 */
+  testable: boolean
+  /** 当前生效的接口根地址。 */
+  baseUrl: string
+  /** 是否曾经测试连通成功（长期保存，重新打开弹层仍然显示「连接正常」）。 */
+  verified?: boolean
 }
 
 /** 一次 RPC 的失败形状（入口会补 `details: {}`）。 */
@@ -99,16 +132,22 @@ export interface AuthDispatcherOptions {
   openaiBaseUrl?: string
   /** 会话记录地址；缺省 {@link IMAGE_VIDEO_AUTH_SESSION_KEY}（测试可隔离）。 */
   sessionKey?: CredentialKey
-  /** 服务商列（缺省内置四项）；入口可据此投递部署侧已知的服务商。 */
+  /** 服务商列（缺省内置五项，含本地模型）；入口可据此投递部署侧已知的服务商。 */
   providers?: readonly Omit<AuthProviderInfo, 'settable' | 'testable'>[]
   /** 服务商 → 凭证引用名覆盖（应与 `Config.*.apiKeyEnv` 保持一致）。 */
   providerRefs?: Partial<Record<AuthProvider, string>>
-  /** 服务商 → 连通性探测 URL 覆盖（缺省 threevideo / wanx / seedance 有值）。 */
+  /** 服务商 → 探测 URL 覆盖；缺省按「接口根 + /models」推导，无 OpenAI 兼容线的服务商不可测。 */
   probeUrls?: Partial<Record<AuthProvider, string>>
   /** 「自带 Key」页签的默认服务商（缺省 `threevideo`）。 */
   defaultProvider?: AuthProvider
   /** 单次上游请求超时（毫秒，缺省 20 秒）。 */
   timeoutMs?: number
+  /** 长期配置存储（接口根地址 / 最近服务商）；缺省时这些配置只在本进程内有效。 */
+  settings?: AuthSettingsStore
+  /** 本地模型服务的默认接口根（缺省 {@link LOCAL_DEFAULT_BASE_URL}）。 */
+  localBaseUrl?: string
+  /** 注册页地址（缺省 `${THREEVIDEO_BASE_URL}/register`）。 */
+  registerUrl?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +210,20 @@ export interface AuthHealthValue {
   keyLast4?: string
   /** 默认服务商。 */
   provider: AuthProvider
+  /** 默认服务商的展示名。 */
+  providerLabel?: string
   /** 「自带 Key」下拉的选项（宿主下发，浏览器包不内置服务商名）。 */
   providers: AuthProviderInfo[]
+  /** 每个服务商的就绪状态，界面按行展示「{名称} 连接正常 / 未配置」。 */
+  providerStates?: AuthProviderState[]
+  /** 用户上次选择的服务商（长期配置，无过期）。 */
+  lastProvider?: AuthProvider
+  /** 本地模型服务的地址信息（存在性由宿主下发，浏览器不硬编码端口）。 */
+  local?: { baseUrl: string; defaultBaseUrl: string }
+  /** 注册页地址。 */
+  registerUrl?: string
+  /** 邀请链接（登录后带邀请码；未登录时就是注册页）。 */
+  inviteUrl?: string
 }
 
 /** `auth/login` 的返回。 */
@@ -203,8 +254,11 @@ export interface AuthProfileValue {
 export interface AuthSetKeyValue {
   success: true
   provider: AuthProvider
+  /** Key 末四位；本地模型只存地址、没有 Key 时为空串。 */
   keyLast4: string
   configured: true
+  /** 当前生效的接口根地址。 */
+  baseUrl?: string
 }
 
 /** `auth/test-key` 的返回。 */
@@ -213,6 +267,29 @@ export interface AuthTestKeyValue {
   /** false 表示该服务商没有已知探测端点（界面把它当「无法测试」而不是「Key 错」）。 */
   testable: boolean
   reason?: string
+  /** 被测试的服务商（界面用它拼「{名称} 连接正常」）。 */
+  provider?: AuthProvider
+  /** 被测试的服务商展示名。 */
+  providerLabel?: string
+}
+
+/** `auth/set-endpoint` 的返回。 */
+export interface AuthEndpointValue {
+  provider: AuthProvider
+  baseUrl: string
+}
+
+/** `auth/reset` 的返回。 */
+export interface AuthResetValue {
+  success: true
+  provider: AuthProvider
+  /** 恢复后仍存在的 Key（本地无 Key 时为 false）。 */
+  configured: boolean
+}
+
+/** `auth/invite-link` 的返回。 */
+export interface AuthInviteValue {
+  url: string
 }
 
 // ---------------------------------------------------------------------------
@@ -258,8 +335,25 @@ function asEmptyRequest(payload: unknown): void {
 
 /** 读取服务商 id。 */
 function asProvider(value: unknown): AuthProvider {
-  if (value === 'threevideo' || value === 'wanx' || value === 'minimax' || value === 'seedance') return value
+  if (value === 'threevideo' || value === 'wanx' || value === 'minimax' || value === 'seedance' || value === 'local') return value
   throw new AuthFailure('auth/invalid-provider', `未知服务商：${String(value)}`)
+}
+
+/** 修正接口根地址：只接受 http(s)、去掉末尾斜杠；非法时抛出可读失败。 */
+function normalizeBaseUrl(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new AuthFailure('auth/invalid-endpoint', '接口地址不能为空')
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(value.trim())
+  } catch {
+    throw new AuthFailure('auth/invalid-endpoint', `接口地址不是合法 URL：${value}`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new AuthFailure('auth/invalid-endpoint', '接口地址必须以 http:// 或 https:// 开头')
+  }
+  return value.trim().replace(/\/+$/, '')
 }
 
 /** 把上游原始用户对象映射成回包资料；形状不认识就返回 undefined。 */
@@ -306,15 +400,30 @@ function asLoginRequest(payload: unknown): { email: string, password: string, tu
   }
 }
 
-/** 载荷守卫：写 Key 请求。 */
-function asSetKeyRequest(payload: unknown): { apiKey: string, provider?: AuthProvider, test: boolean } {
+/** 载荷守卫：写 Key 请求。本地模型允许只存地址、不写 Key。 */
+function asSetKeyRequest(payload: unknown): { apiKey: string, provider?: AuthProvider, test: boolean, baseUrl?: string } {
   if (!isRecord(payload)) throw new AuthFailure('auth/invalid-payload', '写 Key 请求必须是对象')
   const apiKey = typeof payload.apiKey === 'string' ? payload.apiKey.trim() : ''
-  if (apiKey === '') throw new AuthFailure('auth/invalid-payload', 'API Key 不能为空')
+  const provider = payload.provider === undefined || payload.provider === ''
+    ? undefined
+    : asProvider(payload.provider)
+  if (apiKey === '' && provider !== 'local') throw new AuthFailure('auth/invalid-payload', 'API Key 不能为空')
   return {
     apiKey,
-    ...payload.provider === undefined || payload.provider === '' ? {} : { provider: asProvider(payload.provider) },
+    ...provider === undefined ? {} : { provider },
     test: payload.test === true,
+    ...payload.baseUrl === undefined || payload.baseUrl === ''
+      ? {}
+      : { baseUrl: normalizeBaseUrl(payload.baseUrl) },
+  }
+}
+
+/** 载荷守卫：接口地址请求。 */
+function asEndpointRequest(payload: unknown): { provider: AuthProvider, baseUrl: string } {
+  if (!isRecord(payload)) throw new AuthFailure('auth/invalid-payload', '接口地址请求必须是对象')
+  return {
+    provider: asProvider(payload.provider),
+    baseUrl: normalizeBaseUrl(payload.baseUrl),
   }
 }
 
@@ -328,17 +437,16 @@ const BUILTIN_PROVIDERS: readonly Omit<AuthProviderInfo, 'settable' | 'testable'
   { id: 'wanx', label: 'Wanx' },
   { id: 'minimax', label: 'MiniMax' },
   { id: 'seedance', label: 'Seedance' },
+  { id: 'local', label: '本地模型（OpenAI 兼容）', endpointEditable: true },
 ]
 
 /**
- * 内置探测端点：只登记已知的 OpenAI 兼容 `/models` 线。
- * 没登记的（如 minimax）会被标成 `testable: false`，界面按「无法测试」处理，
- * 而不是把网络/端点问题误报成「Key 无效」。
+ * 内置 OpenAI 兼容接口根。没登记的（如 minimax）没有探测端点，
+ * 界面按「无法测试」处理，而不是把网络/端点问题误报成「Key 无效」。
  */
-const BUILTIN_PROBE_URLS: Partial<Record<AuthProvider, string>> = {
-  threevideo: `${THREEVIDEO_OPENAI_BASE}/models`,
-  wanx: 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
-  seedance: 'https://ark.cn-beijing.volces.com/api/v3/models',
+const BUILTIN_ENDPOINTS: Partial<Record<AuthProvider, string>> = {
+  wanx: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  seedance: 'https://ark.cn-beijing.volces.com/api/v3',
 }
 
 /**
@@ -359,18 +467,28 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
   const timeoutMs = options.timeoutMs ?? 20_000
   const fetchImpl: AuthFetch | undefined = options.fetch ?? (globalThis as { fetch?: AuthFetch }).fetch
   const providerRefs: Partial<Record<AuthProvider, string>> = { ...DEFAULT_PROVIDER_API_KEY_REFS, ...options.providerRefs }
-  // 探测端点：threevideo 跟随可注入的 OpenAI 兼容根，其余沿用内置表；显式 probeUrls 最后覆盖
-  const probeUrls: Partial<Record<AuthProvider, string>> = {
-    ...BUILTIN_PROBE_URLS,
-    threevideo: `${openaiBaseUrl}/models`,
-    ...options.probeUrls,
-  }
+  const settings = options.settings
+  const localBaseUrl = (options.localBaseUrl ?? LOCAL_DEFAULT_BASE_URL).replace(/\/+$/, '')
+  // 注册按钮直接打开上游首页（用户从这里自行注册 / 登录）
+  const registerUrl = options.registerUrl ?? baseUrl
+  // 显式 probeUrls 优先于「接口根 + /models」的默认推导
+  const probeUrls: Partial<Record<AuthProvider, string>> = { ...options.probeUrls }
+
+  /** 用户长期保存的接口根覆盖（无过期；显式「恢复默认」才消失）。 */
+  let endpointOverrides: Partial<Record<AuthProvider, string>> = {}
+  /** 用户最后一次选择的服务商。 */
+  let lastProvider: AuthProvider | undefined
+  /** 是否已经读过长期配置。 */
+  let settingsRestored = false
+  /** 已验证连通的服务商（长期保存，关闭弹层不丢）。 */
+  let verifiedProviders = new Set<string>()
 
   const providers: AuthProviderInfo[] = (options.providers ?? BUILTIN_PROVIDERS).map(info => ({
     id: info.id,
     label: info.label,
     settable: providerRefName(info.id) !== undefined,
     testable: probeUrlFor(info.id) !== undefined,
+    ...info.endpointEditable === true ? { endpointEditable: true } : {},
   }))
 
   /** 进程内的登录态；`restoreSession` 会在任何「视为未登录」的判断之前重建它。 */
@@ -385,9 +503,86 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
     return ref === undefined || ref.trim() === '' ? undefined : ref.trim()
   }
 
+  /** 该服务商的默认接口根；没有 OpenAI 兼容线的返回空串。 */
+  function defaultEndpoint(provider: AuthProvider): string {
+    if (provider === 'threevideo') return openaiBaseUrl
+    if (provider === 'local') return localBaseUrl
+    return BUILTIN_ENDPOINTS[provider] ?? ''
+  }
+
+  /** 该服务商当前生效的接口根（用户保存的覆盖优先）。 */
+  function endpointFor(provider: AuthProvider): string {
+    return endpointOverrides[provider] ?? defaultEndpoint(provider)
+  }
+
   /** 该服务商的连通性探测 URL；未登记返回 undefined。 */
   function probeUrlFor(provider: AuthProvider): string | undefined {
-    return probeUrls[provider]
+    const explicit = probeUrls[provider]
+    if (explicit !== undefined) return explicit
+    const root = endpointFor(provider)
+    return root === '' ? undefined : `${root}/models`
+  }
+
+  /** 读一次长期配置（接口地址 / 最近服务商），失败当作空配置。 */
+  async function restoreSettings(): Promise<void> {
+    if (settingsRestored) return
+    settingsRestored = true
+    if (settings === undefined) return
+    try {
+      const document = await settings.load()
+      const overrides: Partial<Record<AuthProvider, string>> = {}
+      for (const [key, value] of Object.entries(document.baseUrls)) {
+        try {
+          overrides[asProvider(key)] = value
+        } catch {
+          // 旧文件里可能有已下线的服务商：忽略即可，不影响其余配置
+        }
+      }
+      endpointOverrides = overrides
+      verifiedProviders = new Set(document.verified ?? [])
+      if (document.lastProvider !== undefined) {
+        try {
+          lastProvider = asProvider(document.lastProvider)
+        } catch {
+          // 同上：未知服务商不阻塞恢复
+        }
+      }
+    } catch (error) {
+      ctx.logger.warn('image-video auth: could not restore saved connection settings', error)
+    }
+  }
+
+  /** 保存接口根；存储缺失时只在本次进程内生效。 */
+  async function saveEndpoint(provider: AuthProvider, baseUrl: string): Promise<void> {
+    const normalized = normalizeBaseUrl(baseUrl)
+    endpointOverrides = { ...endpointOverrides, [provider]: normalized }
+    await settings?.setBaseUrl(provider, normalized)
+  }
+
+  /** 记住最近选择的服务商（长期配置）。 */
+  async function rememberProvider(provider: AuthProvider): Promise<void> {
+    lastProvider = provider
+    await settings?.setLastProvider(provider)
+  }
+
+  /** 标记 / 取消服务商的「连接正常」状态（长期保存）。 */
+  async function rememberVerified(provider: AuthProvider, verified: boolean): Promise<void> {
+    if (verified) verifiedProviders.add(provider)
+    else verifiedProviders.delete(provider)
+    await settings?.setVerified(provider, verified)
+  }
+
+  /** 服务商展示名。 */
+  function providerLabel(provider: AuthProvider): string {
+    return providers.find(info => info.id === provider)?.label ?? provider
+  }
+
+  /** 注册 / 邀请链接：登录后带上邀请码；未登录时指向注册页。 */
+  function invitationUrl(): string {
+    if (session !== null && session.affCode !== '') {
+      return `${baseUrl}/register?aff=${encodeURIComponent(session.affCode)}`
+    }
+    return `${baseUrl}/register`
   }
 
   /** 读取凭证服务；缺失时返回 undefined（调用方决定是否拒绝）。 */
@@ -579,8 +774,10 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
   }
 
   /** 只用一次 GET `/models` 判断 Key 是否可用；网络问题与 Key 问题分开说明。 */
-  async function testApiKey(provider: AuthProvider, apiKey: string): Promise<AuthTestKeyValue> {
-    const probeUrl = probeUrlFor(provider)
+  async function testApiKey(provider: AuthProvider, apiKey: string, baseUrl?: string): Promise<AuthTestKeyValue> {
+    const probeUrl = baseUrl === undefined
+      ? probeUrlFor(provider)
+      : `${normalizeBaseUrl(baseUrl)}/models`
     if (probeUrl === undefined) {
       return { valid: false, testable: false, reason: '该服务商暂不支持连通性测试' }
     }
@@ -623,11 +820,24 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
   async function dispatch(endpoint: string, payload: unknown): Promise<AuthResult> {
     try {
       await restoreSession()
+      await restoreSettings()
       switch (endpoint) {
         case 'auth/health': {
           asEmptyRequest(payload)
           const state = await readKeyState(defaultProvider)
           const fields = await sessionFields()
+          const providerStates: AuthProviderState[] = await Promise.all(providers.map(async info => {
+            const keyState = info.id === defaultProvider ? state : await readKeyState(info.id)
+            return {
+              id: info.id,
+              label: info.label,
+              keyConfigured: keyState.configured,
+              ...keyState.last4 === undefined ? {} : { last4: keyState.last4 },
+              testable: probeUrlFor(info.id) !== undefined,
+              baseUrl: endpointFor(info.id),
+              verified: verifiedProviders.has(info.id),
+            }
+          }))
           const value: AuthHealthValue = {
             ready: true,
             credentials: credentialsService() !== undefined,
@@ -635,7 +845,13 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
             hasKey: state.configured,
             ...state.last4 === undefined ? {} : { keyLast4: state.last4 },
             provider: defaultProvider,
+            providerLabel: providerLabel(defaultProvider),
             providers,
+            providerStates,
+            ...lastProvider === undefined ? {} : { lastProvider },
+            local: { baseUrl: endpointFor('local'), defaultBaseUrl: localBaseUrl },
+            registerUrl,
+            inviteUrl: invitationUrl(),
           }
           return { ok: true, value }
         }
@@ -693,6 +909,9 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
             // 会话在本进程内仍可用，只是重启后要重新登录
             ctx.logger.warn('image-video auth: could not persist the session', error)
           }
+          await rememberProvider(defaultProvider)
+          // 登录已打通上游：把默认服务商长期标成「连接正常」，重开弹层也保留
+          await rememberVerified(defaultProvider, true)
 
           const last4 = provisionedKey === undefined ? undefined : keyLast4(provisionedKey)
           const storedState = await readKeyState(defaultProvider)
@@ -725,6 +944,8 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
               ctx.logger.warn('image-video auth: could not unset the stored API key on logout', error)
             }
           }
+          // 退出后 Key 已撤销，默认服务商不再算「连接正常」
+          await rememberVerified(defaultProvider, false)
           return { ok: true, value: { success: true } }
         }
 
@@ -761,18 +982,31 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
           const request = asSetKeyRequest(payload)
           const provider = request.provider ?? defaultProvider
           requireCredentials()
-          // `test: true` 时先验一次；只在「能测且确实无效」时拒绝，无法测试的服务商照常保存
+          // 先落接口地址，再做连通性测试：测试与后续生成都用同一份长期配置
+          if (request.baseUrl !== undefined) await saveEndpoint(provider, request.baseUrl)
+          const probeBase = request.baseUrl ?? endpointFor(provider)
           if (request.test) {
-            const probed = await testApiKey(provider, request.apiKey)
+            const probed = await testApiKey(provider, request.apiKey, probeBase)
             if (probed.testable && !probed.valid) {
               throw new AuthFailure('auth/invalid-key', probed.reason ?? 'API Key 校验失败')
             }
+            if (probed.valid) await rememberVerified(provider, true)
           }
-          await writeApiKey(provider, request.apiKey)
           const last4 = keyLast4(request.apiKey)
-          if (last4 === undefined) throw new AuthFailure('auth/invalid-payload', 'API Key 不能为空')
-          ctx.logger.info(`image-video auth: stored a user-provided API key for ${provider} (ends in ${last4})`)
-          const value: AuthSetKeyValue = { success: true, provider, keyLast4: last4, configured: true }
+          if (request.apiKey !== '') {
+            await writeApiKey(provider, request.apiKey)
+          } else if (provider !== 'local') {
+            throw new AuthFailure('auth/invalid-payload', 'API Key 不能为空')
+          }
+          await rememberProvider(provider)
+          ctx.logger.info(`image-video auth: stored connection settings for ${provider}${last4 === undefined ? '' : ` (key ends in ${last4})`}`)
+          const value: AuthSetKeyValue = {
+            success: true,
+            provider,
+            keyLast4: last4 ?? '',
+            configured: true,
+            baseUrl: endpointFor(provider),
+          }
           return { ok: true, value }
         }
 
@@ -780,16 +1014,75 @@ export function createAuthDispatcher(ctx: Context, options: AuthDispatcherOption
           if (payload !== undefined && payload !== null && !isRecord(payload)) {
             throw new AuthFailure('auth/invalid-payload', '请求载荷必须是对象')
           }
+          await restoreSettings()
           const request = isRecord(payload) ? payload : {}
           const provider = request.provider === undefined || request.provider === ''
             ? defaultProvider
             : asProvider(request.provider)
           const provided = typeof request.apiKey === 'string' ? request.apiKey.trim() : ''
           const apiKey = provided !== '' ? provided : await readKeyValue(provider)
+          const baseUrl = request.baseUrl === undefined || request.baseUrl === ''
+            ? endpointFor(provider)
+            : normalizeBaseUrl(request.baseUrl)
+          const label = providerLabel(provider)
           if (apiKey === undefined || apiKey === '') {
-            return { ok: true, value: { valid: false, testable: probeUrlFor(provider) !== undefined, reason: '还没有可测试的 API Key' } satisfies AuthTestKeyValue }
+            return {
+              ok: true,
+              value: {
+                valid: false,
+                testable: probeUrlFor(provider) !== undefined,
+                reason: '还没有可测试的 API Key',
+                provider,
+                providerLabel: label,
+              } satisfies AuthTestKeyValue,
+            }
           }
-          return { ok: true, value: await testApiKey(provider, apiKey) }
+          const result = await testApiKey(provider, apiKey, baseUrl)
+          // 连通成功就长期记为「连接正常」；无法测试的服务商不改变既有状态
+          if (result.valid) await rememberVerified(provider, true)
+          return { ok: true, value: { ...result, provider, providerLabel: label } }
+        }
+
+        case 'auth/set-endpoint': {
+          const request = asEndpointRequest(payload)
+          await restoreSettings()
+          await saveEndpoint(request.provider, request.baseUrl)
+          await rememberProvider(request.provider)
+          const value: AuthEndpointValue = { provider: request.provider, baseUrl: endpointFor(request.provider) }
+          return { ok: true, value }
+        }
+
+        case 'auth/reset': {
+          if (payload !== undefined && payload !== null && !isRecord(payload)) {
+            throw new AuthFailure('auth/invalid-payload', '请求载荷必须是对象')
+          }
+          await restoreSettings()
+          const request = isRecord(payload) ? payload : {}
+          const provider = request.provider === undefined || request.provider === ''
+            ? defaultProvider
+            : asProvider(request.provider)
+          // 恢复默认 = 删除该服务商的接口地址覆盖与已存 Key；登录态不受影响
+          delete endpointOverrides[provider]
+          await settings?.clearBaseUrl(provider)
+          await rememberVerified(provider, false)
+          const refName = providerRefName(provider)
+          const credentials = credentialsService()
+          if (refName !== undefined && credentials !== undefined) {
+            try {
+              await credentials.unset(credentialRef(refName))
+            } catch (error) {
+              ctx.logger.warn(`image-video auth: could not unset the stored API key for ${provider}`, error)
+            }
+          }
+          const state = await readKeyState(provider)
+          const value: AuthResetValue = { success: true, provider, configured: state.configured }
+          return { ok: true, value }
+        }
+
+        case 'auth/invite-link': {
+          asEmptyRequest(payload)
+          const value: AuthInviteValue = { url: invitationUrl() }
+          return { ok: true, value }
         }
 
         case 'auth/key-state': {
