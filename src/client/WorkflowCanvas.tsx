@@ -258,6 +258,10 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
   const [error, setError] = useState<string | undefined>(undefined)
   const [templateId, setTemplateId] = useState<string>(WORKFLOW_TEMPLATES[0]?.id ?? '')
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([])
+  /** 日志抽屉默认收起：校验与运行明细不再抢占画布高度，只在顶部留状态摘要。 */
+  const [logOpen, setLogOpen] = useState(false)
+  /** 全屏画布：把整个工作流区抬成覆盖视口的浮层，画布独占剩余高度。 */
+  const [maximized, setMaximized] = useState(false)
   const { fitView } = useReactFlow<CanvasNode, Edge>()
   const lastPushed = useRef<string>('')
   const seededId = useRef<string>(record.id)
@@ -279,6 +283,14 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
     () => nodes.filter(node => selectedIds.includes(node.id)),
     [nodes, selectedIds],
   )
+
+  // 全屏浮层盖住整个工作台：锁住页面滚动，退出时恢复原值
+  useEffect(() => {
+    if (!maximized) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [maximized])
 
   // 文档换了一份（例如切项目）才重新播种；同一份文档的编辑不回灌，避免打断拖拽。
   useEffect(() => {
@@ -345,6 +357,15 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
       return changed ? next : current
     })
   }, [runFingerprint, setNodes])
+
+  // 运行开始/失败时自动展开日志抽屉，保证错误可见；其余状态尊重用户手动折叠
+  const previousRunStatus = useRef(run?.latest?.status)
+  useEffect(() => {
+    const status = run?.latest?.status
+    if (status === previousRunStatus.current) return
+    previousRunStatus.current = status
+    if (status === 'running' || status === 'failed') setLogOpen(true)
+  }, [run?.latest?.status])
 
   const nodeTypes = useMemo(() => ({
     workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} />,
@@ -484,6 +505,11 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
   // Delete/Backspace 删除选中。输入控件里不劫持（让用户正常打字）。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && maximized) {
+        event.preventDefault()
+        setMaximized(false)
+        return
+      }
       const target = event.target as HTMLElement | null
       if (target !== null && (
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
@@ -505,7 +531,7 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
     }
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length])
+  }, [undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized])
 
   // 拖拽结束 = 一步历史（拖动过程中的每个 position 变化都合并进来）
   const onNodeDragStop = useCallback((_event: unknown, node: Node) => {
@@ -517,8 +543,9 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
 
   return (
     <div
-      className="iv-canvas-main"
+      className={`iv-workflow${maximized ? ' iv-workflow--max' : ''}`}
       data-workflow-canvas="true"
+      data-workflow-maximized={maximized ? 'true' : 'false'}
       data-workflow-nodes={String(nodes.length)}
       data-workflow-edges={String(edges.length)}
       data-workflow-selected={selectedIds[0] ?? ''}
@@ -567,7 +594,7 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
           : null}
       </div>
 
-      <div className="iv-canvas-main">
+      <div className="iv-workflow-body">
         <div className="iv-toolbar">
           <select
             className="iv-select"
@@ -614,101 +641,43 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
             disabled={selectedIds.length === 0} onClick={deleteSelected}>
             <Icon name="trash" />{t('canvasDeleteSelected')}{selectedIds.length > 1 ? ` · ${selectedIds.length}` : ''}
           </button>
+          {run === undefined
+            ? null
+            : (
+              <div className="iv-run-actions" data-workflow-toolbar-run="true">
+                <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
+                  disabled={run.busy || !validation.ok || run.latest?.status === 'running'} onClick={run.onStart}>
+                  <Icon name="play" />{t('runStart')}
+                </button>
+                <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="cancel"
+                  disabled={run.latest?.status !== 'running'} onClick={run.onCancel}>
+                  {t('runCancel')}
+                </button>
+                <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="retry"
+                  disabled={run.latest?.status !== 'failed'} onClick={run.onRetry}>
+                  {t('runRetry')}
+                </button>
+              </div>
+            )}
           <span className="iv-count">
             {nodes.length} {t('canvasNodesCount')} · {edges.length} {t('canvasEdgesCount')}
           </span>
-        </div>
-
-        <div className="iv-issues" data-workflow-issues={String(validation.issues.length)}
-          data-workflow-runnable={validation.ok ? 'true' : 'false'} data-ok={validation.ok ? 'true' : 'false'}>
-          <strong>{t('validationTitle')}</strong>
-          {validation.ok
-            ? <span data-workflow-validation="ok"><Icon name="check" size={12} />{t('validationOk')}</span>
-            : validation.issues.slice(0, 6).map((issue: WorkflowIssue, index) => (
-              <span key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? index}`} className="iv-issue"
-                data-workflow-issue={issue.code} title={issue.message}>
-                <Icon name="alert" size={12} />{issue.nodeId === undefined ? '' : `${issue.nodeId}: `}
-                {t(issue.code === 'missing-required' ? 'issueRequired'
-                  : issue.code === 'port-mismatch' ? 'issuePort'
-                    : issue.code === 'self-loop' ? 'issueSelfLoop'
-                      : issue.code === 'dangling-edge' ? 'issueDangling'
-                        : issue.code === 'cycle' ? 'issueCycle' : 'issuePlanned')}
-              </span>
-            ))}
-        </div>
-
-        {run === undefined ? null : (
-          <div className="iv-run" data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}>
-            <div className="iv-run-head">
-              <strong>{t('runTitle')}</strong>
-              {run.latest === undefined
-                ? <span className="iv-meta">{t('runNone')}</span>
-                : (
-                  <>
-                    <span className={runChipClass(run.latest.status)}>
-                      <i className="iv-dot" aria-hidden="true" />
-                      {t(runStatusKey(run.latest.status))}
-                      {' · '}
-                      {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
-                    </span>
-                    {run.latest.error === undefined ? null : (
-                      <span className="iv-meta iv-ellipsis" title={run.latest.error}>{run.latest.error.slice(0, 80)}</span>
-                    )}
-                  </>
-                )}
-            </div>
-            {run.history.length > 1
-              ? (
-                <div className="iv-run-history" data-workflow-run-history="true">
-                  {run.history.slice(0, 8).map(entry => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className="iv-run-item"
-                      data-workflow-run-item={entry.id}
-                      data-workflow-run-item-selected={entry.id === run.selectedRunId ? 'true' : 'false'}
-                      onClick={() => { run.onSelectRun(entry.id) }}
-                    >
-                      {new Date(entry.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}
-                      {' · '}{t(runStatusKey(entry.status))}
-                      {' · '}{entry.nodeRuns.filter(node => node.outputPath !== undefined).length} {t('runArtifacts')}
-                    </button>
-                  ))}
-                </div>
-              )
+          <button type="button" className="iv-btn iv-btn--sm"
+            data-workflow-log-toggle="true" aria-expanded={logOpen}
+            aria-controls="iv-workflow-log" title={t('canvasLogs')}
+            onClick={() => { setLogOpen(open => !open) }}>
+            <Icon name="script" />{t('canvasLogs')}
+            {validation.issues.length > 0
+              ? <span className="iv-chip iv-chip--err" data-workflow-log-issue-count="true">{validation.issues.length}</span>
               : null}
-            {run.latest === undefined
-              ? null
-              : (
-                <div className="iv-run-nodes">
-                  {run.latest.nodeRuns.map(node => (
-                    <span key={node.nodeId} className="iv-node-run" data-workflow-node-run={node.nodeId} data-workflow-node-status={node.status}>
-                      <i className="iv-dot" aria-hidden="true" />
-                      <span className="iv-ellipsis">
-                        {node.nodeId} · {t(nodeStatusKey(node.status))}
-                        {node.outputPath === undefined ? '' : ` · ${node.outputPath.split('/').pop() ?? ''}`}
-                        {node.error === undefined ? '' : ` · ${node.error.slice(0, 60)}`}
-                      </span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            <div className="iv-run-actions">
-              <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
-                disabled={run.busy || !validation.ok || run.latest?.status === 'running'} onClick={run.onStart}>
-                <Icon name="play" />{t('runStart')}
-              </button>
-              <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="cancel"
-                disabled={run.latest?.status !== 'running'} onClick={run.onCancel}>
-                {t('runCancel')}
-              </button>
-              <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="retry"
-                disabled={run.latest?.status !== 'failed'} onClick={run.onRetry}>
-                {t('runRetry')}
-              </button>
-            </div>
-          </div>
-        )}
+          </button>
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="maximize"
+            aria-pressed={maximized} aria-label={maximized ? t('canvasRestore') : t('canvasMaximize')}
+            title={maximized ? t('canvasRestore') : t('canvasMaximize')}
+            onClick={() => { setMaximized(value => !value) }}>
+            <Icon name={maximized ? 'shrink' : 'expand'} />
+          </button>
+        </div>
 
         <div className="iv-flow" data-workflow-flow="true">
           <ReactFlow
@@ -813,6 +782,117 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
                 ))}
             </div>
           )}
+        <div className="iv-worklog" id="iv-workflow-log" data-workflow-log="true"
+          data-workflow-log-open={logOpen ? 'true' : 'false'}>
+          <button type="button" className="iv-worklog-head" data-workflow-log-head="true"
+            aria-expanded={logOpen} aria-controls="iv-workflow-log-body"
+            onClick={() => { setLogOpen(open => !open) }}>
+            <Icon name="chevron" size={12} className="iv-worklog-caret" />
+            <strong>{t('canvasLogs')}</strong>
+            {validation.ok
+              ? (
+                <span className="iv-chip iv-chip--ok" data-workflow-log-validation="ok">
+                  <Icon name="check" size={11} />{t('validationOk')}
+                </span>
+              )
+              : (
+                <span className="iv-chip iv-chip--err" data-workflow-log-validation={String(validation.issues.length)}>
+                  <Icon name="alert" size={11} />{validation.issues.length}
+                </span>
+              )}
+            {run === undefined
+              ? null
+              : run.latest === undefined
+                ? <span className="iv-meta">{t('runNone')}</span>
+                : (
+                  <span className={runChipClass(run.latest.status)}>
+                    <i className="iv-dot" aria-hidden="true" />
+                    {t(runStatusKey(run.latest.status))}
+                    {' · '}
+                    {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+                  </span>
+                )}
+          </button>
+          <div className="iv-worklog-body" id="iv-workflow-log-body" hidden={!logOpen}>
+            <div className="iv-issues" data-workflow-issues={String(validation.issues.length)}
+              data-workflow-runnable={validation.ok ? 'true' : 'false'} data-ok={validation.ok ? 'true' : 'false'}>
+              <strong>{t('validationTitle')}</strong>
+              {validation.ok
+                ? <span data-workflow-validation="ok"><Icon name="check" size={12} />{t('validationOk')}</span>
+                : validation.issues.slice(0, 6).map((issue: WorkflowIssue, index) => (
+                  <span key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? index}`} className="iv-issue"
+                    data-workflow-issue={issue.code} title={issue.message}>
+                    <Icon name="alert" size={12} />{issue.nodeId === undefined ? '' : `${issue.nodeId}: `}
+                    {t(issue.code === 'missing-required' ? 'issueRequired'
+                      : issue.code === 'port-mismatch' ? 'issuePort'
+                        : issue.code === 'self-loop' ? 'issueSelfLoop'
+                          : issue.code === 'dangling-edge' ? 'issueDangling'
+                            : issue.code === 'cycle' ? 'issueCycle' : 'issuePlanned')}
+                  </span>
+                ))}
+            </div>
+
+            {run === undefined ? null : (
+              <div className="iv-run" data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}>
+                <div className="iv-run-head">
+                  <strong>{t('runTitle')}</strong>
+                  {run.latest === undefined
+                    ? <span className="iv-meta">{t('runNone')}</span>
+                    : (
+                      <>
+                        <span className={runChipClass(run.latest.status)}>
+                          <i className="iv-dot" aria-hidden="true" />
+                          {t(runStatusKey(run.latest.status))}
+                          {' · '}
+                          {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+                        </span>
+                        {run.latest.error === undefined ? null : (
+                          <span className="iv-meta iv-ellipsis" title={run.latest.error}>{run.latest.error.slice(0, 80)}</span>
+                        )}
+                      </>
+                    )}
+                </div>
+                {run.history.length > 1
+                  ? (
+                    <div className="iv-run-history" data-workflow-run-history="true">
+                      {run.history.slice(0, 8).map(entry => (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className="iv-run-item"
+                          data-workflow-run-item={entry.id}
+                          data-workflow-run-item-selected={entry.id === run.selectedRunId ? 'true' : 'false'}
+                          onClick={() => { run.onSelectRun(entry.id) }}
+                        >
+                          {new Date(entry.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+                          {' · '}{t(runStatusKey(entry.status))}
+                          {' · '}{entry.nodeRuns.filter(node => node.outputPath !== undefined).length} {t('runArtifacts')}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                  : null}
+                {run.latest === undefined
+                  ? null
+                  : (
+                    <div className="iv-run-nodes">
+                      {run.latest.nodeRuns.map(node => (
+                        <span key={node.nodeId} className="iv-node-run" data-workflow-node-run={node.nodeId} data-workflow-node-status={node.status}>
+                          <i className="iv-dot" aria-hidden="true" />
+                          <span className="iv-ellipsis">
+                            {node.nodeId} · {t(nodeStatusKey(node.status))}
+                            {node.outputPath === undefined ? '' : ` · ${node.outputPath.split('/').pop() ?? ''}`}
+                            {node.error === undefined ? '' : ` · ${node.error.slice(0, 60)}`}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {error === undefined ? null : <p className="iv-notice iv-notice--error" role="status">{error}</p>}
         <p className="iv-meta">{t('canvasTransient')}</p>
       </div>

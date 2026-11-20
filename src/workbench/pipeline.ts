@@ -14,7 +14,7 @@
  *
  * @module dsh-image-video/workbench/pipeline
  */
-import { planStoryboard, type PlanResource } from './storyboard.ts'
+import { planStoryboard, type PlanResource, type StoryboardShot } from './storyboard.ts'
 import type { WorkflowEdge, WorkflowNode } from './workflow.ts'
 
 /**
@@ -155,6 +155,11 @@ export function planPipeline(input: {
   readonly script: string
   readonly options?: PipelineOptions
   readonly resources?: readonly PlanResource[]
+  /**
+   * 已由文本模型拆好的分镜（`B-20`）：给了就**不再**走规则拆解，
+   * 直接用这些镜头编排；编号与顺序以本数组为准。
+   */
+  readonly planned?: readonly PipelineShot[]
 }): PipelineDraft {
   const options = input.options ?? {}
   const mode = options.mode ?? 'image-to-video'
@@ -179,11 +184,32 @@ export function planPipeline(input: {
 
   const warnings: string[] = []
   const shotCount = options.shots === undefined ? undefined : Math.min(MAX_SHOTS, Math.max(1, Math.round(options.shots)))
-  const plan = planStoryboard({
-    script: input.script,
-    ...shotCount === undefined ? {} : { shots: shotCount },
-    resources,
-  })
+  const planned = input.planned ?? []
+  // `B-20`：模型拆好的分镜优先；没有才走确定性拆解（两者后续编排路径完全一致）
+  const plan: { shots: StoryboardShot[]; referencedResourceIds: string[] } = planned.length === 0
+    ? planStoryboard({
+      script: input.script,
+      ...shotCount === undefined ? {} : { shots: shotCount },
+      resources,
+    })
+    : {
+      shots: planned.slice(0, MAX_SHOTS).map((shot, index) => ({
+        index: index + 1,
+        shot: shot.shot,
+        characters: [] as string[],
+        imagePrompt: shot.imagePrompt,
+        videoPrompt: shot.videoPrompt,
+      })),
+      // 模型分镜没有"命中资源"的显式记录：按提示词里出现的资源名回填
+      referencedResourceIds: resources
+        .filter(resource => planned.some(shot => `${shot.imagePrompt}${shot.videoPrompt}`.includes(resource.name)))
+        .map(resource => resource.id),
+    }
+  // `B5`：模型分镜自带时长，逐镜覆盖优先于它；再把全局缺省补齐
+  const plannedDurations = input.planned?.map(shot => shot.duration) ?? []
+  const effectiveShotDurations = options.shotDurations !== undefined && options.shotDurations.length > 0
+    ? options.shotDurations
+    : plannedDurations
   // 手动挑选 = 选中的都算"用到"；自动匹配 = 只算剧本里真正命中的
   const matchedResources = (selectedIds === undefined
     ? resources.filter(resource => plan.referencedResourceIds.includes(resource.id))
@@ -216,7 +242,7 @@ export function planPipeline(input: {
     warnings.push(`每镜时长 ${requestedDuration} 秒超过 ${MAX_SHOT_DURATION} 秒上限：已按 ${MAX_SHOT_DURATION} 秒编排`)
   }
   // `B5`：逐镜时长的脏值/越界/多余项都要讲明白，别让用户以为界面上改的数字被悄悄丢了
-  const shotDurations = options.shotDurations ?? []
+  const shotDurations = effectiveShotDurations
   const consideredDurations = shotDurations.slice(0, plan.shots.length)
   const invalidDurations = consideredDurations.filter(value => toShotDuration(value) === undefined).length
   // 四舍五入与封顶都算"修正过"：用户填 30.4 秒也会被改成 30，必须能看见

@@ -38,7 +38,8 @@ export default defineConfig({
     // jsdom 缺口（ResizeObserver 等）统一补，见 tests/setup-dom.ts
     setupFiles: ['tests/setup-dom.ts'],
     // workspace 包按源码内联（不走 exports）
-    server: { deps: { inline: [/dsh-client-connection/] } },
+    // `pdfjs-dist` 走 Node 原生语义（vite 转译会丢掉它的类原型方法）；其余 workspace 包按源码内联
+    server: { deps: { inline: [/dsh-client-connection/], external: [/pdfjs-dist/] } },
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     coverage: {
       provider: 'v8',

@@ -39,8 +39,6 @@ export type WorkbenchLocaleKey =
   | 'modeQuick'
   | 'modulePipeline'
   | 'modulePipelineDesc'
-  | 'moduleScript'
-  | 'moduleScriptDesc'
   | 'scriptTextModel'
   | 'scriptTextModelEmpty'
   | 'scriptImageModel'
@@ -203,6 +201,9 @@ export type WorkbenchLocaleKey =
   | 'canvasEmpty'
   | 'canvasPlannedTag'
   | 'canvasTransient'
+  | 'canvasLogs'
+  | 'canvasMaximize'
+  | 'canvasRestore'
   | 'paramBrief'
   | 'paramScript'
   | 'paramShots'
@@ -246,6 +247,8 @@ export type WorkbenchLocaleKey =
   | 'kindVoice'
   | 'sectionEpisode'
   | 'episodeNone'
+  | 'episodeNo'
+  | 'episodeNoHint'
   | 'episodeNew'
   | 'episodeRename'
   | 'episodeRemove'
@@ -472,7 +475,6 @@ export type WorkbenchLocaleKey =
   // ---- F2 多参考图选择器 ----
   | 'generateRefsLabel'
   | 'generateRefsPreviewHint'
-  | 'pipelineModeVideoToVideo'
   | 'pipelineToCanvas'
   | 'pipelineToCanvasHint'
   | 'pipelineInlineRun'
@@ -482,7 +484,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineInlineVideoTimeout'
   | 'pipelineInlineVideoNoOutput'
   | 'pipelineShotDuration'
-  | 'pipelineVideoToVideoNeedsRef'
   | 'pipelineShotEditable'
   | 'modelDetails'
   | 'fusionEntry'
@@ -607,14 +608,22 @@ export type WorkbenchLocaleKey =
   | 'pipelineTitle'
   | 'pipelineScriptLabel'
   | 'pipelineScriptPlaceholder'
-  | 'pipelineModeImageToVideo'
-  | 'pipelineModeTextToVideo'
   | 'pipelineShots'
   | 'pipelineDuration'
   | 'pipelineRunning'
   | 'pipelineStarted'
   | 'pipelineCompose'
   | 'pipelineComposed'
+  | 'pipelineGenerateTitle'
+  | 'pipelineGenerateHint'
+  | 'pipelineBriefPlaceholder'
+  | 'pipelinePlanEpisodes'
+  | 'pipelinePlanSegments'
+  | 'pipelinePlanShots'
+  | 'pipelineGenerate'
+  | 'pipelineGeneratingScript'
+  | 'pipelineGenerateDone'
+  | 'pipelineGenerateNeedsSource'
   | 'pipelineShotsCount'
   | 'pipelineWarnings'
   | 'pipelineNeedsProject'
@@ -694,6 +703,46 @@ export type WorkbenchLocaleKey =
   | 'helpDeleteShortcut'
   | 'exampleProject'
   | 'exampleProjectDone'
+  // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
+  | 'pipelineTextModel'
+  | 'pipelineTextModelRules'
+  | 'pipelineTextModelHint'
+  | 'pipelineTextModelMissing'
+  | 'pipelineImportScript'
+  | 'pipelineWindowsSummary'
+  | 'pipelineWindowHint'
+  | 'pipelineImportScriptHint'
+  | 'pipelineImporting'
+  | 'pipelineImportedLabel'
+  | 'pipelineImportRemove'
+  | 'pipelineImportFailedShort'
+  | 'pipelineImportDone'
+  | 'pipelineImportFailed'
+  | 'pipelineSkill'
+  | 'pipelineSkillHint'
+  | 'pipelineSkillNone'
+  | 'pipelineSkillMissing'
+  | 'pipelineInlineImage'
+  | 'pipelineInlineImageHint'
+  | 'pipelineInlineImageAria'
+  | 'pipelineInlineRunAria'
+  | 'pipelineInlineProgress'
+  | 'pipelineShotImage'
+  | 'pipelineExport'
+  | 'pipelineSaveEpisode'
+  | 'pipelineSavedEpisode'
+  | 'pipelineSaveNeedsEpisode'
+  | 'pipelineReplanShot'
+  | 'pipelineReplanNoModel'
+  | 'pipelineAddShot'
+  | 'pipelineShotGenerate'
+  | 'pipelineShotToCanvas'
+  | 'pipelineSourceModel'
+  | 'pipelineSourceRules'
+  | 'pipelineEntitiesTitle'
+  | 'pipelineEntitiesEmpty'
+  | 'pipelineCancel'
+  | 'pipelineCancelled'
   // ---- B-3 融合生图参数化（姿态 / 镜头 / 风格 / 场景裁剪） ----
   | 'fusionPoseLabel'
   | 'fusionPoseNone'
@@ -792,7 +841,6 @@ export type WorkbenchLocaleKey =
   // ---- B-18 物料手动挑选 + 匹配回显 ----
   | 'pipelineManualPick'
   | 'pipelineManualPickHint'
-  | 'pipelineManualPickEmpty'
   | 'pipelineManualPickClear'
   | 'pipelineManualPickCount'
   | 'pipelineMatchedTitle'
@@ -809,14 +857,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineTitle: 'One-click film: script → shots → image → video',
   pipelineScriptLabel: 'Script',
   pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
-  pipelineModeImageToVideo: 'Image → video',
-  pipelineModeTextToVideo: 'Text → video',
   pipelineShots: 'Shots',
   pipelineDuration: 'Seconds per shot',
   pipelineRunning: 'Running…',
   pipelineStarted: 'Pipeline started',
   pipelineCompose: 'Generate shots',
   pipelineComposed: 'Shots ready — edit them below',
+  pipelineGenerateTitle: 'Script → episodes → segments → shots',
+  pipelineGenerateHint: 'Writes into the series records; every level can be added to or edited below.',
+  pipelineBriefPlaceholder: 'One-line idea — used by the model when the script is empty',
+  pipelinePlanEpisodes: 'Episodes',
+  pipelinePlanSegments: 'Segments / episode',
+  pipelinePlanShots: 'Shots / segment',
+  pipelineGenerate: 'Generate script',
+  pipelineGeneratingScript: 'Generating…',
+  pipelineGenerateDone: '{n} episode(s) written into this series',
+  pipelineGenerateNeedsSource: 'Write a script, or a one-line idea for the model',
   pipelineShotsCount: 'shots',
   pipelineWarnings: 'Note',
   pipelineNeedsProject: 'Create or pick a series first',
@@ -842,9 +898,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
   modulePipeline: 'Script → film',
-  modulePipelineDesc: 'Paste a script: it is split into shots, then images and clips are generated for it.',
-  moduleScript: 'Script · segments',
-  moduleScriptDesc: 'Write the full script, pick a text model and skill, then split it into segments automatically or by hand.',
+  modulePipelineDesc: 'Script → episode → segments → shots → images and clips. Every level can be added to, edited or reordered below.',
   scriptTextModel: 'Text model',
   scriptTextModelEmpty: 'Not selected',
   scriptImageModel: 'Image model',
@@ -1051,6 +1105,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasEmpty: 'Add nodes from the library on the left',
   canvasPlannedTag: 'not available',
   canvasTransient: 'Workflow is kept on this machine; series storage lands with the host endpoint',
+  canvasLogs: 'Logs',
+  canvasMaximize: 'Fullscreen canvas',
+  canvasRestore: 'Exit fullscreen',
   paramBrief: 'Creative brief',
   paramScript: 'Copy',
   paramShots: 'Shots',
@@ -1094,6 +1151,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   kindVoice: 'Voice',
   sectionEpisode: 'Episode',
   episodeNone: 'No episode yet',
+  episodeNo: 'Episode no.',
+  episodeNoHint: 'Starts at 0; leave blank to keep the current number',
   episodeNew: 'New episode',
   episodeRename: 'Rename episode',
   episodeRemove: 'Delete episode',
@@ -1320,17 +1379,20 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   generateRefsLabel: 'Reference images (ordered)',
   generateRefsPreviewHint: 'Click the thumbnail or the filename to preview it',
-  pipelineModeVideoToVideo: 'Video → video (recreate)',
   pipelineToCanvas: 'Build canvas',
   pipelineToCanvasHint: 'Only lays the shots out on the canvas — nothing starts until you run it there',
-  pipelineInlineRun: 'Generate here',
-  pipelineInlineRunHint: 'Generates shot by shot right here, without opening the canvas',
+  pipelineInlineRun: 'Generate video',
+  pipelineInlineRunHint: 'Generates the videos shot by shot right here, without opening the canvas',
+  pipelineInlineImage: 'Generate images',
+  pipelineInlineImageHint: 'Generates the images shot by shot right here, without opening the canvas',
+  pipelineInlineImageAria: 'Generate images (shot by shot)',
+  pipelineInlineRunAria: 'Generate video (shot by shot)',
+  pipelineInlineProgress: 'Inline generation',
   pipelineInlineVideoFailed: 'Shot video failed',
   pipelineInlineVideoCancelled: 'Shot video was cancelled',
   pipelineInlineVideoTimeout: 'Timed out waiting for the shot video',
   pipelineInlineVideoNoOutput: 'The shot video task finished without a file',
   pipelineShotDuration: 'Shot seconds',
-  pipelineVideoToVideoNeedsRef: 'Video → video needs a reference clip first',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
   modelDetails: 'Model details',
   fusionEntry: 'Compose with series looks',
@@ -1604,15 +1666,49 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   redrawPlanApplied: 'Applied to compose form.',
 
   // ---- B-18 物料手动挑选 + 匹配回显 ----
-  pipelineManualPick: 'Pick materials manually',
-  pipelineManualPickHint: 'Force specific resources into the pipeline. Leave empty to let the script auto-match.',
-  pipelineManualPickEmpty: 'No materials picked.',
+  pipelineManualPick: 'Materials',
+  pipelineManualPickHint: 'Tick resources to force them into this run; leave empty to auto-match from the script.',
   pipelineManualPickClear: 'Clear',
   pipelineManualPickCount: '{n} picked',
   pipelineMatchedTitle: 'Matched materials',
   pipelineMatchedItem: '{name} · {kind}',
   exampleProject: 'Example series',
   exampleProjectDone: 'Example series created — try the Quick image template on the canvas.',
+  // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
+  pipelineTextModel: 'Script model',
+  pipelineTextModelRules: 'Rules only (no model)',
+  pipelineTextModelHint: 'Picks characters, props, scenes and shots step by step; falls back to rules when the model fails.',
+  pipelineTextModelMissing: 'No text model available in this host — rules only.',
+  pipelineImportScript: 'Import local file',
+  pipelineWindowsSummary: 'Full script: {chars} characters, split into {count} parts.',
+  pipelineWindowHint: 'Only the selected part is storyboarded; move to the next part afterwards.',
+  pipelineImportScriptHint: 'Pick one or more txt / md / docx / pdf scripts',
+  pipelineImporting: 'Importing…',
+  pipelineImportedLabel: 'Referenced files:',
+  pipelineImportRemove: 'Remove',
+  pipelineImportFailedShort: 'failed',
+  pipelineImportDone: 'Imported {name}',
+  pipelineImportFailed: 'Could not import the script file',
+  pipelineSkill: 'Skill',
+  pipelineSkillHint: 'Enhances storyboard, image and video prompts with the selected skill',
+  pipelineSkillNone: 'No skill',
+  pipelineSkillMissing: 'No director skill available — prompts use the built-in rules.',
+  pipelineExport: 'Export storyboard',
+  pipelineSaveEpisode: 'Save to this episode',
+  pipelineSavedEpisode: 'Saved {n} shots to the episode storyboard',
+  pipelineSaveNeedsEpisode: 'Pick an episode first',
+  pipelineReplanShot: 'Redo this shot',
+  pipelineReplanNoModel: 'Pick a script model to redo a single shot',
+  pipelineAddShot: 'Add shot',
+  pipelineShotGenerate: 'Generate video',
+  pipelineShotImage: 'Generate image',
+  pipelineShotToCanvas: 'Open in canvas',
+  pipelineSourceModel: 'Shots planned by the script model',
+  pipelineSourceRules: 'Shots planned by rules (no model)',
+  pipelineEntitiesTitle: 'Character / prop / scene references',
+  pipelineEntitiesEmpty: 'No references extracted.',
+  pipelineCancel: 'Cancel',
+  pipelineCancelled: 'Stopped — nothing was saved.',
 }
 
 /** Simplified Chinese copy. */
@@ -1719,9 +1815,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   redrawPlanApplied: '已填入融合表单。',
 
   // ---- B-18 物料手动挑选 + 匹配回显 ----
-  pipelineManualPick: '手动挑选物料',
-  pipelineManualPickHint: '强制把指定资源塞进流水线。留空则让剧本自动匹配。',
-  pipelineManualPickEmpty: '还没挑任何物料。',
+  pipelineManualPick: '指定物料',
+  pipelineManualPickHint: '勾选要强制带进本次生成的物料；不选就按剧本自动匹配。',
   pipelineManualPickClear: '清空',
   pipelineManualPickCount: '已挑 {n} 个',
   pipelineMatchedTitle: '匹配到的物料',
@@ -1733,14 +1828,22 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
   pipelineScriptLabel: '剧本',
   pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
-  pipelineModeImageToVideo: '图生视频',
-  pipelineModeTextToVideo: '文生视频',
   pipelineShots: '分镜数',
   pipelineDuration: '每镜秒数',
   pipelineRunning: '执行中…',
   pipelineStarted: '已起跑',
   pipelineCompose: '生成分镜',
   pipelineComposed: '分镜已生成，可在下面逐条修改',
+  pipelineGenerateTitle: '剧本 → 集 → 分段 → 分镜',
+  pipelineGenerateHint: '写进剧集的集记录；下面每一级都能继续增删。',
+  pipelineBriefPlaceholder: '一句话创意——剧本为空时由模型写成剧本',
+  pipelinePlanEpisodes: '集数',
+  pipelinePlanSegments: '每集段数',
+  pipelinePlanShots: '每段分镜数',
+  pipelineGenerate: '生成剧本',
+  pipelineGeneratingScript: '生成中…',
+  pipelineGenerateDone: '已写入 {n} 集，可在下面逐级增删',
+  pipelineGenerateNeedsSource: '请先写剧本，或写一句创意让模型生成剧本',
   pipelineShotsCount: '个分镜',
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个剧集',
@@ -1766,9 +1869,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveFailed: '保存失败',
   modeQuick: '快速创作',
   modulePipeline: '剧本 → 成片',
-  modulePipelineDesc: '贴一段剧本：自动拆成分镜，再逐镜出图、出视频。',
-  moduleScript: '剧本 · 分段',
-  moduleScriptDesc: '写整段剧本，选文本模型与导演 Skill，自动或手动拆成分段。',
+  modulePipelineDesc: '剧本 → 集 → 分段 → 分镜 → 出图出片；每一级都能在下面继续增删、修改。',
   scriptTextModel: '文本模型',
   scriptTextModelEmpty: '未选择',
   scriptImageModel: '图像模型',
@@ -1975,6 +2076,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasEmpty: '从左侧节点库添加节点',
   canvasPlannedTag: '未提供',
   canvasTransient: '工作流暂存在本机（剧集存储随宿主端点接入）',
+  canvasLogs: '工作日志',
+  canvasMaximize: '全屏画布',
+  canvasRestore: '退出全屏',
   paramBrief: '创作诉求',
   paramScript: '文案',
   paramShots: '分镜数',
@@ -2018,6 +2122,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   kindVoice: '音色',
   sectionEpisode: '集',
   episodeNone: '暂无集',
+  episodeNo: '集号',
+  episodeNoHint: '从 0 起；留空沿用当前集号',
   episodeNew: '新建集',
   episodeRename: '重命名集',
   episodeRemove: '删除集',
@@ -2244,17 +2350,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   generateRefsLabel: '参考图（按序）',
   generateRefsPreviewHint: '点击缩略图或文件名，在预览里看这张图',
-  pipelineModeVideoToVideo: '视频生视频（复刻）',
   pipelineToCanvas: '生成画布',
   pipelineToCanvasHint: '只把分镜铺到画布，不开始生成；你在画布确认后再点生成',
-  pipelineInlineRun: '就地生成',
-  pipelineInlineRunHint: '不跳画布，直接按分镜逐镜出图 / 出视频',
+  pipelineInlineRun: '生成视频',
+  pipelineInlineRunHint: '不跳画布，直接按分镜逐镜出视频',
+  pipelineInlineImage: '生成图片',
+  pipelineInlineImageHint: '不跳画布，直接按分镜逐镜出图片',
+  pipelineInlineImageAria: '生成图片（按分镜逐镜）',
+  pipelineInlineRunAria: '生成视频（按分镜逐镜）',
+  pipelineInlineProgress: '就地生成进度',
   pipelineInlineVideoFailed: '本镜视频生成失败',
   pipelineInlineVideoCancelled: '本镜视频已取消',
   pipelineInlineVideoTimeout: '等本镜视频超时',
   pipelineInlineVideoNoOutput: '本镜视频任务结束但没有产物文件',
   pipelineShotDuration: '本镜时长(秒)',
-  pipelineVideoToVideoNeedsRef: '视频生视频要先选一段参考视频',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
   modelDetails: '模型详情',
   fusionEntry: '用剧集设定拼画面',
@@ -2428,4 +2537,39 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   helpDeleteShortcut: 'Delete——删除选中的片段或节点',
   exampleProject: '示例剧集',
   exampleProjectDone: '示例剧集已建好——去画布试试「快速图片」模板。',
+  // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
+  pipelineTextModel: '剧本模型',
+  pipelineTextModelRules: '只用规则（不调模型）',
+  pipelineTextModelHint: '分角色、道具、场景、分镜四步拆解；模型失败会如实回落规则拆解。',
+  pipelineTextModelMissing: '当前宿主没有可用的文本模型——只能走规则拆解。',
+  pipelineImportScript: '导入本地文件',
+  pipelineWindowsSummary: '全文 {chars} 字，已切为 {count} 段。',
+  pipelineWindowHint: '本次只拆选中的一段，拆完换下一段继续。',
+  pipelineImportScriptHint: '可一次选多个 txt / md / docx / pdf 剧本',
+  pipelineImporting: '导入中…',
+  pipelineImportedLabel: '已引用文件：',
+  pipelineImportRemove: '移除',
+  pipelineImportFailedShort: '解析失败',
+  pipelineImportDone: '已导入 {name}',
+  pipelineImportFailed: '剧本文件导入失败',
+  pipelineSkill: '技能',
+  pipelineSkillHint: '分镜、生成图片与生成视频的提示词都会按这个技能增强',
+  pipelineSkillNone: '不使用技能',
+  pipelineSkillMissing: '技能库里没有导演技能——提示词按内置规则生成。',
+  pipelineExport: '导出分镜表',
+  pipelineSaveEpisode: '保存到本集分镜',
+  pipelineSavedEpisode: '已把 {n} 镜保存到本集分镜',
+  pipelineSaveNeedsEpisode: '请先选一集',
+  pipelineReplanShot: '重拆这一镜',
+  pipelineReplanNoModel: '重拆单镜需要先选一个剧本模型',
+  pipelineAddShot: '添加一镜',
+  pipelineShotGenerate: '生成视频',
+  pipelineShotImage: '生成图片',
+  pipelineShotToCanvas: '在画布打开',
+  pipelineSourceModel: '分镜由剧本模型拆解',
+  pipelineSourceRules: '分镜由规则拆解（未用模型）',
+  pipelineEntitiesTitle: '角色 / 道具 / 场景参考',
+  pipelineEntitiesEmpty: '没有抽取到实体。',
+  pipelineCancel: '取消',
+  pipelineCancelled: '已停止，没有保存任何东西。',
 }

@@ -16,7 +16,6 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { TaskRecord } from '../workbench/records.ts'
-import type { PipelineMode } from '../workbench/pipeline.ts'
 
 /** 工作台的三种模式。 */
 export type WorkbenchModeName = 'quick' | 'workflow' | 'timeline'
@@ -70,18 +69,20 @@ export interface WorkbenchUiState {
   readonly generateImageModel: string
   /** 单条生成表单：视频模型覆盖。 */
   readonly generateVideoModel: string
+  /** 一键成片表单当前归属的项目（切换项目时按它保存/恢复）。 */
+  readonly pipelineProjectId: string
   /** 一键成片：剧本。 */
   readonly pipelineScript: string
-  /** 一键成片：生成模式。 */
-  readonly pipelineMode: PipelineMode
   /** 一键成片：分镜数。 */
   readonly pipelineShots: number
   /** 一键成片：每镜秒数。 */
   readonly pipelineDuration: number
-  /** 一键成片：参考视频路径。 */
-  readonly pipelineReferenceVideo: string
   /** 一键成片：手动指定的资源 id。 */
   readonly pipelineManualPick: readonly string[]
+  /** 一键成片：拆分镜用的文本模型（`provider::model`）；空串 = 只用规则拆解。 */
+  readonly pipelineTextModel: string
+  /** 一键成片：增强分镜提示词的导演技能 id；空串 = 不叠加技能。 */
+  readonly pipelineSkillId: string
 }
 
 /** 初始值。 */
@@ -105,12 +106,13 @@ const INITIAL: WorkbenchUiState = {
   generateDuration: '',
   generateImageModel: '',
   generateVideoModel: '',
+  pipelineProjectId: '',
   pipelineScript: '',
-  pipelineMode: 'image-to-video',
   pipelineShots: 4,
   pipelineDuration: 6,
-  pipelineReferenceVideo: '',
   pipelineManualPick: [],
+  pipelineTextModel: '',
+  pipelineSkillId: '',
 }
 
 /** 单个字段的 setter：值或更新函数。 */
@@ -163,6 +165,66 @@ export function setWorkbenchField<K extends keyof WorkbenchUiState>(
     : value
   if (Object.is(previous, next)) return
   store.state = { ...store.state, [key]: next }
+  for (const listener of store.listeners) listener()
+}
+
+/** 一键成片表单里**跟随项目**的字段（切换项目时整体保存/恢复）。 */
+export type PipelineFieldSnapshot = Pick<
+  WorkbenchUiState,
+  'pipelineScript' | 'pipelineShots' | 'pipelineDuration' | 'pipelineManualPick' | 'pipelineTextModel' | 'pipelineSkillId'
+>
+
+/** 新项目的成片表单初值。 */
+const PIPELINE_FIELDS_INITIAL: PipelineFieldSnapshot = {
+  pipelineScript: '',
+  pipelineShots: 4,
+  pipelineDuration: 6,
+  pipelineManualPick: [],
+  pipelineTextModel: '',
+  pipelineSkillId: '',
+}
+
+/** 每个 API 实例一份「项目 id → 成片表单」快照，避免切换项目后还显示上一个项目的剧本。 */
+const pipelineSnapshots = new WeakMap<object, Map<string, PipelineFieldSnapshot>>()
+
+/** 取（或建）某个 API 实例的成片表单快照表。 */
+function pipelineSnapshotsOf(owner: object): Map<string, PipelineFieldSnapshot> {
+  let snapshots = pipelineSnapshots.get(owner)
+  if (snapshots === undefined) {
+    snapshots = new Map()
+    pipelineSnapshots.set(owner, snapshots)
+  }
+  return snapshots
+}
+
+/** 只取跟项目走的那几个字段。 */
+function snapshotPipelineFields(state: WorkbenchUiState): PipelineFieldSnapshot {
+  return {
+    pipelineScript: state.pipelineScript,
+    pipelineShots: state.pipelineShots,
+    pipelineDuration: state.pipelineDuration,
+    pipelineManualPick: state.pipelineManualPick,
+    pipelineTextModel: state.pipelineTextModel,
+    pipelineSkillId: state.pipelineSkillId,
+  }
+}
+
+/**
+ * 切换到另一个项目的成片表单：先保存当前项目的填写内容，再恢复目标项目的（没有则回到默认值）。
+ *
+ * 不分项目的话，切换剧集后剧本、分镜数与模型选择都还是上一部的内容——用户会以为"没刷新"。
+ * @param owner - 宿主 API 实例（状态桶的键）。
+ * @param projectId - 目标项目 id；空串表示没有选中项目。
+ */
+export function switchPipelineProject(owner: object, projectId: string): void {
+  const store = storeOf(owner)
+  if (store.state.pipelineProjectId === projectId) return
+  const snapshots = pipelineSnapshotsOf(owner)
+  if (store.state.pipelineProjectId !== '') {
+    snapshots.set(store.state.pipelineProjectId, snapshotPipelineFields(store.state))
+  }
+  const restored = snapshots.get(projectId) ?? PIPELINE_FIELDS_INITIAL
+  store.state = { ...store.state, pipelineProjectId: projectId, ...restored }
   for (const listener of store.listeners) listener()
 }
 

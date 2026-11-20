@@ -46,7 +46,7 @@ import type {
   EpisodeRecord, EpisodeRefCategory,
 } from '../workbench/episodes.ts'
 import type { SkillRecord } from '../workbench/skills.ts'
-import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, StoryboardShot, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
 import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
@@ -544,7 +544,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
    * 收起就把整块内容一起藏起来。
    */
-  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; script: boolean }>({ pipeline: true, quick: true, script: true })
+  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean }>({ pipeline: true, quick: true })
   // 展示列开合（宽档两栏 / 窄档浮层，见样式表容器查询）
   const [dockOpen, setDockOpen] = useWorkbenchField(api, 'dockOpen')
   // 展示列各块的收起态：高频块（预览）默认展开，低频块（资源/导出/任务）默认收起。
@@ -573,10 +573,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [])
 
   useEffect(() => { void loadAuthLabel() }, [loadAuthLabel])
-  const toggleModule = (key: 'pipeline' | 'quick' | 'script'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
-  // `T9` 分镜 → 一键成片直通：把剧本「推」给 PipelineCard。
-  // 用递增 seq 包一层，保证**同一段脚本连点两次也能再次触发**（value 变化才触发 effect）。
-  const [pipelineInject, setPipelineInject] = useState<{ seq: number; script: string } | undefined>(undefined)
+  const toggleModule = (key: 'pipeline' | 'quick'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -597,11 +594,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [composeRiskBusy, setComposeRiskBusy] = useState(false)
   const [composing, setComposing] = useState(false)
 
-  // `B-15` 分镜工坊（`A-7` `storyboard/plan`）：剧本 → 可编辑镜头表。
-  const [storyboardScript, setStoryboardScript] = useState('')
-  const [storyboardTarget, setStoryboardTarget] = useState('')
-  const [storyboardShots, setStoryboardShots] = useState<readonly StoryboardShot[]>([])
-  const [storyboardBusy, setStoryboardBusy] = useState(false)
   // `B-16` 导出历史（`A-11`）：发起导出时记一笔，终态回写；面板据此刷新。
   const [exportRecordId, setExportRecordId] = useState<string | undefined>(undefined)
   const [exportsTick, setExportsTick] = useState(0)
@@ -615,6 +607,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [episodeResourceView, setEpisodeResourceView] = useState<'selected' | 'all'>('selected')
   const [episodeRenaming, setEpisodeRenaming] = useState(false)
   const [episodeRenameValue, setEpisodeRenameValue] = useState('')
+  /** 集号草稿：可留空，留空沿用当前集号（默认从 0 起）。 */
+  const [episodeNoValue, setEpisodeNoValue] = useState('')
   /** 主区标签页：内容生产（生成） / 提示词·分镜（逆向解析与本集提示词库）。 */
   const [quickTab, setQuickTab] = useWorkbenchField(api, 'quickTab')
   // 导演库里启用中的技能：分段的 Skill 选择器只列这些（技能管理页改动后一起刷新）。
@@ -1637,160 +1631,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     setNotice({ text: t('promptApplyDone'), tone: 'info' })
   }
 
-  // ============ B-15 分镜工坊（`A-7` `storyboard/plan`）============
-  /** 镜头表统一重排序号：增/删/移之后保持 1-based 连续（界面只认 index 不认数组位）。 */
-  const reindexStoryboard = (shots: readonly StoryboardShot[]): StoryboardShot[] =>
-    shots.map((shot, position) => ({ ...shot, index: position + 1 }))
-
-  /**
-   * `B-15`：剧本 → 分镜表。宿主做确定性拆解（切句→分组→按创作资源识别角色/场景），
-   * 空剧本/无项目在本地拦；宿主错误（如空剧本的领域错误）如实展示，不伪造结果。
-   */
-  const runPlanStoryboard = async (): Promise<void> => {
-    const script = storyboardScript.trim()
-    if (script === '') { setNotice({ text: t('storyboardNeedsScript'), tone: 'error' }); return }
-    if (activeId === undefined) { setNotice({ text: t('storyboardNeedsProject'), tone: 'error' }); return }
-    const target = Number(storyboardTarget)
-    setStoryboardBusy(true)
-    try {
-      const plan = await apiRef.current.planStoryboard({
-        projectId: activeId,
-        script,
-        ...Number.isFinite(target) && target > 0 ? { shots: Math.round(target) } : {},
-      })
-      setStoryboardShots(plan.shots)
-      const referenced = plan.referencedResourceIds.length === 0
-        ? ''
-        : ` · ${t('storyboardReferenced').replace('{n}', String(plan.referencedResourceIds.length))}`
-      setNotice({
-        text: `${t('storyboardPlanDone').replace('{n}', String(plan.shots.length))}${referenced}`,
-        tone: 'info',
-      })
-    } catch (error) {
-      setNotice({ text: `${t('storyboardPlanFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    } finally {
-      setStoryboardBusy(false)
-    }
-  }
-
-  /** 改一个镜头的文本字段（描述/场景/图片提示词/视频提示词）。 */
-  const patchStoryboardText = (index: number, field: 'shot' | 'scene' | 'imagePrompt' | 'videoPrompt', value: string): void => {
-    setStoryboardShots(current => current.map((shot, position) => (position === index ? { ...shot, [field]: value } : shot)))
-  }
-
-  /** 改一个镜头的角色列表（输入框里是逗号/顿号分隔的文本，落表前拆成数组）。 */
-  const patchStoryboardCharacters = (index: number, value: string): void => {
-    setStoryboardShots(current => current.map((shot, position) => (position === index
-      ? { ...shot, characters: value.split(/[,，、]/u).map(part => part.trim()).filter(part => part !== '') }
-      : shot)))
-  }
-
-  /** 上移/下移一个镜头（到头/到尾不越界），移完重排序号。 */
-  const moveStoryboardShot = (index: number, delta: number): void => {
-    setStoryboardShots(current => {
-      const to = index + delta
-      if (to < 0 || to >= current.length) return current
-      const next = [...current]
-      const [moved] = next.splice(index, 1)
-      if (moved === undefined) return current
-      next.splice(to, 0, moved)
-      return reindexStoryboard(next)
-    })
-  }
-
-  /** 删除一个镜头并重排序号。 */
-  const removeStoryboardShot = (index: number): void => {
-    setStoryboardShots(current => reindexStoryboard(current.filter((_, position) => position !== index)))
-  }
-
-  /** 手动补一个空镜头（宿主拆解不满意时用户自己加）。 */
-  /**
-   * `T9` 把分镜表**组装成一段剧本**，交给「一键成片」编排。
-   * 每镜头写成"场景 + 角色 + 画面"一句，保留用户改过的提示词——这样编排结果与屏幕上的分镜一致，
-   * 而不是让宿主重新从原始脚本猜一遍。
-   * @returns 组装出的剧本（镜头为空时返回空串）。
-   */
-  const storyboardAsScript = (): string =>
-    storyboardShots
-      .map((shot, index) => {
-        const parts = [
-          shot.scene === undefined || shot.scene.trim() === '' ? '' : `场景：${shot.scene.trim()}`,
-          shot.characters.length === 0 ? '' : `角色：${shot.characters.join('、')}`,
-          shot.imagePrompt.trim() === '' ? '' : shot.imagePrompt.trim(),
-        ].filter(part => part !== '')
-        return parts.length === 0 ? '' : `镜头${index + 1}：${parts.join('；')}`
-      })
-      .filter(line => line !== '')
-      .join('\n')
-
-  /**
-   * `T9` 分镜 → 一键成片直通：把组装好的剧本推给 PipelineCard 并滚动到它。
-   * 没有可分镜时给出明确提示（不静默无反应）。
-   */
-  const storyboardToPipeline = (): void => {
-    const script = storyboardAsScript()
-    if (script === '') {
-      setNotice({ text: t('storyboardNeedsShotsForPipeline'), tone: 'error' })
-      return
-    }
-    setPipelineInject(previous => ({ seq: (previous?.seq ?? 0) + 1, script }))
-    setNotice({ text: t('storyboardSentToPipeline'), tone: 'info' })
-    // 滚动只是"锦上添花"：环境（jsdom / 老 WebView）没有 scrollIntoView 时不能因此报错中断
-    const card = document.querySelector('[data-pipeline-card]')
-    if (card !== null && typeof card.scrollIntoView === 'function') {
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
-  }
-
-  const addStoryboardShot = (): void => {
-    setStoryboardShots(current => reindexStoryboard([...current, {
-      index: current.length + 1, shot: '', characters: [], scene: undefined, imagePrompt: '', videoPrompt: '',
-    }]))
-  }
-
-  /** `B-15`：把某镜的图片提示词带入快速生成表单（只填表，不自动生成）。 */
-  const storyboardToGenerate = (shot: StoryboardShot): void => {
-    if (shot.imagePrompt.trim() === '') { setNotice({ text: t('storyboardEmptyPrompt'), tone: 'error' }); return }
-    setGeneratePrompt(shot.imagePrompt)
-    setNotice({ text: t('storyboardSentGenerate').replace('{n}', String(shot.index)), tone: 'info' })
-  }
-
-  /**
-   * `B-15`：把某镜的图片提示词送进画布的图片生成节点——已有图片节点就改它的
-   * 提示词，没有就追加一个；随后切到工作流模式让用户看见。存盘失败如实报错。
-   */
-  const storyboardToCanvas = async (shot: StoryboardShot): Promise<void> => {
-    const prompt = shot.imagePrompt.trim()
-    if (prompt === '') { setNotice({ text: t('storyboardEmptyPrompt'), tone: 'error' }); return }
-    if (activeId === undefined) { setNotice({ text: t('storyboardNeedsProject'), tone: 'error' }); return }
-    const projectId = activeId
-    try {
-      const rows = await apiRef.current.listWorkflows(projectId)
-      const stamp = new Date().toISOString()
-      const base = rows[0] ?? {
-        schemaVersion: 1 as const, id: newWorkbenchId('wfl'), projectId,
-        name: `${activeProject?.name ?? ''} 工作流`, nodes: [] as WorkflowRecord['nodes'], edges: [] as WorkflowRecord['edges'],
-        createdAt: stamp, updatedAt: stamp,
-      }
-      const imageNode = base.nodes.find(node => node.kind === 'image-generate')
-      const nodes = imageNode === undefined
-        ? [...base.nodes, {
-            id: `${base.id}-${base.nodes.length}`, kind: 'image-generate' as const,
-            position: { x: base.nodes.length * 220, y: 0 },
-            params: { ...defaultParams('image-generate'), prompt },
-          }]
-        : base.nodes.map(node => (node.id === imageNode.id ? { ...node, params: { ...node.params, prompt } } : node))
-      const stored = await apiRef.current.saveWorkflow({
-        id: base.id, projectId, name: base.name, nodes, edges: base.edges,
-      })
-      setWorkflow(stored)
-      setWorkflowState('saved')
-      setMode('workflow')
-      setNotice({ text: t('storyboardSentCanvas').replace('{n}', String(shot.index)), tone: 'info' })
-    } catch (error) {
-      setNotice({ text: `${t('storyboardToCanvasFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    }
-  }
 
   // ============ B-16 导出历史（`A-11` `exports/*`）============
   /**
@@ -1989,8 +1829,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     if (activeEpisode === undefined) return
     const title = episodeRenameValue.trim()
     if (title === '') return
+    const no = episodeNoValue.trim() === '' ? undefined : Number(episodeNoValue)
+    if (no !== undefined && (!Number.isInteger(no) || no < 0)) return
     void run(async () => {
-      await apiRef.current.updateEpisode(activeEpisode.id, { title })
+      await apiRef.current.updateEpisode(activeEpisode.id, { title, ...no === undefined ? {} : { no } })
       setEpisodeRenaming(false)
       if (activeId !== undefined) await loadEpisodes(activeId)
     })
@@ -2518,7 +2360,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   data-episode-rename="true"
                   aria-label={t('episodeRename')}
                   title={t('episodeRename')}
-                  onClick={() => { setEpisodeRenaming(true); setEpisodeRenameValue(activeEpisode.title) }}
+                  onClick={() => { setEpisodeRenaming(true); setEpisodeRenameValue(activeEpisode.title); setEpisodeNoValue(String(activeEpisode.no)) }}
                 >
                   <Icon name="pencil" size={12} />
                 </button>
@@ -2711,6 +2553,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         ? (
           <div className="iv-rename" data-episode-rename-row="true">
             <Icon name="pencil" />
+            <label className="iv-plan-field" title={t('episodeNoHint')}>
+              {t('episodeNo')}
+              <input
+                className="iv-input"
+                data-episode-no="true"
+                type="number"
+                min={0}
+                step={1}
+                value={episodeNoValue}
+                onChange={event => { setEpisodeNoValue(event.target.value) }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') saveEpisodeRename()
+                  if (event.key === 'Escape') setEpisodeRenaming(false)
+                }}
+              />
+            </label>
             <input
               className="iv-input"
               aria-label={t('episodeRename')}
@@ -2724,6 +2582,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <button
               type="button"
               className="iv-btn iv-btn--acc iv-btn--sm"
+              data-episode-rename-save="true"
               disabled={busy || episodeRenameValue.trim() === ''}
               onClick={saveEpisodeRename}
             >
@@ -2933,7 +2792,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {quickTab === 'produce'
                     ? (<>
                   <div className="iv-modules" data-quick-modules="true">
-                  {/* 模块 1：剧本成片（一键成片）——"一段剧本，自动拆成分镜并出图出片" */}
+                  {/* 模块 1：剧本 → 集 → 分段 → 分镜（原「剧本 · 分段」已并入，2026-11-20） */}
                   <section className="iv-module" data-module="pipeline">
                     <button
                       type="button"
@@ -2958,222 +2817,89 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     t={t}
                     projectId={activeProject?.id}
                     onStarted={() => { setMode('workflow') }}
-                    injectScript={pipelineInject?.script}
-                    // `B2` 视频生视频（复刻）：把「媒体素材」里选中的那条视频交给卡片当参考片
-                    selectedAsset={selectedAsset === undefined ? undefined : { path: selectedAsset.path, kind: selectedAsset.kind }}
+                    // `B-20`：分镜卡片自带剧本导入/编辑/落库，不再需要外部注入剧本
+                    episodeId={activeEpisodeId}
+                    // `B-22`：生成剧本会新建 / 更新集记录，刷新后选中第一集，用户接着逐级增删
+                    onEpisodesGenerated={async created => {
+                      if (activeId !== undefined) await loadEpisodes(activeId)
+                      const first = created[0]
+                      if (first !== undefined) setActiveEpisodeId(first.id)
+                    }}
                   />
-
-                  {/* `D3` 手动分镜：和“自动拆镜”是同一件事的两个档位（自动 / 手动），
-                      所以并进模块 ①。默认收起。 */}
-                  <details className="iv-vonly" data-storyboard-entry="true">
-                    <summary className="iv-vonly-head">{t('storyboardTitle')}</summary>
-                    <div className="iv-vonly-body">
-                        <div className="iv-storyboard" data-storyboard="true">
-                          <div className="iv-sb-head">
-                            <span className="iv-chip"><Icon name="storyboard" size={11} />{t('storyboardTitle')}</span>
-                            {/* `T9` 分镜 → 一键成片：剧本只粘一遍。**始终渲染**——空态点击给明确提示，
-                                比"按钮凭空消失"更容易理解（用户会怀疑功能没做）。 */}
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-storyboard-to-pipeline="true"
-                              title={t('storyboardToPipelineHint')}
-                              onClick={storyboardToPipeline}
+                  {/* 本集默认值：新分段与「生成剧本」的落库都继承这一组选择 */}
+                  {activeProject === undefined || activeEpisode === undefined
+                    ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
+                    : (
+                      <>
+                        <div className="iv-sb-row" data-script-selectors="true">
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptTextModel')}</span>
+                            <select
+                              className="iv-select iv-select--sm"
+                              aria-label={t('scriptTextModel')}
+                              data-script-text-model="true"
+                              value={scriptTextModel}
+                              onChange={event => { setScriptTextModel(event.target.value) }}
                             >
-                              <Icon name="flow" size={11} />{t('storyboardToPipeline')}
-                            </button>
-                            {storyboardShots.length === 0
-                              ? null
-                              : (
-                                <span className="iv-sb-count">
-                                  <span className="iv-meta" data-storyboard-count="true">
-                                    {t('storyboardShotsCount').replace('{n}', String(storyboardShots.length))}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--ghost iv-btn--sm"
-                                    data-storyboard-add="true"
-                                    onClick={addStoryboardShot}
-                                  >
-                                    <Icon name="plus" size={11} />{t('storyboardAddShot')}
-                                  </button>
-
-                                </span>
-                              )}
-                          </div>
-                          <span className="iv-meta">{t('storyboardHint')}</span>
-                          <div className="iv-sb-field">
-                            <span className="iv-meta">{t('storyboardScriptLabel')}</span>
-                            <textarea
-                              className="iv-input"
-                              rows={3}
-                              value={storyboardScript}
-                              placeholder={t('storyboardScriptPlaceholder')}
-                              data-storyboard-script="true"
-                              disabled={storyboardBusy}
-                              onChange={event => setStoryboardScript(event.target.value)}
-                              style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                              <option value="">{t('scriptTextModelEmpty')}</option>
+                              {scriptModels.map(model => (
+                                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                                  {model.providerName} · {model.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptImageModel')}</span>
+                            <ModelPicker
+                              api={apiRef.current} t={t} mediaMode="image"
+                              value={scriptImageModel} onChange={setScriptImageModel}
                             />
-                          </div>
-                          <div className="iv-sb-row">
-                            <label className="iv-sb-field" style={{ flex: '0 0 120px' }}>
-                              <span className="iv-meta">{t('storyboardCountLabel')}</span>
-                              <input
-                                className="iv-input"
-                                type="number"
-                                min={1}
-                                max={60}
-                                value={storyboardTarget}
-                                placeholder={t('none')}
-                                data-storyboard-target="true"
-                                disabled={storyboardBusy}
-                                onChange={event => setStoryboardTarget(event.target.value)}
-                                style={{ font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className={`iv-btn iv-btn--acc${storyboardBusy ? ' iv-btn--busy' : ''}`}
-                              data-storyboard-plan="true"
-                              aria-busy={storyboardBusy ? 'true' : undefined}
-                              disabled={storyboardBusy || activeId === undefined || storyboardScript.trim() === ''}
-                              onClick={() => { void runPlanStoryboard() }}
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptVideoModel')}</span>
+                            <ModelPicker
+                              api={apiRef.current} t={t} mediaMode="video"
+                              value={scriptVideoModel} onChange={setScriptVideoModel}
+                            />
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptDirectorSkill')}</span>
+                            <select
+                              className="iv-select iv-select--sm"
+                              aria-label={t('scriptDirectorSkill')}
+                              data-script-skill="true"
+                              value={scriptSkillId}
+                              onChange={event => { setScriptSkillId(event.target.value) }}
                             >
-                              <Icon name="sparkles" size={11} />{storyboardBusy ? t('storyboardPlanning') : t('storyboardPlan')}
-                            </button>
-                            <span className="iv-meta">{activeId === undefined ? t('storyboardNeedsProject') : ''}</span>
-                          </div>
-                          {storyboardShots.length === 0
-                            ? <div className="iv-empty" data-storyboard-empty="true">{t('storyboardEmpty')}</div>
-                            : (
-                              <div className="iv-sb-list">
-                                {storyboardShots.map((shot, index) => (
-                                  <div className="iv-sb-shot" key={`shot-${shot.index}-${index}`} data-storyboard-shot={String(index)}>
-                                    <span className="iv-sb-shot-index">{shot.index}</span>
-                                    <div className="iv-sb-shot-body">
-                                      <div className="iv-sb-row">
-                                        <label className="iv-sb-field">
-                                          <span className="iv-meta">{t('storyboardShotLabel')}</span>
-                                          <input
-                                            className="iv-input"
-                                            value={shot.shot}
-                                            data-storyboard-field="shot"
-                                            onChange={event => patchStoryboardText(index, 'shot', event.target.value)}
-                                            style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                          />
-                                        </label>
-                                        <label className="iv-sb-field">
-                                          <span className="iv-meta">{t('storyboardSceneLabel')}</span>
-                                          <input
-                                            className="iv-input"
-                                            value={shot.scene ?? ''}
-                                            placeholder={t('none')}
-                                            data-storyboard-field="scene"
-                                            onChange={event => patchStoryboardText(index, 'scene', event.target.value)}
-                                            style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                          />
-                                        </label>
-                                      </div>
-                                      <label className="iv-sb-field">
-                                        <span className="iv-meta">
-                                          {t('storyboardCharactersLabel')}
-                                          {shot.characters.length === 0 ? `（${t('storyboardCharactersEmpty')}）` : ''}
-                                        </span>
-                                        <input
-                                          className="iv-input"
-                                          value={shot.characters.join('、')}
-                                          data-storyboard-field="characters"
-                                          onChange={event => patchStoryboardCharacters(index, event.target.value)}
-                                          style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                        />
-                                      </label>
-                                      <label className="iv-sb-field">
-                                        <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
-                                        <textarea
-                                          className="iv-input"
-                                          rows={2}
-                                          value={shot.imagePrompt}
-                                          data-storyboard-field="imagePrompt"
-                                          onChange={event => patchStoryboardText(index, 'imagePrompt', event.target.value)}
-                                          style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                        />
-                                      </label>
-                                      <label className="iv-sb-field">
-                                        <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
-                                        <textarea
-                                          className="iv-input"
-                                          rows={2}
-                                          value={shot.videoPrompt}
-                                          data-storyboard-field="videoPrompt"
-                                          onChange={event => patchStoryboardText(index, 'videoPrompt', event.target.value)}
-                                          style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                                        />
-                                      </label>
-                                      <div className="iv-sb-actions">
-                                        <button
-                                          type="button"
-                                          className="iv-btn iv-btn--sm"
-                                          data-storyboard-to-generate={String(index)}
-                                          onClick={() => storyboardToGenerate(shot)}
-                                        >
-                                          <Icon name="bolt" size={11} />{t('storyboardToGenerate')}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="iv-btn iv-btn--sm"
-                                          data-storyboard-to-canvas={String(index)}
-                                          onClick={() => { void storyboardToCanvas(shot) }}
-                                        >
-                                          <Icon name="flow" size={11} />{t('storyboardToCanvas')}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="iv-btn iv-btn--icon iv-btn--sm"
-                                          aria-label={t('storyboardMoveUp')}
-                                          data-storyboard-up={String(index)}
-                                          disabled={index === 0}
-                                          onClick={() => moveStoryboardShot(index, -1)}
-                                        >
-                                          <Icon name="chevron" size={11} className="iv-ico--up" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="iv-btn iv-btn--icon iv-btn--sm"
-                                          aria-label={t('storyboardMoveDown')}
-                                          data-storyboard-down={String(index)}
-                                          disabled={index === storyboardShots.length - 1}
-                                          onClick={() => moveStoryboardShot(index, 1)}
-                                        >
-                                          <Icon name="chevron" size={11} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="iv-btn iv-btn--icon iv-btn--sm"
-                                          aria-label={`${t('storyboardRemoveShot')} ${shot.index}`}
-                                          data-storyboard-remove={String(index)}
-                                          onClick={() => removeStoryboardShot(index)}
-                                        >
-                                          <Icon name="trash" size={11} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          {storyboardShots.length === 0 ? null : (
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-storyboard-add-bottom="true"
-                              onClick={addStoryboardShot}
-                            >
-                              <Icon name="plus" size={11} />{t('storyboardAddShot')}
-                            </button>
-                      )}
+                              <option value="">{t('scriptFollowDefault')}</option>
+                              {directorSkills.map(skill => (
+                                <option key={skill.id} value={skill.id}>{skill.name}</option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                      </div>
-                  </details>
+                        <EpisodeWorkspace
+                          api={apiRef.current}
+                          t={t}
+                          projectId={activeProject.id}
+                          episode={activeEpisode}
+                          resources={resources}
+                          assets={assets}
+                          options={options}
+                          skills={directorSkills}
+                          textModel={scriptTextModelChoice}
+                          defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
+                          onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
+                          onMediaGenerated={async () => {
+                            setAssets(await apiRef.current.listAssets())
+                            await loadTasks()
+                          }}
+                          onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                        />
+                      </>
+                    )}
+
                     </div>
                   </section>
 
@@ -3775,101 +3501,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   </section>
 
-                  {/* 模块 3：剧本与分段——与模块 ①② 并列的第三块，同样可收起/展开。
-                      模型与 Skill 在这里选，新分段继承；拆段由宿主调文本模型完成。 */}
-                  <section className="iv-module" data-module="script">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="script"
-                      aria-expanded={openModules.script}
-                      aria-label={`${openModules.script ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleScript')}`}
-                      onClick={() => { toggleModule('script') }}
-                    >
-                      <span className="iv-module-n">3</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="script">{t('moduleScript')}</span>
-                        <span className="iv-meta">{t('moduleScriptDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.script ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body" data-module-body="script" hidden={!openModules.script}>
-                      {activeProject === undefined || activeEpisode === undefined
-                        ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
-                        : (
-                          <>
-                            <div className="iv-sb-row" data-script-selectors="true">
-                              <label className="iv-sb-field">
-                                <span className="iv-meta">{t('scriptTextModel')}</span>
-                                <select
-                                  className="iv-select iv-select--sm"
-                                  aria-label={t('scriptTextModel')}
-                                  data-script-text-model="true"
-                                  value={scriptTextModel}
-                                  onChange={event => { setScriptTextModel(event.target.value) }}
-                                >
-                                  <option value="">{t('scriptTextModelEmpty')}</option>
-                                  {scriptModels.map(model => (
-                                    <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
-                                      {model.providerName} · {model.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className="iv-sb-field">
-                                <span className="iv-meta">{t('scriptImageModel')}</span>
-                                <ModelPicker
-                                  api={apiRef.current} t={t} mediaMode="image"
-                                  value={scriptImageModel} onChange={setScriptImageModel}
-                                />
-                              </label>
-                              <label className="iv-sb-field">
-                                <span className="iv-meta">{t('scriptVideoModel')}</span>
-                                <ModelPicker
-                                  api={apiRef.current} t={t} mediaMode="video"
-                                  value={scriptVideoModel} onChange={setScriptVideoModel}
-                                />
-                              </label>
-                              <label className="iv-sb-field">
-                                <span className="iv-meta">{t('scriptDirectorSkill')}</span>
-                                <select
-                                  className="iv-select iv-select--sm"
-                                  aria-label={t('scriptDirectorSkill')}
-                                  data-script-skill="true"
-                                  value={scriptSkillId}
-                                  onChange={event => { setScriptSkillId(event.target.value) }}
-                                >
-                                  <option value="">{t('scriptFollowDefault')}</option>
-                                  {directorSkills.map(skill => (
-                                    <option key={skill.id} value={skill.id}>{skill.name}</option>
-                                  ))}
-                                </select>
-                              </label>
-                            </div>
-                            <EpisodeWorkspace
-                              api={apiRef.current}
-                              t={t}
-                              projectId={activeProject.id}
-                              episode={activeEpisode}
-                              resources={resources}
-                              assets={assets}
-                              options={options}
-                              skills={directorSkills}
-                              textModel={scriptTextModelChoice}
-                              defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
-                              onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
-                              onMediaGenerated={async () => {
-                                setAssets(await apiRef.current.listAssets())
-                                await loadTasks()
-                              }}
-                              onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                            />
-                          </>
-                        )}
-                    </div>
-                  </section>
                   </div>
                     </>)
                     : (
@@ -3895,7 +3526,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
             {mode === 'workflow' && workflow !== undefined
               ? (
-                <section className="iv-pane" data-workbench-pane="paneCanvas" data-workbench-planned="false">
+                <section className="iv-pane iv-pane--canvas" data-workbench-pane="paneCanvas" data-workbench-planned="false">
                   <PaneBoundary label={t('paneCanvas')} t={t}>
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="flow" size={13} /></span>

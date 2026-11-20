@@ -472,6 +472,7 @@ export function fakeApi(options: {
         : current.script.text
       const updated: EpisodeRecord = {
         ...current,
+        ...typeof patch.no === 'number' ? { no: patch.no } : {},
         ...typeof patch.title === 'string' ? { title: patch.title } : {},
         script: { text, updatedAt: '2026-11-09T00:00:00.000Z' },
       }
@@ -611,6 +612,42 @@ export function fakeApi(options: {
         }))
       }
       return { episode: await api.getEpisode(input.episodeId), created }
+    },
+    // 剧本结构夹具：按请求的三级数量建集 / 段 / 镜（真实生成由宿主调模型完成）。
+    generateEpisodes: async input => {
+      const episodeCount = Math.max(1, Math.min(12, Math.round(input.episodes ?? 1)))
+      const segmentCount = Math.max(1, Math.min(20, Math.round(input.segments ?? 3)))
+      const shotCount = Math.max(1, Math.min(20, Math.round(input.shots ?? 4)))
+      const created: EpisodeRecord[] = []
+      let targetId = input.episodeId
+      for (let episodeIndex = 0; episodeIndex < episodeCount; episodeIndex += 1) {
+        const episode = targetId === undefined || targetId === ''
+          ? await api.createEpisode(input.projectId, {})
+          : await api.updateEpisode(targetId, {})
+        targetId = undefined
+        if ((input.script ?? '').trim() !== '') await api.updateEpisode(episode.id, { script: { text: input.script } })
+        for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+          const segment = await api.createSegment(episode.id, {
+            promptText: `第${episodeIndex}集 第${segmentIndex + 1}段`,
+            imageModel: input.imageModel ?? '',
+            videoModel: input.videoModel ?? '',
+            skillId: input.skillId ?? '',
+          })
+          await api.saveStoryboard({
+            episodeId: episode.id,
+            segmentId: segment.id,
+            shots: Array.from({ length: shotCount }, (_, shotIndex) => ({
+              order: shotIndex + 1,
+              durationSec: input.shotDurationSec ?? 6,
+              imagePrompt: `镜头 ${shotIndex + 1}`,
+              videoPrompt: `镜头 ${shotIndex + 1}`,
+              refs: [],
+            })),
+          })
+        }
+        created.push(await api.getEpisode(episode.id))
+      }
+      return { episodes: created }
     },
     listStoryboards: async episodeId => (await api.getEpisode(episodeId)).storyboards,
     getStoryboard: async id => {

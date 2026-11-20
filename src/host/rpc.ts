@@ -10,7 +10,7 @@
  * carries them without pulling in any host code.
  */
 import { planStoryboard } from '../workbench/storyboard.ts'
-import { planPipeline, type PipelineOptions } from '../workbench/pipeline.ts'
+import { DEFAULT_SHOT_DURATION, planPipeline, type PipelineOptions, type PipelineShot } from '../workbench/pipeline.ts'
 import { planDub } from '../workbench/voice.ts'
 import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
 import { cropImage } from '../media/image-crop.ts'
@@ -76,6 +76,15 @@ import {
 } from '../workbench/records.ts'
 import type { EpisodeRecord, EpisodeRefAction, EpisodeRefInput, SegmentInput, SegmentRecord } from '../workbench/episodes.ts'
 import { buildSplitInput, parseSplitProposals, SCRIPT_SPLIT_SYSTEM } from '../workbench/script-split.ts'
+import {
+  DEFAULT_PLAN_EPISODES, DEFAULT_PLAN_SEGMENTS, DEFAULT_PLAN_SHOTS, DEFAULT_PLAN_SHOT_SEC,
+  buildEpisodePlanPrompt, parseEpisodePlan, planEpisodesByRules,
+  type EpisodePlanEpisode, type EpisodePlanRequest,
+} from '../workbench/episode-plan.ts'
+import type { StoryboardShot } from '../workbench/storyboard.ts'
+import type { StoryboardEntityLibrary } from '../workbench/storyboard-plan.ts'
+import { planStoryboardWithModel, replanStoryboardShot, type StoryboardModelCaller } from './storyboard-llm.ts'
+import { extractScriptBytes, readScriptFile } from './script-import.ts'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmRuntime } from '@deepseek-ai/dsh-llm'
 
@@ -226,6 +235,7 @@ export function workbenchOptions(): WorkbenchOptions {
 async function composePipeline(
   deps: WorkbenchRpcDeps,
   payload: unknown,
+  signal?: AbortSignal,
 ): Promise<{
   workflowId: string
   name: string
@@ -237,6 +247,10 @@ async function composePipeline(
   matchedResources: Array<{ name: string; resourceId: string; kind: string }>
   /** `B5`：逐镜明细（时长 / 提示词），界面据此做"可编辑分镜"；旧宿主没有该字段。 */
   shotDetails: Array<{ index: number; shot: string; duration: number; imagePrompt: string; videoPrompt: string }>
+  /** `B-20`：分镜是谁拆的（`model` = 文本模型，`rules` = 规则拆解）。 */
+  source: 'model' | 'rules'
+  /** `B-20`：模型拆出的实体库（局部重拆时客户端原样回传）。 */
+  entities?: StoryboardEntityLibrary
 }> {
   const projectId = text(payload, 'projectId')
   const script = text(payload, 'script')
@@ -270,6 +284,40 @@ async function composePipeline(
   const resourceIds = Array.isArray(rawResourceIds)
     ? rawResourceIds.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
     : undefined
+  // `B-20`：选了文本模型就让模型拆分镜；失败如实回落规则拆解并写进诊断
+  const warnings: string[] = []
+  const choice = optionalModelChoice(payload)
+  const skill = await resolveSkillPrompt(deps, payload)
+  if (skill.warning !== undefined) warnings.push(skill.warning)
+  if (skill.prompt !== undefined && choice === undefined) {
+    warnings.push('技能只在文本模型拆解时生效：本次用规则拆解，技能未应用')
+  }
+  if (choice === undefined) warnings.push('未选择文本模型：本次用规则拆解')
+  let planned: readonly PipelineShot[] | undefined
+  let entities: StoryboardEntityLibrary | undefined
+  if (choice !== undefined) {
+    try {
+      const caller = await createStoryboardCaller(deps, choice.provider, choice.model, signal)
+      if (caller === undefined) throw new Error('当前宿主未提供文本模型服务')
+      const modelPlan = await planStoryboardWithModel(caller, {
+        script,
+        ...options.shots === undefined ? {} : { shots: options.shots },
+        ...skill.prompt === undefined ? {} : { skillPrompt: skill.prompt },
+        ...signal === undefined ? {} : { signal },
+      })
+      const duration = options.duration ?? DEFAULT_SHOT_DURATION
+      planned = modelPlan.shots.map((shot, index) => ({
+        index: index + 1,
+        shot: shot.shot,
+        duration,
+        imagePrompt: shot.imagePrompt,
+        videoPrompt: shot.videoPrompt,
+      }))
+      entities = modelPlan.library
+    } catch (error) {
+      warnings.push(`文本模型拆解失败：${error instanceof Error ? error.message : String(error)}；已回落到规则拆解`)
+    }
+  }
   const draft = planPipeline({
     script,
     options: resourceIds === undefined ? options : { ...options, resourceIds },
@@ -277,6 +325,7 @@ async function composePipeline(
       id: resource.id, kind: resource.kind, name: resource.name,
       ...resource.note === undefined ? {} : { note: resource.note },
     })),
+    ...planned === undefined ? {} : { planned },
   })
   const stored = await deps.store.saveWorkflow({
     projectId,
@@ -290,11 +339,13 @@ async function composePipeline(
     mode: draft.mode,
     shots: draft.diagnostics.shots,
     nodes: draft.diagnostics.nodes,
-    warnings: [...draft.diagnostics.warnings],
+    warnings: [...warnings, ...draft.diagnostics.warnings],
     missingResources: [...draft.diagnostics.missingResources],
     matchedResources: draft.diagnostics.matchedResources.map(entry => ({ ...entry })),
     // `shots` 这个字段历史上是"分镜数"（number），不能占用；逐镜明细单独给
     shotDetails: draft.shots.map(shot => ({ ...shot })),
+    source: planned === undefined ? 'rules' : 'model',
+    ...entities === undefined ? {} : { entities },
   }
 }
 
@@ -325,6 +376,30 @@ function skillLibraryFor(deps: WorkbenchRpcDeps): SkillLibrary {
   const created = new SkillLibrary({ directory: deps.store.directory })
   skillLibraries.set(deps, created)
   return created
+}
+
+/**
+ * 取请求里选中的导演技能正文（`B-20`）。
+ *
+ * 技能只增强**文本模型**拆解：没选模型时规则拆解照旧，并如实说明技能未生效；
+ * 技能缺失或已禁用不阻断编排，只给一条可照做的提醒。
+ * @param deps - RPC 依赖（技能库）。
+ * @param payload - RPC 载荷（`skillId`）。
+ * @returns 技能正文与可选提醒。
+ */
+async function resolveSkillPrompt(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+): Promise<{ readonly prompt?: string; readonly warning?: string }> {
+  const skillId = optionalText(payload, 'skillId')
+  if (skillId === undefined || skillId === '') return {}
+  try {
+    const skill = await skillLibraryFor(deps).get(skillId)
+    if (!skill.enabled) return { warning: `技能「${skill.name}」已禁用：本次按内置导演口径拆解` }
+    return { prompt: skill.prompt }
+  } catch (error) {
+    return { warning: `技能 ${skillId} 不可用：${error instanceof Error ? error.message : String(error)}；本次按内置导演口径拆解` }
+  }
 }
 
 export function createWorkbenchHandler(deps: WorkbenchRpcDeps): ConnectionRpcHandler {
@@ -444,6 +519,241 @@ async function splitEpisode(
     throw new Error(`已创建 ${created.length} 段后失败：${error instanceof Error ? error.message : String(error)}`)
   }
   return { episode: await deps.store.getEpisode(episodeId), created }
+}
+
+/** 分镜拆解单步的模型输出上限：一条提示词几十字，60 条也远低于该预算。 */
+const STORYBOARD_STEP_MAX_TOKENS = 4096
+
+/** 「剧本 → 集 → 分段 → 分镜」整棵结构的模型输出上限（多集多段时体积最大）。 */
+const EPISODE_PLAN_MAX_TOKENS = 16_384
+
+/**
+ * 组装生成请求：三级数量缺省用产品默认值。
+ * @param payload - RPC 载荷。
+ * @returns 领域层的生成请求。
+ */
+function readEpisodePlanRequest(payload: unknown): EpisodePlanRequest {
+  return {
+    script: optionalText(payload, 'script') ?? '',
+    brief: optionalText(payload, 'brief') ?? '',
+    episodes: optionalNumber(payload, 'episodes') ?? DEFAULT_PLAN_EPISODES,
+    segments: optionalNumber(payload, 'segments') ?? DEFAULT_PLAN_SEGMENTS,
+    shots: optionalNumber(payload, 'shots') ?? DEFAULT_PLAN_SHOTS,
+    shotDurationSec: optionalNumber(payload, 'shotDurationSec') ?? DEFAULT_PLAN_SHOT_SEC,
+  }
+}
+
+/**
+ * 生成「集 → 分段 → 分镜」草案：选了文本模型就让模型写剧本并拆分，
+ * 没有模型（或模型失败仍有剧本）时用规则拆分。
+ * @param deps - RPC 依赖（含文本模型服务）。
+ * @param payload - 载荷：projectId / script / brief / 三级数量 / 模型。
+ * @param signal - 取消信号，透传给模型调用。
+ * @returns 结构草案（集号缺省，由落库阶段分配）。
+ * @throws {Error} 剧本与创意都为空、模型失败且无剧本可拆、模型输出不可用时。
+ */
+async function draftEpisodePlan(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<readonly EpisodePlanEpisode[]> {
+  const request = readEpisodePlanRequest(payload)
+  if (request.script.trim() === '' && request.brief.trim() === '') {
+    throw new Error('请先写剧本，或写一句创意让模型生成剧本')
+  }
+  const projectId = optionalText(payload, 'projectId') ?? ''
+  const resources = projectId === '' ? [] : await deps.store.listResources(projectId)
+  const rules = (): readonly EpisodePlanEpisode[] => planEpisodesByRules(
+    request,
+    resources.map(resource => ({
+      id: resource.id,
+      kind: resource.kind,
+      name: resource.name,
+      ...resource.note === undefined ? {} : { note: resource.note },
+    })),
+  )
+  const choice = optionalModelChoice(payload)
+  const llm = deps.llm
+  // 没有模型就只能拆已有剧本；只有一句话创意时没有可拆的内容
+  if (choice === undefined || llm === undefined) {
+    if (request.script.trim() === '') throw new Error('请选择文本模型后再用一句话创意生成剧本')
+    return rules()
+  }
+  try {
+    const prepared = await llm.prepareCall(
+      { provider: choice.provider, model: choice.model, maxTokens: EPISODE_PLAN_MAX_TOKENS },
+      signal,
+    )
+    const options: GenerateOptions = {
+      ...prepared.config,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: buildEpisodePlanPrompt(request) }],
+        source: { kind: 'user' },
+      })],
+      ...signal === undefined ? {} : { signal },
+    }
+    const assembler = new BlockAssembler()
+    for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+    const raw = assembler.blocks()
+      .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+      .map(block => block.text)
+      .join('')
+    return parseEpisodePlan(raw, request)
+  } catch (error) {
+    // 有剧本就还能按规则拆；只有创意时只能如实报错，不编造内容
+    if (request.script.trim() !== '') return rules()
+    throw error
+  }
+}
+
+/**
+ * 把结构草案落库：目标集先更新剧本，其余按需新建；分段与分镜逐段落库。
+ *
+ * 落库是追加语义：不清空用户已有的分段 / 分镜，失败时已写入的部分保留并如实报出集数。
+ * @param deps - RPC 依赖（store）。
+ * @param payload - 载荷：projectId / 可选 episodeId / 模型与技能默认值。
+ * @param plan - 结构草案。
+ * @returns 受影响集的完整记录（含新分段与分镜）。
+ * @throws {Error} 项目或集不存在、字段不合法，或中途落库失败时。
+ */
+async function materializeEpisodePlan(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  plan: readonly EpisodePlanEpisode[],
+): Promise<EpisodeRecord[]> {
+  const projectId = text(payload, 'projectId')
+  let targetId = optionalText(payload, 'episodeId')
+  const imageModel = optionalText(payload, 'imageModel')
+  const videoModel = optionalText(payload, 'videoModel')
+  const skillId = optionalText(payload, 'skillId')
+  const created: EpisodeRecord[] = []
+  try {
+    for (const entry of plan) {
+      const target = targetId
+      // 只有第一集落在目标集上，后续集都新建
+      targetId = undefined
+      let episode = target === undefined || target === ''
+        ? await deps.store.createEpisode(projectId, entry.title === '' ? {} : { title: entry.title })
+        : await deps.store.updateEpisode(target, entry.title === '' ? {} : { title: entry.title })
+      if (entry.script !== '') episode = await deps.store.updateEpisode(episode.id, { script: entry.script })
+      for (const segment of entry.segments) {
+        const saved = await deps.store.createSegment(episode.id, {
+          promptText: segment.promptText,
+          durationSec: segment.durationSec,
+          ...imageModel === undefined || imageModel === '' ? {} : { imageModel },
+          ...videoModel === undefined || videoModel === '' ? {} : { videoModel },
+          ...skillId === undefined || skillId === '' ? {} : { skillId },
+        })
+        if (segment.shots.length === 0) continue
+        await deps.store.upsertStoryboard({
+          episodeId: episode.id,
+          segmentId: saved.id,
+          ...skillId === undefined || skillId === '' ? {} : { skillId },
+          shots: segment.shots.map((shot, index) => ({
+            order: index + 1,
+            durationSec: shot.durationSec,
+            imagePrompt: shot.imagePrompt,
+            videoPrompt: shot.videoPrompt,
+            refs: [],
+          })),
+        })
+      }
+      created.push(await deps.store.getEpisode(episode.id))
+    }
+  } catch (error) {
+    throw new Error(`已生成 ${created.length} 集后失败：${error instanceof Error ? error.message : String(error)}`)
+  }
+  return created
+}
+
+
+/**
+ * 读请求里可选的文本模型选择（`B-20`）。
+ * provider 与 model 必须成对出现：只给一半当作"不启用模型拆解"，不猜默认值。
+ * @param payload - RPC 载荷。
+ * @returns 成对的模型选择；缺任一半时 `undefined`。
+ */
+function optionalModelChoice(payload: unknown): { provider: string; model: string } | undefined {
+  const provider = optionalText(payload, 'provider')
+  const model = optionalText(payload, 'model')
+  if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
+  return { provider, model }
+}
+
+/**
+ * 用宿主文本模型服务构造分镜拆解调用器。
+ * @param deps - RPC 依赖（含文本模型服务）。
+ * @param provider - 服务商路由键。
+ * @param model - 模型 id。
+ * @param signal - 取消信号（透传到每一次流式调用）。
+ * @returns 调用器；宿主未装配文本模型服务时 `undefined`。
+ * @throws {Error} 模型不可用 / 无凭证时（由调用方决定是否回落）。
+ */
+async function createStoryboardCaller(
+  deps: WorkbenchRpcDeps,
+  provider: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<StoryboardModelCaller | undefined> {
+  const llm = deps.llm
+  if (llm === undefined) return undefined
+  const prepared = await llm.prepareCall({ provider, model, maxTokens: STORYBOARD_STEP_MAX_TOKENS }, signal)
+  return async call => {
+    const assembler = new BlockAssembler()
+    const options: GenerateOptions = {
+      ...prepared.config,
+      messages: [createUserMessage({ content: [{ type: 'text', text: call.input }], source: { kind: 'user' } })],
+      system: call.system,
+      ...call.signal === undefined ? {} : { signal: call.signal },
+    }
+    for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+    return assembler.blocks()
+      .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+      .map(block => block.text)
+      .join('')
+  }
+}
+
+/**
+ * 按资源名在分镜文本里是否出现，回填"这次拆解用到了哪些资源"。
+ * @param shots - 分镜表。
+ * @param resources - 项目资源。
+ * @returns 命中的资源 id（按资源顺序，去重）。
+ */
+function referencedResourceIds(
+  shots: readonly StoryboardShot[],
+  resources: readonly { readonly id: string; readonly name: string }[],
+): string[] {
+  const text = shots.map(shot => `${shot.shot}${shot.characters.join('')}${shot.scene ?? ''}${shot.imagePrompt}${shot.videoPrompt}`).join('\n')
+  return resources.filter(resource => text.includes(resource.name)).map(resource => resource.id)
+}
+
+/**
+ * 校验客户端回传的实体库（线路边界，不信任形状）。
+ * @param value - 请求里的 `entities` 字段。
+ * @returns 合法的实体库；缺字段或结构不对时 `undefined`（局部重拆退化为只按剧本改）。
+ */
+function readEntityLibrary(value: unknown): StoryboardEntityLibrary | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const read = (key: 'roles' | 'props' | 'scenes'): Array<{ kind: 'role' | 'prop' | 'scene'; name: string; prompt: string }> | undefined => {
+    const entries = record[key]
+    if (!Array.isArray(entries)) return undefined
+    const kind = key === 'roles' ? 'role' : key === 'props' ? 'prop' : 'scene'
+    const parsed: Array<{ kind: 'role' | 'prop' | 'scene'; name: string; prompt: string }> = []
+    for (const entry of entries) {
+      if (typeof entry !== 'object' || entry === null) continue
+      const item = entry as Record<string, unknown>
+      if (typeof item['name'] !== 'string' || typeof item['prompt'] !== 'string') continue
+      parsed.push({ kind, name: item['name'], prompt: item['prompt'] })
+    }
+    return parsed
+  }
+  const roles = read('roles')
+  const props = read('props')
+  const scenes = read('scenes')
+  if (roles === undefined || props === undefined || scenes === undefined) return undefined
+  return { roles, props, scenes }
 }
 
 async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -667,6 +977,7 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     case 'episodes/update':
       return {
         episode: await deps.store.updateEpisode(text(payload, 'id'), {
+          ...field(payload, 'no') === undefined ? {} : { no: field(payload, 'no') },
           ...field(payload, 'title') === undefined ? {} : { title: field(payload, 'title') },
           ...field(payload, 'remark') === undefined ? {} : { remark: field(payload, 'remark') },
           ...field(payload, 'script') === undefined ? {} : { script: field(payload, 'script') },
@@ -699,6 +1010,11 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     // 剧本自动拆段：交给所选文本模型按剧情/场景切分，并逐段落库。
     case 'episodes/split':
       return await splitEpisode(deps, payload, signal)
+    // 剧本 → 集 → 分段 → 分镜：一次生成整棵结构并落库（每级都能再手动增删）。
+    case 'episodes/generate': {
+      const plan = await draftEpisodePlan(deps, payload, signal)
+      return { episodes: await materializeEpisodePlan(deps, payload, plan) }
+    }
     // 文本模型目录：剧本模块「模型」选择器的候选（宿主 ctx.llm，与图片/视频服务商无关）。
     case 'llm/models': {
       const llm = deps.llm
@@ -826,11 +1142,11 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     // ---- 一键自动流水线（`P0-2`）：剧本 → 分镜 →（生图）→ 生视频 的编排与起跑 ----------
     // 与画布同一套执行语义：这里只负责"把剧本编排成图"，执行仍走 `deps.runner`。
     case 'pipelines/compose': {
-      const pipeline = await composePipeline(deps, payload)
+      const pipeline = await composePipeline(deps, payload, signal)
       return { pipeline }
     }
     case 'pipelines/run': {
-      const pipeline = await composePipeline(deps, payload)
+      const pipeline = await composePipeline(deps, payload, signal)
       const workflow = await deps.store.findWorkflow(pipeline.workflowId)
       if (workflow === undefined) throw new Error(`unknown workflow: ${pipeline.workflowId}`)
       return { pipeline, run: await deps.runner.begin(workflow) }
@@ -1404,19 +1720,109 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       return { report: scanPrompt(text) }
     }
     // ---- 媒体能力（阶段 5）：ffmpeg 是否可用、什么版本、编码器齐不齐 ----------------
-    // `A-7`：剧本 → 结构化分镜表（确定性拆解；接入 LLM 后可替换同一契约）
+    // `A-7` / `B-20`：剧本 → 分镜表。选了文本模型走四步拆解，否则走确定性规则拆解；
+    // 模型失败**如实回落**并在 `warnings` 里说明，不让界面以为"模型拆的就是这份"。
     case 'storyboard/plan': {
       const projectId = text(payload, 'projectId')
       const script = text(payload, 'script')
       const resources = await deps.store.listResources(projectId)
-      return planStoryboard({
+      const target = optionalNumber(payload, 'shots')
+      const choice = optionalModelChoice(payload)
+      const skill = await resolveSkillPrompt(deps, payload)
+      const skillWarnings = skill.warning === undefined ? [] : [skill.warning]
+      if (choice !== undefined) {
+        try {
+          const caller = await createStoryboardCaller(deps, choice.provider, choice.model, signal)
+          if (caller === undefined) throw new Error('当前宿主未提供文本模型服务')
+          const modelPlan = await planStoryboardWithModel(caller, {
+            script,
+            ...target === undefined ? {} : { shots: target },
+            ...skill.prompt === undefined ? {} : { skillPrompt: skill.prompt },
+            ...signal === undefined ? {} : { signal },
+          })
+          return {
+            shots: modelPlan.shots,
+            referencedResourceIds: referencedResourceIds(modelPlan.shots, resources),
+            source: 'model' as const,
+            entities: modelPlan.library,
+            warnings: skillWarnings,
+          }
+        } catch (error) {
+          const fallback = planStoryboard({
+            script,
+            ...target === undefined ? {} : { shots: target },
+            resources: resources.map(resource => ({
+              id: resource.id, kind: resource.kind, name: resource.name,
+              ...resource.note === undefined ? {} : { note: resource.note },
+            })),
+          })
+          return {
+            ...fallback,
+            source: 'rules' as const,
+            warnings: [...skillWarnings, `文本模型拆解失败：${error instanceof Error ? error.message : String(error)}；已回落到规则拆解`],
+          }
+        }
+      }
+      return {
+        ...planStoryboard({
+          script,
+          ...target === undefined ? {} : { shots: target },
+          resources: resources.map(resource => ({
+            id: resource.id, kind: resource.kind, name: resource.name,
+            ...resource.note === undefined ? {} : { note: resource.note },
+          })),
+        }),
+        source: 'rules' as const,
+        warnings: [
+          ...skillWarnings,
+          ...skill.prompt === undefined ? [] : ['技能只在文本模型拆解时生效：本次用规则拆解，技能未应用'],
+          '未选择文本模型：本次用规则拆解',
+        ],
+      }
+    }
+    // `B-20`：剧本文件导入（txt / md / docx / pdf，宿主侧解析后回纯文本）
+    case 'scripts/import': {
+      // 浏览器用 `<input type="file">` 上传时没有真实路径，改交文件名 + base64 字节
+      const base64 = optionalText(payload, 'base64')
+      if (base64 !== undefined) {
+        return { script: await extractScriptBytes(text(payload, 'fileName'), Buffer.from(base64, 'base64')) }
+      }
+      return { script: await readScriptFile(text(payload, 'path')) }
+    }
+    // `B-20` 局部重拆：只重写指定的一镜，其余镜头原样保留（不推翻全表）。
+    case 'storyboard/replan': {
+      const script = text(payload, 'script')
+      const index = Math.round(optionalNumber(payload, 'index') ?? 0)
+      const rawShots = field(payload, 'shots')
+      if (!Array.isArray(rawShots) || rawShots.length === 0) throw new Error('局部重拆需要先有分镜表')
+      const shots = rawShots
+        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+        .map((entry, position) => ({
+          index: position + 1,
+          shot: typeof entry['shot'] === 'string' ? entry['shot'] : '',
+          characters: Array.isArray(entry['characters'])
+            ? (entry['characters'] as unknown[]).filter((name): name is string => typeof name === 'string')
+            : [],
+          ...typeof entry['scene'] === 'string' && entry['scene'] !== '' ? { scene: entry['scene'] } : {},
+          imagePrompt: typeof entry['imagePrompt'] === 'string' ? entry['imagePrompt'] : '',
+          videoPrompt: typeof entry['videoPrompt'] === 'string' ? entry['videoPrompt'] : '',
+        }))
+      if (index < 1 || index > shots.length) throw new Error(`镜号 ${index} 不在 1–${shots.length} 范围内`)
+      const choice = optionalModelChoice(payload)
+      if (choice === undefined) throw new Error('局部重拆需要选择一个文本模型')
+      const caller = await createStoryboardCaller(deps, choice.provider, choice.model, signal)
+      if (caller === undefined) throw new Error('当前宿主未提供文本模型服务，无法局部重拆')
+      const entities = readEntityLibrary(field(payload, 'entities'))
+      const skill = await resolveSkillPrompt(deps, payload)
+      const next = await replanStoryboardShot(caller, {
         script,
-        ...optionalNumber(payload, 'shots') === undefined ? {} : { shots: optionalNumber(payload, 'shots') as number },
-        resources: resources.map(resource => ({
-          id: resource.id, kind: resource.kind, name: resource.name,
-          ...resource.note === undefined ? {} : { note: resource.note },
-        })),
+        shots,
+        index,
+        ...entities === undefined ? {} : { library: entities },
+        ...skill.prompt === undefined ? {} : { skillPrompt: skill.prompt },
+        ...signal === undefined ? {} : { signal },
       })
+      return { shots: next }
     }
     // `A-11`：导出历史（独立 exports.json；按项目可查，供界面展示成功/失败/重试）
     case 'exports/list': {

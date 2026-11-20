@@ -41,6 +41,12 @@ export const MAX_SEGMENT_PROMPT_LENGTH = 20_000
 /** 集内顺序号从 1 起。 */
 export const FIRST_ORDER = 1
 
+/** 集号从 0 起：第 0 集是新建剧集的第一集，用户不填就按 0、1、2… 递增。 */
+export const FIRST_EPISODE_NO = 0
+
+/** 集号上限（只防手滑，不参与排序语义）。 */
+export const MAX_EPISODE_NO = 9999
+
 /** 本集独立的剧本。 */
 export interface EpisodeScript {
   readonly text: string
@@ -146,6 +152,8 @@ export interface SegmentPatch extends SegmentInput {
 
 /** 改集的可选字段；`script` 可以是正文，也可以是首轮解析出的对象。 */
 export interface EpisodePatch {
+  /** 集号：可改，改完按剧集内唯一校验。 */
+  readonly no?: unknown
   readonly title?: unknown
   readonly remark?: unknown
   readonly script?: unknown
@@ -193,14 +201,15 @@ export function normalizeEpisodeTitle(value: unknown, no: number): string {
  * 校验集号。
  * @param value - 原始输入；缺省时用调用方算出的下一个集号。
  * @param fallback - 缺省值。
- * @returns 正整数集号。
- * @throws {Error} 非正整数时。
+ * @returns 0–{@link MAX_EPISODE_NO} 的整数集号。
+ * @throws {Error} 非整数或越界时。
  */
 export function normalizeEpisodeNo(value: unknown, fallback: number): number {
   if (value === undefined || value === null) return fallback
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < FIRST_ORDER) {
-    throw new Error('集号必须是正整数')
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < FIRST_EPISODE_NO) {
+    throw new Error(`集号必须是 0–${MAX_EPISODE_NO} 的整数`)
   }
+  if (value > MAX_EPISODE_NO) throw new Error(`集号最大 ${MAX_EPISODE_NO}（收到 ${value}）`)
   return value
 }
 

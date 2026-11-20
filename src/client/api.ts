@@ -148,10 +148,37 @@ export interface StoryboardShot {
   readonly videoPrompt: string
 }
 
-/** `storyboard/plan` 的返回（`A-7`）：镜头表 + 实际引用到的资源 id。 */
+/** `storyboard/plan` 的返回（`A-7` / `B-20`）：镜头表 + 实际引用到的资源 id。 */
 export interface StoryboardPlan {
   readonly shots: readonly StoryboardShot[]
   readonly referencedResourceIds: readonly string[]
+  /** 这份分镜是谁拆的：`model` = 文本模型四步拆解，`rules` = 确定性规则拆解。 */
+  readonly source?: 'model' | 'rules'
+  /** 模型拆出的实体库（角色/道具/场景）：界面展示，并在局部重拆时原样回传。 */
+  readonly entities?: StoryboardEntityLibraryView
+  /** 非阻断说明（如"模型失败已回落规则拆解"）。 */
+  readonly warnings?: readonly string[]
+}
+
+/** 一个实体（角色/道具/场景）及其独立提示词（`B-20`）。 */
+export interface StoryboardEntityView {
+  readonly kind: 'role' | 'prop' | 'scene'
+  readonly name: string
+  readonly prompt: string
+}
+
+/** 实体库：四步拆解里前三步的产物。 */
+export interface StoryboardEntityLibraryView {
+  readonly roles: readonly StoryboardEntityView[]
+  readonly props: readonly StoryboardEntityView[]
+  readonly scenes: readonly StoryboardEntityView[]
+}
+
+/** 剧本文件导入结果（`B-20` `scripts/import`）。 */
+export interface ImportedScriptView {
+  readonly fileName: string
+  readonly text: string
+  readonly bytes: number
 }
 
 /** 导出历史状态（`A-11`）：与宿主 `exports.json` 的记录同构。 */
@@ -359,6 +386,12 @@ export interface PipelineRunInput {
   readonly styleNote?: string
   /** 显式指定物料资源 id（`B-18`）：给了就按指定资源编排，缺 id 仍走剧本自动匹配。 */
   readonly resourceIds?: readonly string[]
+  /** `B-20`：用于拆分镜的文本模型（服务商路由键）；与 `model` 成对出现才启用，缺省走规则拆解。 */
+  readonly provider?: string
+  /** `B-20`：用于拆分镜的文本模型 id。 */
+  readonly model?: string
+  /** `B-20`：增强分镜提示词的导演技能 id（缺省不叠加技能）。 */
+  readonly skillId?: string
 }
 
 /** 一键流水线编排结果（已落库的工作流 + 诊断）。 */
@@ -378,6 +411,10 @@ export interface PipelineResult {
    * 旧宿主不返回时客户端用同一个纯函数 `planPipeline` 在本地补一份（口径一致）。
    */
   readonly shotDetails?: readonly PipelineShot[]
+  /** `B-20`：分镜是文本模型拆的还是规则拆的（旧宿主不返回时不展示来源）。 */
+  readonly source?: 'model' | 'rules'
+  /** `B-20`：模型拆出的实体库（局部重拆时原样回传）。 */
+  readonly entities?: StoryboardEntityLibraryView
 }
 
 /** 一次模型目录探测的结果（与服务商 API 同源，失败如实给原因）。 */
@@ -451,6 +488,35 @@ export interface SplitEpisodeInput {
 export interface SplitEpisodeResult {
   readonly episode: EpisodeRecord
   readonly created: readonly SegmentRecord[]
+}
+
+/** 剧本结构生成：一段剧本或一句话创意 → 集 → 分段 → 分镜。 */
+export interface GenerateEpisodesInput {
+  readonly projectId: string
+  /** 落在哪一集：缺省时整批新建；给了就把第一集写进它，其余仍新建。 */
+  readonly episodeId?: string
+  /** 已写好的剧本；空串表示让模型按 `brief` 先写剧本。 */
+  readonly script?: string
+  /** 一句话创意：剧本为空时由模型写成剧本。 */
+  readonly brief?: string
+  /** 文本模型的服务商路由键与模型 id；缺省时只用规则拆已有剧本。 */
+  readonly provider?: string
+  readonly model?: string
+  /** 集数 / 每集分段数 / 每段分镜数。 */
+  readonly episodes?: number
+  readonly segments?: number
+  readonly shots?: number
+  /** 每镜时长（秒）。 */
+  readonly shotDurationSec?: number
+  /** 新分段继承的图片 / 视频模型与导演 Skill。 */
+  readonly imageModel?: string
+  readonly videoModel?: string
+  readonly skillId?: string
+}
+
+/** 剧本结构生成的结果：受影响集的完整记录（含新分段与分镜）。 */
+export interface GenerateEpisodesResult {
+  readonly episodes: readonly EpisodeRecord[]
 }
 
 export interface WorkbenchApi {
@@ -556,7 +622,7 @@ export interface WorkbenchApi {
     readonly skipped: readonly { readonly path: string; readonly reason: string }[]
   }>
   listTasks: (limit?: number, projectId?: string, episodeId?: string) => Promise<TaskRecord[]>
-  /** 剧集下的集；空剧集首次访问会自动补建第 1 集。 */
+  /** 剧集下的集；空剧集首次访问会自动补建第 0 集。 */
   listEpisodes: (projectId: string) => Promise<EpisodeRecord[]>
   /** 新建一集；集号冲突如实报错。 */
   createEpisode: (projectId: string, input?: EpisodeInput) => Promise<EpisodeRecord>
@@ -586,6 +652,8 @@ export interface WorkbenchApi {
   listTextModels: () => Promise<TextModelCatalog>
   /** 调文本模型把剧本拆成分段并落库（新建，不覆盖已有分段）。 */
   splitEpisode: (input: SplitEpisodeInput) => Promise<SplitEpisodeResult>
+  /** 生成剧本结构：剧本/创意 → 集 → 分段 → 分镜（追加落库，不覆盖已有内容）。 */
+  generateEpisodes: (input: GenerateEpisodesInput) => Promise<GenerateEpisodesResult>
   /** 一集的分镜（按分段归属）。 */
   listStoryboards: (episodeId: string) => Promise<StoryboardRecord[]>
   /** 单组分镜。 */
@@ -691,8 +759,29 @@ export interface WorkbenchApi {
    * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
    */
   extractPrompt: (input: { readonly path: string; readonly skillId?: string }) => Promise<ExtractedPrompt>
-  /** 剧本 → 分镜表（`A-7`）。 */
-  planStoryboard: (input: { projectId: string; script: string; shots?: number }) => Promise<StoryboardPlan>
+  /** 剧本 → 分镜表（`A-7`）。传 `provider`+`model` 时走文本模型四步拆解（`B-20`）。 */
+  planStoryboard: (input: {
+    projectId: string
+    script: string
+    shots?: number
+    provider?: string
+    model?: string
+  }) => Promise<StoryboardPlan>
+  /** 局部重拆（`B-20`）：只重写指定的一镜，其余镜头原样保留。 */
+  replanStoryboard: (input: {
+    script: string
+    index: number
+    shots: readonly StoryboardShot[]
+    provider?: string
+    model?: string
+    entities?: StoryboardEntityLibraryView
+    skillId?: string
+  }) => Promise<{ shots: readonly StoryboardShot[] }>
+  /**
+   * 导入剧本文件（`B-20`）：txt / md / docx / pdf，由宿主解析成纯文本。
+   * 浏览器上传交 `fileName` + `base64`（没有真实路径）；本地路径仍可用 `path`。
+   */
+  importScript: (input: { readonly path?: string; readonly fileName?: string; readonly base64?: string }) => Promise<ImportedScriptView>
   /** 提示词库列表（`A-5`）；`episodeId` 只取本集提示词。 */
   listPrompts: (filter?: { readonly projectId?: string; readonly episodeId?: string }) => Promise<PromptRecord[]>
   /** 存入/更新一条提示词（`A-5`）。 */
@@ -765,8 +854,8 @@ export interface WorkbenchApi {
   compactAssets: () => Promise<number>
   /** Start a run of the stored workflow. `only` limits the run to those nodes and their downstream (B4 single-node run). */
   runWorkflow: (workflowId: string, only?: readonly string[]) => Promise<WorkflowRunRecord>
-  /** 一键流水线：把剧本编排成工作流（只落库、不起跑）。 */
-  composePipeline: (input: PipelineRunInput) => Promise<PipelineResult>
+  /** 一键流水线：把剧本编排成工作流（只落库、不起跑）。`signal` 取消后宿主会中断模型调用。 */
+  composePipeline: (input: PipelineRunInput, signal?: AbortSignal) => Promise<PipelineResult>
   /** 一键流水线：编排并立刻起跑（剧本 → 分镜 → 生图 → 生视频）。 */
   /** 配音可用性：未接入 TTS 时 `available: false` + 可读原因。 */
   voiceStatus: () => Promise<VoiceStatus>
@@ -806,8 +895,8 @@ export interface WorkbenchApi {
  */
 export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
   /** Call one endpoint and unwrap the connection result envelope. */
-  async function call<T>(endpoint: string, payload: unknown = {}): Promise<T> {
-    const result = await connection.rpc.call(WORKBENCH_RPC_CHANNEL, endpoint, payload)
+  async function call<T>(endpoint: string, payload: unknown = {}, signal?: AbortSignal): Promise<T> {
+    const result = await connection.rpc.call(WORKBENCH_RPC_CHANNEL, endpoint, payload, signal)
     if (!result.ok) throw new Error(result.error?.message ?? `workbench ${endpoint} failed`)
     return result.value as T
   }
@@ -879,6 +968,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
       (await call<{ segments: SegmentRecord[] }>('segments/reorder', { episodeId, order })).segments,
     listTextModels: () => call<TextModelCatalog>('llm/models'),
     splitEpisode: input => call<SplitEpisodeResult>('episodes/split', input),
+    generateEpisodes: input => call<GenerateEpisodesResult>('episodes/generate', { ...input }),
     listStoryboards: async episodeId =>
       (await call<{ storyboards: StoryboardRecord[] }>('storyboards/list', { episodeId })).storyboards,
     getStoryboard: async id => (await call<{ storyboard: StoryboardRecord }>('storyboards/get', { id })).storyboard,
@@ -934,8 +1024,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
         workflowId,
         ...only === undefined ? {} : { only },
       })).run,
-    composePipeline: input =>
-      call<{ pipeline: PipelineResult }>('pipelines/compose', input).then(result => result.pipeline),
+    composePipeline: (input, signal) =>
+      call<{ pipeline: PipelineResult }>('pipelines/compose', input, signal).then(result => result.pipeline),
     runPipeline: input => call<{ pipeline: PipelineResult; run: WorkflowRunRecord }>('pipelines/run', input),
     voiceStatus: async () => (await call<{ voice: VoiceStatus }>('voice/status', {})).voice,
     voicePlan: input => call<{ plan: DubPlanView; voice: VoiceStatus }>('voice/plan', { timelineId: input }),
@@ -952,6 +1042,8 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     composeMedia: input => call<ComposeMediaResult>('media/compose', input),
     extractPrompt: input => call<ExtractedPrompt>('prompts/extract', input),
     planStoryboard: input => call<StoryboardPlan>('storyboard/plan', input),
+    replanStoryboard: input => call<{ shots: StoryboardShot[] }>('storyboard/replan', input),
+    importScript: async input => (await call<{ script: ImportedScriptView }>('scripts/import', input)).script,
     listPrompts: async filter => (await call<{ prompts: PromptRecord[] }>('prompts/list', {
       ...filter?.projectId === undefined ? {} : { projectId: filter.projectId },
       ...filter?.episodeId === undefined ? {} : { episodeId: filter.episodeId },

@@ -96,7 +96,7 @@ describe('PipelineCard', () => {
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={id => { started.push(id) }} />)
     // 旧「一键生成」（pipelines/run：起跑 + 跳画布）与 B5.1/B6 口径冲突，已按产品决定删除
     expect(container.querySelector('[data-pipeline-run]')).toBeNull()
-    expect(container.querySelectorAll('[data-pipeline-compose], [data-pipeline-to-canvas], [data-pipeline-inline-run]').length).toBe(3)
+    expect(container.querySelectorAll('[data-pipeline-compose], [data-pipeline-to-canvas], [data-pipeline-inline-image], [data-pipeline-inline-run]').length).toBe(4)
     fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
     fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
     await waitFor(() => { expect(container.querySelector('[data-pipeline-result]')).not.toBeNull() })
@@ -132,58 +132,49 @@ describe('PipelineCard', () => {
     expect((container.querySelector('[data-pipeline-duration]') as HTMLInputElement).value).toBe('6')
   })
 
-  // ---- B2：视频生视频（复刻）+ 参考片 ---------------------------------------
-  it('B2：模式下拉有三项，选视频生视频会出现参考片入口且缺片时给提示', async () => {
-    const composePipeline = vi.fn(async () => ({
-      workflowId: 'wfl-v2v', name: '一键成片 · 2 镜（视频生视频（复刻））', mode: 'video-to-video',
-      shots: 2, nodes: 2, warnings: [], missingResources: [],
-    }))
-    const api = makeApi({ composePipeline: composePipeline as unknown as WorkbenchApi['composePipeline'] })
+  // ---- B-21：去掉模式下拉，改用「生成图片」「生成视频」两个按钮 ----------------
+  it('B-21：没有模式与参考片入口，动作按钮是生成分镜 / 生成画布 / 生成图片 / 生成视频', () => {
+    const api = makeApi()
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    const select = container.querySelector('[data-pipeline-mode]') as HTMLSelectElement
-    expect([...select.options].map(option => option.value)).toEqual(['image-to-video', 'text-to-video', 'video-to-video'])
-    expect(select.selectedOptions[0]?.textContent).toBe(en.pipelineModeImageToVideo)
-    // 图生视频时不该有参考片区（不占位、不误导）
+    expect(container.querySelector('[data-pipeline-mode]')).toBeNull()
     expect(container.querySelector('[data-pipeline-ref-video]')).toBeNull()
-
-    fireEvent.change(select, { target: { value: 'video-to-video' } })
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-ref-video]')).not.toBeNull() })
-    const missing = container.querySelector('[data-pipeline-ref-video-missing]')
-    expect(missing?.textContent).toContain(en.pipelineVideoToVideoNeedsRef)
-
-    fireEvent.change(container.querySelector('[data-pipeline-ref-video-input]') as HTMLInputElement, {
-      target: { value: '/tmp/outputs/ref.mp4' },
-    })
-    expect(container.querySelector('[data-pipeline-ref-video-missing]')).toBeNull()
-
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头。林夏抬头。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(composePipeline).toHaveBeenCalledTimes(1) })
-    // 模式与参考片都下发（复刻模式必须带片）
-    expect(composePipeline.mock.calls[0]?.[0]).toMatchObject({ mode: 'video-to-video', referenceVideo: '/tmp/outputs/ref.mp4' })
+    expect(container.querySelector('[data-pipeline-inline-image]')?.textContent).toContain(en.pipelineInlineImage)
+    expect(container.querySelector('[data-pipeline-inline-run]')?.textContent).toContain(en.pipelineInlineRun)
   })
 
-  it('B2：宿主注入选中素材时才有「用选中素材」，点了就填参考片；未注入时不摆死按钮', async () => {
+  it('B-21：编排统一按「图 + 视频」铺，不再随模式切换', async () => {
     const api = makeApi()
-    const bare = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(bare.container.querySelector('[data-pipeline-mode]') as HTMLSelectElement, { target: { value: 'video-to-video' } })
-    await waitFor(() => { expect(bare.container.querySelector('[data-pipeline-ref-video]')).not.toBeNull() })
-    expect(bare.container.querySelector('[data-pipeline-ref-video-use]')).toBeNull()
-    bare.unmount()
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头。林夏抬头。' } })
+    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
+    await waitFor(() => { expect(api.composePipeline).toHaveBeenCalledTimes(1) })
+    expect((api.composePipeline as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0]).toMatchObject({ mode: 'image-to-video' })
+  })
 
-    const withAsset = render(
-      <PipelineCard
-        api={api}
-        t={t}
-        projectId="prj-1"
-        onStarted={() => {}}
-        selectedAsset={{ path: '/tmp/outputs/picked.mp4', kind: 'video' }}
-      />,
-    )
-    fireEvent.change(withAsset.container.querySelector('[data-pipeline-mode]') as HTMLSelectElement, { target: { value: 'video-to-video' } })
-    await waitFor(() => { expect(withAsset.container.querySelector('[data-pipeline-ref-video-use]')).not.toBeNull() })
-    fireEvent.click(withAsset.container.querySelector('[data-pipeline-ref-video-use]') as HTMLButtonElement)
-    expect((withAsset.container.querySelector('[data-pipeline-ref-video-input]') as HTMLInputElement).value).toBe('/tmp/outputs/picked.mp4')
+  it('没有物料时不再出现「高级设置」与空物料提示；有分镜才出现导出 / 落库', async () => {
+    const api = makeApi()
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    expect(container.querySelector('[data-pipeline-advanced]')).toBeNull()
+    expect(container.querySelector('[data-pipeline-pick]')).toBeNull()
+    expect(container.querySelector('[data-pipeline-export]')).toBeNull()
+    await composeShots(container)
+    expect(container.querySelector('[data-pipeline-export]')).not.toBeNull()
+  })
+
+  // ---- 切换剧集：成片表单按项目保存 / 恢复 ------------------------------------
+  it('切换剧集：上一部的剧本不会留在下一部，切回来还能恢复', () => {
+    const api = makeApi()
+    const { container, rerender } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const script = (): HTMLTextAreaElement => container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement
+    fireEvent.change(script(), { target: { value: '第一部的剧本' } })
+    expect(script().value).toBe('第一部的剧本')
+
+    rerender(<PipelineCard api={api} t={t} projectId="prj-2" onStarted={() => {}} />)
+    expect(script().value).toBe('')
+
+    fireEvent.change(script(), { target: { value: '第二部的剧本' } })
+    rerender(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    expect(script().value).toBe('第一部的剧本')
   })
 
   // ---- B5：可编辑分镜（提示词 + 本镜时长 + 用 shotDurations 重排） ------------
@@ -226,7 +217,7 @@ describe('PipelineCard', () => {
     expect(container.querySelectorAll('[data-pipeline-shot]').length).toBe(2)
     expect((container.querySelector('[data-pipeline-shot-duration="2"]') as HTMLInputElement).value).toBe('11')
     expect((container.querySelector('[data-pipeline-shot-video-prompt="1"]') as HTMLTextAreaElement).value).toBe('宿主视频 1')
-    expect(container.querySelector('[data-pipeline-shots-panel]')?.textContent).toContain('宿主第 2 镜')
+    expect((container.querySelector('[data-pipeline-shot-label="2"]') as HTMLInputElement).value).toBe('宿主第 2 镜')
   })
 
   // ---- B5.1：生成画布（落库 + 切画布，但不起跑） ------------------------------
@@ -245,7 +236,7 @@ describe('PipelineCard', () => {
   })
 
   // ---- B6：就地生成（逐镜 generateMedia，串行推进） ---------------------------
-  it('B6：就地生成在图生视频模式下逐镜「先出图再出视频」，并带本镜时长', async () => {
+  it('B6：生成视频逐镜只调视频，并带本镜时长', async () => {
     const api = makeApi()
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
     await composeShots(container)
@@ -256,16 +247,25 @@ describe('PipelineCard', () => {
       expect(container.querySelector('[data-pipeline-inline-progress]')?.textContent).not.toContain('#')
     })
     const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
-    // 6 次：3 镜 ×（图 + 视频），顺序是"图 → 视频 → 图 → 视频…"（串行）
-    expect(calls.map(call => call.mediaMode)).toEqual(['image', 'video', 'image', 'video', 'image', 'video'])
-    const videos = calls.filter(call => call.mediaMode === 'video')
+    // 3 镜只出视频，串行推进
+    expect(calls.map(call => call.mediaMode)).toEqual(['video', 'video', 'video'])
     // 每镜用自己的时长（第 3 镜改成 8 秒）
-    expect(videos.map(video => video.duration)).toEqual([6, 6, 8])
-    // 首帧图接力：视频请求带上刚出的那张图
-    expect(videos[0]?.image).toBe('/tmp/outputs/shot.png')
+    expect(calls.map(call => call.duration)).toEqual([6, 6, 8])
+    // 没有先出图：视频请求不带首帧
+    expect(calls[0]?.image).toBeUndefined()
     // 都提交成功：每镜一行、没有错误条
     expect(container.querySelector('[data-pipeline-inline-error]')).toBeNull()
     expect(container.querySelectorAll('[data-pipeline-inline-state="submitted"]').length).toBe(3)
+  })
+
+  it('B6：生成图片只出图，不出视频', async () => {
+    const api = makeApi()
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    await composeShots(container)
+    fireEvent.click(container.querySelector('[data-pipeline-inline-image]') as HTMLButtonElement)
+    await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-inline-state="image"]').length).toBe(3) })
+    const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
+    expect(calls.map(call => call.mediaMode)).toEqual(['image', 'image', 'image'])
   })
 
   it('B6：就地生成失败要看出是第几镜，且后面的镜不再偷偷跑', async () => {
@@ -335,24 +335,15 @@ describe('PipelineCard', () => {
     expect(api.composePipeline).not.toHaveBeenCalled()
   })
 
-  it('B6：视频生视频就地生成只出视频（带参考片），没有参考片直接拒绝', async () => {
+  it('B6：生成视频不再带参考片（复刻入口已移除）', async () => {
     const api = makeApi()
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container, '两句。话。')
-    fireEvent.change(container.querySelector('[data-pipeline-mode]') as HTMLSelectElement, { target: { value: 'video-to-video' } })
-    // 没填参考片：点就地生成只给提示，一个模型调用都不发
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-error]')).not.toBeNull() })
-    expect((container.querySelector('[data-pipeline-error]') as HTMLElement).textContent).toContain(en.pipelineVideoToVideoNeedsRef)
-    expect(api.generateMedia).not.toHaveBeenCalled()
-
-    fireEvent.change(container.querySelector('[data-pipeline-ref-video-input]') as HTMLInputElement, { target: { value: '/tmp/outputs/ref.mp4' } })
     await composeShots(container, '两句。话。')
     fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
     await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-inline-row]').length).toBeGreaterThan(0) })
     const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
     expect(calls.every(call => call.mediaMode === 'video')).toBe(true)
     expect(calls[0]?.image).toBeUndefined()
-    expect(calls[0]?.media).toEqual([{ video: '/tmp/outputs/ref.mp4', type: 'reference_video' }])
+    expect(calls[0]?.media).toBeUndefined()
   })
 })

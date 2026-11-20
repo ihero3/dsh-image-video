@@ -70,6 +70,26 @@ describe('集选择器与集内引用', () => {
     })
   })
 
+  it('edits the episode number from the rename row', async () => {
+    const host = fakeApi({ episodes: [episode('ep-1', 0)] })
+    host.projects.push(project() as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-rename]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-episode-rename]') as HTMLElement)
+    const noInput = await waitFor(() => {
+      const input = view.container.querySelector('[data-episode-no]') as HTMLInputElement
+      expect(input).toBeTruthy()
+      return input
+    })
+    // 默认值就是当前集号（从 0 起）
+    expect(noInput.value).toBe('0')
+    fireEvent.change(noInput, { target: { value: '7' } })
+    fireEvent.click(view.container.querySelector('[data-episode-rename-save]') as HTMLElement)
+
+    await waitFor(() => { expect(host.episodes?.[0]?.no).toBe(7) })
+  })
+
   it('adds a series resource to the episode and removes it again', async () => {
     const host = fakeApi({ episodes: [episode('ep-1', 1)] })
     host.projects.push(project() as never)

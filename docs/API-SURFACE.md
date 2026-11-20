@@ -33,7 +33,9 @@
 | `assets/remove-many` | `{ids[],force?}` | `{removed,skipped[{id,reason}]}` | **`A-2`** 批量删除素材（单次 ≤200；不存在的 id 进 skipped 而不报错）|
 | `assets/attach-many` | `{projectId,items[{path,kind?,bytes?}]}` | `{created,assets}` | **`A152`** 批量登记素材（单次 ≤200；kind 缺省按扩展名推断）|
 | `media/import` | `{projectId,paths[]}` | `{imported,assets,skipped[{path,reason}]}` | **`A152`** 从本地路径批量导入媒体：**复制进 outputs**（保证 `/outputs` 预览可用），跳过不支持的类型并说明原因 |
-| `storyboard/plan` | `{projectId,script,shots?}` | `{shots[],referencedResourceIds[]}` | **`A-7`** 剧本→结构化分镜表（确定性拆解：切句→分组→识别资源里的角色/场景→生成 imagePrompt/videoPrompt；接入 LLM 后可替换同一契约；空剧本如实报错）|
+| `storyboard/plan` | `{projectId,script,shots?,provider?,model?,skillId?}` | `{shots[],referencedResourceIds[],source,warnings[],entities?}` | **`A-7` / `B-20`** 剧本→分镜表：不传模型走确定性拆解（切句→分组→识别资源）；传 `provider`+`model` 走文本模型四步拆解（角色→道具→场景→分镜，实体提示词独立、分镜只引用名字）；模型失败如实回落规则拆解并在 `warnings` 说明 |
+| `storyboard/replan` | `{script,index,shots[],provider,model,entities?,skillId?}` | `{shots[]}` | **`B-20`** 局部重拆：只重写指定的一镜，其余镜头原样保留；镜号越界/无模型/无文本模型服务时如实报错 |
+| `scripts/import` | `{path}` 或 `{fileName,base64}`（浏览器上传无真实路径） | `{script{fileName,text,bytes}}` | **`B-20`** 剧本文件导入：宿主解析 txt/md/docx/pdf；PDF 由 `pdfjs-dist` 经字体 `ToUnicode` 解码（中文不再乱码），无文字层的扫描件明确拒绝；单份文本上限 200 万字 |
 | `exports/list` | `{projectId?,limit?}` | `{exports[]}` | **`A-11`** 导出历史（独立 `exports.json`，按项目过滤、默认 50 条）|
 | `exports/record` | `{projectId,timelineId}` | `{export}` | **`A-11`** 记录一次导出（初始 `queued`）|
 | `exports/update` | `{id,status?,outputPath?,bytes?,error?,elapsedSeconds?}` | `{export}` | **`A-11`** 更新导出状态/产物/失败原因 |
@@ -144,7 +146,7 @@
 | `workflows/run-cancel` | `{runId}` | `{cancelled}` |
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
 | `workflows/sync-episode` | `{episodeId}` | `{workflow}`（分镜逐镜映射成 `image-generate → video-generate`，末尾 `preview`；工作流 id 按集固定 `wfl-ep-<id>`，重复同步幂等） |
-| `pipelines/compose` | `{projectId, script, mode?, shots?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?, resourceIds?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources, matchedResources}}` —— **只编排不跑**（零花费；`P0-2`） |
+| `pipelines/compose` | `{projectId, script, mode?, shots?, shotDurations?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?, resourceIds?, provider?, model?, skillId?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources, matchedResources}}` —— **只编排不跑**（零花费；`P0-2`） |
 | `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
 | `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?}}` —— 配音可用性（TTS 未接入时 `available:false` + 原因；`P0-1`） |
 | `voice/plan` | `{timelineId}` | `{plan: {lines:[{clipId,text,chars,slotMs,estimatedMs,warning?}], totalChars, estimatedMs, warnings}, voice}` —— 字幕→配音计划（零花费、只读） |
@@ -185,13 +187,14 @@
 
 | 端点 | 参数 | 返回 |
 | --- | --- | --- |
-| `episodes/list` | `{projectId}` | `{episodes}`（空剧集首次访问自动补建第 1 集） |
-| `episodes/create` | `{projectId,title?,no?}` | `{episode}`（集号冲突如实报错） |
+| `episodes/list` | `{projectId}` | `{episodes}`（空剧集首次访问自动补建第 0 集） |
+| `episodes/create` | `{projectId,title?,no?}` | `{episode}`（集号从 0 起，缺省取最大值 +1；冲突如实报错） |
 | `episodes/get` | `{id}` | `{episode}`（含剧本、分段、分镜与两类引用） |
-| `episodes/update` | `{id,title?,remark?,script?}` | `{episode}`（`script` 可传正文或 `{text}`；`remark:null` 清空备注） |
+| `episodes/update` | `{id,no?,title?,remark?,script?}` | `{episode}`（`no` 可改，按剧集内唯一校验；`script` 可传正文或 `{text}`；`remark:null` 清空备注） |
 | `episodes/remove` | `{id,force?}` | `{removed}`（有归属任务时需 `force`；只删元引用，`outputs` 文件保留） |
-| `episodes/reorder` | `{projectId,order}` | `{episodes}`（集号重编为 1..n） |
+| `episodes/reorder` | `{projectId,order}` | `{episodes}`（集号重编为 0..n-1） |
 | `episodes/split` | `{episodeId,provider,model,script?,imageModel?,videoModel?,skillId?}` | `{episode,created}`（把剧本交给所选文本模型按剧情拆段并逐段落库；`script` 缺省用已保存的正文，新段继承传入的模型/Skill；输出不可解析或宿主无文本模型时如实报错，已落库的段保留） |
+| `episodes/generate` | `{projectId,episodeId?,script?,brief?,provider?,model?,episodes?,segments?,shots?,shotDurationSec?,imageModel?,videoModel?,skillId?}` | `{episodes}`（剧本 → 集 → 分段 → 分镜一次落库；有文本模型时由模型写剧本并拆分，数量缺省 1 集 / 3 段 / 4 镜；没有模型时按规则拆已有剧本，只有 `brief` 则如实报错；集号从 0 起、段 / 镜顺序 1..n；结果是追加语义，不覆盖已有分段 / 分镜） |
 | `episodes/resources` | `{id,action,resourceId?,category?,order?}` | `{refs}`（`action` = `list/add/remove/move`；剧集级资源库引用，只存 id） |
 | `episodes/assets` | `{id,action,assetId?,category?,order?}` | `{refs}`（全局素材库引用，只存 id） |
 | `episodes/export` | `{episodeId}` | `{export}`（只导这一集：`outputs/episodes/<id>/episode.json` + `files/` 里被本集镜头引用的素材副本；缺失文件记进 `missing`） |

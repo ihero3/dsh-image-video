@@ -44,7 +44,7 @@ describe('buildEpisodeWorkflow', () => {
     const graph = buildEpisodeWorkflow(episode)
 
     expect(graph.id).toBe(episodeWorkflowId(episode.id))
-    expect(graph.name).toBe('第1集 分镜')
+    expect(graph.name).toBe('第0集 分镜')
     // 两镜：图 → 视频 ×2 + 预览
     expect(graph.nodes).toHaveLength(5)
     expect(graph.nodes.filter(node => node.kind === 'image-generate')).toHaveLength(2)
@@ -120,7 +120,7 @@ describe('exportEpisode', () => {
       missing: string[]
     }
     expect(manifest.formatVersion).toBe(EPISODE_EXPORT_VERSION)
-    expect(manifest.episode.no).toBe(1)
+    expect(manifest.episode.no).toBe(0)
     expect(manifest.episode.durationSec).toBe(10)
     expect(manifest.segments).toHaveLength(1)
     expect(manifest.files.map(file => file.assetId)).toEqual([used.id])

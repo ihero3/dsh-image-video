@@ -16,19 +16,24 @@ async function makeStore() {
 }
 
 describe('workbench episodes', () => {
-  it('lazily creates episode #1 and orders episodes by number', async () => {
+  it('lazily creates episode #0 and orders episodes by number', async () => {
     const { store } = await makeStore()
     const project = await store.createProject('剧集')
     const episodes = await store.listEpisodes(project.id)
     expect(episodes).toHaveLength(1)
-    expect(episodes[0]!.no).toBe(1)
-    expect(episodes[0]!.title).toBe('第1集')
+    expect(episodes[0]!.no).toBe(0)
+    expect(episodes[0]!.title).toBe('第0集')
 
     const second = await store.createEpisode(project.id, { title: '第二集' })
-    expect(second.no).toBe(2)
+    expect(second.no).toBe(1)
     expect(second.title).toBe('第二集')
-    await expect(store.createEpisode(project.id, { no: 2 })).rejects.toThrow(/第2集已存在/)
-    expect((await store.listEpisodes(project.id)).map(episode => episode.no)).toEqual([1, 2])
+    await expect(store.createEpisode(project.id, { no: 1 })).rejects.toThrow(/第1集已存在/)
+    expect((await store.listEpisodes(project.id)).map(episode => episode.no)).toEqual([0, 1])
+    // 集号可改：默认标题跟随新集号，冲突同样拒绝
+    const renumbered = await store.updateEpisode(second.id, { no: 5 })
+    expect(renumbered.no).toBe(5)
+    expect(renumbered.title).toBe('第二集')
+    await expect(store.updateEpisode(second.id, { no: 0 })).rejects.toThrow(/第0集已存在/)
     await expect(store.createEpisode('nope')).rejects.toThrow(/未知的剧集/)
   })
 

@@ -390,6 +390,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-dock > [data-dock-order="8"]{order:8}
 .iv-pane{display:flex;flex-direction:column;gap:var(--iv-sp-4);min-width:0;border:1px solid var(--iv-line);
   border-radius:var(--iv-r-lg);background:var(--iv-panel);padding:var(--iv-sp-4) var(--iv-sp-5);scroll-margin:var(--iv-sp-5)}
+/* 工作流画布独占主栏剩余高度，画布本身再在其中弹性拉伸 */
+.iv-page:has(> .iv-pane--canvas){flex:1;min-height:0}
+.iv-pane--canvas{flex:1;min-height:clamp(480px,calc(100vh - 200px),980px)}
 /* 左栏快捷入口点击后的确认高亮：一次性脉冲，避免"点了没反应"的错觉 */
 .iv-pane--flash{animation:iv-pane-flash 1.5s ease-out}
 @keyframes iv-pane-flash{
@@ -701,8 +704,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-pal-chip[data-availability=planned]{border-style:dashed;opacity:.68}
 .iv-pal-chip[data-availability=planned] .iv-ico{color:var(--iv-tx3)}
 .iv-pal-sep{width:100%;border-top:1px dashed var(--iv-line-2);margin:2px 0}
-.iv-canvas-main{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0}
-.iv-flow{height:250px;border:1px solid var(--iv-line);border-radius:var(--iv-r);overflow:hidden;background:var(--iv-panel-2)}
+.iv-workflow{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0;min-height:0;flex:1 1 auto}
+.iv-workflow-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0;min-height:0;flex:1 1 auto}
+.iv-flow{flex:1 1 auto;min-height:280px;border:1px solid var(--iv-line);border-radius:var(--iv-r);overflow:hidden;background:var(--iv-panel-2)}
 .iv-issues{display:grid;gap:var(--iv-sp-2);font-size:var(--iv-fs-meta);border-radius:var(--iv-r);padding:6px 9px;border:1px solid var(--iv-line)}
 .iv-issues strong{font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-bold);letter-spacing:.06em;opacity:.9;display:inline-flex;align-items:center;gap:var(--iv-sp-2);text-transform:uppercase}
 .iv-issues[data-ok=true]{color:var(--iv-ok);background:var(--iv-ok-soft);border-color:color-mix(in srgb,var(--iv-ok) 28%,transparent)}
@@ -724,6 +728,22 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-node-run[data-status=running] .iv-dot{color:var(--iv-acc);animation:iv-pulse 1.2s ease-in-out infinite}
 .iv-node-run[data-status=cancelled] .iv-dot,.iv-node-run[data-status=skipped] .iv-dot{color:var(--iv-tx3)}
 .iv-run-actions{display:flex;flex-wrap:wrap;gap:var(--iv-sp-2)}
+/* 工作流日志抽屉：校验与运行明细默认收起，画布独占剩余高度 */
+.iv-worklog{display:flex;flex-direction:column;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);min-width:0}
+.iv-worklog-head{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;width:100%;padding:5px 9px;
+  border:0;background:transparent;color:var(--iv-tx2);font:inherit;font-size:var(--iv-fs-meta);text-align:left;cursor:pointer}
+.iv-worklog-head:hover{color:var(--iv-tx)}
+.iv-worklog-head strong{font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-bold);letter-spacing:.06em;text-transform:uppercase;color:var(--iv-tx3)}
+.iv-worklog-caret{transform:rotate(-90deg);transition:transform .12s ease}
+[data-workflow-log-open=true] .iv-worklog-caret{transform:rotate(0deg)}
+[data-workflow-log-toggle][aria-expanded=true]{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
+.iv-worklog-body{display:grid;gap:var(--iv-sp-2);padding:0 9px 8px;max-height:190px;overflow:auto;scrollbar-gutter:stable}
+.iv-worklog-body[hidden]{display:none}
+/* 全屏画布：整个工作流区抬成覆盖视口的浮层 */
+.iv-workflow--max{position:fixed;inset:0;z-index:var(--iv-z-overlay);padding:var(--iv-sp-5);
+  background:var(--iv-surface);overflow:hidden}
+.iv-workflow--max .iv-flow{min-height:0}
+.iv-workflow--max .iv-worklog-body{max-height:240px}
 /* ============ B-6 模板市场（分组卡片） ============ */
 .iv-tpl{display:grid;gap:var(--iv-sp-5)}
 .iv-tpl-group{display:grid;gap:var(--iv-sp-2)}
@@ -849,6 +869,10 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;flex:1 1 150px}
 .iv-sb-field .iv-input{width:100%}
 .iv-sb-actions{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;justify-content:flex-end}
+.iv-plan-row{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:flex-end}
+.iv-plan-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
+.iv-plan-field .iv-input{width:88px}
+.iv-plan-brief{width:100%}
 .iv-ico--up{transform:rotate(180deg)}
 /* B-16 导出历史面板 */
 .iv-exports{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}

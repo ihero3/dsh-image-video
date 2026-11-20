@@ -16,7 +16,7 @@ import { WorkflowRunner } from '../src/workbench/runner.ts'
 import { RenderRegistry } from '../src/media/render-registry.ts'
 import { RenderService } from '../src/media/render.ts'
 
-async function harness() {
+async function harness(options: { llm?: unknown } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'dsh-cov-rpc-'))
   const outputsDir = await mkdtemp(join(tmpdir(), 'dsh-cov-out-'))
   await writeFile(join(outputsDir, 'clip.mp4'), 'mp4')
@@ -38,6 +38,7 @@ async function harness() {
   })
   const handler = createWorkbenchHandler({
     provider: 'threevideo', outputsDir, store, registry, runner, renders,
+    ...options.llm === undefined ? {} : { llm: options.llm as never },
     defaults: () => ({
       mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
       videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
@@ -109,6 +110,229 @@ describe('new endpoint coverage (A136)', () => {
 
     const preflight = await ok<{ summaryLine: string; ok: boolean }>('timelines/preflight', { timelineId: saved.id })
     expect(preflight.summaryLine.length).toBeGreaterThan(0)
+  })
+
+  it('generates episodes → segments → shots in one call (rules fallback)', async () => {
+    const { ok, store, project } = await harness()
+    const result = await ok<{
+      episodes: Array<{ id: string; no: number; script: { text: string }; segments: Array<{ id: string; order: number; storyboardId?: string }>; storyboards: Array<{ shots: Array<{ order: number }> }> }>
+    }>('episodes/generate', {
+      projectId: project.id,
+      script: '第一场 雨夜。第二场 天台。第三场 地铁。第四场 片场。',
+      episodes: 2,
+      segments: 2,
+      shots: 2,
+      shotDurationSec: 4,
+    })
+    // 集号默认从 0 起，段 / 镜顺序恒为 1..n
+    expect(result.episodes.map(episode => episode.no)).toEqual([0, 1])
+    expect(result.episodes.every(episode => episode.script.text !== '')).toBe(true)
+    expect(result.episodes.every(episode => episode.segments.length === 2)).toBe(true)
+    expect(result.episodes.every(episode => episode.segments.map(segment => segment.order).join(',') === '1,2')).toBe(true)
+    expect(result.episodes.every(episode => episode.storyboards.length === 2)).toBe(true)
+    // 规则分镜不注水：句子不够时以句子数为准，但顺序号恒为 1..n
+    expect(result.episodes.every(episode => episode.storyboards.every(storyboard => (
+      storyboard.shots.length > 0
+      && storyboard.shots.every((shot, index) => shot.order === index + 1)
+    )))).toBe(true)
+    expect((await store.listEpisodes(project.id)).map(episode => episode.no)).toEqual([0, 1])
+  })
+
+  it('fills the target episode first, then creates siblings', async () => {
+    const { ok, store, project } = await harness()
+    const target = await store.createEpisode(project.id, {})
+    const result = await ok<{ episodes: Array<{ id: string; no: number; segments: unknown[] }> }>('episodes/generate', {
+      projectId: project.id,
+      episodeId: target.id,
+      script: '第一场。第二场。',
+      episodes: 2,
+      segments: 1,
+      shots: 1,
+    })
+    expect(result.episodes.map(episode => episode.no)).toEqual([0, 1])
+    expect(result.episodes[0]!.id).toBe(target.id)
+    expect(result.episodes[0]!.segments).toHaveLength(1)
+  })
+
+  it('refuses generation without a script or an idea', async () => {
+    const { handler, project } = await harness()
+    const result = await handler('episodes/generate', { projectId: project.id }, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('请先写剧本')
+  })
+
+  it('refuses a brief-only request when no text model is available', async () => {
+    const { handler, project } = await harness()
+    const result = await handler('episodes/generate', { projectId: project.id, brief: '雨夜追逐' }, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('请选择文本模型')
+  })
+
+  it('lets the text model write the script and the whole hierarchy', async () => {
+    const raw = JSON.stringify({
+      episodes: [{
+        title: '雨夜',
+        script: '第一集正文',
+        segments: [
+          { promptText: '街口', shots: [{ shot: '撑伞', imagePrompt: '雨夜街口', videoPrompt: '撑伞走来' }] },
+          { promptText: '天台', shots: [{ shot: '抬头', imagePrompt: '天台风', videoPrompt: '抬头' }] },
+        ],
+      }],
+    })
+    let calls = 0
+    const llm = {
+      prepareCall: async () => ({
+        config: {},
+        stream: async function* () {
+          calls += 1
+          yield { type: 'block-start', index: 0, blockType: 'text' }
+          yield { type: 'text-delta', index: 0, text: raw }
+          yield { type: 'block-end', index: 0, block: { type: 'text', text: raw } }
+          yield { type: 'finish', reason: 'stop' }
+        },
+      }),
+    }
+    const { ok, project } = await harness({ llm })
+    const result = await ok<{
+      episodes: Array<{ title: string; script: { text: string }; segments: unknown[]; storyboards: Array<{ shots: Array<{ order: number }> }> }>
+    }>('episodes/generate', {
+      projectId: project.id,
+      brief: '雨夜追逐',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      episodes: 1,
+      segments: 2,
+      shots: 1,
+    })
+    expect(calls).toBe(1)
+    expect(result.episodes).toHaveLength(1)
+    expect(result.episodes[0]!.title).toBe('雨夜')
+    expect(result.episodes[0]!.script.text).toBe('第一集正文')
+    expect(result.episodes[0]!.segments).toHaveLength(2)
+    expect(result.episodes[0]!.storyboards).toHaveLength(2)
+  })
+
+  it('falls back to rules when the text model fails but a script exists', async () => {
+    const llm = {
+      prepareCall: async () => ({
+        config: {},
+        stream: async function* () {
+          throw new Error('模型不可用')
+        },
+      }),
+    }
+    const { ok, project } = await harness({ llm })
+    const result = await ok<{ episodes: Array<{ segments: unknown[] }> }>('episodes/generate', {
+      projectId: project.id,
+      script: '第一场。第二场。',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      episodes: 1,
+      segments: 1,
+      shots: 1,
+    })
+    expect(result.episodes).toHaveLength(1)
+    expect(result.episodes[0]!.segments).toHaveLength(1)
+  })
+
+  it('inherits image / video / skill defaults and matches project resources', async () => {
+    const { ok, store, project } = await harness()
+    // 资源带备注：规则拆分把角色 / 场景提示带进分镜；无备注的资源同样可用
+    await store.createResource({ projectId: project.id, kind: 'role', name: '林夏', note: '红围巾' })
+    await store.createResource({ projectId: project.id, kind: 'scene', name: '天台' })
+    const result = await ok<{ episodes: Array<{ segments: Array<{ promptText: string; imageModel?: string; videoModel?: string; skillId?: string }> }> }>(
+      'episodes/generate',
+      {
+        projectId: project.id,
+        script: '林夏走在雨里。她抬头看霓虹。',
+        episodes: 1,
+        segments: 1,
+        shots: 1,
+        imageModel: 'img-model',
+        videoModel: 'video-model',
+        skillId: 'skill-1',
+      },
+    )
+    const segment = result.episodes[0]!.segments[0]!
+    expect(segment.imageModel).toBe('img-model')
+    expect(segment.videoModel).toBe('video-model')
+    expect(segment.skillId).toBe('skill-1')
+    expect(segment.promptText).toContain('林夏')
+    // 空串表示"不指定"，不落成空字段
+    const bare = await ok<{ episodes: Array<{ segments: Array<{ imageModel?: string }> }> }>('episodes/generate', {
+      projectId: project.id, script: '一句。', episodes: 1, segments: 1, shots: 1, imageModel: '',
+    })
+    expect(bare.episodes[0]!.segments[0]!.imageModel).toBeUndefined()
+  })
+
+  it('reports a missing project id after drafting by rules', async () => {
+    const { handler } = await harness()
+    // 不传取消信号同样可用（signal 可选）
+    const result = await handler('episodes/generate', { script: '一句。' }, undefined as never, {} as never)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toMatch(/projectId|项目|缺少/)
+  })
+
+  it('writes the model draft into the target episode and keeps zero-shot segments', async () => {
+    const raw = JSON.stringify({
+      episodes: [{
+        title: '天台',
+        script: '目标集正文',
+        segments: [
+          { promptText: '空段', shots: [] },
+          { promptText: '有镜', shots: [{ imagePrompt: '天台', videoPrompt: '抬头' }] },
+        ],
+      }],
+    })
+    const llm = {
+      prepareCall: async () => ({
+        config: {},
+        stream: async function* () {
+          yield { type: 'text-delta', index: 0, text: raw }
+          yield { type: 'block-end', index: 0, block: { type: 'text', text: raw } }
+        },
+      }),
+    }
+    const { ok, store, project } = await harness({ llm })
+    const target = await store.createEpisode(project.id, {})
+    const result = await ok<{
+      episodes: Array<{ id: string; title: string; script: { text: string }; segments: unknown[]; storyboards: Array<{ shots: unknown[] }> }>
+    }>('episodes/generate', {
+      projectId: project.id,
+      episodeId: target.id,
+      script: '旧正文',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      episodes: 1,
+      segments: 2,
+      shots: 1,
+    })
+    expect(result.episodes[0]!.id).toBe(target.id)
+    expect(result.episodes[0]!.title).toBe('天台')
+    expect(result.episodes[0]!.script.text).toBe('目标集正文')
+    expect(result.episodes[0]!.segments).toHaveLength(2)
+    // 零镜分段不建分镜记录
+    expect(result.episodes[0]!.storyboards).toHaveLength(1)
+  })
+
+  it('rethrows model failures when there is no script to fall back to', async () => {
+    const llm = {
+      prepareCall: async () => ({
+        config: {},
+        stream: async function* () {
+          throw new Error('模型挂了')
+        },
+      }),
+    }
+    const { handler, project } = await harness({ llm })
+    const result = await handler(
+      'episodes/generate',
+      { projectId: project.id, brief: '雨夜追逐', provider: 'deepseek', model: 'deepseek-chat' },
+      new AbortController().signal,
+      {} as never,
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('模型挂了')
   })
 
   it('bulk-registers outputs and imports external files (A152)', async () => {

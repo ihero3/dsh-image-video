@@ -316,4 +316,31 @@ describe('B4 canvas interaction', () => {
     })
     expect(bubble.textContent).toContain('provider said no')
   })
+
+  it('keeps validation and run details in a collapsed log drawer', () => {
+    const { view } = renderCanvas()
+    const log = view.container.querySelector('[data-workflow-log]')
+    const body = view.container.querySelector('#iv-workflow-log-body') as HTMLElement
+    // 默认收起，画布拿满高度；校验结果仍留在 DOM 里可随时查
+    expect(log?.getAttribute('data-workflow-log-open')).toBe('false')
+    expect(body.hidden).toBe(true)
+    expect(view.container.querySelector('[data-workflow-issues]')).toBeTruthy()
+
+    fireEvent.click(view.container.querySelector('[data-workflow-log-toggle]') as HTMLElement)
+    expect(log?.getAttribute('data-workflow-log-open')).toBe('true')
+    expect(body.hidden).toBe(false)
+    expect(view.container.querySelector('[data-workflow-validation="ok"]')).toBeTruthy()
+  })
+
+  it('maximizes the canvas and restores it on Escape', () => {
+    const { view } = renderCanvas()
+    fireEvent.click(view.container.querySelector('[data-workflow-action="maximize"]') as HTMLElement)
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('true')
+    expect(canvas(view).className).toContain('iv-workflow--max')
+    expect(document.body.style.overflow).toBe('hidden')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('false')
+    expect(document.body.style.overflow).toBe('')
+  })
 })

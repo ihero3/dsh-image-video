@@ -18,7 +18,7 @@ export type IconName =
   | 'eye' | 'user' | 'play' | 'filter' | 'upload' | 'link' | 'box' | 'script'
   | 'storyboard' | 'input' | 'subtitle' | 'music' | 'motion' | 'sparkles' | 'tag'
   | 'search' | 'copy' | 'pause' | 'pencil' | 'chevron' | 'undo' | 'redo' | 'clipboard' | 'help'
-  | 'shirt'
+  | 'shirt' | 'expand' | 'shrink'
 
 /** 单路径图标：一个 `d` 讲完（圆用小圆弧拼）；多元素图形见 {@link SHAPES}。 */
 const STROKE: Partial<Record<IconName, string>> = {
@@ -61,6 +61,8 @@ const STROKE: Partial<Record<IconName, string>> = {
   redo: 'M20 9h-9.5a4.5 4.5 0 0 0 0 9H14M16 5l4 4-4 4',
   clipboard: 'M9.5 4.5h5v2.2h-5zM7 6.2h10V20H7zM10.2 11h3.6M10.2 14.4h3.6',
   help: 'M12 3.6a8.4 8.4 0 1 0 8.4 8.4A8.4 8.4 0 0 0 12 3.6zM9.7 9.4a2.4 2.4 0 1 1 3.2 2.2c-.6.3-.9.8-.9 1.5v.3M12 16.6v.2',
+  expand: 'M4.8 9.2V4.8h4.4M19.2 9.2V4.8h-4.4M4.8 14.8v4.4h4.4M19.2 14.8v4.4h-4.4',
+  shrink: 'M9.2 4.8v4.4H4.8M14.8 4.8v4.4h4.4M9.2 19.2v-4.4H4.8M14.8 19.2v-4.4h4.4',
 }
 
 /** 多元素图标（矩形/圆等无法用一个 `d` 表达的图形）。 */

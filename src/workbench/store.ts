@@ -25,7 +25,7 @@ import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalize
 import { buildEpisodeWorkflow } from './storyboard-workflow.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 import {
-  applyReorder, DEFAULT_EPISODE_REF_CATEGORY, emptySegment, EPISODE_REF_CATEGORIES, FIRST_ORDER, newEpisode, nextOrder,
+  applyReorder, DEFAULT_EPISODE_REF_CATEGORY, emptySegment, EPISODE_REF_CATEGORIES, FIRST_EPISODE_NO, FIRST_ORDER, newEpisode, nextOrder,
   normalizeEpisodeNo, normalizeEpisodeRefCategory, normalizeEpisodeTitle, normalizeOptionalId,
   normalizePromptText, normalizeRemark, normalizeScriptText, normalizeSegmentDuration, normalizeSegmentRefs,
   normalizeShots, type EpisodeAssetRef, type EpisodeInput, type EpisodePatch, type EpisodeRecord,
@@ -1023,7 +1023,7 @@ export class WorkbenchStore {
     let episodes = document.episodes.filter(episode => episode.projectId === projectId)
     if (episodes.length === 0) {
       const stamp = this.now().toISOString()
-      const created = newEpisode(projectId, 1, normalizeEpisodeTitle(undefined, 1), stamp)
+      const created = newEpisode(projectId, FIRST_EPISODE_NO, normalizeEpisodeTitle(undefined, FIRST_EPISODE_NO), stamp)
       document.episodes.push(created)
       await this.save(document)
       episodes = [created]
@@ -1032,7 +1032,7 @@ export class WorkbenchStore {
   }
 
   /**
-   * 新建一集；集号缺省取当前最大值 +1。
+   * 新建一集；集号缺省取当前最大值 +1（首集是第 0 集）。
    * @param projectId - 剧集 id。
    * @param input - 可选的标题与集号。
    * @returns 新建的集。
@@ -1042,7 +1042,9 @@ export class WorkbenchStore {
     const document = await this.load()
     this.assertProject(document, projectId)
     const siblings = document.episodes.filter(episode => episode.projectId === projectId)
-    const nextNo = siblings.length === 0 ? 1 : Math.max(...siblings.map(episode => episode.no)) + 1
+    const nextNo = siblings.length === 0
+      ? FIRST_EPISODE_NO
+      : Math.max(...siblings.map(episode => episode.no)) + 1
     const no = normalizeEpisodeNo(input.no, nextNo)
     if (siblings.some(episode => episode.no === no)) throw new Error(`第${no}集已存在`)
     const stamp = this.now().toISOString()
@@ -1065,19 +1067,31 @@ export class WorkbenchStore {
 
   /**
    * 部分更新一集；`script` 传字符串或 `{ text }` 都会刷新 `updatedAt`。
+   * 改集号会按剧集内唯一校验；默认标题（`第n集`）跟随新集号。
    * @param episodeId - 集 id。
    * @param patch - 要改的字段。
    * @returns 更新后的集。
-   * @throws {Error} 集不存在或字段不合法时。
+   * @throws {Error} 集不存在、集号冲突或字段不合法时。
    */
   async updateEpisode(episodeId: string, patch: EpisodePatch): Promise<EpisodeRecord> {
     const document = await this.load()
     const current = this.findEpisode(document, episodeId)
+    const no = patch.no === undefined ? current.no : normalizeEpisodeNo(patch.no, current.no)
+    if (no !== current.no) {
+      const clash = document.episodes.some(episode => (
+        episode.projectId === current.projectId && episode.id !== current.id && episode.no === no
+      ))
+      if (clash) throw new Error(`第${no}集已存在`)
+    }
     const stamp = this.now().toISOString()
     const remark = patch.remark === undefined ? undefined : normalizeRemark(patch.remark)
+    const title = patch.title === undefined
+      ? current.title === `第${current.no}集` && no !== current.no ? `第${no}集` : current.title
+      : normalizeEpisodeTitle(patch.title, no)
     const updated: EpisodeRecord = {
       ...current,
-      ...patch.title === undefined ? {} : { title: normalizeEpisodeTitle(patch.title, current.no) },
+      no,
+      title,
       ...patch.remark === undefined ? {} : remark === undefined ? { remark: undefined } : { remark },
       ...patch.script === undefined ? {} : { script: { text: normalizeScriptText(readScriptText(patch.script)), updatedAt: stamp } },
       updatedAt: stamp,
@@ -1109,7 +1123,7 @@ export class WorkbenchStore {
   }
 
   /**
-   * 重排一个剧集的集顺序，并把集号重编为 1..n；默认标题跟随集号。
+   * 重排一个剧集的集顺序，并把集号重编为 0..n-1；默认标题跟随集号。
    * @param projectId - 剧集 id。
    * @param order - 目标集 id 顺序。
    * @returns 重排后的集。
@@ -1122,7 +1136,7 @@ export class WorkbenchStore {
     const reordered = applyReorder(current, order, '集')
     const stamp = this.now().toISOString()
     const next = reordered.map((episode, index): EpisodeRecord => {
-      const no = index + 1
+      const no = index + FIRST_EPISODE_NO
       return {
         ...episode,
         no,
