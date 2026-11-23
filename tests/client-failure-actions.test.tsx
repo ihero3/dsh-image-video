@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -52,8 +52,9 @@ describe('失败不再给"可以试试"按钮组（2026-11-05 删除）', () => 
     const { host, view } = renderQuick()
     await failOnce(host)
     await waitFor(() => { expect(view.container.textContent).toContain('upstream said no') })
+    // 时长下拉在生视频页：切过去确认它仍是默认跟随（没有被"缩短时长"副作用改掉）
+    await openCreateTab(view, 'video')
     const duration = view.container.querySelector('[data-generate-duration]') as HTMLSelectElement
-    // 时长仍是默认跟随（''），没被"缩短时长"副作用改掉
     expect(duration.value).toBe('')
   })
 })

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-06.1'
+export const WORKBENCH_STYLE_VERSION = '2026-11-20.1'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -111,8 +111,15 @@ export const WORKBENCH_STYLE = `
 .iv-meta{font-size:var(--iv-fs-body);color:var(--iv-tx3)}
 .iv-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* ============ 应用外壳：顶栏 ============ */
+/* 整条顶栏都是窗口拖拽把手：Electron 里按住任意空白处即可移动窗口。
+   拖拽区会吞掉鼠标事件，所以里面的控件统一 no-drag 交回给页面；
+   代价是桌面端顶栏的双击交给系统（缩放/最大化），双击全屏只在浏览器里保留。 */
 .iv-top{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5);padding:7px 10px;
-  background:var(--iv-panel);border-bottom:1px solid var(--iv-line);flex:none}
+  background:var(--iv-panel);border-bottom:1px solid var(--iv-line);flex:none;
+  -webkit-app-region:drag;user-select:none;cursor:default}
+.iv-top :is(button,a,input,select,textarea,summary,[role='button'],[role='tab'],[role='menuitem'],
+  [role='combobox'],[role='textbox'],[role='switch'],[role='checkbox'],[tabindex]){
+  -webkit-app-region:no-drag}
 .iv-brand{display:flex;align-items:center;gap:var(--iv-sp-4);min-width:0}
 .iv-brand-text{display:flex;flex-direction:column;min-width:0;line-height:1.25}
 .iv-brand-name{font-size:var(--iv-fs-title);font-weight:var(--iv-fw-medium);letter-spacing:.01em;white-space:nowrap}
@@ -283,21 +290,14 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-5);padding:5px 10px;flex:none;
   border-bottom:1px solid var(--iv-line);background:var(--iv-panel);font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
 .iv-def{display:inline-flex;align-items:baseline;gap:var(--iv-sp-2);white-space:nowrap}
-/* 壳层级折叠块（模型能力）：与参数条同一条水平节奏，但比参数更"次要"——
-   左边距对齐参数条文字、细分隔线、默认收起。 */
+/* 壳层级展开块（模型能力）：入口在参数条最右侧，内容紧接参数条下方 */
 .iv-shell-details{border-bottom:1px solid var(--iv-line);background:var(--iv-panel);flex:none}
-.iv-shell-details-head{display:flex;align-items:center;gap:var(--iv-sp-2);padding:4px 10px;cursor:pointer;
-  font-size:var(--iv-fs-meta);color:var(--iv-tx3);user-select:none;list-style:none}
-.iv-shell-details-head::-webkit-details-marker{display:none}
-.iv-shell-details-head:hover{color:var(--iv-tx)}
-.iv-shell-details-head::after{content:'▾';margin-left:auto;transition:transform .16s ease}
-.iv-shell-details:not([open]) .iv-shell-details-head::after{transform:rotate(-90deg)}
 .iv-shell-details-body{padding:var(--iv-sp-3) var(--iv-sp-5) var(--iv-sp-5);min-width:0}
 .iv-def i{font-style:normal;color:var(--iv-tx3)}
 .iv-def b{font-weight:var(--iv-fw-medium);color:var(--iv-tx);font-variant-numeric:tabular-nums}
 .iv-row{flex-wrap:wrap}
 .iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
-/* 生成动作行：两个按钮等宽等大（用户要求：防止点错），生成中就地变「取消生成」 */
+/* 生成动作行：每页只有一个主按钮并占满整行；生成中就地变「取消生成」 */
 .iv-gen-actions{display:flex;gap:var(--iv-sp-4);min-width:0}
 .iv-gen-btn{flex:1 1 0;min-width:0;justify-content:center}
 /* 参考图 chip 的"缩略图 + 文件名"预览按钮：名字本身认不出图，点一下就能看 */
@@ -305,12 +305,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   padding:1px 4px;border:1px solid transparent;border-radius:var(--iv-r-sm);background:transparent;
   color:var(--iv-tx);font:inherit;cursor:pointer}
 .iv-ref-open:hover{border-color:var(--iv-line-2);background:var(--iv-panel-3)}
-/* 视频专用块：默认收起（生图时全是无效控件），风格低调 */
-.iv-vonly{border:1px dashed color-mix(in srgb,var(--iv-line) 80%,transparent);border-radius:var(--iv-r);
-  padding:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
-.iv-vonly[open]{padding-bottom:var(--iv-sp-3)}
-.iv-vonly-head{cursor:pointer;font-size:var(--iv-fs-meta);color:var(--iv-tx3);user-select:none}
-.iv-vonly-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding-top:var(--iv-sp-3);min-width:0}
 .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
@@ -321,7 +315,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* 工作台/composer 改过的值用动作色点出来，和"设置里的默认"一眼可分 */
 .iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
 .iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
-/* 生成动作行：两个按钮等宽等大（用户要求：防止点错），生成中就地变「取消生成」 */
+/* 生成动作行：每页只有一个主按钮并占满整行；生成中就地变「取消生成」 */
 .iv-gen-actions{display:flex;gap:var(--iv-sp-4);min-width:0}
 .iv-gen-btn{flex:1 1 0;min-width:0;justify-content:center}
 /* 参考图 chip 的"缩略图 + 文件名"预览按钮：名字本身认不出图，点一下就能看 */
@@ -329,12 +323,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   padding:1px 4px;border:1px solid transparent;border-radius:var(--iv-r-sm);background:transparent;
   color:var(--iv-tx);font:inherit;cursor:pointer}
 .iv-ref-open:hover{border-color:var(--iv-line-2);background:var(--iv-panel-3)}
-/* 视频专用块：默认收起（生图时全是无效控件），风格低调 */
-.iv-vonly{border:1px dashed color-mix(in srgb,var(--iv-line) 80%,transparent);border-radius:var(--iv-r);
-  padding:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
-.iv-vonly[open]{padding-bottom:var(--iv-sp-3)}
-.iv-vonly-head{cursor:pointer;font-size:var(--iv-fs-meta);color:var(--iv-tx3);user-select:none}
-.iv-vonly-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding-top:var(--iv-sp-3);min-width:0}
 .iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
 .iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
@@ -506,6 +494,10 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 
 /* ============ 快速生成面板 ============ */
 .iv-model-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-3) var(--iv-sp-5)}
+/* 视频参数三项并排一行：默认跟随整体配置，可逐项重选；窄屏不换行，由下拉自身压缩 */
+.iv-model-row--inline{flex-wrap:nowrap;gap:var(--iv-sp-3)}
+.iv-model-row--inline>.iv-meta{flex:none;white-space:nowrap}
+.iv-model-row--inline :is(.iv-select,.iv-model-pick){flex:1 1 auto;min-width:0}
 .iv-model-pick{display:flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
 .iv-create .iv-notice{margin:0}
 .iv-asset-search{min-width:120px;max-width:220px;flex:1}
@@ -586,6 +578,25 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 
 /* ============ F2 多参考图 chips ============ */
 .iv-refs{display:grid;gap:var(--iv-sp-2)}
+/* 生图 / 融合生图 / 生视频：每页只留一套输入与一个主按钮 */
+.iv-create-panel{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0}
+.iv-ref-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--iv-sp-2) var(--iv-sp-4);min-width:0}
+.iv-ref-head .iv-meta:first-child{color:var(--iv-tx2)}
+.iv-ref-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
+/* 空参考图时的拖放入口：虚线盒告诉用户"这里能放东西" */
+.iv-ref-drop{display:block;padding:var(--iv-sp-4);border:1px dashed var(--iv-line-2);border-radius:var(--iv-r);
+  color:var(--iv-tx3);font-size:var(--iv-fs-meta);text-align:center}
+/* 拖拽经过用 outline：不改变布局尺寸，避免 chip 跳动 */
+.iv-refs[data-ref-dropzone=true]{outline:2px dashed var(--iv-acc);outline-offset:3px;border-radius:var(--iv-r)}
+.iv-slot-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0;
+  padding:var(--iv-sp-2);border:1px solid transparent;border-radius:var(--iv-r)}
+.iv-slot-row[data-slot-drop=true]{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
+/* 参考图 / 首末帧选择：锚在触发按钮上，列表行是"首图 + 名称" */
+.iv-pick{position:relative;display:inline-flex;min-width:0}
+.iv-pick .iv-pop-panel{width:min(380px,86vw);padding:8px}
+.iv-ref-picker-name{flex:1;min-width:0}
+/* 参考图 chip 横排换行；.iv-ref-list 在样式表后段用于纵向引用列表，这里不复用 */
+.iv-ref-chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:var(--iv-sp-2)}
 .iv-ref-list{display:flex;flex-wrap:wrap;gap:var(--iv-sp-2)}
 .iv-ref-chip{display:inline-flex;align-items:center;gap:var(--iv-sp-2);height:22px;padding:0 3px 0 0;max-width:100%;
   border:1px solid var(--iv-line-2);border-radius:var(--iv-r);background:var(--iv-panel-2);font-size:var(--iv-fs-meta);cursor:grab}
@@ -820,7 +831,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-steps{flex-wrap:wrap}
 .iv-toolbar{flex-wrap:wrap}
 }
-/* B-9 融合生图 / 提示词·分镜 / 技能库 */
+/* B-9 融合生图 / 提取提示词 / 技能库 */
 .iv-fusion-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:space-between}
 .iv-fusion-group{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap}
 .iv-skill-bar{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;justify-content:space-between}
@@ -867,13 +878,42 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-shot-body{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
 .iv-sb-row{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:flex-end}
 .iv-sb-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;flex:1 1 150px}
+/* 纵向容器里 flex-basis 落在高度轴上：卡片直挂的字段会被撑到 150px 高，
+   没引用的分段因此留出一大片空白。卡内字段按内容高度排，引用随条目自然长高。 */
+.iv-sb-shot-body>.iv-sb-field{flex:0 0 auto}
+/* 分段元信息行：秒数 / 生图模型 / 生视频模型 / 导演 Skill 压成一行，紧贴提示词 */
+.iv-sb-seg-meta{display:flex;flex-wrap:wrap;gap:var(--iv-sp-3) var(--iv-sp-4);align-items:flex-end}
+.iv-sb-seg-meta>.iv-sb-field{flex:0 0 auto}
 .iv-sb-field .iv-input{width:100%}
 .iv-sb-actions{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;justify-content:flex-end}
+/* 分段卡：标题行动作簇、折叠预览、引用选择面板 */
+.iv-sb-seg-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
+.iv-sb-seg-actions{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2)}
+.iv-seg-peek{font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 100%}
+.iv-dur-row{display:flex;align-items:center;gap:var(--iv-sp-2)}
+.iv-dur-row .iv-input{width:56px;flex:0 0 56px}
+.iv-ref-row{display:flex;gap:var(--iv-sp-2);align-items:center;flex-wrap:wrap}
+.iv-ref-hint{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iv-ref-pop{position:relative;display:inline-flex;margin-left:auto}
+.iv-ref-pop .iv-pop-panel{width:min(320px,80vw);padding:8px}
+.iv-ref-picker-search{width:100%;margin-bottom:var(--iv-sp-2)}
+.iv-ref-picker-item{display:flex;width:100%;align-items:center;gap:var(--iv-sp-3);padding:4px 6px;border:1px solid transparent;border-radius:var(--iv-r-xs);background:none;color:var(--iv-tx1);font-size:var(--iv-fs-meta);text-align:left;cursor:pointer}
+.iv-ref-picker-item:hover{background:var(--iv-panel-3);border-color:var(--iv-line)}
+.iv-ref-picker-item:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
+/* 缩略图：自动命名的文件单看名字分不出来，选择器里直接给画面 */
+.iv-ref-picker-thumb{width:64px;height:44px;object-fit:cover;border-radius:var(--iv-r-xs);background:var(--iv-panel-3);flex:none;display:block}
+/* 面板内的通用图片规则会覆盖上面这行，这里按同层级写回固定尺寸（首图不能糊成整行宽） */
+.iv-pane .iv-ref-picker-thumb{width:64px;height:44px}
+.iv-ref-list{list-style:none;margin:var(--iv-sp-3) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--iv-sp-3);max-height:280px;overflow-y:auto}
+.iv-studio-ref-row{display:flex;align-items:center;gap:var(--iv-sp-5);padding:var(--iv-sp-3) var(--iv-sp-4);border:1px solid var(--iv-line);border-radius:var(--iv-r-sm);background:var(--iv-panel-2)}
+.iv-studio-ref-row .iv-ellipsis{flex:1 1 auto}
+.iv-ref-picker-meta{margin-left:auto;flex:none;color:var(--iv-tx3);font-size:var(--iv-fs-micro)}
+.iv-ref-picker-empty{display:block;padding:var(--iv-sp-3) 0;color:var(--iv-tx3);font-size:var(--iv-fs-meta)}
 .iv-plan-row{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:flex-end}
 .iv-plan-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
 .iv-plan-field .iv-input{width:88px}
-.iv-plan-brief{width:100%}
-.iv-ico--up{transform:rotate(180deg)}
+.iv-ico--up{transform:rotate(-90deg)}
+.iv-ico--down{transform:rotate(90deg)}
 /* B-16 导出历史面板 */
 .iv-exports{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}
 .iv-exports-filter{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:center}

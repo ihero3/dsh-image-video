@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -33,6 +33,7 @@ function renderQuick(withVideo = false) {
 describe('B-4 video continuation (A-4)', () => {
   it('refuses to continue without a reference video', async () => {
     const { host, view } = renderQuick()
+    await openCreateTab(view, 'video')
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
     fireEvent.change(box, { target: { value: '接上一镜继续' } })
     // 开启续写但没给参考视频
@@ -48,6 +49,7 @@ describe('B-4 video continuation (A-4)', () => {
 
   it('passes continuation:true when a reference video is supplied', async () => {
     const { host, view } = renderQuick(true)
+    await openCreateTab(view, 'video')
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
     fireEvent.change(box, { target: { value: '接上一镜继续' } })
 

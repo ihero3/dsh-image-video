@@ -24,12 +24,12 @@ import {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('workbench skeleton', () => {
-  it('renders the header, three modes and four panes', async () => {
+  it('renders the header, four modes and four panes', async () => {
     const view = render(<Workbench {...clientProps()} />)
     expect(view.container.querySelector('[data-workbench-kind]')?.getAttribute('data-workbench-kind'))
       .toBe('dsh-image-video-workbench')
     expect(screen.getByText(en.sectionProject)).toBeTruthy()
-    for (const mode of [en.modeQuick, en.modeWorkflow, en.modeTimeline]) {
+    for (const mode of [en.modeQuick, en.modeScript, en.modeWorkflow, en.modeTimeline]) {
       expect(screen.getByRole('button', { name: mode })).toBeTruthy()
     }
     for (const pane of [en.paneAssets, en.paneResources, en.panePreview, en.paneTasks]) {
@@ -43,7 +43,10 @@ describe('workbench skeleton', () => {
     for (const pane of ['paneAssets', 'paneResources', 'panePreview', 'paneTasks']) {
       expect(view.container.querySelector(`[data-workbench-pane=${pane}]`)?.getAttribute('data-workbench-planned')).toBe('false')
     }
-    expect(await screen.findByText('0.3.1 · threevideo')).toBeTruthy()
+    // 版本号只在帮助浮层里展示，头部不再占位；健康检查成功后头部无状态提示
+    const root = view.container.querySelector('[data-workbench-kind]')!
+    await waitFor(() => { expect(root.getAttribute('data-workbench-health')).toBe('ok') })
+    expect(view.container.querySelector('.iv-top-meta')?.textContent ?? '').not.toContain('0.3.1')
   })
 
   it('switches the current mode without losing the panes', () => {
@@ -879,7 +882,9 @@ describe('workbench state across remounts', () => {
   it('keeps the mode and the half-written prompt after the panel unmounts and comes back (T2)', async () => {
     const host = fakeApi()
     const first = render(<Workbench {...clientProps({ api: host.api })} />)
-    await screen.findByText('0.3.1 · threevideo')
+    await waitFor(() => {
+      expect(first.container.querySelector('[data-workbench-kind]')?.getAttribute('data-workbench-health')).toBe('ok')
+    })
 
     fireEvent.click(screen.getByRole('button', { name: en.modeQuick }))
     const prompt = screen.getByPlaceholderText(en.generatePromptPlaceholder)
@@ -887,10 +892,11 @@ describe('workbench state across remounts', () => {
     expect((prompt as HTMLTextAreaElement).value).toBe('一只在雨里跑的白猫')
 
     first.unmount()
-    render(<Workbench {...clientProps({ api: host.api })} />)
-
     // 主面板是 keyed slot：卸载后组件状态清零，提示词必须从跨挂载 store 里读回来
-    await screen.findByText('0.3.1 · threevideo')
+    const second = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => {
+      expect(second.container.querySelector('[data-workbench-kind]')?.getAttribute('data-workbench-health')).toBe('ok')
+    })
     expect((screen.getByPlaceholderText(en.generatePromptPlaceholder) as HTMLTextAreaElement).value)
       .toBe('一只在雨里跑的白猫')
   })

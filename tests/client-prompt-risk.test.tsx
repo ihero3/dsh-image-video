@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -44,12 +44,14 @@ describe('快速路径不再做提示词风控（2026-11-05 删除）', () => {
   })
 
   it('keeps both generate buttons enabled once a prompt exists', async () => {
-    renderQuick()
+    const { view } = renderQuick()
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
     fireEvent.change(box, { target: { value: '雨夜街头的橘猫' } })
     await waitFor(() => {
       expect((screen.getByRole('button', { name: en.generateImage }) as HTMLButtonElement).disabled).toBe(false)
     })
+    // 生视频是独立页签：提示词跨页保留，切过去按钮同样可用
+    await openCreateTab(view, 'video')
     expect((screen.getByRole('button', { name: en.generateVideo }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

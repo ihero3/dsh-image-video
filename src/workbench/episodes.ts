@@ -17,14 +17,14 @@ export const EPISODE_REF_CATEGORIES: readonly EpisodeRefCategory[] = [
 /** 引用没写分类时落到「未分组」。 */
 export const DEFAULT_EPISODE_REF_CATEGORY: EpisodeRefCategory = 'ungrouped'
 
-/** 分段时长常用档位（界面快捷按钮），数据层允许 1–60。 */
-export const SEGMENT_DURATION_PRESETS: readonly number[] = [5, 10, 20, 30]
+/** 分段时长常用档位（界面快捷按钮），数据层允许 1–180。 */
+export const SEGMENT_DURATION_PRESETS: readonly number[] = [30, 60, 180]
 
 /** 分段时长下限（秒）。 */
 export const MIN_SEGMENT_DURATION_SEC = 1
 
 /** 分段时长上限（秒）。 */
-export const MAX_SEGMENT_DURATION_SEC = 60
+export const MAX_SEGMENT_DURATION_SEC = 180
 
 /** 集标题上限。 */
 export const MAX_EPISODE_TITLE_LENGTH = 80
@@ -215,8 +215,8 @@ export function normalizeEpisodeNo(value: unknown, fallback: number): number {
 
 /**
  * 校验分段时长。
- * @param value - 原始输入；缺省时用默认 5 秒。
- * @returns 1–60 的整数秒。
+ * @param value - 原始输入；缺省时用默认 30 秒。
+ * @returns 1–180 的整数秒。
  * @throws {Error} 非数字或越界时（越界一律拒，不做静默截断）。
  */
 export function normalizeSegmentDuration(value: unknown): number {

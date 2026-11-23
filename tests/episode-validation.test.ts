@@ -33,7 +33,7 @@ describe('episode field validation', () => {
   })
 
   it('validates segment duration without silent clamping', () => {
-    expect(normalizeSegmentDuration(undefined)).toBe(5)
+    expect(normalizeSegmentDuration(undefined)).toBe(30)
     expect(normalizeSegmentDuration(9.6)).toBe(10)
     expect(normalizeSegmentDuration(MAX_SEGMENT_DURATION_SEC)).toBe(MAX_SEGMENT_DURATION_SEC)
     expect(() => normalizeSegmentDuration(Number.NaN)).toThrow(/必须是数字/)
@@ -94,9 +94,9 @@ describe('episode field validation', () => {
     expect(shots[1]!.id).toBe('b')
     expect(shots[1]!.imageModel).toBe('m1')
     expect(shots[1]!.videoModel).toBeUndefined()
-    // 缺 id 时自动生成，缺时长落到默认 5 秒
+    // 缺 id 时自动生成，缺时长落到默认 30 秒
     expect(shots[0]!.id).not.toBe('')
-    expect(shots[0]!.durationSec).toBe(5)
+    expect(shots[0]!.durationSec).toBe(30)
     expect(() => normalizeShots(undefined)).toThrow(/必须是数组/)
     expect(() => normalizeShots([1])).toThrow(/必须是对象/)
   })

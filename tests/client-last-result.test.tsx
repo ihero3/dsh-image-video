@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -65,16 +65,22 @@ describe('本次结果就地展示（T3）', () => {
   })
 
   it('视频完成后也用任务账本的产物路径就地展示', async () => {
-    const { host, view } = renderQuick()
-    const tasks = (host as unknown as { tasks: Array<Record<string, unknown>> }).tasks
-    const spy = vi.fn(async () => ({ mediaMode: 'video' as const, pending: true, taskId: 'tsk-v1' }))
-    ;(host.api as unknown as { generateMedia: typeof spy }).generateMedia = spy
-    tasks.push({
+    // 任务账本在挂载前就位：轮询快照按真实宿主语义带上这条已完成任务
+    const host = fakeApi({})
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '结果项目',
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    })
+    host.tasks.push({
       schemaVersion: 4, id: 'tsk-v1', kind: 'video', status: 'succeeded',
       provider: 'threevideo', prompt: '海面日落', projectId: 'prj-1',
       outputPath: '/tmp/outputs/last.mp4',
       startedAt: '2026-10-30T00:00:00.000Z',
-    })
+    } as never)
+    const spy = vi.fn(async () => ({ mediaMode: 'video' as const, pending: true, taskId: 'tsk-v1' }))
+    ;(host.api as unknown as { generateMedia: typeof spy }).generateMedia = spy
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await openCreateTab(view, 'video')
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
     fireEvent.change(box, { target: { value: '海面日落' } })
     fireEvent.click(screen.getByRole('button', { name: en.generateVideo }))

@@ -57,10 +57,10 @@ import {
 } from '../runtime-defaults.ts'
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, renameGeneratedOutput, type OutputFile } from '../workbench/outputs.ts'
-import { sep } from 'node:path'
-import { dirname, resolve } from 'node:path'
-import { stat, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
+import { stat, unlink, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { spawn } from 'node:child_process'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
 import { probeMediaSpec } from '../media/render.ts'
 import { planRetention } from '../media/retention.ts'
@@ -81,12 +81,17 @@ import {
   buildEpisodePlanPrompt, parseEpisodePlan, planEpisodesByRules,
   type EpisodePlanEpisode, type EpisodePlanRequest,
 } from '../workbench/episode-plan.ts'
+import {
+  buildExtractPrompt, parseExtractItems, type ExtractCategory, type ExtractItem,
+} from '../workbench/entity-extract.ts'
 import type { StoryboardShot } from '../workbench/storyboard.ts'
 import type { StoryboardEntityLibrary } from '../workbench/storyboard-plan.ts'
 import { planStoryboardWithModel, replanStoryboardShot, type StoryboardModelCaller } from './storyboard-llm.ts'
 import { extractScriptBytes, readScriptFile } from './script-import.ts'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmRuntime } from '@deepseek-ai/dsh-llm'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import { saveImageAttachment } from '../media.ts'
 
 export { WORKBENCH_RPC_CHANNEL }
 export type { WorkbenchHealth }
@@ -191,6 +196,11 @@ export interface WorkbenchRpcDeps {
    * 缺省时 `llm/models` 与 `episodes/split` 如实报错，界面降级为手动加段。
    */
   readonly llm?: LlmRuntime
+  /**
+   * 附件服务（`ctx.attachments`）：把引用的图片 / 视频帧交给文本模型提取提示词。
+   * 缺省时选模型提取会如实报错；不选模型仍可退回宿主视觉适配器。
+   */
+  readonly attachments?: AttachmentStore
 }
 
 /**
@@ -666,6 +676,60 @@ async function materializeEpisodePlan(
   return created
 }
 
+/** 实体提取的最大输出 token（一屏角色 / 道具列表足够）。 */
+const ENTITY_EXTRACT_MAX_TOKENS = 4_096
+
+/**
+ * 读提取分区：未知值直接报错——静默按角色处理会把结果错位到另一个标签页。
+ * @param payload - RPC 载荷。
+ * @returns 分区名。
+ * @throws {Error} `category` 不是三个已知分区之一时。
+ */
+function readExtractCategory(payload: unknown): ExtractCategory {
+  const value = optionalText(payload, 'category')
+  if (value === 'role' || value === 'scene' || value === 'prop') return value
+  throw new Error('未知的提取分区')
+}
+
+/**
+ * 从剧本提取实体：把剧本与分区要求交给文本模型，返回可入库的候选列表。
+ * @param deps - RPC 依赖（含文本模型服务）。
+ * @param payload - 载荷：script / category / provider / model。
+ * @param signal - 取消信号，透传给模型调用。
+ * @returns 候选条目（名称 + 说明）。
+ * @throws {Error} 剧本为空、没有可用文本模型、模型输出不可用时。
+ */
+async function extractEntities(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<{ items: readonly ExtractItem[] }> {
+  const script = optionalText(payload, 'script')?.trim() ?? ''
+  if (script === '') throw new Error('请先把剧本写进当前集')
+  const category = readExtractCategory(payload)
+  const choice = optionalModelChoice(payload)
+  const llm = deps.llm
+  if (choice === undefined || llm === undefined) throw new Error('请选择文本模型后再提取')
+  const prepared = await llm.prepareCall(
+    { provider: choice.provider, model: choice.model, maxTokens: ENTITY_EXTRACT_MAX_TOKENS },
+    signal,
+  )
+  const options: GenerateOptions = {
+    ...prepared.config,
+    messages: [createUserMessage({
+      content: [{ type: 'text', text: buildExtractPrompt(script, category) }],
+      source: { kind: 'user' },
+    })],
+    ...signal === undefined ? {} : { signal },
+  }
+  const assembler = new BlockAssembler()
+  for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+  const raw = assembler.blocks()
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('\n')
+  return { items: parseExtractItems(raw) }
+}
 
 /**
  * 读请求里可选的文本模型选择（`B-20`）。
@@ -678,6 +742,161 @@ function optionalModelChoice(payload: unknown): { provider: string; model: strin
   const model = optionalText(payload, 'model')
   if (provider === undefined || provider === '' || model === undefined || model === '') return undefined
   return { provider, model }
+}
+
+/** 提示词提取的输出上限：一段提示词远低于该预算。 */
+const PROMPT_EXTRACT_MAX_TOKENS = 2048
+
+/** 没给提取要点时使用的中性口径。 */
+const PROMPT_EXTRACT_DEFAULT_POINTS = '提取可直接用于生图或生视频的中文提示词：主体、风格、材质与光线、构图与镜头细节。'
+
+/** 提取提示词的系统口径：只描述画面里确实存在的内容。 */
+const PROMPT_EXTRACT_SYSTEM = [
+  '你是生图与分镜提示词的反向工程助手。',
+  '阅读用户给出的画面，输出一段可直接使用的中文提示词。',
+  '只描述画面中确实存在的内容，不要编造品牌、文字或画面外的信息。',
+  '按「主体 → 风格 → 材质/光线 → 构图与镜头细节」的顺序写成一段，不要使用 Markdown。',
+].join('\n')
+
+/** 视频扩展名：这些引用需要先取一帧才能交给视觉模型。 */
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm'])
+
+/** 图片扩展名 → 内容类型；未知扩展名按 PNG 交给附件服务。 */
+const IMAGE_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+}
+
+/** 提取输入的一帧画面及其临时资源。 */
+interface ExtractFrame {
+  readonly data: Uint8Array
+  readonly contentType: string
+  readonly name: string
+  /** 视频取帧时创建的临时目录；图片输入没有该清理动作。 */
+  readonly cleanup?: () => Promise<void>
+}
+
+/**
+ * 把引用路径变成一张可交给视觉模型的画面：图片直接读字节，视频用 ffmpeg 取第 1 秒的一帧。
+ * @param path - 素材绝对路径。
+ * @param signal - 取消信号；取消会终止 ffmpeg。
+ * @returns 帧字节、内容类型、保存名与可选清理动作。
+ * @throws {Error} 视频引用但宿主没有可用的 ffmpeg，或取帧失败时。
+ */
+async function readExtractFrame(path: string, signal?: AbortSignal): Promise<ExtractFrame> {
+  if (!VIDEO_EXTENSIONS.has(extname(path).toLowerCase())) {
+    const contentType = IMAGE_CONTENT_TYPES[extname(path).toLowerCase()] ?? 'image/png'
+    return { data: await readFile(path), contentType, name: basename(path) }
+  }
+  const probe = await probeFfmpeg()
+  const ffmpeg = probe.path
+  if (!probe.available || ffmpeg === undefined) {
+    throw new Error(`提取视频提示词需要 ffmpeg：${probe.message ?? '未找到可执行文件'}`)
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-image-video-extract-'))
+  const frame = join(dir, 'frame.jpg')
+  try {
+    await new Promise<void>((resolveCall, rejectCall) => {
+      const child = spawn(ffmpeg, [
+        '-y', '-hide_banner', '-loglevel', 'error',
+        '-ss', '1', '-i', path,
+        '-frames:v', '1', '-vf', 'scale=1280:-2', frame,
+      ], { stdio: 'ignore' })
+      const onAbort = (): void => { child.kill('SIGKILL') }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      child.on('error', rejectCall)
+      child.on('close', code => {
+        signal?.removeEventListener('abort', onAbort)
+        if (code === 0) resolveCall()
+        else rejectCall(new Error(`ffmpeg 提取视频帧失败（退出码 ${String(code)}）`))
+      })
+    })
+  } catch (thrown) {
+    await rm(dir, { recursive: true, force: true })
+    throw thrown
+  }
+  return {
+    data: await readFile(frame),
+    contentType: 'image/jpeg',
+    name: `${basename(path, extname(path))}-frame.jpg`,
+    cleanup: async () => { await rm(dir, { recursive: true, force: true }) },
+  }
+}
+
+/**
+ * 提示词提取（`A-5`）：图片 / 视频 → 可编辑提示词。
+ * 选了文本模型就一次调用一个引用；没选时退回宿主视觉适配器。
+ * @param deps - RPC 依赖（文本模型 / 附件 / 视觉适配器）。
+ * @param payload - 载荷：path / skillId / instructions / provider / model。
+ * @param signal - 取消信号。
+ * @returns 提取出的提示词文本。
+ * @throws {Error} 既没有文本模型也没有视觉适配器、或模型没有返回结果时。
+ */
+async function extractPromptByPath(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<{ text: string }> {
+  const path = text(payload, 'path')
+  const skillId = optionalText(payload, 'skillId')
+  const skillPrompt = skillId === undefined ? undefined : (await skillLibraryFor(deps).get(skillId)).prompt
+  const points = optionalText(payload, 'instructions')?.trim()
+  const guidance = [skillPrompt?.trim(), points === undefined || points === '' ? undefined : points]
+    .filter((part): part is string => part !== undefined && part !== '')
+    .join('\n\n')
+  const choice = optionalModelChoice(payload)
+  if (choice === undefined) {
+    const vision = (deps as unknown as { generate?: { vision?: GenerationTool } }).generate?.vision
+    if (vision === undefined) {
+      throw new Error('提示词提取需要模型：请选择文本模型，或让宿主注入 vision 适配器')
+    }
+    const controller = new AbortController()
+    const value = await vision.execute(
+      guidance === '' ? { image: path } : { image: path, instructions: guidance },
+      { signal: controller.signal },
+    )
+    const outcome = extractOutcome(value)
+    if (outcome.outputPath === undefined) throw new Error('视觉模型没有返回提示词结果')
+    return { text: outcome.outputPath }
+  }
+  const llm = deps.llm
+  if (llm === undefined) throw new Error('当前宿主未提供文本模型服务，无法提取提示词')
+  const attachments = deps.attachments
+  if (attachments === undefined) throw new Error('当前宿主未提供附件服务，无法把引用画面交给文本模型')
+  const frame = await readExtractFrame(path, signal)
+  try {
+    const ref = await saveImageAttachment(attachments, frame.data, frame.contentType, frame.name)
+    const prepared = await llm.prepareCall(
+      { provider: choice.provider, model: choice.model, maxTokens: PROMPT_EXTRACT_MAX_TOKENS },
+      signal,
+    )
+    const options: GenerateOptions = {
+      ...prepared.config,
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: ref },
+          { type: 'text', text: guidance === '' ? PROMPT_EXTRACT_DEFAULT_POINTS : guidance },
+        ],
+        source: { kind: 'user' },
+      })],
+      system: PROMPT_EXTRACT_SYSTEM,
+      ...signal === undefined ? {} : { signal },
+    }
+    const assembler = new BlockAssembler()
+    for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+    const raw = assembler.blocks()
+      .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+      .map(block => block.text)
+      .join('')
+      .trim()
+    if (raw === '') throw new Error('模型没有返回提示词结果')
+    return { text: raw }
+  } finally {
+    await frame.cleanup?.()
+  }
 }
 
 /**
@@ -1015,6 +1234,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const plan = await draftEpisodePlan(deps, payload, signal)
       return { episodes: await materializeEpisodePlan(deps, payload, plan) }
     }
+    // 剧本实体提取：剧本生成页的角色 / 场景 / 道具·服装三个分区共用。
+    case 'entities/extract':
+      return await extractEntities(deps, payload, signal)
     // 文本模型目录：剧本模块「模型」选择器的候选（宿主 ctx.llm，与图片/视频服务商无关）。
     case 'llm/models': {
       const llm = deps.llm
@@ -1875,27 +2097,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
     }
     case 'prompts/remove':
       return { removed: await promptLibraryFor(deps).remove(text(payload, 'id')) }
-    // `A-5`：图片 → 提示词提取。没有视觉模型适配器时**如实报错**（`R-BND-4` 不伪造结果）。
-    case 'prompts/extract': {
-      const vision = (deps as unknown as { generate?: { vision?: GenerationTool } }).generate?.vision
-      if (vision === undefined) {
-        throw new Error('提示词提取需要视觉模型适配器（当前宿主未注入 vision 适配器）；可先用手写提示词，或等宿主接入多模态模型')
-      }
-      const path = text(payload, 'path')
-      // 逆向库选中的技能正文作为提取指令；未选时用适配器默认口径。
-      const skillId = optionalText(payload, 'skillId')
-      const instructions = skillId === undefined
-        ? undefined
-        : (await skillLibraryFor(deps).get(skillId)).prompt
-      const controller = new AbortController()
-      const value = await vision.execute(
-        instructions === undefined ? { image: path } : { image: path, instructions },
-        { signal: controller.signal },
-      )
-      const outcome = extractOutcome(value)
-      if (outcome.outputPath === undefined) throw new Error('视觉模型没有返回提示词结果')
-      return { text: outcome.outputPath }
-    }
+    // `A-5`：图片 / 视频 → 提示词提取。没有模型时如实报错（`R-BND-4` 不伪造结果）。
+    case 'prompts/extract':
+      return await extractPromptByPath(deps, payload, signal)
     case 'media/ffmpeg': {
       // 允许带一个 path 做"检查指定副本"的诊断（UI 的重新检查按钮用默认路径）
       const candidate = optionalText(payload, 'path')

@@ -16,7 +16,7 @@ import { BrandMark, ICON_NAMES, Icon } from '../src/client/icons.tsx'
 import { WORKBENCH_STYLE } from '../src/client/workbench-style.ts'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { cleanup, clientProps, fakeApi, render } from './client-fake-api.ts'
+import { cleanup, clientProps, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -292,7 +292,7 @@ describe('视觉层级契约（R7）', () => {
     expect(ruleOf('textarea.iv-input{')).toContain('height:auto')
   })
 
-  it('主创 W1 簇：提示词用 textarea 撑开，两个生成按钮同尺寸（2026-11-05 产品调整）', async () => {
+  it('主创 W1 簇：提示词用 textarea 撑开，每页主按钮同尺寸（2026-11-22 页签化）', async () => {
     const host = fakeApi()
     host.projects.push({
       schemaVersion: 1, id: 'prj-1', name: '层级契约',
@@ -305,13 +305,14 @@ describe('视觉层级契约（R7）', () => {
     expect(prompt, '主创提示词应是 textarea').toBeTruthy()
     expect(prompt.classList.contains('iv-textarea')).toBe(true)
 
-    // 2026-11-05 产品调整：两个按钮**等宽等大**（用户要求，避免手滑点错），
-    // 所以旧的"图片 lg / 视频默认档"层级契约作废，改成两者同为 lg + 同尺寸类
+    // 2026-11-22：生成方式拆成页签，每页只有一个主按钮（避免手滑点错）；
+    // 生图与生视频的主按钮保持同一套尺寸/层级类。
     const image = await screen.findByRole('button', { name: en.generateImage }) as HTMLButtonElement
     expect(image.classList.contains('iv-btn--acc')).toBe(true)
     expect(image.classList.contains('iv-btn--lg')).toBe(true)
     expect(image.classList.contains('iv-gen-btn')).toBe(true)
 
+    await openCreateTab(view, 'video')
     const video = await screen.findByRole('button', { name: en.generateVideo }) as HTMLButtonElement
     expect(video.classList.contains('iv-btn--acc')).toBe(true)
     expect(video.classList.contains('iv-btn--lg')).toBe(true)

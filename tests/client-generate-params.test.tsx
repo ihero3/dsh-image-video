@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -29,8 +29,13 @@ describe('生成参数下拉（T1）', () => {
   it('三个参数都是 select，首项是自动', async () => {
     const { view } = renderQuick()
     await waitFor(() => { expect(view.container.querySelector('[data-generate-size]')).toBeTruthy() })
+    const size = view.container.querySelector('[data-generate-size]') as HTMLSelectElement
+    expect(size.tagName).toBe('SELECT')
+    expect(size.options[0]!.textContent).toContain(en.generateParamAuto)
+    // 尺寸属于生图页，比例与时长属于生视频页——分页后仍都要有
+    await openCreateTab(view, 'video')
 
-    for (const attr of ['data-generate-size', 'data-generate-aspect', 'data-generate-duration']) {
+    for (const attr of ['data-generate-aspect', 'data-generate-duration']) {
       const el = view.container.querySelector(`[${attr}]`)
       expect(el, attr).toBeTruthy()
       expect(el!.tagName).toBe('SELECT')
@@ -42,10 +47,12 @@ describe('生成参数下拉（T1）', () => {
     const { view } = renderQuick()
     await waitFor(() => { expect(view.container.querySelector('[data-generate-size]')).toBeTruthy() })
     const size = view.container.querySelector('[data-generate-size]') as HTMLSelectElement
+    expect(size.options.length).toBe(3)
+    // 比例与时长在生视频页
+    await openCreateTab(view, 'video')
     const aspect = view.container.querySelector('[data-generate-aspect]') as HTMLSelectElement
     const duration = view.container.querySelector('[data-generate-duration]') as HTMLSelectElement
     // 宿主下发 2 个尺寸 + 3 个比例 + 1..30 秒
-    expect(size.options.length).toBe(3)
     expect(aspect.options.length).toBe(4)
     expect(duration.options.length).toBe(31)
   })

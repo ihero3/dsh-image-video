@@ -37,6 +37,27 @@ export type WorkbenchLocaleKey =
   | 'saveDirty'
   | 'saveFailed'
   | 'modeQuick'
+  | 'modeScript'
+  | 'scriptTabRoles'
+  | 'scriptTabScenes'
+  | 'scriptTabProps'
+  | 'scriptTabSplit'
+  | 'extractRoleTitle'
+  | 'extractRoleDesc'
+  | 'extractSceneTitle'
+  | 'extractSceneDesc'
+  | 'extractPropTitle'
+  | 'extractPropDesc'
+  | 'extractRun'
+  | 'extractRunning'
+  | 'extractSource'
+  | 'extractNeedsScript'
+  | 'extractNeedsModel'
+  | 'extractNeedsProject'
+  | 'extractEmpty'
+  | 'extractAdd'
+  | 'extractAdded'
+  | 'extractExisting'
   | 'modulePipeline'
   | 'modulePipelineDesc'
   | 'scriptTextModel'
@@ -273,6 +294,8 @@ export type WorkbenchLocaleKey =
   | 'segmentAdd'
   | 'segmentEmpty'
   | 'segmentName'
+  | 'segmentExpand'
+  | 'segmentCollapse'
   | 'segmentPromptLabel'
   | 'segmentPromptPlaceholder'
   | 'segmentDurationLabel'
@@ -323,6 +346,11 @@ export type WorkbenchLocaleKey =
   | 'studioSourcesHint'
   | 'studioSourcesEmpty'
   | 'studioSourceLimit'
+  | 'studioAddSource'
+  | 'studioRulesLabel'
+  | 'studioRulesPlaceholder'
+  | 'studioModelLabel'
+  | 'studioModelEmpty'
   | 'studioExtractAction'
   | 'studioExtracting'
   | 'studioExtracted'
@@ -355,8 +383,14 @@ export type WorkbenchLocaleKey =
   | 'episodeExportFailed'
   | 'segmentRefsEmpty'
   | 'segmentAddRef'
-  | 'segmentRefResources'
-  | 'segmentRefAssets'
+  | 'segmentRefSearch'
+  | 'segmentRefPickerEmpty'
+  | 'segmentRefImages'
+  | 'segmentRefVideos'
+  | 'segmentGenerateAllImages'
+  | 'segmentGenerateAllVideos'
+  | 'segmentGenerateAllImagesDone'
+  | 'segmentGenerateAllVideosDone'
   | 'segmentRemove'
   | 'segmentSaveFailed'
   | 'segmentAddFailed'
@@ -382,8 +416,6 @@ export type WorkbenchLocaleKey =
   | 'generateImageModel'
   | 'generateVideoModel'
   | 'generateModelCatalogUnavailable'
-  | 'modelLimitFixedDuration'
-  | 'modelLimitNoRefVideo'
   | 'generateResultTitle'
   | 'generateResultView'
   | 'generateResultAsReference'
@@ -475,6 +507,22 @@ export type WorkbenchLocaleKey =
   // ---- F2 多参考图选择器 ----
   | 'generateRefsLabel'
   | 'generateRefsPreviewHint'
+  // ---- 生成方式标签页（生图 / 融合生图 / 生视频）与参考图选择 ----
+  | 'createTabImage'
+  | 'createTabFusion'
+  | 'createTabVideo'
+  | 'generateRefsModeHint'
+  | 'generateRefsPick'
+  | 'generateRefsDragHint'
+  | 'refPickerSearch'
+  | 'refPickerAssets'
+  | 'refPickerResources'
+  | 'refPickerEmpty'
+  | 'refPickerAdded'
+  | 'refPickerClose'
+  | 'videoFirstFrame'
+  | 'videoFirstFramePick'
+  | 'fusionEmptyAll'
   | 'pipelineToCanvas'
   | 'pipelineToCanvasHint'
   | 'pipelineInlineRun'
@@ -486,12 +534,10 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotDuration'
   | 'pipelineShotEditable'
   | 'modelDetails'
-  | 'fusionEntry'
   | 'fusionEntryHint'
   | 'defaultsBuiltinSource'
   | 'defaultsFollow'
   | 'defaultSeriesName'
-  | 'videoSlotsTitle'
   | 'generateRefsHint'
   | 'generateRefsAdd'
   | 'generateRefsFull'
@@ -571,7 +617,7 @@ export type WorkbenchLocaleKey =
   | 'fusionFailed'
   | 'fusionNeedsPrompt'
   | 'fusionClear'
-  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
+  // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   | 'promptApplyDone'
   | 'healthSize'
   | 'healthDupes'
@@ -616,7 +662,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineComposed'
   | 'pipelineGenerateTitle'
   | 'pipelineGenerateHint'
-  | 'pipelineBriefPlaceholder'
   | 'pipelinePlanEpisodes'
   | 'pipelinePlanSegments'
   | 'pipelinePlanShots'
@@ -691,16 +736,17 @@ export type WorkbenchLocaleKey =
   | 'railExports'
   | 'railHelp'
   | 'helpTitle'
-  | 'helpShortcuts'
   | 'helpModes'
   | 'helpModeQuick'
   | 'helpModeWorkflow'
   | 'helpModeTimeline'
+  | 'helpModeScript'
+  | 'helpContactTitle'
+  | 'helpContactOrg'
+  | 'helpContactWechat'
+  | 'helpVersionTitle'
+  | 'helpVersionUnknown'
   | 'helpClose'
-  | 'helpGenerateShortcut'
-  | 'helpUndoShortcut'
-  | 'helpPlayShortcut'
-  | 'helpDeleteShortcut'
   | 'exampleProject'
   | 'exampleProjectDone'
   // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
@@ -855,8 +901,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   guideDescription: 'Series, media assets and generation tasks for image and video work.',
   sectionProject: 'Series',
   pipelineTitle: 'One-click film: script → shots → image → video',
-  pipelineScriptLabel: 'Script',
-  pipelineScriptPlaceholder: 'Rainy street at night. Lin Xia walks over with an umbrella. She looks up at the neon sign.',
+  pipelineScriptLabel: 'Script / idea',
+  pipelineScriptPlaceholder: 'Rainy street at night — paste a full script, or just a one-line idea and let the model expand it.',
   pipelineShots: 'Shots',
   pipelineDuration: 'Seconds per shot',
   pipelineRunning: 'Running…',
@@ -864,15 +910,14 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineCompose: 'Generate shots',
   pipelineComposed: 'Shots ready — edit them below',
   pipelineGenerateTitle: 'Script → episodes → segments → shots',
-  pipelineGenerateHint: 'Writes into the series records; every level can be added to or edited below.',
-  pipelineBriefPlaceholder: 'One-line idea — used by the model when the script is empty',
+  pipelineGenerateHint: 'Splits the script above into episodes → segments → shots and writes them into the series; every level can still be added to or edited below.',
   pipelinePlanEpisodes: 'Episodes',
   pipelinePlanSegments: 'Segments / episode',
   pipelinePlanShots: 'Shots / segment',
   pipelineGenerate: 'Generate script',
   pipelineGeneratingScript: 'Generating…',
   pipelineGenerateDone: '{n} episode(s) written into this series',
-  pipelineGenerateNeedsSource: 'Write a script, or a one-line idea for the model',
+  pipelineGenerateNeedsSource: 'Write a script or a one-line idea above first',
   pipelineShotsCount: 'shots',
   pipelineWarnings: 'Note',
   pipelineNeedsProject: 'Create or pick a series first',
@@ -897,6 +942,27 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   saveDirty: 'Unsaved changes',
   saveFailed: 'Save failed',
   modeQuick: 'Quick create',
+  modeScript: 'Script',
+  scriptTabRoles: 'Characters',
+  scriptTabScenes: 'Scenes',
+  scriptTabProps: 'Props & costumes',
+  scriptTabSplit: 'Segments',
+  extractRoleTitle: 'Character extraction',
+  extractRoleDesc: 'Pull every character out of the current episode script; each candidate can be added to the resource library as a role.',
+  extractSceneTitle: 'Scene extraction',
+  extractSceneDesc: 'Pull every location out of the script, with time, lighting and set dressing that image prompts can use.',
+  extractPropTitle: 'Props & costume extraction',
+  extractPropDesc: 'Pull props and costumes out of the script; costumes record who wears them.',
+  extractRun: 'Extract from script',
+  extractRunning: 'Extracting…',
+  extractSource: 'Source: current episode script',
+  extractNeedsScript: 'This episode has no script yet — write one under Segments first.',
+  extractNeedsModel: 'Pick a text model under Segments before extracting.',
+  extractNeedsProject: 'Create a series first.',
+  extractEmpty: 'No candidates yet — run the extraction, then add the ones you want.',
+  extractAdd: 'Add to library',
+  extractAdded: 'Added to library: {name}',
+  extractExisting: 'In library',
   modulePipeline: 'Script → film',
   modulePipelineDesc: 'Script → episode → segments → shots → images and clips. Every level can be added to, edited or reordered below.',
   scriptTextModel: 'Text model',
@@ -1177,6 +1243,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   segmentAdd: 'Add segment',
   segmentEmpty: 'No segments yet — add one and write its prompt.',
   segmentName: 'Segment {n}',
+  segmentExpand: 'Expand segment',
+  segmentCollapse: 'Collapse segment',
   segmentPromptLabel: 'Segment prompt',
   segmentPromptPlaceholder: 'Within these seconds: who, where, what happens…',
   segmentDurationLabel: 'Seconds',
@@ -1218,15 +1286,20 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   skillsHint: 'Skills live under skills/ in the workbench data directory; built-in skills are read-only but can be disabled.',
   skillsRefresh: 'Refresh',
   quickTabProduce: 'Content production',
-  quickTabPrompt: 'Prompts · storyboard',
-  studioTitle: 'Prompts · storyboard',
-  studioDesc: 'Turn up to 8 images into editable prompts, then save them to this episode.',
+  quickTabPrompt: 'Extract prompts',
+  studioTitle: 'Extract prompts',
+  studioDesc: 'Reference images or videos, extract editable prompts with your key points, then save them to this episode.',
   studioSkillLabel: 'Reverse skill',
   studioSkillDefault: 'Default Skill',
-  studioSources: 'Input images',
-  studioSourcesHint: 'From this episode and the global media library; at most 8.',
-  studioSourcesEmpty: 'No images yet — generate or register media first.',
-  studioSourceLimit: 'At most {n} input images',
+  studioSources: 'References',
+  studioSourcesHint: 'Images and videos from this episode and the global media library; at most 8.',
+  studioSourcesEmpty: 'No references yet — add images or videos.',
+  studioSourceLimit: 'At most {n} references',
+  studioAddSource: 'Add reference',
+  studioRulesLabel: 'Extraction key points',
+  studioRulesPlaceholder: 'For example: focus on character look, camera language and lighting; ignore watermarks and subtitles.',
+  studioModelLabel: 'Text model',
+  studioModelEmpty: 'Default (host vision model)',
   studioExtractAction: 'Extract prompts',
   studioExtracting: 'Extracting…',
   studioExtracted: 'Extracted {n} prompt(s)',
@@ -1257,10 +1330,16 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   episodeExportDone: 'Episode exported to {path}',
   episodeExportFailed: 'Export failed',
   segmentRefsLabel: 'References',
-  segmentRefsEmpty: 'No references — pick from this episode’s resources or assets.',
+  segmentRefsEmpty: 'No references yet — pick images or videos from the asset library.',
   segmentAddRef: 'Add reference',
-  segmentRefResources: 'Series resources',
-  segmentRefAssets: 'Assets',
+  segmentRefSearch: 'Search images or videos',
+  segmentRefPickerEmpty: 'No images or videos to add',
+  segmentRefImages: 'Images',
+  segmentRefVideos: 'Videos',
+  segmentGenerateAllImages: 'Generate all images',
+  segmentGenerateAllVideos: 'Generate all videos',
+  segmentGenerateAllImagesDone: 'Generated {done}/{total} images.',
+  segmentGenerateAllVideosDone: 'Queued {done}/{total} videos — follow the task list.',
   segmentRemove: 'Delete segment',
   segmentSaveFailed: 'Segment save failed',
   segmentAddFailed: 'Could not add the segment',
@@ -1286,8 +1365,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateImageModel: 'Image model',
   generateVideoModel: 'Video model',
   generateModelCatalogUnavailable: 'Model catalog unavailable — falling back to the host default',
-  modelLimitFixedDuration: 'fixed duration only',
-  modelLimitNoRefVideo: 'no reference video / continuation',
   generateResultTitle: 'This result',
   generateResultView: 'View',
   generateResultAsReference: 'Use as reference',
@@ -1379,6 +1456,21 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   generateRefsLabel: 'Reference images (ordered)',
   generateRefsPreviewHint: 'Click the thumbnail or the filename to preview it',
+  createTabImage: 'Image',
+  createTabFusion: 'Fusion image',
+  createTabVideo: 'Video',
+  generateRefsModeHint: 'No reference = text-to-image; one or more = image-to-image, first is the base',
+  generateRefsPick: 'Choose reference',
+  generateRefsDragHint: 'Drag an image here from the asset library or the series resources',
+  refPickerSearch: 'Search by name',
+  refPickerAssets: 'Asset library',
+  refPickerResources: 'Series resources',
+  refPickerEmpty: 'No matching images yet',
+  refPickerAdded: 'Added',
+  refPickerClose: 'Done',
+  videoFirstFrame: 'First frame',
+  videoFirstFramePick: 'Choose first frame',
+  fusionEmptyAll: 'No roles, scenes or props yet — create them in the series resources first.',
   pipelineToCanvas: 'Build canvas',
   pipelineToCanvasHint: 'Only lays the shots out on the canvas — nothing starts until you run it there',
   pipelineInlineRun: 'Generate video',
@@ -1395,12 +1487,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: 'Shot seconds',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
   modelDetails: 'Model details',
-  fusionEntry: 'Compose with series looks',
   fusionEntryHint: 'Pick roles, scenes and props — they are turned into one prompt',
   defaultsBuiltinSource: 'Built-in',
   defaultsFollow: 'Follow default',
   defaultSeriesName: 'First series',
-  videoSlotsTitle: 'Video only (last frame / reference clip / real person / continuation)',
   generateRefsHint: 'First = base image, the rest = style / face references. Up to 6 — drag a chip or use the arrows to reorder.',
   generateRefsAdd: 'Add selected asset',
   generateRefsFull: 'At most 6 reference images',
@@ -1471,7 +1561,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   fusionNeedsPrompt: 'Write a prompt first',
   fusionClear: 'Clear selection',
 
-  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
+  // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   promptApplyDone: 'Loaded into the prompt box',
   healthSize: 'Size report',
   healthDupes: 'Duplicates',
@@ -1554,16 +1644,17 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   railExports: 'Export history',
   railHelp: 'Help',
   helpTitle: 'Help',
-  helpShortcuts: 'Shortcuts',
   helpModes: 'Modes',
   helpModeQuick: 'Quick create — generate images or videos right here, with reference images.',
   helpModeWorkflow: 'Workflow — chain script → storyboard → image → video → render on the canvas.',
   helpModeTimeline: 'Timeline — assemble clips, subtitles and audio, then export the film.',
+  helpModeScript: 'Script generation — script → episode → segments → shots → images/videos → canvas. Every episode, segment and shot can be added, edited or removed at any time.',
+  helpContactTitle: 'Contact',
+  helpContactOrg: 'Beijing Peiji Qizhi Technology Co., Ltd.',
+  helpContactWechat: 'WeChat: i-hero',
+  helpVersionTitle: 'Version',
+  helpVersionUnknown: 'Host not connected',
   helpClose: 'Close',
-  helpGenerateShortcut: 'Ctrl/⌘ + Enter — start generation',
-  helpUndoShortcut: 'Ctrl/⌘ + Z / Shift+Z — undo / redo',
-  helpPlayShortcut: 'Space — play or pause the timeline',
-  helpDeleteShortcut: 'Delete — remove the selected clip or node',
   // ---- B-3 融合生图参数化（姿态 / 镜头 / 风格 / 场景裁剪） ----
   fusionPoseLabel: 'Pose',
   fusionPoseNone: 'No pose (free)',
@@ -1826,8 +1917,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   guideDescription: '图片与视频创作的剧集、媒体素材与生成任务。',
   sectionProject: '剧集',
   pipelineTitle: '一键成片：剧本 → 分镜 → 生图 → 生视频',
-  pipelineScriptLabel: '剧本',
-  pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来。她抬眼看向霓虹招牌。',
+  pipelineScriptLabel: '剧本 / 一句话创意',
+  pipelineScriptPlaceholder: '雨夜街头，林夏撑伞走来——粘贴整段剧本，或只写一句话创意，模型会补全成剧本。',
   pipelineShots: '分镜数',
   pipelineDuration: '每镜秒数',
   pipelineRunning: '执行中…',
@@ -1835,15 +1926,14 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineCompose: '生成分镜',
   pipelineComposed: '分镜已生成，可在下面逐条修改',
   pipelineGenerateTitle: '剧本 → 集 → 分段 → 分镜',
-  pipelineGenerateHint: '写进剧集的集记录；下面每一级都能继续增删。',
-  pipelineBriefPlaceholder: '一句话创意——剧本为空时由模型写成剧本',
+  pipelineGenerateHint: '用上面的剧本生成：剧本 → 集 → 分段 → 分镜，写进剧集的集记录；每一级都能继续增删。',
   pipelinePlanEpisodes: '集数',
   pipelinePlanSegments: '每集段数',
   pipelinePlanShots: '每段分镜数',
   pipelineGenerate: '生成剧本',
   pipelineGeneratingScript: '生成中…',
   pipelineGenerateDone: '已写入 {n} 集，可在下面逐级增删',
-  pipelineGenerateNeedsSource: '请先写剧本，或写一句创意让模型生成剧本',
+  pipelineGenerateNeedsSource: '请先在上面写剧本或一句话创意',
   pipelineShotsCount: '个分镜',
   pipelineWarnings: '提醒',
   pipelineNeedsProject: '先创建或选择一个剧集',
@@ -1868,6 +1958,27 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   saveDirty: '有未保存改动',
   saveFailed: '保存失败',
   modeQuick: '快速创作',
+  modeScript: '剧本生成',
+  scriptTabRoles: '角色',
+  scriptTabScenes: '场景',
+  scriptTabProps: '道具·服装',
+  scriptTabSplit: '剧本分段',
+  extractRoleTitle: '角色提取',
+  extractRoleDesc: '从当前集剧本里挑出所有角色；每条都可以加入资源库，作为定妆照与出图引用。',
+  extractSceneTitle: '场景提取',
+  extractSceneDesc: '从剧本里挑出所有地点与场景；说明带时间、光线与陈设，可直接用于出图提示词。',
+  extractPropTitle: '道具·服装提取',
+  extractPropDesc: '从剧本里挑出所有道具与服装；服装会写明穿着者。',
+  extractRun: '从剧本提取',
+  extractRunning: '提取中…',
+  extractSource: '来源：当前集剧本',
+  extractNeedsScript: '当前集还没有剧本——先到「剧本分段」写好剧本。',
+  extractNeedsModel: '先在「剧本分段」选一个文本模型，再回来提取。',
+  extractNeedsProject: '先建一个剧集再提取。',
+  extractEmpty: '还没有候选——先点「从剧本提取」，再挑要入库的条目。',
+  extractAdd: '加入资源库',
+  extractAdded: '已加入资源库：{name}',
+  extractExisting: '已在资源库',
   modulePipeline: '剧本 → 成片',
   modulePipelineDesc: '剧本 → 集 → 分段 → 分镜 → 出图出片；每一级都能在下面继续增删、修改。',
   scriptTextModel: '文本模型',
@@ -2148,6 +2259,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   segmentAdd: '新建分段',
   segmentEmpty: '还没有分段——先新建一段并写下提示词。',
   segmentName: '第 {n} 段',
+  segmentExpand: '展开',
+  segmentCollapse: '收起',
   segmentPromptLabel: '分段提示词',
   segmentPromptPlaceholder: '这几秒里：谁、在哪、发生什么…',
   segmentDurationLabel: '秒数',
@@ -2189,15 +2302,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   skillsHint: '技能保存在工作台数据目录的 skills/ 下；内置技能只读但可以禁用。',
   skillsRefresh: '刷新',
   quickTabProduce: '内容生产',
-  quickTabPrompt: '提示词·分镜',
-  studioTitle: '提示词·分镜',
-  studioDesc: '最多选择 8 张图，经逆向 Skill 提取成可编辑提示词，并存进本集提示词库。',
+  quickTabPrompt: '提取提示词',
+  studioTitle: '提取提示词',
+  studioDesc: '引用图片或视频，按提取要点生成可编辑提示词，再存入本集。',
   studioSkillLabel: '逆向 Skill',
   studioSkillDefault: '默认 Skill',
-  studioSources: '输入图',
-  studioSourcesHint: '来自本集素材与全局素材；最多 8 张。',
-  studioSourcesEmpty: '还没有图片：先生成或登记素材。',
-  studioSourceLimit: '最多选择 {n} 张输入图',
+  studioSources: '引用素材',
+  studioSourcesHint: '来自本集素材与全局素材的图片或视频；最多 8 个。',
+  studioSourcesEmpty: '还没有引用——添加图片或视频。',
+  studioSourceLimit: '最多选择 {n} 个素材',
+  studioAddSource: '添加引用',
+  studioRulesLabel: '提取要点',
+  studioRulesPlaceholder: '例如：重点描述人物外观、镜头语言与光影；忽略水印与字幕。',
+  studioModelLabel: '文本模型',
+  studioModelEmpty: '默认（宿主视觉模型）',
   studioExtractAction: '提取提示词',
   studioExtracting: '提取中…',
   studioExtracted: '已提取 {n} 条提示词',
@@ -2219,7 +2337,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   studioStoryboardEmpty: '本集还没有分镜',
   studioShotApply: '带入镜头提示词',
   studioNoEpisode: '请先新建一集',
-  studioLoadFailed: '提示词·分镜读取失败',
+  studioLoadFailed: '提取提示词读取失败',
   shotRefAdd: '为本镜选择图片 / 视频',
   episodeSyncWorkflow: '同步到工作流',
   episodeSyncWorkflowDone: '分镜已同步到 {name}',
@@ -2228,10 +2346,16 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   episodeExportDone: '本集已导出到 {path}',
   episodeExportFailed: '导出失败',
   segmentRefsLabel: '引用',
-  segmentRefsEmpty: '还没有引用——从本集资源或素材里选。',
+  segmentRefsEmpty: '还没有引用——从素材库挑图片或视频。',
   segmentAddRef: '添加引用',
-  segmentRefResources: '剧集资源',
-  segmentRefAssets: '素材',
+  segmentRefSearch: '搜索图片或视频',
+  segmentRefPickerEmpty: '没有可添加的图片或视频',
+  segmentRefImages: '图片',
+  segmentRefVideos: '视频',
+  segmentGenerateAllImages: '一键生成图片',
+  segmentGenerateAllVideos: '一键生成视频',
+  segmentGenerateAllImagesDone: '已生成 {done}/{total} 张图片。',
+  segmentGenerateAllVideosDone: '已提交 {done}/{total} 个视频任务，去任务列表看进度。',
   segmentRemove: '删除分段',
   segmentSaveFailed: '分段保存失败',
   segmentAddFailed: '新建分段失败',
@@ -2257,8 +2381,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateImageModel: '图像模型',
   generateVideoModel: '视频模型',
   generateModelCatalogUnavailable: '模型目录不可用，已回退到宿主默认模型',
-  modelLimitFixedDuration: '不支持自定义时长',
-  modelLimitNoRefVideo: '不支持参考视频/续写',
   generateResultTitle: '本次结果',
   generateResultView: '查看',
   generateResultAsReference: '设为参考',
@@ -2366,14 +2488,27 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: '本镜时长(秒)',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
   modelDetails: '模型详情',
-  fusionEntry: '用剧集设定拼画面',
   fusionEntryHint: '多选角色 / 场景 / 道具，自动拼成一段提示词',
   defaultsBuiltinSource: '内置默认',
   defaultsFollow: '跟随默认',
   defaultSeriesName: '三视剧集',
-  videoSlotsTitle: '视频专用（尾帧 / 参考视频 / 真人 / 续写）',
   generateRefsHint: '首图=底图，其余为风格/脸部参考；最多 6 张，可拖拽 chip 或用箭头排序。',
   generateRefsAdd: '加入选中素材',
+  createTabImage: '生图',
+  createTabFusion: '融合生图',
+  createTabVideo: '生视频',
+  generateRefsModeHint: '不带参考图 = 文生图；带 1 张以上 = 图生图，首图为底图',
+  generateRefsPick: '选择参考图',
+  generateRefsDragHint: '把素材库或剧集资源里的图片拖到这里',
+  refPickerSearch: '按名称搜索',
+  refPickerAssets: '素材库',
+  refPickerResources: '剧集资源',
+  refPickerEmpty: '还没有可选的图片',
+  refPickerAdded: '已加入',
+  refPickerClose: '完成',
+  videoFirstFrame: '首帧',
+  videoFirstFramePick: '选择首帧',
+  fusionEmptyAll: '还没有角色 / 场景 / 物品——先去剧集资源里创建，再回来融合。',
   generateRefsFull: '最多 6 张参考图',
   generateRefsMoveUp: '前移',
   generateRefsMoveDown: '后移',
@@ -2442,7 +2577,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   fusionNeedsPrompt: '先写一段提示词',
   fusionClear: '清空选择',
 
-  // ---- 提示词带入（提示词·分镜页与分镜镜头共用） ----
+  // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   promptApplyDone: '已带入提示词框',
   healthSize: '体积排行',
   healthDupes: '重复素材',
@@ -2525,16 +2660,17 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   railExports: '导出历史',
   railHelp: '帮助',
   helpTitle: '帮助',
-  helpShortcuts: '快捷键',
   helpModes: '模式说明',
   helpModeQuick: '快速创作——就在这里生成图片或视频，可带多张参考图。',
   helpModeWorkflow: '工作流——在画布上串起 剧本→分镜→生图→视频→导出。',
   helpModeTimeline: '时间轴——组装片段、字幕与音轨，然后导出成片。',
+  helpModeScript: '剧本生成——剧本 → 集 → 分段 → 分镜 → 出图/出视频 → 导进画布；每一集、每一段、每一个分镜都能随时增删改查。',
+  helpContactTitle: '联系方式',
+  helpContactOrg: '北京培基启智科技有限公司',
+  helpContactWechat: '微信：i-hero',
+  helpVersionTitle: '版本',
+  helpVersionUnknown: '未连接宿主',
   helpClose: '关闭',
-  helpGenerateShortcut: 'Ctrl/⌘ + Enter——开始生成',
-  helpUndoShortcut: 'Ctrl/⌘ + Z / Shift+Z——撤销 / 重做',
-  helpPlayShortcut: '空格——播放 / 暂停时间轴',
-  helpDeleteShortcut: 'Delete——删除选中的片段或节点',
   exampleProject: '示例剧集',
   exampleProjectDone: '示例剧集已建好——去画布试试「快速图片」模板。',
   // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----

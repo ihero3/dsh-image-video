@@ -279,10 +279,11 @@ describe('分镜合并（B-20）', () => {
 })
 
 describe('生成剧本（B-22）', () => {
-  it('剧本与创意都为空时按钮禁用', () => {
+  it('剧本为空时按钮禁用；剧本框是唯一入口（不再有单独的一句话创意输入）', () => {
     const api = makeApi()
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
     expect((container.querySelector('[data-pipeline-script-generate]') as HTMLButtonElement).disabled).toBe(true)
+    expect(container.querySelector('[data-pipeline-brief]')).toBeNull()
   })
 
   it('按三级数量下发并把人造的集交回外层', async () => {

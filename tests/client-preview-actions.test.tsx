@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -73,7 +73,8 @@ describe('预览送参考位（T7）', () => {
     await waitFor(() => {
       expect(document.querySelector('.iv-notice')?.textContent ?? '').toContain(en.previewSentLastFrame)
     })
-    // 尾帧槽显示该文件名
+    // 尾帧槽显示该文件名（尾帧属于生视频页）
+    await openCreateTab(view, 'video')
     const slots = view.container.querySelector('[data-video-slots]') as HTMLElement
     expect(slots.textContent).toContain('pic.png')
   })

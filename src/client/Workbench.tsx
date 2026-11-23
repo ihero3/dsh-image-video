@@ -34,6 +34,7 @@ import { WorkflowCanvas } from './WorkflowCanvas.tsx'
 import { VirtualList } from './VirtualList.tsx'
 import { PaneBoundary } from './PaneBoundary.tsx'
 import { useDialogFocus } from './use-dialog-focus.ts'
+import { placeOverlay, type Placement } from './overlay-position.ts'
 import { PipelineCard } from './PipelineCard.tsx'
 import { VoiceCard } from './VoiceCard.tsx'
 import {
@@ -53,6 +54,7 @@ import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useModernTheme } from './modern-theme.ts'
 import { useWorkbenchField } from './workbench-store.ts'
+import type { WorkbenchScriptTab } from './workbench-store.ts'
 import { isInteractiveTarget, toggleWindowFullscreen } from './window-fullscreen.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
 import { useElapsedSeconds } from './use-elapsed.ts'
@@ -64,6 +66,7 @@ import { ResourceFoldersPanel } from './panels/ResourceFoldersPanel.tsx'
 import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
 import { TaskCard } from './panels/TaskCard.tsx'
 import { EpisodeWorkspace } from './panels/EpisodeWorkspace.tsx'
+import { ScriptExtractPanel } from './panels/ScriptExtractPanel.tsx'
 import { PromptStudioPanel } from './panels/PromptStudioPanel.tsx'
 import { SkillLibraryPanel } from './panels/SkillLibraryPanel.tsx'
 import { ExportHistoryPanel } from './panels/ExportHistoryPanel.tsx'
@@ -89,8 +92,8 @@ export interface WorkbenchInjected {
   bindLocale?: (ns: string) => (key: string) => string
 }
 
-/** The three modes the workbench offers. */
-export type WorkbenchMode = 'quick' | 'workflow' | 'timeline'
+/** The four modes the workbench offers. */
+export type WorkbenchMode = 'quick' | 'script' | 'workflow' | 'timeline'
 
 /** Props the main-panel seat binds for this body. */
 export type WorkbenchProps =
@@ -127,14 +130,28 @@ type HealthState =
 /** Mode → dictionary key, in switch order. */
 const MODE_KEYS: Record<WorkbenchMode, WorkbenchLocaleKey> = {
   quick: 'modeQuick',
+  script: 'modeScript',
   workflow: 'modeWorkflow',
   timeline: 'modeTimeline',
 }
-const MODES: readonly WorkbenchMode[] = ['quick', 'workflow', 'timeline']
+const MODES: readonly WorkbenchMode[] = ['quick', 'script', 'workflow', 'timeline']
 
 /** Mode → icon (segmented switcher). */
 const MODE_ICONS: Record<WorkbenchMode, IconName> = {
-  quick: 'bolt', workflow: 'flow', timeline: 'film',
+  quick: 'bolt', script: 'script', workflow: 'flow', timeline: 'film',
+}
+
+/** 剧本生成页的四个分区标签页（顺序即界面顺序：剧本分段 + 三个提取分区）。 */
+const SCRIPT_TABS: ReadonlyArray<{ readonly key: WorkbenchScriptTab, readonly label: WorkbenchLocaleKey }> = [
+  { key: 'split', label: 'scriptTabSplit' },
+  { key: 'roles', label: 'scriptTabRoles' },
+  { key: 'scenes', label: 'scriptTabScenes' },
+  { key: 'props', label: 'scriptTabProps' },
+]
+
+/** 分区 → 入库的资源类型（道具·服装都归到 `prop`）。 */
+const SCRIPT_TAB_KINDS: Record<WorkbenchScriptTab, ResourceKind> = {
+  roles: 'role', scenes: 'scene', props: 'prop', split: 'prop',
 }
 
 /** Resource kind → icon (resource library rows). */
@@ -266,6 +283,11 @@ function resourceRefs(resource: ResourceRecord): readonly string[] {
  */
 const MAX_REFERENCE_IMAGES = 8
 
+/** 参考图 / 首帧选择弹层的期望宽度（px）；实际宽度按视口夹紧，贴边时不溢出。 */
+const REF_PICKER_WIDTH = 340
+/** 弹层期望高度（px）：只用于判断向上还是向下展开，真实高度由内容 + `max-height` 决定。 */
+const REF_PICKER_HEIGHT = 360
+
 /** 片段 id 生成器（分割/复制用；随机后缀保证同帧内多次操作也不撞 id）。 */
 function nextClipId(): string {
   return `clip-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -353,6 +375,212 @@ function FusionGroup(props: {
               {resource.name}
             </button>
           ))}
+    </div>
+  )
+}
+
+/** 资源类型在参考图选择列表里的短标签（没有翻译的少见类型直接显示原值）。 */
+const RESOURCE_KIND_LABELS: Partial<Record<ResourceKind, WorkbenchLocaleKey>> = {
+  role: 'kindRole',
+  costume: 'kindCostume',
+  scene: 'kindScene',
+  prop: 'kindProp',
+  brand: 'kindBrand',
+  style: 'kindStyle',
+  voice: 'kindVoice',
+}
+
+/** 选择列表里的首图：图片取原图，视频取第 0.1 秒一帧。 */
+function PickThumb(props: { readonly path: string, readonly kind: 'image' | 'video' }): ReactNode {
+  const src = `/outputs/${encodeURIComponent(baseName(props.path))}`
+  return props.kind === 'video'
+    ? <video className="iv-ref-picker-thumb" src={`${src}#t=0.1`} muted preload="metadata" playsInline aria-hidden="true" />
+    : <img className="iv-ref-picker-thumb" src={src} alt="" loading="lazy" />
+}
+
+/**
+ * 生成表单里的图片 / 视频选择入口：列出剧集资源（取其首张参考图）与素材库，
+ * 每行是「首图 + 名称」。剧集资源在前（数量少、常用），素材库在后。
+ * 参考图列表保持打开以便连续添加，单槽（首帧/尾帧/参考视频）选完即收起。
+ *
+ * 弹层用 `position:fixed` + `placeOverlay` 实测定位：触发器贴在栏位左侧，
+ * 若继续按右对齐绝对定位，弹层会向左越出栏宽被裁掉（素材库只剩半列）。
+ */
+function RefPickField(props: {
+  readonly id: string
+  readonly label: string
+  readonly t: (key: WorkbenchLocaleKey) => string
+  readonly assets: readonly AssetRecord[]
+  readonly resources: readonly ResourceRecord[]
+  readonly kind: 'image' | 'video'
+  readonly picked: (path: string) => boolean
+  readonly onPick: (path: string) => void
+  readonly keepOpen?: boolean
+  readonly triggerData?: Readonly<Record<string, string>>
+}): ReactNode {
+  const { t, kind } = props
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [placement, setPlacement] = useState<Placement | undefined>(undefined)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => { setOpen(false); setQuery('') }, [])
+  useDialogFocus(open, panelRef, close)
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.target instanceof Node && wrapRef.current?.contains(event.target) === true) return
+      close()
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => { document.removeEventListener('mousedown', onMouseDown) }
+  }, [open, close])
+
+  // 打开时按触发器实测位置定位；滚动/改窗时重算，弹层始终留在视口内
+  useLayoutEffect(() => {
+    if (!open) { setPlacement(undefined); return }
+    const measure = (): void => {
+      const anchor = triggerRef.current?.getBoundingClientRect()
+      if (anchor === undefined) return
+      setPlacement(placeOverlay(
+        anchor,
+        { width: Math.min(REF_PICKER_WIDTH, window.innerWidth - 16), height: REF_PICKER_HEIGHT },
+        { width: window.innerWidth, height: window.innerHeight },
+        'below',
+        'start',
+      ))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [open])
+
+  const keyword = query.trim().toLowerCase()
+  const assetOptions = props.assets
+    .filter(asset => asset.kind === kind)
+    .filter(asset => keyword === '' || baseName(asset.path).toLowerCase().includes(keyword))
+  const resourceOptions = kind === 'video'
+    ? []
+    : props.resources
+        .map(resource => ({ resource, path: resourceRefs(resource)[0] }))
+        .filter((entry): entry is { resource: ResourceRecord, path: string } => entry.path !== undefined)
+        .filter(entry => keyword === '' || entry.resource.name.toLowerCase().includes(keyword))
+  const empty = assetOptions.length === 0 && resourceOptions.length === 0
+
+  /** 选中一张后：多选入口保持打开，单槽入口直接收起。 */
+  const pick = (path: string): void => {
+    props.onPick(path)
+    if (props.keepOpen !== true) close()
+  }
+
+  return (
+    <div className="iv-pick" ref={wrapRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="iv-btn iv-btn--ghost iv-btn--sm"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        {...props.triggerData}
+        onClick={() => { if (open) close(); else setOpen(true) }}
+      >
+        <Icon name="plus" size={11} />{props.label}
+      </button>
+      {open ? (
+        <div
+          className="iv-pop-panel"
+          ref={panelRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-label={props.label}
+          data-ref-picker={props.id}
+          data-ref-picker-side={placement?.side}
+          style={placement === undefined
+            ? undefined
+            : {
+              position: 'fixed',
+              left: `${placement.left}px`,
+              top: `${placement.top}px`,
+              right: 'auto',
+              bottom: 'auto',
+              width: `${placement.width}px`,
+              maxHeight: `${Math.max(160, placement.maxHeight)}px`,
+            }}
+        >
+          <input
+            className="iv-input iv-ref-picker-search"
+            type="search"
+            value={query}
+            placeholder={t('refPickerSearch')}
+            aria-label={t('refPickerSearch')}
+            data-ref-picker-search={props.id}
+            onChange={event => { setQuery(event.target.value) }}
+          />
+          {empty
+            ? <span className="iv-ref-picker-empty" data-ref-picker-empty={props.id}>{t('refPickerEmpty')}</span>
+            : null}
+          {/* 剧集资源在前：数量少、是主要来源；素材库放后面 */}
+          {resourceOptions.length === 0
+            ? null
+            : (
+              <div className="iv-pop-group">
+                <span className="iv-micro iv-pop-group-title">{t('refPickerResources')}</span>
+                {resourceOptions.map(({ resource, path }) => {
+                  const kindLabel = RESOURCE_KIND_LABELS[resource.kind]
+                  return (
+                    <button
+                      key={resource.id}
+                      type="button"
+                      className="iv-ref-picker-item"
+                      data-ref-option={`resource:${resource.id}`}
+                      data-pick-path={path}
+                      onClick={() => { pick(path) }}
+                    >
+                      <PickThumb path={path} kind="image" />
+                      <span className="iv-ellipsis iv-ref-picker-name" title={resource.name}>{resource.name}</span>
+                      <span className="iv-ref-picker-meta">
+                        {props.picked(path) ? t('refPickerAdded') : kindLabel === undefined ? resource.kind : t(kindLabel)}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          {assetOptions.length === 0
+            ? null
+            : (
+              <div className="iv-pop-group">
+                <span className="iv-micro iv-pop-group-title">{t('refPickerAssets')}</span>
+                {assetOptions.map(asset => (
+                  <button
+                    key={asset.id}
+                    type="button"
+                    className="iv-ref-picker-item"
+                    data-ref-option={`asset:${asset.id}`}
+                    data-pick-path={asset.path}
+                    onClick={() => { pick(asset.path) }}
+                  >
+                    <PickThumb path={asset.path} kind={kind} />
+                    <span className="iv-ellipsis iv-ref-picker-name" title={baseName(asset.path)}>{baseName(asset.path)}</span>
+                    <span className="iv-ref-picker-meta">{props.picked(asset.path) ? t('refPickerAdded') : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          <div className="iv-pop-foot">
+            <span className="iv-meta">{props.keepOpen === true ? t('generateRefsHint') : ''}</span>
+            <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={close}>
+              {t('refPickerClose')}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -445,6 +673,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [resourceUsage, setResourceUsage] = useState<readonly ResourceUsageRecord[]>([])
   // 默认值编辑草稿（`R-CFG-2`）：undefined = 不在编辑态
   const [defaultsDraft, setDefaultsDraft] = useState<Record<string, string> | undefined>(undefined)
+  /** 模型详情折叠（2026-11-20）：入口移到「当前生效参数」条最右侧，内容仍在参数条下方。 */
+  const [modelDetailsOpen, setModelDetailsOpen] = useState(false)
   const [renderJob, setRenderJob] = useState<RenderJob | undefined>(undefined)
   const [health, setHealth] = useState<HealthState>({ status: 'checking' })
   // B6 导出面板：分辨率 / 帧率 / 宽高比选择（默认 = 跟随模型 / 30fps / 16:9）。
@@ -517,6 +747,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 参考图 chip 的拖拽排序：拖着的位置 → 落点（鼠标用户；键盘用前移/后移按钮）
   const [refDragFrom, setRefDragFrom] = useState<number | undefined>(undefined)
   const [refDropAt, setRefDropAt] = useState<number | undefined>(undefined)
+  /** 参考图区正在接收外部拖入（素材库 / 资源库），用来点亮落点。 */
+  const [refDragOver, setRefDragOver] = useState(false)
+  /** 视频槽（首帧 / 尾帧 / 参考视频）正在接收拖入的那一个。 */
+  const [slotDrag, setSlotDrag] = useState<'first' | 'last' | 'video' | undefined>(undefined)
   // `G4`：视频生成的尾帧图 / 参考视频 / 真人勾选——随请求透传 `media[]` 与 `realPerson`。
   const [generateLastFrame, setGenerateLastFrame] = useWorkbenchField(api, 'generateLastFrame')
   const [generateRefVideo, setGenerateRefVideo] = useWorkbenchField(api, 'generateRefVideo')
@@ -609,8 +843,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [episodeRenameValue, setEpisodeRenameValue] = useState('')
   /** 集号草稿：可留空，留空沿用当前集号（默认从 0 起）。 */
   const [episodeNoValue, setEpisodeNoValue] = useState('')
-  /** 主区标签页：内容生产（生成） / 提示词·分镜（逆向解析与本集提示词库）。 */
+  /** 主区标签页：内容生产（生成） / 提取提示词（引用提取与本集提示词库）。 */
   const [quickTab, setQuickTab] = useWorkbenchField(api, 'quickTab')
+  /** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
+  const [createTab, setCreateTab] = useWorkbenchField(api, 'createTab')
+  /** 剧本生成页的分区：剧本分段 / 角色 / 场景 / 道具·服装（默认剧本分段）。 */
+  const [scriptTab, setScriptTab] = useWorkbenchField(api, 'scriptTab')
   // 导演库里启用中的技能：分段的 Skill 选择器只列这些（技能管理页改动后一起刷新）。
   const [directorSkills, setDirectorSkills] = useState<readonly SkillRecord[]>([])
 
@@ -637,7 +875,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const scriptModelsLoaded = useRef(false)
 
   useEffect(() => {
-    if (scriptModelsLoaded.current || quickTab !== 'produce') return
+    if (scriptModelsLoaded.current || mode !== 'script') return
     scriptModelsLoaded.current = true
     void apiRef.current.listTextModels()
       .then(catalog => { setScriptModels(catalog.models) })
@@ -648,7 +886,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           tone: 'error',
         })
       })
-  }, [quickTab, t])
+  }, [mode, t])
 
   /** 文本模型下拉值 `provider::id` → 拆段入参；未选时返回 undefined。 */
   const scriptTextModelChoice = ((): { provider: string; model: string } | undefined => {
@@ -692,6 +930,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
     setGenerateImages([...generateImages, path])
     setNotice({ text: `${t('referenceAsset')}：${baseName(path)}`, tone: 'info' })
+  }
+
+  /** 视频首帧 = 参考图第 1 张：选首帧时把该图提到队首，已在列表里先摘掉避免重复。 */
+  const setFirstFrame = (path: string): void => {
+    setGenerateImages([path, ...generateImages.filter(candidate => candidate !== path)])
   }
 
   /** 参考图排序（`F2`）：把 from 位置移到 to 位置（拖拽落点或箭头按钮共用）。 */
@@ -1206,6 +1449,23 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     event.dataTransfer.effectAllowed = 'copy'
   }
 
+  /**
+   * 生成表单的图片 / 视频槽接受素材库拖入：与素材行共用同一份拖拽载荷，
+   * 类型不匹配就原样忽略（例如把视频拖到参考图区）。
+   */
+  const onReferenceDrop = (event: ReactDragEvent, kind: 'image' | 'video', onPick: (path: string) => void): void => {
+    event.preventDefault()
+    setRefDragOver(false)
+    const payload = event.dataTransfer.getData(ASSET_DRAG_TYPE) !== ''
+      ? event.dataTransfer.getData(ASSET_DRAG_TYPE)
+      : event.dataTransfer.getData('text/plain')
+    if (payload === '') return
+    let entry: { path?: string, kind?: string } = {}
+    try { entry = JSON.parse(payload) as { path?: string, kind?: string } } catch { return }
+    if (entry.path === undefined || entry.kind !== kind) return
+    onPick(entry.path)
+  }
+
   /** 片段开始拖拽：带上所在轨道与片段 id（换轨/移动都认这个载荷）。 */
   const onClipDragStart = (event: ReactDragEvent, trackId: string, clipId: string): void => {
     event.dataTransfer.setData(CLIP_DRAG_TYPE, JSON.stringify({ trackId, clipId }))
@@ -1569,6 +1829,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   })()
   const composeResourcesOf = (kind: ResourceKind): readonly ResourceRecord[] =>
     resources.filter(resource => resource.kind === kind)
+  /** 融合页是否还有可选项：三类都空时只显示一条空态，不再每组重复一句。 */
+  const composeHasResources = composeResourcesOf('role').length + composeResourcesOf('scene').length
+    + composeResourcesOf('prop').length > 0
+  /** 参考图 / 首末帧选择列表的数据源（素材库按媒体类型拆开，资源库在组件内取首图）。 */
+  const imageAssets = assets.filter(asset => asset.kind === 'image')
+  const videoAssets = assets.filter(asset => asset.kind === 'video')
 
   /** `B-6`：提示词风控——手动触发一次 `prompts/check`，结果用于提交前拦截与提醒。 */
   const checkComposePrompt = async (): Promise<void> => {
@@ -1625,7 +1891,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }
   }
 
-  /** 把提示词一键带入生成表单（提示词·分镜页与分镜镜头共用）。 */
+  /** 把提示词一键带入生成表单（提取提示词页与分镜镜头共用）。 */
   const applyPrompt = (text: string): void => {
     setGeneratePrompt(text)
     setNotice({ text: t('promptApplyDone'), tone: 'info' })
@@ -2156,11 +2422,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     return host === '' || host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]'
   })()
 
-  const healthText = health.status === 'checking'
-    ? t('healthChecking')
-    : health.status === 'ok'
-      ? `${health.version} · ${health.provider}`
-      : t('healthFailed')
+  // 版本号只在帮助浮层展示（头部只保留异常状态提示）
+  const healthText = health.status === 'ok'
+    ? ''
+    : health.status === 'checking' ? t('healthChecking') : t('healthFailed')
 
   // ---- 首次使用：宿主连上了、且用户没说过「稍后再说」→ 弹一次引导 ----
   useEffect(() => {
@@ -2444,13 +2709,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             <i className="iv-dot" aria-hidden="true" />
             {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
           </span>
-          <span
-            className={`iv-chip${health.status === 'ok' ? ' iv-chip--ok' : health.status === 'checking' ? '' : ' iv-chip--err'}`}
-            title={health.status === 'failed' ? health.message : undefined}
-          >
-            <i className="iv-dot" aria-hidden="true" />
-            {healthText}
-          </span>
+          {/* 健康状态只在异常 / 检测中时提示：正常的版本号收进帮助浮层（2026-11-20） */}
+          {health.status === 'ok' ? null : (
+            <span
+              className={`iv-chip${health.status === 'checking' ? '' : ' iv-chip--err'}`}
+              title={health.status === 'failed' ? health.message : undefined}
+            >
+              <i className="iv-dot" aria-hidden="true" />
+              {healthText}
+            </span>
+          )}
           <button
             type="button"
             className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
@@ -2729,21 +2997,34 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 </div>
               )}
             </span>
+            {/* 模型详情：折叠入口在参数条最右侧，展开内容紧接参数条下方 */}
+            <button
+              type="button"
+              className="iv-btn iv-btn--ghost iv-btn--sm"
+              data-model-details-toggle="true"
+              aria-expanded={modelDetailsOpen}
+              aria-controls="iv-model-details"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => { setModelDetailsOpen(value => !value) }}
+            >
+              <Icon name="sliders" size={12} />{t('modelDetails')}
+              <span aria-hidden="true" style={{ fontSize: 10 }}>{modelDetailsOpen ? '▴' : '▾'}</span>
+            </button>
           </div>
         )}
 
       {/* ============ 模型能力（公共信息：跟着生效参数展示，不归某个模块）============ */}
-      {/* 用户 2026-11-06：模型详情属"当前生效参数"的延伸，放到参数条与提示条之间；
-          仍是默认收起、点一下展开、再点收起（用原生 <details>，行为与之前完全一致）。 */}
-      <details className="iv-shell-details" data-model-details="true">
-        <summary className="iv-shell-details-head">
-          <Icon name="sliders" size={11} />{t('modelDetails')}
-        </summary>
-        <div className="iv-shell-details-body">
-          {/* `B-6` 模型能力卡：可用模型 / 擅长 / 关键限制 / 实时校验徽章 / 刷新 */}
-          <ModelCardsPanel api={apiRef.current} t={t} />
-        </div>
-      </details>
+      {/* 模型详情属"当前生效参数"的延伸：折叠按钮在参数条最右侧，展开内容紧接参数条下方 */}
+      {modelDetailsOpen
+        ? (
+          <div className="iv-shell-details" id="iv-model-details" data-model-details="true">
+            <div className="iv-shell-details-body">
+              {/* `B-6` 模型能力卡：可用模型 / 擅长 / 关键限制 / 实时校验徽章 / 刷新 */}
+              <ModelCardsPanel api={apiRef.current} t={t} />
+            </div>
+          </div>
+        )
+        : null}
 
       {/* ============ 提示条 ============ */}
       {notice === undefined ? null : (
@@ -2764,7 +3045,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 <>
                 <section className="iv-pane" data-workbench-pane="paneCreate">
                   <PaneBoundary label={t('modeQuick')} t={t}>
-                  {/* 两等宽标签页：内容生产 / 提示词·分镜 */}
+                  {/* 两等宽标签页：内容生产 / 提取提示词 */}
                   <div className="iv-quick-tabs" role="tablist" data-quick-tabs="true">
                     <button
                       type="button"
@@ -2792,118 +3073,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {quickTab === 'produce'
                     ? (<>
                   <div className="iv-modules" data-quick-modules="true">
-                  {/* 模块 1：剧本 → 集 → 分段 → 分镜（原「剧本 · 分段」已并入，2026-11-20） */}
-                  <section className="iv-module" data-module="pipeline">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="pipeline"
-                      aria-expanded={openModules.pipeline}
-                      aria-label={`${openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')} · ${t('modulePipeline')}`}
-                      onClick={() => { toggleModule('pipeline') }}
-                    >
-                      <span className="iv-module-n">1</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</span>
-                        <span className="iv-meta">{t('modulePipelineDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body" data-module-body="pipeline" hidden={!openModules.pipeline}>
-                  <PipelineCard
-                    api={apiRef.current}
-                    t={t}
-                    projectId={activeProject?.id}
-                    onStarted={() => { setMode('workflow') }}
-                    // `B-20`：分镜卡片自带剧本导入/编辑/落库，不再需要外部注入剧本
-                    episodeId={activeEpisodeId}
-                    // `B-22`：生成剧本会新建 / 更新集记录，刷新后选中第一集，用户接着逐级增删
-                    onEpisodesGenerated={async created => {
-                      if (activeId !== undefined) await loadEpisodes(activeId)
-                      const first = created[0]
-                      if (first !== undefined) setActiveEpisodeId(first.id)
-                    }}
-                  />
-                  {/* 本集默认值：新分段与「生成剧本」的落库都继承这一组选择 */}
-                  {activeProject === undefined || activeEpisode === undefined
-                    ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
-                    : (
-                      <>
-                        <div className="iv-sb-row" data-script-selectors="true">
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptTextModel')}</span>
-                            <select
-                              className="iv-select iv-select--sm"
-                              aria-label={t('scriptTextModel')}
-                              data-script-text-model="true"
-                              value={scriptTextModel}
-                              onChange={event => { setScriptTextModel(event.target.value) }}
-                            >
-                              <option value="">{t('scriptTextModelEmpty')}</option>
-                              {scriptModels.map(model => (
-                                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
-                                  {model.providerName} · {model.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptImageModel')}</span>
-                            <ModelPicker
-                              api={apiRef.current} t={t} mediaMode="image"
-                              value={scriptImageModel} onChange={setScriptImageModel}
-                            />
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptVideoModel')}</span>
-                            <ModelPicker
-                              api={apiRef.current} t={t} mediaMode="video"
-                              value={scriptVideoModel} onChange={setScriptVideoModel}
-                            />
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptDirectorSkill')}</span>
-                            <select
-                              className="iv-select iv-select--sm"
-                              aria-label={t('scriptDirectorSkill')}
-                              data-script-skill="true"
-                              value={scriptSkillId}
-                              onChange={event => { setScriptSkillId(event.target.value) }}
-                            >
-                              <option value="">{t('scriptFollowDefault')}</option>
-                              {directorSkills.map(skill => (
-                                <option key={skill.id} value={skill.id}>{skill.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                        <EpisodeWorkspace
-                          api={apiRef.current}
-                          t={t}
-                          projectId={activeProject.id}
-                          episode={activeEpisode}
-                          resources={resources}
-                          assets={assets}
-                          options={options}
-                          skills={directorSkills}
-                          textModel={scriptTextModelChoice}
-                          defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
-                          onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
-                          onMediaGenerated={async () => {
-                            setAssets(await apiRef.current.listAssets())
-                            await loadTasks()
-                          }}
-                          onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                        />
-                      </>
-                    )}
-
-                    </div>
-                  </section>
-
-                  {/* 模块 2：单条生成（快速创作）——"一句话出一张图或一条视频" */}
+                  {/* 单条生成（快速创作）——"一句话出一张图或一条视频" */}
                   <section className="iv-module" data-module="quick">
                     <button
                       type="button"
@@ -2913,7 +3083,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       aria-label={`${openModules.quick ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleQuick')}`}
                       onClick={() => { toggleModule('quick') }}
                     >
-                      <span className="iv-module-n">2</span>
+                      <span className="iv-module-n">1</span>
                       <span className="iv-module-text">
                         <span className="iv-module-title" data-module-title="quick">{t('moduleQuick')}</span>
                         <span className="iv-meta">{t('moduleQuickDesc')}</span>
@@ -2927,7 +3097,46 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
                         不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
                     {busy ? <span className="iv-meta">{t('busy')}</span> : null}
-                    <div style={{ display: 'grid', gap: 'var(--iv-sp-3)' }}>
+                    {/* 生成方式：生图（参考图可选 = 文生/图生） / 融合生图 / 生视频 */}
+                    <div className="iv-quick-tabs" role="tablist" aria-label={t('generateHeading')} data-create-tabs="true">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={createTab === 'image'}
+                        className={`iv-btn${createTab === 'image' ? ' iv-btn--acc' : ''}`}
+                        style={{ flex: 1 }}
+                        data-create-tab="image"
+                        onClick={() => { setCreateTab('image') }}
+                      >
+                        {t('createTabImage')}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={createTab === 'fusion'}
+                        className={`iv-btn${createTab === 'fusion' ? ' iv-btn--acc' : ''}`}
+                        style={{ flex: 1 }}
+                        data-create-tab="fusion"
+                        onClick={() => { setCreateTab('fusion') }}
+                      >
+                        {t('createTabFusion')}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={createTab === 'video'}
+                        className={`iv-btn${createTab === 'video' ? ' iv-btn--acc' : ''}`}
+                        style={{ flex: 1 }}
+                        data-create-tab="video"
+                        onClick={() => { setCreateTab('video') }}
+                      >
+                        {t('createTabVideo')}
+                      </button>
+                    </div>
+                    {createTab !== 'image'
+                      ? null
+                      : (
+                    <div className="iv-create-panel" role="tabpanel" data-create-panel="image">
                       <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
                       <textarea
                         className="iv-input iv-textarea"
@@ -2944,21 +3153,37 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         }}
                         style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
                       />
-                      {/* `F2` 多参考图选择器：按序 chips，首图=底图，其余=风格/脸部参考 */}
-                      <div className="iv-refs" data-generate-refs="true">
-                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-                          <span className="iv-meta">{t('generateRefsLabel')}：</span>
-                          {generateImages.length === 0
-                            ? <span className="iv-meta">{t('generateReferenceNone')}</span>
-                            : (
-                              <button
-                                type="button"
-                                className="iv-btn iv-btn--ghost iv-btn--sm"
-                                onClick={() => { setGenerateImages([]); setRefDragFrom(undefined); setRefDropAt(undefined) }}
-                              >
-                                {t('generateClearReference')}
-                              </button>
-                            )}
+                      {/* `F2` 多参考图：参考图可选——不带 = 文生图，带 = 图生图；首图为底图 */}
+                      <div
+                        className="iv-refs"
+                        data-generate-refs="true"
+                        data-ref-dropzone={refDragOver ? 'true' : undefined}
+                        onDragOver={event => {
+                          if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'copy'
+                          setRefDragOver(true)
+                        }}
+                        onDragLeave={() => { setRefDragOver(false) }}
+                        onDrop={event => { onReferenceDrop(event, 'image', addReferenceImage) }}
+                      >
+                        <div className="iv-ref-head">
+                          <span className="iv-meta">{t('generateRefsLabel')}</span>
+                          <span className="iv-meta">{t('generateRefsModeHint')}</span>
+                        </div>
+                        <div className="iv-ref-actions">
+                          <RefPickField
+                            id="refs"
+                            label={t('generateRefsPick')}
+                            t={t}
+                            assets={imageAssets}
+                            resources={resources}
+                            kind="image"
+                            keepOpen
+                            picked={path => generateImages.includes(path)}
+                            onPick={addReferenceImage}
+                            triggerData={{ 'data-generate-refs-pick': 'true' }}
+                          />
                           <button
                             type="button"
                             className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -2968,14 +3193,25 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           >
                             {t('generateRefsAdd')}
                           </button>
+                          {generateImages.length === 0
+                            ? null
+                            : (
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--ghost iv-btn--sm"
+                                onClick={() => { setGenerateImages([]); setRefDragFrom(undefined); setRefDropAt(undefined) }}
+                              >
+                                {t('generateClearReference')}
+                              </button>
+                            )}
                           {generateImages.length >= MAX_REFERENCE_IMAGES
                             ? <span className="iv-meta">{t('generateRefsFull')}</span>
                             : null}
                         </div>
                         {generateImages.length === 0
-                          ? null
+                          ? <span className="iv-ref-drop">{t('generateRefsDragHint')}</span>
                           : (
-                            <ul className="iv-ref-list">
+                            <ul className="iv-ref-chips">
                               {generateImages.map((path, index) => (
                                 <li
                                   key={path}
@@ -3053,13 +3289,129 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           )}
                         <span className="iv-meta">{t('generateRefsHint')}</span>
                       </div>
-                      {/* `G4` 首尾帧 / 视频编辑槽：尾帧图 + 参考视频 + 真人勾选（仅视频生成生效）。
-                          用户 2026-11-05：生图时这些都是无效控件 → 收进可折叠的「视频专用」，
-                          默认收起；用到再展开。 */}
-                      <details className="iv-vonly" data-video-slots="true">
-                      <summary className="iv-vonly-head">{t('videoSlotsTitle')}</summary>
-                      <div className="iv-vonly-body">
-                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {/* 图片参数：尺寸 + 图像模型——常驻显示，默认跟随整体配置 */}
+                      <div className="iv-model-row" data-image-advanced="true">
+                        <span className="iv-meta">{t('defaultImageSize')}：</span>
+                        {/* `T1` 参数改成候选下拉：候选来自宿主 `health.options`（与协议层校验同源），
+                            浏览器包不内置服务商名单；空值 = 跟随「当前生效参数」。 */}
+                        <select
+                          className="iv-select iv-select--sm"
+                          aria-label={t('defaultImageSize')}
+                          data-generate-size="true"
+                          value={generateSize}
+                          disabled={generating !== undefined}
+                          onChange={event => setGenerateSize(event.target.value)}
+                        >
+                          {generateParameterOptions('imageSize').map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <span className="iv-meta">{t('generateImageModel')}：</span>
+                        <ModelPicker
+                          api={apiRef.current} t={t} mediaMode="image"
+                          value={generateImageModel} onChange={setGenerateImageModel}
+                          disabled={generating !== undefined}
+                        />
+                      </div>
+                      {/* 唯一主按钮：文案跟着生成方式走；生成中就地变成"取消生成" */}
+                      <div className="iv-gen-actions" data-generate-actions="true">
+                        <button
+                          type="button"
+                          className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'image' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
+                          aria-busy={generating === 'image' ? true : undefined}
+                          data-generate-image="true"
+                          disabled={generating === 'video' || activeId === undefined || (generating !== 'image' && generatePrompt.trim() === '')}
+                          onClick={() => {
+                            if (generating === 'image') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
+                            void runGenerate('image')
+                          }}
+                        >
+                          {generating === 'image' ? t('generateCancel') : t('generateImage')}
+                        </button>
+                      </div>
+                    </div>
+                      )}
+                    {createTab !== 'video'
+                      ? null
+                      : (
+                    <div className="iv-create-panel" role="tabpanel" data-create-panel="video">
+                      <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
+                      <textarea
+                        className="iv-input iv-textarea"
+                        rows={3}
+                        value={generatePrompt}
+                        placeholder={t('generatePromptPlaceholder')}
+                        data-generate-prompt-video="true"
+                        disabled={generating !== undefined}
+                        onChange={event => setGeneratePrompt(event.target.value)}
+                        onKeyDown={event => {
+                          if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+                          event.preventDefault()
+                          if (generating === undefined && activeId !== undefined) void runGenerate('video')
+                        }}
+                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+                      />
+                      {/* `G4` 视频槽：首帧 / 尾帧 / 参考视频 + 真人、续写；都支持素材库拖入 */}
+                      <div className="iv-refs" data-video-slots="true">
+                        <div
+                          className="iv-slot-row"
+                          data-slot-drop={slotDrag === 'first' ? 'true' : undefined}
+                          onDragOver={event => {
+                            if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'copy'
+                            setSlotDrag('first')
+                          }}
+                          onDragLeave={() => { setSlotDrag(undefined) }}
+                          onDrop={event => { setSlotDrag(undefined); onReferenceDrop(event, 'image', setFirstFrame) }}
+                        >
+                          <span className="iv-meta">{t('videoFirstFrame')}：</span>
+                          {generateImages[0] === undefined
+                            ? <span className="iv-meta">{t('generateReferenceNone')}</span>
+                            : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="iv-ref-open iv-chip"
+                                  data-video-first-frame-preview={generateImages[0]}
+                                  title={t('generateRefsPreviewHint')}
+                                  onClick={() => { setPreviewPath({ path: generateImages[0] as string, kind: 'image' }); scrollToPane('panePreview') }}
+                                >
+                                  <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateImages[0]))}`} alt="" />
+                                  <span className="iv-ellipsis">{baseName(generateImages[0])}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setGenerateImages(generateImages.slice(1)) }}
+                                >
+                                  {t('resourceClear')}
+                                </button>
+                              </>
+                            )}
+                          <RefPickField
+                            id="firstFrame"
+                            label={t('videoFirstFramePick')}
+                            t={t}
+                            assets={imageAssets}
+                            resources={resources}
+                            kind="image"
+                            picked={path => generateImages[0] === path}
+                            onPick={setFirstFrame}
+                          />
+                        </div>
+                        <div
+                          className="iv-slot-row"
+                          data-slot-drop={slotDrag === 'last' ? 'true' : undefined}
+                          onDragOver={event => {
+                            if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'copy'
+                            setSlotDrag('last')
+                          }}
+                          onDragLeave={() => { setSlotDrag(undefined) }}
+                          onDrop={event => { setSlotDrag(undefined); onReferenceDrop(event, 'image', setGenerateLastFrame) }}
+                        >
                           <span className="iv-meta">{t('videoLastFrame')}：</span>
                           {generateLastFrame === undefined
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
@@ -3093,8 +3445,29 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           >
                             {t('generateUseSelected')}
                           </button>
+                          <RefPickField
+                            id="lastFrame"
+                            label={t('videoLastFrame')}
+                            t={t}
+                            assets={imageAssets}
+                            resources={resources}
+                            kind="image"
+                            picked={path => generateLastFrame === path}
+                            onPick={path => { setGenerateLastFrame(path) }}
+                          />
                         </div>
-                        <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div
+                          className="iv-slot-row"
+                          data-slot-drop={slotDrag === 'video' ? 'true' : undefined}
+                          onDragOver={event => {
+                            if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'copy'
+                            setSlotDrag('video')
+                          }}
+                          onDragLeave={() => { setSlotDrag(undefined) }}
+                          onDrop={event => { setSlotDrag(undefined); onReferenceDrop(event, 'video', path => { setGenerateRefVideo(path) }) }}
+                        >
                           <span className="iv-meta">{t('videoReferenceVideo')}：</span>
                           {generateRefVideo === undefined
                             ? <span className="iv-meta">{t('generateReferenceNone')}</span>
@@ -3128,6 +3501,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           >
                             {t('generateUseSelected')}
                           </button>
+                          <RefPickField
+                            id="refVideo"
+                            label={t('videoReferenceVideo')}
+                            t={t}
+                            assets={videoAssets}
+                            resources={[]}
+                            kind="video"
+                            picked={path => generateRefVideo === path}
+                            onPick={path => { setGenerateRefVideo(path) }}
+                          />
                           <label className="iv-check">
                             <input
                               type="checkbox"
@@ -3152,23 +3535,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : <span className="iv-meta" data-video-edit-pending="true">{t('videoEditPending')}</span>}
                       </div>
-                      </details>
-                      <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span className="iv-meta">{t('defaultImageSize')}：</span>
-                        {/* `T1` 参数改成候选下拉：候选来自宿主 `health.options`（与协议层校验同源），
-                            浏览器包不内置服务商名单；空值 = 跟随「当前生效参数」。 */}
-                        <select
-                          className="iv-select iv-select--sm"
-                          aria-label={t('defaultImageSize')}
-                          data-generate-size="true"
-                          value={generateSize}
-                          disabled={generating !== undefined}
-                          onChange={event => setGenerateSize(event.target.value)}
-                        >
-                          {generateParameterOptions('imageSize').map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
+                      {/* 视频参数：比例 / 时长 / 模型——常驻一行，默认跟随整体配置，可逐项重选 */}
+                      <div className="iv-model-row iv-model-row--inline" data-video-advanced="true">
                         <span className="iv-meta">{t('defaultVideoAspectRatio')}：</span>
                         <select
                           className="iv-select iv-select--sm"
@@ -3195,14 +3563,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
-                      </div>
-                      <div className="iv-model-row" data-generate-models="true">
-                        <span className="iv-meta">{t('generateImageModel')}：</span>
-                        <ModelPicker
-                          api={apiRef.current} t={t} mediaMode="image"
-                          value={generateImageModel} onChange={setGenerateImageModel}
-                          disabled={generating !== undefined}
-                        />
                         <span className="iv-meta">{t('generateVideoModel')}：</span>
                         <ModelPicker
                           api={apiRef.current} t={t} mediaMode="video"
@@ -3210,21 +3570,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           disabled={generating !== undefined}
                         />
                       </div>
-                      {/* 两个按钮**等宽等大**（用户要求：别让手滑点错）；生成中就地变成"取消生成" */}
                       <div className="iv-gen-actions" data-generate-actions="true">
-                        <button
-                          type="button"
-                          className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'image' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
-                          aria-busy={generating === 'image' ? true : undefined}
-                          data-generate-image="true"
-                          disabled={generating === 'video' || activeId === undefined || (generating !== 'image' && generatePrompt.trim() === '')}
-                          onClick={() => {
-                            if (generating === 'image') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
-                            void runGenerate('image')
-                          }}
-                        >
-                          {generating === 'image' ? t('generateCancel') : t('generateImage')}
-                        </button>
                         <button
                           type="button"
                           className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'video' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
@@ -3239,6 +3585,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           {generating === 'video' ? t('generateCancel') : t('generateVideo')}
                         </button>
                       </div>
+                    </div>
+                      )}
                       {/* `T3` 本次结果就地展示 + `T4` 自动定位锚点 */}
                       <div ref={generateOutcomeRef} data-generate-outcome="true">
                       {lastResult === undefined
@@ -3304,15 +3652,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </span>
                           </div>
                         )}
-                    </div>
-                  </div>
-
-                    {/* `D1` 融合生图进主路径：本质是"用剧集设定拼一段提示词"，属于单条生成的一种输入方式；
-                        默认收起，避免和普通提示词输入抢位置。 */}
-                    <details className="iv-vonly" data-fusion-entry="true">
-                      <summary className="iv-vonly-head">{t('fusionEntry')} · {t('fusionEntryHint')}</summary>
-                      <div className="iv-vonly-body">
-                        <div className="iv-fusion" data-fusion="true">
+                    {createTab !== 'fusion'
+                      ? null
+                      : (
+                    <div className="iv-create-panel" role="tabpanel" data-create-panel="fusion">
+                      {/* 融合生图：用剧集设定拼一段提示词，和生图/生视频并列成第三种输入方式 */}
+                      <div className="iv-fusion" data-fusion="true">
                           <div className="iv-fusion-head">
                             <span className="iv-chip iv-chip--run"><Icon name="layers" size={11} />{t('fusionTitle')}</span>
                             {composeSelection.length === 0
@@ -3327,6 +3672,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                 </button>
                               )}
                           </div>
+                          {composeHasResources
+                            ? (
+                              <>
                           <FusionGroup
                             kind="role"
                             label={t('fusionRoles')}
@@ -3351,8 +3699,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             emptyHint={t('fusionNoResources')}
                             onToggle={id => setComposeProps(current => toggleSelection(current, id))}
                           />
-                          {/* `B-3` 融合生图参数化：姿态 × 镜头 × 风格备注 × 场景裁剪 */}
-                          <div className="iv-compose-params" data-compose-params="true">
+                              </>
+                            )
+                            : <span className="iv-meta" data-fusion-empty="true">{t('fusionEmptyAll')}</span>}
+                          {/* `B-3` 融合生图参数化：姿态 × 镜头 × 风格备注 × 场景裁剪（常驻展开） */}
+                          <div className="iv-compose-params" data-fusion-advanced="true" data-compose-params="true">
                             <div className="iv-param-row" data-param="pose">
                               <span className="iv-meta">{t('fusionPoseLabel')}：</span>
                               <button
@@ -3496,8 +3847,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             <span className="iv-meta">{t('fusionHint')}</span>
                           </div>
                         </div>
-                      </div>
-                    </details>
+                    </div>
+                      )}
+                  </div>
                     </div>
                   </section>
 
@@ -3513,14 +3865,174 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         onNotice={(text, tone) => { setNotice({ text, tone }) }}
                         onApplyPrompt={(text) => {
                           applyPrompt(text)
-                          // 带入后切回内容生产页，让用户直接看到已填好的提示词
+                          // 带入后切回内容生产页的生图页签：提示词落在生图表单里，
+                          // 而不是停在融合/生视频页签上让用户以为没生效。
                           setQuickTab('produce')
+                          setCreateTab('image')
                         }}
                       />
                     )}
                   </PaneBoundary>
                 </section>
                 </>
+              )
+              : null}
+
+            {mode === 'script'
+              ? (
+                <section className="iv-pane" data-workbench-pane="paneScript">
+                  <PaneBoundary label={t('modeScript')} t={t}>
+                  {/* 四个分区标签页：剧本分段 / 角色 / 场景 / 道具·服装 */}
+                  <div className="iv-quick-tabs" role="tablist" data-script-tabs="true">
+                    {SCRIPT_TABS.map(tab => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={scriptTab === tab.key}
+                        className={`iv-btn${scriptTab === tab.key ? ' iv-btn--acc' : ''}`}
+                        style={{ flex: 1 }}
+                        data-script-tab={tab.key}
+                        onClick={() => { setScriptTab(tab.key) }}
+                      >
+                        {t(tab.label)}
+                      </button>
+                    ))}
+                  </div>
+                  {scriptTab === 'split'
+                    ? (
+                  <div className="iv-modules">
+                  {/* 剧本生成：剧本 → 集 → 分段 → 分镜（原「剧本 · 分段」已并入，2026-11-20 独立成页） */}
+                  <section className="iv-module" data-module="pipeline">
+                    <button
+                      type="button"
+                      className="iv-module-head"
+                      data-module-toggle="pipeline"
+                      aria-expanded={openModules.pipeline}
+                      aria-label={`${openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')} · ${t('modulePipeline')}`}
+                      onClick={() => { toggleModule('pipeline') }}
+                    >
+                      <span className="iv-module-n">1</span>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</span>
+                        <span className="iv-meta">{t('modulePipelineDesc')}</span>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
+                    </button>
+                    <div className="iv-module-body" data-module-body="pipeline" hidden={!openModules.pipeline}>
+                  <PipelineCard
+                    api={apiRef.current}
+                    t={t}
+                    projectId={activeProject?.id}
+                    onStarted={() => { setMode('workflow') }}
+                    // `B-20`：分镜卡片自带剧本导入/编辑/落库，不再需要外部注入剧本
+                    episodeId={activeEpisodeId}
+                    // `B-22`：生成剧本会新建 / 更新集记录，刷新后选中第一集，用户接着逐级增删
+                    onEpisodesGenerated={async created => {
+                      if (activeId !== undefined) await loadEpisodes(activeId)
+                      const first = created[0]
+                      if (first !== undefined) setActiveEpisodeId(first.id)
+                    }}
+                  />
+                  {/* 本集默认值：新分段与「生成剧本」的落库都继承这一组选择 */}
+                  {activeProject === undefined || activeEpisode === undefined
+                    ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
+                    : (
+                      <>
+                        <div className="iv-sb-row" data-script-selectors="true">
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptTextModel')}</span>
+                            <select
+                              className="iv-select iv-select--sm"
+                              aria-label={t('scriptTextModel')}
+                              data-script-text-model="true"
+                              value={scriptTextModel}
+                              onChange={event => { setScriptTextModel(event.target.value) }}
+                            >
+                              <option value="">{t('scriptTextModelEmpty')}</option>
+                              {scriptModels.map(model => (
+                                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                                  {model.providerName} · {model.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptImageModel')}</span>
+                            <ModelPicker
+                              api={apiRef.current} t={t} mediaMode="image"
+                              value={scriptImageModel} onChange={setScriptImageModel}
+                            />
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptVideoModel')}</span>
+                            <ModelPicker
+                              api={apiRef.current} t={t} mediaMode="video"
+                              value={scriptVideoModel} onChange={setScriptVideoModel}
+                            />
+                          </label>
+                          <label className="iv-sb-field">
+                            <span className="iv-meta">{t('scriptDirectorSkill')}</span>
+                            <select
+                              className="iv-select iv-select--sm"
+                              aria-label={t('scriptDirectorSkill')}
+                              data-script-skill="true"
+                              value={scriptSkillId}
+                              onChange={event => { setScriptSkillId(event.target.value) }}
+                            >
+                              <option value="">{t('scriptFollowDefault')}</option>
+                              {directorSkills.map(skill => (
+                                <option key={skill.id} value={skill.id}>{skill.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <EpisodeWorkspace
+                          api={apiRef.current}
+                          t={t}
+                          projectId={activeProject.id}
+                          episode={activeEpisode}
+                          resources={resources}
+                          assets={assets}
+                          options={options}
+                          skills={directorSkills}
+                          textModel={scriptTextModelChoice}
+                          defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
+                          onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
+                          onMediaGenerated={async () => {
+                            setAssets(await apiRef.current.listAssets())
+                            await loadTasks()
+                          }}
+                          onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                        />
+                      </>
+                    )}
+
+                    </div>
+                  </section>
+
+                  </div>
+                    )
+                    : (
+                      <ScriptExtractPanel
+                        api={apiRef.current}
+                        t={t}
+                        category={scriptTab === 'roles' ? 'role' : scriptTab === 'scenes' ? 'scene' : 'prop'}
+                        projectId={activeProject?.id}
+                        script={activeEpisode?.script.text ?? ''}
+                        model={scriptTextModelChoice}
+                        existing={resources.filter(item => item.kind === SCRIPT_TAB_KINDS[scriptTab]
+                          || (scriptTab === 'props' && item.kind === 'costume'))}
+                        onCreated={async () => {
+                          if (activeProject !== undefined) await loadResources(activeProject.id)
+                        }}
+                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                      />
+                    )}
+                  </PaneBoundary>
+                </section>
               )
               : null}
 
@@ -5168,6 +5680,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <li key={resource.id} className="iv-row"
                       data-active={selectedResourceId === resource.id ? 'true' : undefined}
                       data-resource-row={resource.id}
+                      draggable={refs.length > 0}
+                      data-resource-draggable={refs.length > 0 ? 'true' : undefined}
+                      onDragStart={event => {
+                        const first = refs[0]
+                        if (first === undefined) { event.preventDefault(); return }
+                        // 资源行按"首张参考图"拖出，和素材行共用同一份载荷：
+                        // 生成页的参考图区 / 首末帧槽都能接住。
+                        const payload = JSON.stringify({ path: first, kind: 'image' })
+                        event.dataTransfer.setData(ASSET_DRAG_TYPE, payload)
+                        event.dataTransfer.setData('text/plain', payload)
+                        event.dataTransfer.effectAllowed = 'copy'
+                      }}
                       title={t('resourceFirstRefHint')}
                       onClick={() => {
                         setSelectedResourceId(resource.id)
@@ -5689,7 +6213,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       {/* ============ 连接弹层（账号登录 / 自带 Key，auth/* 端点）============ */}
       {connectOpen ? <ConnectDialog api={api} t={authT} onClose={() => { setConnectOpen(false); void loadAuthLabel() }} /> : null}
 
-      {/* ============ B-17 帮助浮层（快捷键 + 模式说明）============ */}
+      {/* ============ B-17 帮助浮层（模式说明 + 联系方式 + 版本）============ */}
       {helpOpen
         ? (
           <div className="iv-help-mask" data-workbench-help="true" onClick={event => { if (event.target === event.currentTarget) setHelpOpen(false) }}>
@@ -5698,16 +6222,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               <h4>{t('helpModes')}</h4>
               <ul className="iv-help-list">
                 <li><span>{t('helpModeQuick')}</span></li>
+                <li><span>{t('helpModeScript')}</span></li>
                 <li><span>{t('helpModeWorkflow')}</span></li>
                 <li><span>{t('helpModeTimeline')}</span></li>
               </ul>
-              <h4>{t('helpShortcuts')}</h4>
-              <ul className="iv-help-list">
-                <li><span>{t('helpGenerateShortcut')}</span></li>
-                <li><span>{t('helpUndoShortcut')}</span></li>
-                <li><span>{t('helpPlayShortcut')}</span></li>
-                <li><span>{t('helpDeleteShortcut')}</span></li>
+              <h4>{t('helpContactTitle')}</h4>
+              <ul className="iv-help-list" data-workbench-help-contact="true">
+                <li><span>{t('helpContactOrg')}</span></li>
+                <li><span>{t('helpContactWechat')}</span></li>
               </ul>
+              <h4>{t('helpVersionTitle')}</h4>
+              <p className="iv-meta" data-workbench-help-version="true">
+                {health.status === 'ok' ? health.version : t('helpVersionUnknown')}
+              </p>
               <div className="iv-help-actions">
                 <button
                   type="button"

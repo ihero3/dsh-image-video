@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -43,8 +43,9 @@ function renderFusion() {
   return { host, view }
 }
 
-/** 等融合面板的 chip 出现（资源列表是异步加载的）。 */
+/** 切到融合生图页，等资源 chip 出现（资源列表是异步加载的）。 */
 async function waitForChips(view: ReturnType<typeof renderFusion>['view']): Promise<void> {
+  await openCreateTab(view, 'fusion')
   await waitFor(() => { expect(view.container.querySelector('[data-fusion-pick="res-role"]')).toBeTruthy() })
 }
 

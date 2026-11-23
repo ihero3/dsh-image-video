@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * B8 a11y：三模式切换是可键盘聚焦的 <button>，带 aria-label / aria-pressed（焦点的真实来源）；
+ * B8 a11y：四模式切换是可键盘聚焦的 <button>，带 aria-label / aria-pressed（焦点的真实来源）；
  * 导出面板的分辨率 / 帧率 / 宽高比选择器都带 aria-label；切换模式后焦点状态正确反映当前模式。
  */
 import { afterEach, describe, expect, it } from 'vitest'
@@ -17,7 +17,7 @@ describe('B8 accessibility', () => {
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await waitFor(() => { expect(view.container.querySelector(`[aria-label="${en.modeQuick}"]`)).toBeTruthy() })
 
-    for (const key of ['modeQuick', 'modeWorkflow', 'modeTimeline'] as const) {
+    for (const key of ['modeQuick', 'modeScript', 'modeWorkflow', 'modeTimeline'] as const) {
       const button = view.container.querySelector(`[aria-label="${en[key]}"]`) as HTMLButtonElement
       expect(button).toBeTruthy()
       expect(button.tagName).toBe('BUTTON')

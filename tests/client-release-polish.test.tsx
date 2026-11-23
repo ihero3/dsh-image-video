@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * `B-17` 发布前收尾：帮助入口（快捷键 + 模式说明）与示例项目。
+ * `B-17` 发布前收尾：帮助入口（模式说明 + 联系方式 + 版本）与示例项目。
  *
- * 帮助浮层只陈述**真实存在**的快捷键（Ctrl/⌘+Enter 生成、Ctrl/⌘+Z 撤销、
- * 空格播放、Delete 删除）；示例项目一键建项并套用「快速图片」模板，
- * 让新用户打开就有东西可看。真实生成端到端走查需要宿主授权（见
- * `docs/archive/2026-10-31/WALKTHROUGH-v1.0.0.md`），本文件只覆盖不花额度的部分。
+ * 帮助浮层不再罗列快捷键，改为四类说明、联系方式与版本号（版本只在这里展示，
+ * 头部不再占位）；示例项目一键建项并套用「快速图片」模板，让新用户打开就有东西可看。
+ * 真实生成端到端走查需要宿主授权（见 `docs/archive/2026-10-31/WALKTHROUGH-v1.0.0.md`），
+ * 本文件只覆盖不花额度的部分。
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -16,7 +16,7 @@ import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
 afterEach(cleanup)
 
 describe('B-17 release polish', () => {
-  it('opens the help overlay with real shortcuts and mode descriptions', async () => {
+  it('opens the help overlay with mode descriptions, contact and version', async () => {
     const view = render(<Workbench {...clientProps()} />)
     await screen.findByRole('button', { name: en.modeQuick })
 
@@ -26,15 +26,19 @@ describe('B-17 release polish', () => {
     fireEvent.click(view.container.querySelector('[data-workbench-help-toggle]') as HTMLElement)
     const help = view.container.querySelector('[data-workbench-help]') as HTMLElement
     expect(help).toBeTruthy()
-    // 快捷键逐条如实呈现（没有绑定的键不写）
-    expect(help.textContent).toContain(en.helpGenerateShortcut)
-    expect(help.textContent).toContain(en.helpUndoShortcut)
-    expect(help.textContent).toContain(en.helpPlayShortcut)
-    expect(help.textContent).toContain(en.helpDeleteShortcut)
-    // 三个模式的说明
-    expect(help.textContent).toContain(en.helpModeQuick)
-    expect(help.textContent).toContain(en.helpModeWorkflow)
-    expect(help.textContent).toContain(en.helpModeTimeline)
+    // 四个模式的说明：顺序是快速创作 → 剧本生成 → 工作流 → 时间线
+    const modes = [en.helpModeQuick, en.helpModeScript, en.helpModeWorkflow, en.helpModeTimeline]
+    for (const text of modes) expect(help.textContent).toContain(text)
+    const order = modes.map(text => help.textContent?.indexOf(text) ?? -1)
+    expect(order.every(index => index >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    // 联系方式
+    expect(help.textContent).toContain(en.helpContactOrg)
+    expect(help.textContent).toContain(en.helpContactWechat)
+    // 版本号只在帮助里展示，头部不再占位
+    expect(help.textContent).toContain('0.3.1')
+    const topMeta = view.container.querySelector('.iv-top-meta') as HTMLElement
+    expect(topMeta?.textContent ?? '').not.toContain('0.3.1')
 
     // 关闭按钮收起
     fireEvent.click(view.container.querySelector('[data-workbench-help-close]') as HTMLElement)

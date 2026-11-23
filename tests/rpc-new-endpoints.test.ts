@@ -428,7 +428,7 @@ describe('new endpoint coverage (A136)', () => {
     }
   })
 
-  it('saves/lists/removes prompts and refuses extraction without a vision adapter (A-5)', async () => {
+  it('saves/lists/removes prompts and refuses extraction without any model (A-5)', async () => {
     const { ok, handler } = await harness()
     const saved = await ok<{ prompt: { id: string; name: string } }>('prompts/save', { name: '雨夜', text: '雨夜霓虹街头，电影感' })
     expect(saved.prompt.name).toBe('雨夜')
@@ -437,6 +437,64 @@ describe('new endpoint coverage (A136)', () => {
 
     const refused = await handler('prompts/extract', { path: '/tmp/whatever.png' }, new AbortController().signal, {} as never)
     expect(refused.ok).toBe(false)
-    if (!refused.ok) expect(refused.error.message).toContain('视觉模型适配器')
+    if (!refused.ok) expect(refused.error.message).toContain('请选择文本模型')
+
+    // 选了模型但宿主没装文本模型服务：同样如实报错，不伪造结果
+    const noService = await handler('prompts/extract', {
+      path: '/tmp/whatever.png', provider: 'fake', model: 'fake-text',
+    }, new AbortController().signal, {} as never)
+    expect(noService.ok).toBe(false)
+    if (!noService.ok) expect(noService.error.message).toContain('文本模型服务')
+  })
+})
+
+describe('entities/extract (B-23)', () => {
+  it('refuses an empty script or a missing text model', async () => {
+    const { handler } = await harness()
+    const empty = await handler('entities/extract', { category: 'role', script: '  ' }, new AbortController().signal, {} as never)
+    expect(empty.ok).toBe(false)
+    if (!empty.ok) expect(empty.error.message).toContain('请先把剧本写进当前集')
+
+    const noModel = await handler('entities/extract', { category: 'role', script: '林夏撑伞走来。' }, new AbortController().signal, {} as never)
+    expect(noModel.ok).toBe(false)
+    if (!noModel.ok) expect(noModel.error.message).toContain('请选择文本模型')
+  })
+
+  it('refuses an unknown category instead of silently picking one', async () => {
+    const { handler } = await harness()
+    const result = await handler('entities/extract', { category: 'brand', script: '林夏撑伞走来。' }, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.message).toContain('未知的提取分区')
+  })
+
+  it('returns parsed candidates from the text model', async () => {
+    const raw = '```json\n[{"name":"林夏","note":"二十岁，红伞"},{"name":"林夏","note":"重复"},{"name":"老周","note":""}]\n```'
+    const prompts: string[] = []
+    const llm = {
+      prepareCall: async () => ({
+        config: {},
+        stream: async function* (options: { messages: Array<{ content: Array<{ text?: string }> }> }) {
+          prompts.push(options.messages[0]?.content[0]?.text ?? '')
+          yield { type: 'block-start', index: 0, blockType: 'text' }
+          yield { type: 'text-delta', index: 0, text: raw }
+          yield { type: 'block-end', index: 0, block: { type: 'text', text: raw } }
+          yield { type: 'finish', reason: 'stop' }
+        },
+      }),
+    }
+    const { ok } = await harness({ llm })
+    const result = await ok<{ items: Array<{ name: string; note: string }> }>('entities/extract', {
+      category: 'role',
+      script: '雨夜街头，林夏撑伞走来。老周在屋檐下等她。',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    })
+    expect(result.items).toEqual([
+      { name: '林夏', note: '二十岁，红伞' },
+      { name: '老周', note: '' },
+    ])
+    // 提示词带上了分区要求与剧本原文
+    expect(prompts[0]).toContain('所有角色')
+    expect(prompts[0]).toContain('老周在屋檐下等她')
   })
 })

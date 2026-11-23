@@ -15,6 +15,7 @@ import type {
   EpisodeResourceRef, SegmentInput, SegmentPatch, SegmentRecord, StoryboardInput, StoryboardRecord,
 } from '../workbench/episodes.ts'
 import type { SkillKind, SkillRecord } from '../workbench/skills.ts'
+import type { ExtractCategory, ExtractItem } from '../workbench/entity-extract.ts'
 import type { EpisodeExportResult } from '../workbench/episode-export.ts'
 import type { PipelineMode, PipelineShot } from '../workbench/pipeline.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
@@ -519,6 +520,25 @@ export interface GenerateEpisodesResult {
   readonly episodes: readonly EpisodeRecord[]
 }
 
+/** 剧本实体提取的分区：角色 / 场景 / 道具·服装。 */
+export type ExtractCategoryInput = ExtractCategory
+
+/** 剧本实体提取：从当前集剧本里挑出可入库的候选（角色 / 场景 / 道具·服装）。 */
+export interface ExtractEntitiesInput {
+  /** 剧本原文（调用方保证非空）。 */
+  readonly script: string
+  /** 提取分区，对应剧本生成页的三个提取标签页。 */
+  readonly category: ExtractCategoryInput
+  /** 文本模型：提取必须走模型，没有模型不使用这条。 */
+  readonly provider: string
+  readonly model: string
+}
+
+/** 提取结果：同名已去重、条数已截断。 */
+export interface ExtractEntitiesResult {
+  readonly items: readonly ExtractItem[]
+}
+
 export interface WorkbenchApi {
   /** Host facts (version, provider, output directory). */
   health: () => Promise<WorkbenchHealth>
@@ -654,6 +674,8 @@ export interface WorkbenchApi {
   splitEpisode: (input: SplitEpisodeInput) => Promise<SplitEpisodeResult>
   /** 生成剧本结构：剧本/创意 → 集 → 分段 → 分镜（追加落库，不覆盖已有内容）。 */
   generateEpisodes: (input: GenerateEpisodesInput) => Promise<GenerateEpisodesResult>
+  /** 从剧本提取实体（角色 / 场景 / 道具·服装）：只返回候选，入库逐条走 `createResource`。 */
+  extractEntities: (input: ExtractEntitiesInput) => Promise<ExtractEntitiesResult>
   /** 一集的分镜（按分段归属）。 */
   listStoryboards: (episodeId: string) => Promise<StoryboardRecord[]>
   /** 单组分镜。 */
@@ -755,10 +777,17 @@ export interface WorkbenchApi {
     readonly priority?: number
   }) => Promise<RenderRatioResult>
   /**
-   * 提示词提取（`G1`/`A-5`）：图片路径 → 结构化提示词（风格/主体/材质/细节）。
-   * 不可用（无视觉模型或端点未落地）时宿主返回清晰错误，界面如实展示。
+   * 提示词提取（`G1`/`A-5`）：图片 / 视频路径 → 结构化提示词（风格/主体/材质/细节）。
+   * 传 `provider`+`model` 时由该文本模型提取；不可用时宿主返回清晰错误，界面如实展示。
    */
-  extractPrompt: (input: { readonly path: string; readonly skillId?: string }) => Promise<ExtractedPrompt>
+  extractPrompt: (input: {
+    readonly path: string
+    readonly skillId?: string
+    /** 提取要点与大纲；为空时用内置口径。 */
+    readonly instructions?: string
+    readonly provider?: string
+    readonly model?: string
+  }) => Promise<ExtractedPrompt>
   /** 剧本 → 分镜表（`A-7`）。传 `provider`+`model` 时走文本模型四步拆解（`B-20`）。 */
   planStoryboard: (input: {
     projectId: string
@@ -969,6 +998,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     listTextModels: () => call<TextModelCatalog>('llm/models'),
     splitEpisode: input => call<SplitEpisodeResult>('episodes/split', input),
     generateEpisodes: input => call<GenerateEpisodesResult>('episodes/generate', { ...input }),
+    extractEntities: input => call<ExtractEntitiesResult>('entities/extract', { ...input }),
     listStoryboards: async episodeId =>
       (await call<{ storyboards: StoryboardRecord[] }>('storyboards/list', { episodeId })).storyboards,
     getStoryboard: async id => (await call<{ storyboard: StoryboardRecord }>('storyboards/get', { id })).storyboard,

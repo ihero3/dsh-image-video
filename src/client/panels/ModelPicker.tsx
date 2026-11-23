@@ -8,8 +8,7 @@
  * - **候选来自 `models/catalog`**（能力卡），不是硬编码名单：浏览器包不出现模型/服务商名
  *   （守住 `T2-11`），宿主新增模型只要更新能力卡即可。
  * - 模块级缓存：同一会话里只请求一次（能力卡是静态事实，不必每次挂载都打一次）。
- * - 选中后在下方显示**一张摘要**（擅长 + 关键限制），而不是把整张卡塞进表单——
- *   下拉负责"选"，摘要负责"为什么选它"。
+ * - 只留一只下拉：选中的模型不再附带能力摘要，参数行保持单行高度。
  * - 取不到目录时**降级为「自动（宿主默认）」并给出原因**，不假装有候选。
  *
  * @module dsh-image-video/panels/ModelPicker
@@ -43,15 +42,6 @@ function loadCatalog(api: WorkbenchApi): Promise<readonly ModelCardView[]> {
   return pending
 }
 
-/** 从能力卡里挑出「这个模型最该被知道的一句限制」。 */
-function keyLimit(card: ModelCardView, mediaMode: 'image' | 'video', t: (key: WorkbenchLocaleKey) => string): string | undefined {
-  if (mediaMode === 'video') {
-    if (card.duration !== undefined && !card.duration.customizable) return t('modelLimitFixedDuration')
-    if (!card.features.referenceVideo.supported) return t('modelLimitNoRefVideo')
-  }
-  return undefined
-}
-
 export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = false }: ModelPickerProps) {
   const [cards, setCards] = useState<readonly ModelCardView[] | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -67,7 +57,6 @@ export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = fal
   }, [api])
 
   const candidates = (cards ?? []).filter(card => card.kinds.includes(mediaMode))
-  const selected = candidates.find(card => card.id === value)
 
   return (
     <div className="iv-model-pick" data-model-picker={mediaMode}>
@@ -92,14 +81,6 @@ export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = fal
           <span className="iv-meta iv-model-pick-note" data-model-picker-error="true">
             <Icon name="alert" size={11} />
             {t('generateModelCatalogUnavailable')}
-          </span>
-        )}
-      {selected === undefined
-        ? null
-        : (
-          <span className="iv-meta iv-model-pick-note" data-model-picker-note={selected.id}>
-            {selected.strength}
-            {keyLimit(selected, mediaMode, t) === undefined ? '' : ` · ${keyLimit(selected, mediaMode, t) as string}`}
           </span>
         )}
     </div>

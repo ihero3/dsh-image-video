@@ -17,11 +17,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { TaskRecord } from '../workbench/records.ts'
 
-/** 工作台的三种模式。 */
-export type WorkbenchModeName = 'quick' | 'workflow' | 'timeline'
+/** 工作台的四种模式。 */
+export type WorkbenchModeName = 'quick' | 'script' | 'workflow' | 'timeline'
 
-/** 主区标签页：内容生产 / 提示词·分镜。 */
+/** 主区标签页：内容生产 / 提取提示词。 */
 export type WorkbenchQuickTab = 'produce' | 'prompt'
+
+/** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
+export type WorkbenchCreateTab = 'image' | 'fusion' | 'video'
+
+/** 剧本生成页的分区标签页：剧本分段 / 角色 / 场景 / 道具·服装。 */
+export type WorkbenchScriptTab = 'roles' | 'scenes' | 'props' | 'split'
 
 /** 预览目标（图片或视频的绝对路径）。 */
 export interface WorkbenchPreviewTarget {
@@ -35,6 +41,10 @@ export interface WorkbenchUiState {
   readonly mode: WorkbenchModeName
   /** 主区标签页。 */
   readonly quickTab: WorkbenchQuickTab
+  /** 内容生产页的生成方式标签。 */
+  readonly createTab: WorkbenchCreateTab
+  /** 剧本生成页的分区标签页。 */
+  readonly scriptTab: WorkbenchScriptTab
   /** 展示列是否展开（窄档浮层也用同一个开关）。 */
   readonly dockOpen: boolean
   /** 当前剧集（project）id。 */
@@ -89,6 +99,8 @@ export interface WorkbenchUiState {
 const INITIAL: WorkbenchUiState = {
   mode: 'quick',
   quickTab: 'produce',
+  createTab: 'image',
+  scriptTab: 'split',
   dockOpen: true,
   activeId: undefined,
   activeEpisodeId: undefined,

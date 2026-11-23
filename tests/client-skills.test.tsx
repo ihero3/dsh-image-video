@@ -6,8 +6,9 @@
  * 逆向库标签页切换、导入本地技能、删除用户技能。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
+import { en } from '../src/client/locales.ts'
 import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
 import type { EpisodeRecord, SegmentRecord } from '../src/workbench/episodes.ts'
 import type { SkillRecord } from '../src/workbench/skills.ts'
@@ -39,6 +40,18 @@ function skill(id: string, kind: SkillRecord['kind'], extra: Partial<SkillRecord
   }
 }
 
+/**
+ * 挂载工作台并切到「剧本生成」页：分段选择器随本集工作区一起在那一页。
+ *
+ * @param host - `fakeApi` 返回的测试替身。
+ * @returns 渲染结果。
+ */
+async function renderScript(host: ReturnType<typeof fakeApi>) {
+  const view = render(<Workbench {...clientProps({ api: host.api })} />)
+  fireEvent.click(await screen.findByRole('button', { name: en.modeScript }))
+  return view
+}
+
 describe('双技能库', () => {
   it('lists enabled director skills in the segment selector and drops disabled ones', async () => {
     const host = fakeApi({
@@ -50,7 +63,7 @@ describe('双技能库', () => {
       ],
     })
     host.projects.push(project() as never)
-    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = await renderScript(host)
 
     await waitFor(() => { expect(view.container.querySelector('[data-segment-skill="seg-1"]')).toBeTruthy() })
     const select = view.container.querySelector('[data-segment-skill="seg-1"]') as HTMLSelectElement
@@ -75,7 +88,7 @@ describe('双技能库', () => {
       skills: [skill('dir-off', 'director', { name: '停用技能', enabled: false })],
     })
     host.projects.push(project() as never)
-    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    const view = await renderScript(host)
 
     await waitFor(() => { expect(view.container.querySelector('[data-segment-skill="seg-1"]')).toBeTruthy() })
     const select = view.container.querySelector('[data-segment-skill="seg-1"]') as HTMLSelectElement

@@ -34,7 +34,8 @@ import { probeFfmpeg } from './media/ffmpeg.ts'
 import { sep } from 'node:path'
 import { resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
+import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Config, hasConfiguredCredentials, normalizeConfig, resolveActiveProvider } from './config.ts'
 import type { ApiKeyResolver } from './config.ts'
@@ -239,6 +240,8 @@ export function apply(ctx: Context, rawConfig: Config): void {
   // generate_image 只在 attachments 注入回调里注册，顺序不定，所以这里放槽位、
   // 用惰性代理调用；服务缺失时给出诚实错误，而不是伪造成功。
   const generationTools: { image?: GenerationTool; video?: GenerationTool } = {}
+  // 提示词提取的可选服务：由各自的 ctx.inject 填槽，未装配时端点如实报错
+  const extractServices: { attachments?: AttachmentStore; llm?: LlmRuntime } = {}
   const proxyTool = (slot: 'image' | 'video'): GenerationTool => ({
     async execute(args, exec) {
       const tool = generationTools[slot]
@@ -261,6 +264,20 @@ export function apply(ctx: Context, rawConfig: Config): void {
     )
     imageCtx.tools.register(imageTool)
     generationTools.image = imageTool as unknown as GenerationTool
+    imageCtx.effect(() => {
+      extractServices.attachments = attachments
+      return () => { extractServices.attachments = undefined }
+    }, 'dsh-image-video: prompt extraction attachments')
+  })
+
+  // 文本模型服务：提示词提取按所选模型读图；未装配时端点如实报错。
+  ctx.inject(['llm'], (llmCtx) => {
+    const llm = llmCtx.get('llm')
+    if (!llm) return
+    llmCtx.effect(() => {
+      extractServices.llm = llm
+      return () => { extractServices.llm = undefined }
+    }, 'dsh-image-video: prompt extraction llm')
   })
 
   // generate_video：不依赖 attachments，始终注册。
@@ -377,6 +394,9 @@ export function apply(ctx: Context, rawConfig: Config): void {
       runner: workflowRunner, renders: renderRegistry,
       // `A145`：工作台内直接生成复用同一对工具（参数语义/计费/账本一致）
       generate: { image: proxyTool('image'), video: proxyTool('video') },
+      // 提示词提取：文本模型 + 附件服务（未装配时端点如实报错）
+      get llm() { return extractServices.llm },
+      get attachments() { return extractServices.attachments },
       // `P0-1`：配音应用层（计划可用；合成等 TTS 接口联调，未接入时端点明确拒绝）
       voice: { availability: () => ttsAvailability(config.tts), provider: createTtsProvider(config.tts) },
       probeCache,

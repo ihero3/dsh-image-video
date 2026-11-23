@@ -111,7 +111,7 @@ describe('workbench episodes', () => {
     expect(cleared.imageModel).toBeUndefined()
 
     await expect(store.updateSegment(first.id, { durationSec: 0 })).rejects.toThrow(/分段时长/)
-    await expect(store.createSegment(episode.id, { durationSec: 61 })).rejects.toThrow(/分段时长/)
+    await expect(store.createSegment(episode.id, { durationSec: 181 })).rejects.toThrow(/分段时长/)
 
     // 移动到末尾
     await store.updateSegment(first.id, { order: 3 })

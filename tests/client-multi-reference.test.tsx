@@ -154,4 +154,94 @@ describe('F2 multi-reference selector (B-1)', () => {
     expect(noticeText()).toContain(en.generateRefsFull)
     expect(host.calls).toContain('assets/list')
   })
+
+  it('picks from a first-image + name list, and keeps the panel open for more', async () => {
+    const { view } = renderWithImages(2)
+    fireEvent.click(view.container.querySelector('[data-generate-refs-pick="true"]') as HTMLElement)
+    const panel = await waitFor(() => {
+      const node = view.container.querySelector('[data-ref-picker="refs"]')
+      if (node === null) throw new Error('missing reference picker')
+      return node as HTMLElement
+    })
+
+    // 每行都是「首图 + 名称」：缩略图指向产物，名称与文件名一致
+    const row = panel.querySelector('[data-ref-option="asset:ast-1"]') as HTMLElement
+    expect(row.querySelector('img')?.getAttribute('src')).toContain('ref-1.png')
+    expect(row.textContent).toContain('ref-1.png')
+
+    fireEvent.click(row)
+    await waitFor(() => { expect(view.container.querySelector('[data-generate-ref="/tmp/outputs/ref-1.png"]')).toBeTruthy() })
+    // 多选面板不关闭：连续添加时不用重新打开
+    expect(view.container.querySelector('[data-ref-picker="refs"]')).toBeTruthy()
+    expect(row.textContent).toContain(en.refPickerAdded)
+
+    // 搜索按名称过滤
+    fireEvent.change(panel.querySelector('[data-ref-picker-search="refs"]') as HTMLInputElement, {
+      target: { value: 'ref-0' },
+    })
+    expect(panel.querySelector('[data-ref-option="asset:ast-0"]')).toBeTruthy()
+    expect(panel.querySelector('[data-ref-option="asset:ast-1"]')).toBeNull()
+  })
+
+  it('offers a resource’s first reference image with the resource name', async () => {
+    const { host, view } = renderWithImages(0)
+    host.resources.push({
+      schemaVersion: 1, id: 'res-role', projectId: 'prj-1', kind: 'role', name: '林萧',
+      scope: 'project', assetPaths: ['/tmp/outputs/face.png'],
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    } as never)
+
+    fireEvent.click(view.container.querySelector('[data-generate-refs-pick="true"]') as HTMLElement)
+    const row = await waitFor(() => {
+      const node = view.container.querySelector('[data-ref-option="resource:res-role"]')
+      if (node === null) throw new Error('missing resource row')
+      return node as HTMLElement
+    })
+    expect(row.textContent).toContain('林萧')
+    // 元信息给的是资源类型；首图取该资源的第一张参考图
+    expect(row.textContent).toContain(en.kindRole)
+    fireEvent.click(row)
+    await waitFor(() => { expect(view.container.querySelector('[data-generate-ref="/tmp/outputs/face.png"]')).toBeTruthy() })
+  })
+
+  it('lists series resources before the asset library and floats the panel', async () => {
+    const { host, view } = renderWithImages(1)
+    host.resources.push({
+      schemaVersion: 1, id: 'res-scene', projectId: 'prj-1', kind: 'scene', name: '天台',
+      scope: 'project', assetPaths: ['/tmp/outputs/roof.png'],
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    } as never)
+
+    fireEvent.click(view.container.querySelector('[data-generate-refs-pick="true"]') as HTMLElement)
+    const panel = await waitFor(() => {
+      const node = view.container.querySelector('[data-ref-picker="refs"]')
+      if (node === null) throw new Error('missing reference picker')
+      return node as HTMLElement
+    })
+    const titles = Array.from(panel.querySelectorAll('.iv-pop-group-title')).map(node => node.textContent)
+    expect(titles).toEqual([en.refPickerResources, en.refPickerAssets])
+    // 固定定位：不再被右侧栏的滚动容器裁掉
+    expect(panel.style.position).toBe('fixed')
+  })
+
+  it('accepts a resource dragged from the series resource panel', async () => {
+    const { host, view } = renderWithImages(0)
+    host.resources.push({
+      schemaVersion: 1, id: 'res-role', projectId: 'prj-1', kind: 'role', name: '林萧',
+      scope: 'project', assetPaths: ['/tmp/outputs/face.png'],
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    } as never)
+    const row = await waitFor(() => {
+      const node = view.container.querySelector('[data-resource-row="res-role"]')
+      if (node === null) throw new Error('missing resource row')
+      return node as HTMLElement
+    })
+
+    const transfer = fakeDataTransfer()
+    fireEvent.dragStart(row, { dataTransfer: transfer })
+    const zone = view.container.querySelector('[data-generate-refs]') as HTMLElement
+    fireEvent.dragOver(zone, { dataTransfer: transfer })
+    fireEvent.drop(zone, { dataTransfer: transfer })
+    await waitFor(() => { expect(view.container.querySelector('[data-generate-ref="/tmp/outputs/face.png"]')).toBeTruthy() })
+  })
 })

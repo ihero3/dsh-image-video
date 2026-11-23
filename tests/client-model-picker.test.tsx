@@ -4,7 +4,7 @@
  *
  * 断言：
  * 1. 图片/视频各有一个下拉，候选按 `kinds` 过滤（图片下拉里不出现纯视频模型）；
- * 2. 首项是「自动」（= 宿主默认），选中后显示该模型的一句话能力摘要；
+ * 2. 首项是「自动」（= 宿主默认）；选中的模型只回填下拉，不再额外渲染能力摘要；
  * 3. 选中的模型随请求下发；不选则**不下发 model**（保持宿主默认链）。
  * 4. 能力卡目录取不到时降级为自动 + 明确提示，不假装有候选。
  */
@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 import type { ModelCardView } from '../src/client/api.ts'
 
 afterEach(cleanup)
@@ -60,21 +60,27 @@ describe('模型选择器（T2）', () => {
       expect(image?.options.length).toBe(2) // 自动 + Image A
     })
     const image = view.container.querySelector('[data-generate-model="image"]') as HTMLSelectElement
-    const video = view.container.querySelector('[data-generate-model="video"]') as HTMLSelectElement
     expect(image.options[0]!.textContent).toContain(en.generateParamAuto)
     expect(Array.from(image.options).map(o => o.value)).toEqual(['', 'img-a'])
+    // 视频模型只在生视频页：切过去再看它
+    await openCreateTab(view, 'video')
+    const video = await waitFor(() => {
+      const element = view.container.querySelector('[data-generate-model="video"]') as HTMLSelectElement | null
+      if (element === null) throw new Error('missing video model picker')
+      return element
+    })
     expect(Array.from(video.options).map(o => o.value)).toEqual(['', 'vid-b'])
   })
 
-  it('选中后显示能力摘要', async () => {
+  it('选中后只回填下拉，不渲染能力摘要', async () => {
     const { view } = renderQuick()
     await waitFor(() => { expect(view.container.querySelector('[data-generate-model="image"]')).toBeTruthy() })
     const image = view.container.querySelector('[data-generate-model="image"]') as HTMLSelectElement
     fireEvent.change(image, { target: { value: 'img-a' } })
     await waitFor(() => {
-      const note = view.container.querySelector('[data-model-picker-note="img-a"]')
-      expect(note?.textContent).toContain('通用文生图')
+      expect((view.container.querySelector('[data-generate-model="image"]') as HTMLSelectElement).value).toBe('img-a')
     })
+    expect(view.container.querySelector('[data-model-picker-note]')).toBeNull()
   })
 
   it('选中的模型随请求下发；不选则不下发 model', async () => {

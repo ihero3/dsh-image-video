@@ -219,11 +219,10 @@ export function PipelineCard(props: PipelineCardProps) {
   }, [injectScript])
   const [shots, setShots] = useWorkbenchField(api, 'pipelineShots')
   const [duration, setDuration] = useWorkbenchField(api, 'pipelineDuration')
-  /** `B-22` 剧本结构的三级规模（集 / 每集段 / 每段镜）与一句话创意。 */
+  /** `B-22` 剧本结构的三级规模（集 / 每集段 / 每段镜）。 */
   const [planEpisodes, setPlanEpisodes] = useState(1)
   const [planSegments, setPlanSegments] = useState(3)
   const [planShots, setPlanShots] = useState(4)
-  const [brief, setBrief] = useState('')
   /** 「生成剧本」进行态：与普通编排互斥，避免结构生成时又起一轮。 */
   const [generatingScript, setGeneratingScript] = useState(false)
   /** `B-20`：增强分镜提示词的导演技能；默认取第一条启用中的。 */
@@ -506,21 +505,21 @@ export function PipelineCard(props: PipelineCardProps) {
   }
 
   /**
-   * `B-22` 生成剧本：把剧本（或一句话创意）拆成集 → 分段 → 分镜并落库。
+   * `B-22` 生成剧本：把剧本拆成集 → 分段 → 分镜并落库。
    *
+   * 剧本框是唯一入口：写整段剧本，或只写一句话创意（选了文本模型时由模型补全）。
    * 与「生成分镜」的区别：这条会**写进集记录**，每一级都能在下面的本集工作区继续增删；
-   * 「生成分镜」只就地排版，不落库。选了文本模型时模型写剧本并拆分，否则按规则拆已有剧本。
+   * 「生成分镜」只就地排版，不落库。
    */
   const generateScript = async (): Promise<void> => {
     if (projectId === undefined || projectId === '') { setError(t('pipelineNeedsProject')); return }
-    if (script.trim() === '' && brief.trim() === '') { setError(t('pipelineGenerateNeedsSource')); return }
+    if (script.trim() === '') { setError(t('pipelineGenerateNeedsSource')); return }
     setRunning(true); setGeneratingScript(true); setError(undefined); setNotice(undefined)
     try {
       const result = await api.generateEpisodes({
         projectId,
         ...props.episodeId === undefined || props.episodeId === '' ? {} : { episodeId: props.episodeId },
-        ...script.trim() === '' ? {} : { script: planningScript },
-        ...brief.trim() === '' ? {} : { brief },
+        script: planningScript,
         ...selectedModel === undefined ? {} : { provider: selectedModel.provider, model: selectedModel.model },
         episodes: planEpisodes,
         segments: planSegments,
@@ -528,9 +527,6 @@ export function PipelineCard(props: PipelineCardProps) {
         shotDurationSec: duration,
         ...skillId === '' ? {} : { skillId },
       })
-      const first = result.episodes[0]
-      // 创意生成时把模型写好的剧本回填到输入框，用户能接着改
-      if (first !== undefined && script.trim() === '' && first.script.text !== '') setScript(first.script.text)
       setNotice(t('pipelineGenerateDone').replace('{n}', String(result.episodes.length)))
       await props.onEpisodesGenerated?.(result.episodes)
     } catch (cause) {
@@ -1028,20 +1024,12 @@ export function PipelineCard(props: PipelineCardProps) {
                   </div>
                 )}
             </div>
-            {/* `B-22` 生成剧本：剧本为空时可写一句话创意；三级数量默认 1 集 / 3 段 / 4 镜 */}
+            {/* `B-22` 生成剧本：剧本框同时接收整段剧本与一句话创意；三级数量默认 1 集 / 3 段 / 4 镜 */}
             <div className="iv-sub" data-pipeline-generate="true">
               <div className="iv-sub-head">
                 <span className="iv-sub-title">{t('pipelineGenerateTitle')}</span>
                 <span className="iv-meta" data-pipeline-generate-hint="true">{t('pipelineGenerateHint')}</span>
               </div>
-              <input
-                className="iv-input iv-plan-brief"
-                data-pipeline-brief="true"
-                value={brief}
-                placeholder={t('pipelineBriefPlaceholder')}
-                disabled={running}
-                onChange={event => setBrief(event.target.value)}
-              />
               <div className="iv-plan-row">
                 <label className="iv-plan-field">
                   {t('pipelinePlanEpisodes')}
@@ -1086,7 +1074,7 @@ export function PipelineCard(props: PipelineCardProps) {
                   type="button"
                   className="iv-btn iv-btn--primary iv-btn--sm"
                   data-pipeline-script-generate="true"
-                  disabled={running || (script.trim() === '' && brief.trim() === '')}
+                  disabled={running || script.trim() === ''}
                   onClick={() => { void generateScript() }}
                 >
                   <Icon name="sparkles" size={12} />

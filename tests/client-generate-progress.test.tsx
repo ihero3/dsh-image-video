@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -58,7 +58,8 @@ describe('F3 generation progress (B-2)', () => {
 
   it('shows elapsed seconds for a running video generation (tasks/running)', async () => {
     // 宿主注册表里这条生成 5 秒前开始（wait:false 一返回就一定在册）
-    const { host } = renderQuick()
+    const { host, view } = renderQuick()
+    await openCreateTab(view, 'video')
     host.runningGenerations.push({
       id: 'tsk-run-1', kind: 'video', startedAt: new Date(Date.now() - 5000).toISOString(),
     })
@@ -108,7 +109,8 @@ describe('F3 generation progress (B-2)', () => {
   })
 
   it('asks the host for the running snapshot while generating', async () => {
-    const { host } = renderQuick()
+    const { host, view } = renderQuick()
+    await openCreateTab(view, 'video')
     host.runningGenerations.push({
       id: 'tsk-run-2', kind: 'video', startedAt: new Date().toISOString(),
     })

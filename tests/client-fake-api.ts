@@ -112,7 +112,7 @@ export function fakeApi(options: {
   /** `B-9`：`composeMedia` 收到的入参（测试断言用，含 B-3 参数化字段）。 */
   const composePayloads: Array<{ projectId: string; prompt: string; resourceIds?: readonly string[]; pose?: string; lens?: string; styleNote?: string; cropScene?: unknown }> = []
   /** `B-10`：`extractPrompt` 收到的入参（测试断言用）。 */
-  const extractInputs: Array<{ path?: string }> = []
+  const extractInputs: Array<{ path?: string; instructions?: string; provider?: string; model?: string }> = []
   /** `B-15`：`planStoryboard` 收到的入参（测试断言用）。 */
   const storyboardPayloads: Array<{ projectId: string; script: string; shots?: number }> = []
   /** `B-4`：`generateMedia` 收到的入参（含续写意图与集归属，测试断言用）。 */
@@ -123,6 +123,7 @@ export function fakeApi(options: {
     episodeId?: string
     segmentId?: string
     shotId?: string
+    model?: string
   }> = []
   /** `B-6`：`modelsCatalog` 返回的卡片（测试替身，固定两份）。 */
   const modelCards: Array<{ id: string; name: string }> = [
@@ -171,6 +172,7 @@ export function fakeApi(options: {
       ...input.episodeId === undefined ? {} : { episodeId: input.episodeId },
       ...input.segmentId === undefined ? {} : { segmentId: input.segmentId },
       ...input.shotId === undefined ? {} : { shotId: input.shotId },
+      ...input.model === undefined ? {} : { model: input.model },
     })
     if (input.mediaMode === 'video') {
       const task = {
@@ -649,6 +651,12 @@ export function fakeApi(options: {
       }
       return { episodes: created }
     },
+    // 剧本实体提取夹具：按分区回固定候选，真实提取由宿主调模型完成。
+    extractEntities: async input => {
+      calls.push('entities/extract')
+      const names = input.category === 'role' ? ['林夏', '老周'] : input.category === 'scene' ? ['雨夜街头'] : ['红伞']
+      return { items: names.map(name => ({ name, note: `${input.category} 说明` })) }
+    },
     listStoryboards: async episodeId => (await api.getEpisode(episodeId)).storyboards,
     getStoryboard: async id => {
       for (const episode of episodeRecords) {
@@ -1095,6 +1103,21 @@ export async function createProject(host: ReturnType<typeof fakeApi>, name: stri
   fireEvent.change(screen.getByLabelText(en.newProject), { target: { value: name } })
   fireEvent.click(screen.getByRole('button', { name: en.create }))
   await waitFor(() => { expect(host.projects).toHaveLength(1) })
+}
+
+/**
+ * 切到内容生产页的生成方式标签（生图 / 融合生图 / 生视频），并等对应面板出现。
+ * @param view - `render` 返回的视图。
+ * @param tab - 目标生成方式。
+ */
+export async function openCreateTab(view: { container: HTMLElement }, tab: 'image' | 'fusion' | 'video'): Promise<void> {
+  const tabButton = await waitFor(() => {
+    const element = view.container.querySelector(`[data-create-tab="${tab}"]`)
+    if (element === null) throw new Error(`missing create tab: ${tab}`)
+    return element as HTMLElement
+  })
+  fireEvent.click(tabButton)
+  await waitFor(() => { expect(view.container.querySelector(`[data-create-panel="${tab}"]`)).toBeTruthy() })
 }
 
 /**

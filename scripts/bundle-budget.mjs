@@ -67,7 +67,11 @@ export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // （剧本模块③ 之后的界面增长未同步基线，已超原预算 15_726 B / 3_514 B），改造后
 // 1_305_537 / 284_867。属可解释的界面增长而非打包失控，按规则抬基线到
 // 1_105_000 / 242_000（预算 1_326_000 / 290_400，实测占 98.5% / 98.1%）。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_105_000, gzip: 242_000 })
+// 2026-11-22 快速创作改为「生图 / 融合生图 / 生视频」三页签，参考图与首末帧共用带缩略图的
+// 选择弹层：工作区实测总产物 1_396_543 / 303_924（含同一工作区里尚未发布的其他界面改动）。
+// 仍是界面增长（没有新增依赖），按同一口径抬到 1_170_000 / 255_000
+// （预算 1_404_000 / 306_000，实测占 99.4% / 99.3%）。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_170_000, gzip: 255_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

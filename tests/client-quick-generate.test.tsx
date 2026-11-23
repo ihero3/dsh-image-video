@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -41,12 +41,14 @@ describe('quick create generate (A149)', () => {
   })
 
   it('runs video non-blocking and can cancel it', async () => {
-    const { host } = renderQuick()
+    const { host, view } = renderQuick()
     const generateSpy = vi.fn(async () => ({ mediaMode: 'video' as const, pending: true, taskId: 'tsk-gen-1' }))
     const cancelSpy = vi.fn(async () => true)
     ;(host.api as unknown as { generateMedia: typeof generateSpy }).generateMedia = generateSpy
     ;(host.api as unknown as { cancelTask: typeof cancelSpy }).cancelTask = cancelSpy
 
+    // 生视频是独立页签：先切过去，页内只有一个主按钮
+    await openCreateTab(view, 'video')
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
     fireEvent.change(box, { target: { value: '海面日落' } })
     fireEvent.click(screen.getByRole('button', { name: en.generateVideo }))

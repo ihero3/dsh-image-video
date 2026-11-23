@@ -28,7 +28,7 @@ describe('script split', () => {
     const raw = '[{"promptText":"  "},{"promptText":"短","durationSec":0},{"promptText":"长","durationSec":9999},{"nope":1}]'
     expect(parseSplitProposals(raw)).toEqual([
       { promptText: '短' },
-      { promptText: '长', durationSec: 60 },
+      { promptText: '长', durationSec: 180 },
     ])
   })
 

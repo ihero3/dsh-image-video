@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
+import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
 
@@ -43,6 +43,7 @@ async function selectAsset(name: string): Promise<void> {
 describe('G4 video edit slots (B-3)', () => {
   it('sends last frame and reference video as an ordered media array', async () => {
     const { view, spy } = renderQuick()
+    await openCreateTab(view, 'video')
 
     // 尾帧槽：选中图片 → 「用选中素材」
     await selectAsset('portrait.png')
@@ -71,6 +72,7 @@ describe('G4 video edit slots (B-3)', () => {
 
   it('passes the real-person checkbox through', async () => {
     const { view, spy } = renderQuick()
+    await openCreateTab(view, 'video')
     await selectAsset('dance.mp4')
     fireEvent.click(view.container.querySelector('[data-video-reference-use]') as HTMLElement)
     fireEvent.click(view.container.querySelector('[data-video-real-person]') as HTMLElement)
@@ -86,8 +88,9 @@ describe('G4 video edit slots (B-3)', () => {
 
   it('keeps a first-frame reference inside media when both are set', async () => {
     const { view, spy } = renderQuick()
+    await openCreateTab(view, 'video')
     // 首帧参考走 F2 的多参考图列表（第一张）
-    fireEvent.click(await screen.findByRole('button', { name: `${en.referenceAsset} portrait.png` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.referenceAsset} portrait.png` }))
     // 尾帧
     await selectAsset('portrait.png')
     fireEvent.click(view.container.querySelector('[data-video-last-frame-use]') as HTMLElement)
@@ -106,7 +109,8 @@ describe('G4 video edit slots (B-3)', () => {
   })
 
   it('leaves plain video generation untouched when no slot is filled', async () => {
-    const { spy } = renderQuick()
+    const { view, spy } = renderQuick()
+    await openCreateTab(view, 'video')
     fireEvent.change(await screen.findByPlaceholderText(en.generatePromptPlaceholder), { target: { value: '海面日落' } })
     fireEvent.click(screen.getByRole('button', { name: en.generateVideo }))
     await waitFor(() => { expect(spy).toHaveBeenCalledTimes(1) })
