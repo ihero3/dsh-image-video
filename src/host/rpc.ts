@@ -78,7 +78,7 @@ import type { EpisodeRecord, EpisodeRefAction, EpisodeRefInput, SegmentInput, Se
 import { buildSplitInput, parseSplitProposals, SCRIPT_SPLIT_SYSTEM } from '../workbench/script-split.ts'
 import {
   DEFAULT_PLAN_EPISODES, DEFAULT_PLAN_SEGMENTS, DEFAULT_PLAN_SHOTS, DEFAULT_PLAN_SHOT_SEC,
-  buildEpisodePlanPrompt, parseEpisodePlan, planEpisodesByRules,
+  buildCountSuggestionPrompt, buildEpisodePlanPrompt, parseCountSuggestion, parseEpisodePlan, planEpisodesByRules,
   type EpisodePlanEpisode, type EpisodePlanRequest,
 } from '../workbench/episode-plan.ts'
 import {
@@ -614,6 +614,48 @@ async function draftEpisodePlan(
     if (request.script.trim() !== '') return rules()
     throw error
   }
+}
+
+/**
+ * 让文本模型按剧本内容推荐集 / 每集段 / 每段镜三个数量（不落库）。
+ *
+ * 与结构生成分开，响应只要三个整数；结果夹取到合法区间后回填到界面，用户仍可手改。
+ * @param deps - RPC 依赖（含文本模型服务）。
+ * @param payload - 载荷：script / brief / provider / model。
+ * @param signal - 取消信号，透传给模型调用。
+ * @returns 三个数量。
+ * @throws {Error} 没有文本模型、素材为空或模型输出不可用时。
+ */
+async function suggestEpisodeCounts(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<{ episodes: number, segments: number, shots: number }> {
+  const choice = optionalModelChoice(payload)
+  const llm = deps.llm
+  if (choice === undefined || llm === undefined) throw new Error('请先选择一个文本模型')
+  const script = optionalText(payload, 'script') ?? ''
+  const brief = optionalText(payload, 'brief') ?? ''
+  if (script.trim() === '' && brief.trim() === '') throw new Error('请先写剧本，或写一句创意')
+  const prepared = await llm.prepareCall(
+    { provider: choice.provider, model: choice.model, maxTokens: 512 },
+    signal,
+  )
+  const options: GenerateOptions = {
+    ...prepared.config,
+    messages: [createUserMessage({
+      content: [{ type: 'text', text: buildCountSuggestionPrompt(script, brief) }],
+      source: { kind: 'user' },
+    })],
+    ...signal === undefined ? {} : { signal },
+  }
+  const assembler = new BlockAssembler()
+  for await (const chunk of prepared.stream(options)) assembler.push(chunk)
+  const raw = assembler.blocks()
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+  return parseCountSuggestion(raw)
 }
 
 /**
@@ -1234,6 +1276,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const plan = await draftEpisodePlan(deps, payload, signal)
       return { episodes: await materializeEpisodePlan(deps, payload, plan) }
     }
+    // 自动取数：按剧本内容让模型推荐集 / 段 / 镜三级数量，不落库。
+    case 'episodes/suggestCounts':
+      return await suggestEpisodeCounts(deps, payload, signal)
     // 剧本实体提取：剧本生成页的角色 / 场景 / 道具·服装三个分区共用。
     case 'entities/extract':
       return await extractEntities(deps, payload, signal)

@@ -32,7 +32,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
-  ImportedScriptView, MediaGenerateResult, PipelineResult, PipelineRunInput, StoryboardEntityLibraryView,
+  MediaGenerateResult, PipelineResult, PipelineRunInput, StoryboardEntityLibraryView,
   TextModelOption, WorkbenchApi,
 } from './api.ts'
 import type { ResourceKind, ResourceRecord } from '../workbench/records.ts'
@@ -51,6 +51,7 @@ import { MAX_PLAN_EPISODES, MAX_PLAN_SEGMENTS, MAX_PLAN_SHOTS } from '../workben
 import type { SkillRecord } from '../workbench/skills.ts'
 import { Icon } from './icons.tsx'
 import { getWorkbenchField, switchPipelineProject, useWorkbenchField } from './workbench-store.ts'
+import { importScriptFilesShared } from './script-import-shared.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 
 /** 卡片 props：注入 api / 词典 / 当前项目 / 起跑后的回调。 */
@@ -170,28 +171,6 @@ function downloadText(fileName: string, text: string): void {
   URL.revokeObjectURL(url)
 }
 
-/** 已选择/已导入的一份剧本文件（`B-20`）。 */
-interface ImportedFile {
-  readonly name: string
-  /** `importing` 解析中 / `done` 已并入剧本 / `failed` 解析失败（保留在列表里说明原因）。 */
-  readonly status: 'importing' | 'done' | 'failed'
-  readonly error?: string
-}
-
-/**
- * 把浏览器拿到的文件字节转成 base64（浏览器没有 `Buffer`）。
- * @param bytes - 文件内容。
- * @returns base64 字符串。
- */
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
-  }
-  return btoa(binary)
-}
-
 /** 就地生成里一镜的运行状态（`B6`，串行推进的可视化）。 */
 interface InlineRow {
   readonly index: number
@@ -225,20 +204,20 @@ export function PipelineCard(props: PipelineCardProps) {
   const [planShots, setPlanShots] = useState(4)
   /** 「生成剧本」进行态：与普通编排互斥，避免结构生成时又起一轮。 */
   const [generatingScript, setGeneratingScript] = useState(false)
+  /** 三级数量「自动」取数进行态：三个按钮共用一次模型调用。 */
+  const [suggestingCounts, setSuggestingCounts] = useState(false)
   /** `B-20`：增强分镜提示词的导演技能；默认取第一条启用中的。 */
   const [skillId, setSkillId] = useWorkbenchField(api, 'pipelineSkillId')
   const [skills, setSkills] = useState<readonly SkillRecord[]>([])
-  /** 已选择/已导入的剧本文件：选中就立刻显示名字，解析失败也保留并标出原因。 */
-  const [importedFiles, setImportedFiles] = useState<readonly ImportedFile[]>([])
+  /** 已选择/已导入的剧本文件：与角色/场景/道具分区共享，文件名与原文都长期保留。 */
+  const [importedFiles, setImportedFiles] = useWorkbenchField(api, 'pipelineImportedFiles')
   /** 浏览器文件选择器：点按钮再打开系统窗口，不要求用户手填路径。 */
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   /** 剧本输入框：导入成功后把它滚到末尾，明确"内容追加到了这里"。 */
   const scriptRef = useRef<HTMLTextAreaElement | null>(null)
-  // 切换剧集：成片表单按项目保存/恢复，避免还显示上一部的剧本与分镜
+  // 切换剧集：成片表单按项目保存/恢复；导入文件与剧本一起走，文件名和原文都不丢
   useEffect(() => {
     switchPipelineProject(api, projectId ?? '')
-    // 切换项目后剧本已换成目标项目的，上一部的已引用文件不再对应
-    setImportedFiles([])
   }, [api, projectId])
   // `B-18`：手动挑选物料——把指定资源 id 强制塞进流水线（留空则剧本自动匹配）。
   const [manualPick, setManualPick] = useWorkbenchField(api, 'pipelineManualPick')
@@ -538,6 +517,36 @@ export function PipelineCard(props: PipelineCardProps) {
   }
 
   /**
+   * 三级数量「自动」：调用文本模型按当前剧本推荐集 / 段 / 镜数，回填后可继续手动修改。
+   *
+   * 三个数量互相牵连，一次推荐整体回填；输入框本身可编辑，用户改完就以手填值为准。
+   */
+  const autoFillCounts = async (): Promise<void> => {
+    if (script.trim() === '') { setError(t('pipelineGenerateNeedsSource')); return }
+    if (selectedModel === undefined) { setError(t('pipelineAutoNeedsModel')); return }
+    setSuggestingCounts(true); setError(undefined); setNotice(undefined)
+    try {
+      const suggested = await api.suggestEpisodeCounts({
+        script: planningScript,
+        brief: script,
+        provider: selectedModel.provider,
+        model: selectedModel.model,
+      })
+      setPlanEpisodes(Math.max(1, Math.min(MAX_PLAN_EPISODES, suggested.episodes)))
+      setPlanSegments(Math.max(1, Math.min(MAX_PLAN_SEGMENTS, suggested.segments)))
+      setPlanShots(Math.max(1, Math.min(MAX_PLAN_SHOTS, suggested.shots)))
+      setNotice(t('pipelineAutoCountsDone')
+        .replace('{episodes}', String(suggested.episodes))
+        .replace('{segments}', String(suggested.segments))
+        .replace('{shots}', String(suggested.shots)))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSuggestingCounts(false)
+    }
+  }
+
+  /**
    * `B5.1` 生成画布：排版 + 落库 + 切到画布，**不** `workflows/run`。
    * 用户在画布上看清节点、确认参数后再自己点生成——不替他烧钱。
    */
@@ -685,41 +694,21 @@ export function PipelineCard(props: PipelineCardProps) {
   }
 
   /**
-   * `B-20` 导入剧本文件：浏览器选中的**每个**文件都先列出来（多个用分号隔开），
-   * 再逐个交给宿主解析（txt/md/docx/pdf）；成功的并入剧本正文，失败的原位标出原因，
-   * 一份失败不影响其他文件。
+   * 导入剧本文件：委托共享 helper 写入文件名与原文，再把原文追加进剧本框。
+   *
+   * 原文独立保存在共享列表里（角色 / 场景 / 道具也能拿它当输入），即使剧本框被
+   * 改写也不丢；一份失败不影响其它文件。
    */
   const importScriptFiles = async (files: readonly File[]): Promise<void> => {
     if (files.length === 0) return
-    const picked = files
     setImporting(true); setError(undefined); setNotice(undefined)
-    // 选中就先挂出来，让用户看到"文件已经进来了"（同名文件只留一条）
-    setImportedFiles(current => {
-      const known = new Set(current.map(item => item.name))
-      const added = picked
-        .filter(file => !known.has(file.name))
-        .map(file => ({ name: file.name, status: 'importing' as const }))
-      return [...current, ...added]
-    })
-    const failures: string[] = []
-    const done: string[] = []
-    for (const file of picked) {
-      try {
-        const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
-        const imported: ImportedScriptView = await api.importScript({ fileName: file.name, base64 })
-        setScript(current => current.trim() === '' ? imported.text : `${current}\n\n${imported.text}`)
-        done.push(`${file.name}（${imported.text.length} 字）`)
-        setImportedFiles(current => current.map(item =>
-          item.name === file.name ? { name: item.name, status: 'done' } : item))
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause)
-        failures.push(`${file.name}：${message}`)
-        setImportedFiles(current => current.map(item =>
-          item.name === file.name ? { name: item.name, status: 'failed', error: message } : item))
-      }
+    const { done, failures } = await importScriptFilesShared(api, files, setImportedFiles)
+    for (const imported of done) {
+      setScript(current => current.trim() === '' ? imported.text : `${current}\n\n${imported.text}`)
     }
     if (failures.length === 0) {
-      setNotice(t('pipelineImportDone').replace('{name}', done.join('；')))
+      const names = done.map(item => `${item.fileName}（${item.text.length} 字）`).join('；')
+      setNotice(t('pipelineImportDone').replace('{name}', names))
       // 正文是追加在剧本末尾的：把剧本框滚到底，用户一眼能看到内容去了哪里
       const textarea = scriptRef.current
       if (textarea !== null) {
@@ -1024,51 +1013,83 @@ export function PipelineCard(props: PipelineCardProps) {
                   </div>
                 )}
             </div>
-            {/* `B-22` 生成剧本：剧本框同时接收整段剧本与一句话创意；三级数量默认 1 集 / 3 段 / 4 镜 */}
+            {/* `B-22` 生成剧本：剧本框同时接收整段剧本与一句话创意；三级数量默认 1 集 / 3 段 / 4 镜。流程说明只在模块头部出现一次 */}
             <div className="iv-sub" data-pipeline-generate="true">
-              <div className="iv-sub-head">
-                <span className="iv-sub-title">{t('pipelineGenerateTitle')}</span>
-                <span className="iv-meta" data-pipeline-generate-hint="true">{t('pipelineGenerateHint')}</span>
-              </div>
               <div className="iv-plan-row">
                 <label className="iv-plan-field">
                   {t('pipelinePlanEpisodes')}
-                  <input
-                    className="iv-input"
-                    data-pipeline-plan-episodes="true"
-                    type="number"
-                    min={1}
-                    max={MAX_PLAN_EPISODES}
-                    value={planEpisodes}
-                    disabled={running}
-                    onChange={event => setPlanEpisodes(Math.max(1, Math.min(MAX_PLAN_EPISODES, Number(event.target.value) || 1)))}
-                  />
+                  <span style={{ display: 'flex', gap: 'var(--iv-sp-2)', alignItems: 'center' }}>
+                    <input
+                      className="iv-input"
+                      data-pipeline-plan-episodes="true"
+                      type="number"
+                      min={1}
+                      max={MAX_PLAN_EPISODES}
+                      value={planEpisodes}
+                      disabled={running || suggestingCounts}
+                      onChange={event => setPlanEpisodes(Math.max(1, Math.min(MAX_PLAN_EPISODES, Number(event.target.value) || 1)))}
+                    />
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      data-pipeline-auto-counts="episodes"
+                      title={t('pipelineAutoCountsHint')}
+                      disabled={running || suggestingCounts}
+                      onClick={() => { void autoFillCounts() }}
+                    >
+                      {suggestingCounts ? '…' : t('pipelineAuto')}
+                    </button>
+                  </span>
                 </label>
                 <label className="iv-plan-field">
                   {t('pipelinePlanSegments')}
-                  <input
-                    className="iv-input"
-                    data-pipeline-plan-segments="true"
-                    type="number"
-                    min={1}
-                    max={MAX_PLAN_SEGMENTS}
-                    value={planSegments}
-                    disabled={running}
-                    onChange={event => setPlanSegments(Math.max(1, Math.min(MAX_PLAN_SEGMENTS, Number(event.target.value) || 1)))}
-                  />
+                  <span style={{ display: 'flex', gap: 'var(--iv-sp-2)', alignItems: 'center' }}>
+                    <input
+                      className="iv-input"
+                      data-pipeline-plan-segments="true"
+                      type="number"
+                      min={1}
+                      max={MAX_PLAN_SEGMENTS}
+                      value={planSegments}
+                      disabled={running || suggestingCounts}
+                      onChange={event => setPlanSegments(Math.max(1, Math.min(MAX_PLAN_SEGMENTS, Number(event.target.value) || 1)))}
+                    />
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      data-pipeline-auto-counts="segments"
+                      title={t('pipelineAutoCountsHint')}
+                      disabled={running || suggestingCounts}
+                      onClick={() => { void autoFillCounts() }}
+                    >
+                      {suggestingCounts ? '…' : t('pipelineAuto')}
+                    </button>
+                  </span>
                 </label>
                 <label className="iv-plan-field">
                   {t('pipelinePlanShots')}
-                  <input
-                    className="iv-input"
-                    data-pipeline-plan-shots="true"
-                    type="number"
-                    min={1}
-                    max={MAX_PLAN_SHOTS}
-                    value={planShots}
-                    disabled={running}
-                    onChange={event => setPlanShots(Math.max(1, Math.min(MAX_PLAN_SHOTS, Number(event.target.value) || 1)))}
-                  />
+                  <span style={{ display: 'flex', gap: 'var(--iv-sp-2)', alignItems: 'center' }}>
+                    <input
+                      className="iv-input"
+                      data-pipeline-plan-shots="true"
+                      type="number"
+                      min={1}
+                      max={MAX_PLAN_SHOTS}
+                      value={planShots}
+                      disabled={running || suggestingCounts}
+                      onChange={event => setPlanShots(Math.max(1, Math.min(MAX_PLAN_SHOTS, Number(event.target.value) || 1)))}
+                    />
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      data-pipeline-auto-counts="shots"
+                      title={t('pipelineAutoCountsHint')}
+                      disabled={running || suggestingCounts}
+                      onClick={() => { void autoFillCounts() }}
+                    >
+                      {suggestingCounts ? '…' : t('pipelineAuto')}
+                    </button>
+                  </span>
                 </label>
                 <button
                   type="button"

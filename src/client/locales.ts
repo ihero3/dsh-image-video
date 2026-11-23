@@ -51,6 +51,7 @@ export type WorkbenchLocaleKey =
   | 'extractRun'
   | 'extractRunning'
   | 'extractSource'
+  | 'extractSourceWithFiles'
   | 'extractNeedsScript'
   | 'extractNeedsModel'
   | 'extractNeedsProject'
@@ -519,7 +520,6 @@ export type WorkbenchLocaleKey =
   | 'refPickerResources'
   | 'refPickerEmpty'
   | 'refPickerAdded'
-  | 'refPickerClose'
   | 'videoFirstFrame'
   | 'videoFirstFramePick'
   | 'fusionEmptyAll'
@@ -660,11 +660,13 @@ export type WorkbenchLocaleKey =
   | 'pipelineStarted'
   | 'pipelineCompose'
   | 'pipelineComposed'
-  | 'pipelineGenerateTitle'
-  | 'pipelineGenerateHint'
   | 'pipelinePlanEpisodes'
   | 'pipelinePlanSegments'
   | 'pipelinePlanShots'
+  | 'pipelineAuto'
+  | 'pipelineAutoCountsHint'
+  | 'pipelineAutoCountsDone'
+  | 'pipelineAutoNeedsModel'
   | 'pipelineGenerate'
   | 'pipelineGeneratingScript'
   | 'pipelineGenerateDone'
@@ -909,11 +911,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineStarted: 'Pipeline started',
   pipelineCompose: 'Generate shots',
   pipelineComposed: 'Shots ready — edit them below',
-  pipelineGenerateTitle: 'Script → episodes → segments → shots',
-  pipelineGenerateHint: 'Splits the script above into episodes → segments → shots and writes them into the series; every level can still be added to or edited below.',
   pipelinePlanEpisodes: 'Episodes',
   pipelinePlanSegments: 'Segments / episode',
   pipelinePlanShots: 'Shots / segment',
+  pipelineAuto: 'Auto',
+  pipelineAutoCountsHint: 'Ask the text model to recommend all three counts from the script — still editable afterwards',
+  pipelineAutoCountsDone: 'Auto-filled: {episodes} episodes / {segments} segments / {shots} shots — still editable',
+  pipelineAutoNeedsModel: 'Pick a text model first to auto-fill the counts',
   pipelineGenerate: 'Generate script',
   pipelineGeneratingScript: 'Generating…',
   pipelineGenerateDone: '{n} episode(s) written into this series',
@@ -956,6 +960,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   extractRun: 'Extract from script',
   extractRunning: 'Extracting…',
   extractSource: 'Source: current episode script',
+  extractSourceWithFiles: 'Source: current episode script + imported files',
   extractNeedsScript: 'This episode has no script yet — write one under Segments first.',
   extractNeedsModel: 'Pick a text model under Segments before extracting.',
   extractNeedsProject: 'Create a series first.',
@@ -1467,7 +1472,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   refPickerResources: 'Series resources',
   refPickerEmpty: 'No matching images yet',
   refPickerAdded: 'Added',
-  refPickerClose: 'Done',
   videoFirstFrame: 'First frame',
   videoFirstFramePick: 'Choose first frame',
   fusionEmptyAll: 'No roles, scenes or props yet — create them in the series resources first.',
@@ -1925,11 +1929,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineStarted: '已起跑',
   pipelineCompose: '生成分镜',
   pipelineComposed: '分镜已生成，可在下面逐条修改',
-  pipelineGenerateTitle: '剧本 → 集 → 分段 → 分镜',
-  pipelineGenerateHint: '用上面的剧本生成：剧本 → 集 → 分段 → 分镜，写进剧集的集记录；每一级都能继续增删。',
   pipelinePlanEpisodes: '集数',
   pipelinePlanSegments: '每集段数',
   pipelinePlanShots: '每段分镜数',
+  pipelineAuto: '自动',
+  pipelineAutoCountsHint: '调用文本模型按剧本内容推荐这三个数量，填好后仍可手动修改',
+  pipelineAutoCountsDone: '已自动推荐：{episodes} 集 / {segments} 段 / {shots} 镜，可继续手动修改',
+  pipelineAutoNeedsModel: '自动取数需要先在「剧本模型」里选一个文本模型',
   pipelineGenerate: '生成剧本',
   pipelineGeneratingScript: '生成中…',
   pipelineGenerateDone: '已写入 {n} 集，可在下面逐级增删',
@@ -1972,6 +1978,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   extractRun: '从剧本提取',
   extractRunning: '提取中…',
   extractSource: '来源：当前集剧本',
+  extractSourceWithFiles: '来源：当前集剧本 + 导入文件原文',
   extractNeedsScript: '当前集还没有剧本——先到「剧本分段」写好剧本。',
   extractNeedsModel: '先在「剧本分段」选一个文本模型，再回来提取。',
   extractNeedsProject: '先建一个剧集再提取。',
@@ -2505,7 +2512,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   refPickerResources: '剧集资源',
   refPickerEmpty: '还没有可选的图片',
   refPickerAdded: '已加入',
-  refPickerClose: '完成',
   videoFirstFrame: '首帧',
   videoFirstFramePick: '选择首帧',
   fusionEmptyAll: '还没有角色 / 场景 / 物品——先去剧集资源里创建，再回来融合。',

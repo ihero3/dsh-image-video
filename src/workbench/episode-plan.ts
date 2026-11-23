@@ -256,3 +256,50 @@ export function planEpisodesByRules(
     }
   })
 }
+
+/**
+ * 让模型只推荐三级数量（集 / 每集段 / 每段镜）。
+ *
+ * 与完整结构生成分开：这里只要三个整数，响应短、可单独重算；数量范围与解析层
+ * 共用同一组上限，推荐结果直接回填到输入框，用户仍可手动改。
+ * @param script - 剧本正文（空串时按 brief 推断）。
+ * @param brief - 一句话创意（剧本为空时用）。
+ * @returns 提示词。
+ */
+export function buildCountSuggestionPrompt(script: string, brief: string): string {
+  const source = script.trim() === ''
+    ? `一句话创意：${brief.trim()}`
+    : `剧本：\n${script.trim()}`
+  return [
+    '你是短剧策划。阅读素材，判断它适合拆成几集、每集几段、每段几个分镜。',
+    `硬性范围：集数 1-${MAX_PLAN_EPISODES}；每集段数 1-${MAX_PLAN_SEGMENTS}；每段分镜数 1-${MAX_PLAN_SHOTS}。`,
+    '剧情越长、场景与人物越多，集数和段数可以越多；一个分段拆 2–6 个镜头比较自然。',
+    '只输出 JSON，不要 Markdown 代码块与任何前后缀：{"episodes":数字,"segments":数字,"shots":数字}',
+    source,
+  ].join('\n')
+}
+
+/**
+ * 解析数量推荐：三个字段各自夹取到合法区间，缺字段或非数字用缺省值。
+ * @param raw - 模型原始输出。
+ * @returns 三个数量。
+ * @throws {Error} 没有可解析的 JSON 对象时。
+ */
+export function parseCountSuggestion(raw: string): {
+  readonly episodes: number
+  readonly segments: number
+  readonly shots: number
+} {
+  const root = extractJson(raw)
+  if (root === null || typeof root !== 'object' || Array.isArray(root)) {
+    throw new Error('模型返回的数量不是 JSON 对象')
+  }
+  const parsed = root as { episodes?: unknown, segments?: unknown, shots?: unknown }
+  const read = (value: unknown, max: number, fallback: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? clampInt(value, 1, max) : fallback
+  return {
+    episodes: read(parsed.episodes, MAX_PLAN_EPISODES, DEFAULT_PLAN_EPISODES),
+    segments: read(parsed.segments, MAX_PLAN_SEGMENTS, DEFAULT_PLAN_SEGMENTS),
+    shots: read(parsed.shots, MAX_PLAN_SHOTS, DEFAULT_PLAN_SHOTS),
+  }
+}

@@ -573,12 +573,6 @@ function RefPickField(props: {
                 ))}
               </div>
             )}
-          <div className="iv-pop-foot">
-            <span className="iv-meta">{props.keepOpen === true ? t('generateRefsHint') : ''}</span>
-            <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={close}>
-              {t('refPickerClose')}
-            </button>
-          </div>
         </div>
       ) : null}
     </div>

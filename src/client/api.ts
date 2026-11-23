@@ -520,6 +520,21 @@ export interface GenerateEpisodesResult {
   readonly episodes: readonly EpisodeRecord[]
 }
 
+/** 自动取数：让文本模型按剧本推荐集 / 每集段 / 每段分镜数。 */
+export interface SuggestEpisodeCountsInput {
+  readonly script: string
+  readonly brief?: string
+  readonly provider: string
+  readonly model: string
+}
+
+/** 模型推荐的三级数量（已夹取到合法区间）。 */
+export interface EpisodeCountSuggestion {
+  readonly episodes: number
+  readonly segments: number
+  readonly shots: number
+}
+
 /** 剧本实体提取的分区：角色 / 场景 / 道具·服装。 */
 export type ExtractCategoryInput = ExtractCategory
 
@@ -674,6 +689,8 @@ export interface WorkbenchApi {
   splitEpisode: (input: SplitEpisodeInput) => Promise<SplitEpisodeResult>
   /** 生成剧本结构：剧本/创意 → 集 → 分段 → 分镜（追加落库，不覆盖已有内容）。 */
   generateEpisodes: (input: GenerateEpisodesInput) => Promise<GenerateEpisodesResult>
+  /** 自动取数：让文本模型按剧本推荐集 / 每集段 / 每段分镜数（不落库）。 */
+  suggestEpisodeCounts: (input: SuggestEpisodeCountsInput) => Promise<EpisodeCountSuggestion>
   /** 从剧本提取实体（角色 / 场景 / 道具·服装）：只返回候选，入库逐条走 `createResource`。 */
   extractEntities: (input: ExtractEntitiesInput) => Promise<ExtractEntitiesResult>
   /** 一集的分镜（按分段归属）。 */
@@ -998,6 +1015,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     listTextModels: () => call<TextModelCatalog>('llm/models'),
     splitEpisode: input => call<SplitEpisodeResult>('episodes/split', input),
     generateEpisodes: input => call<GenerateEpisodesResult>('episodes/generate', { ...input }),
+    suggestEpisodeCounts: input => call<EpisodeCountSuggestion>('episodes/suggestCounts', { ...input }),
     extractEntities: input => call<ExtractEntitiesResult>('entities/extract', { ...input }),
     listStoryboards: async episodeId =>
       (await call<{ storyboards: StoryboardRecord[] }>('storyboards/list', { episodeId })).storyboards,

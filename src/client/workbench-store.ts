@@ -29,6 +29,19 @@ export type WorkbenchCreateTab = 'image' | 'fusion' | 'video'
 /** 剧本生成页的分区标签页：剧本分段 / 角色 / 场景 / 道具·服装。 */
 export type WorkbenchScriptTab = 'roles' | 'scenes' | 'props' | 'split'
 
+/**
+ * 一份导入的剧本文件：文件名与解析出的原文都长期保留。
+ *
+ * 原文单独存一份，不依赖剧本输入框（用户可以改框里的字），角色 / 场景 / 道具分区
+ * 也拿它当提取来源；`status` 只描述最近一次导入结果，失败也留着文件名说明原因。
+ */
+export interface PipelineImportedFile {
+  readonly name: string
+  readonly text: string
+  readonly status: 'importing' | 'done' | 'failed'
+  readonly error?: string
+}
+
 /** 预览目标（图片或视频的绝对路径）。 */
 export interface WorkbenchPreviewTarget {
   readonly path: string
@@ -83,6 +96,8 @@ export interface WorkbenchUiState {
   readonly pipelineProjectId: string
   /** 一键成片：剧本。 */
   readonly pipelineScript: string
+  /** 导入的剧本文件（文件名 + 原文），剧本分段与角色/场景/道具分区共享。 */
+  readonly pipelineImportedFiles: readonly PipelineImportedFile[]
   /** 一键成片：分镜数。 */
   readonly pipelineShots: number
   /** 一键成片：每镜秒数。 */
@@ -120,6 +135,7 @@ const INITIAL: WorkbenchUiState = {
   generateVideoModel: '',
   pipelineProjectId: '',
   pipelineScript: '',
+  pipelineImportedFiles: [],
   pipelineShots: 4,
   pipelineDuration: 6,
   pipelineManualPick: [],
@@ -183,12 +199,13 @@ export function setWorkbenchField<K extends keyof WorkbenchUiState>(
 /** 一键成片表单里**跟随项目**的字段（切换项目时整体保存/恢复）。 */
 export type PipelineFieldSnapshot = Pick<
   WorkbenchUiState,
-  'pipelineScript' | 'pipelineShots' | 'pipelineDuration' | 'pipelineManualPick' | 'pipelineTextModel' | 'pipelineSkillId'
+  'pipelineScript' | 'pipelineImportedFiles' | 'pipelineShots' | 'pipelineDuration' | 'pipelineManualPick' | 'pipelineTextModel' | 'pipelineSkillId'
 >
 
 /** 新项目的成片表单初值。 */
 const PIPELINE_FIELDS_INITIAL: PipelineFieldSnapshot = {
   pipelineScript: '',
+  pipelineImportedFiles: [],
   pipelineShots: 4,
   pipelineDuration: 6,
   pipelineManualPick: [],
@@ -213,6 +230,7 @@ function pipelineSnapshotsOf(owner: object): Map<string, PipelineFieldSnapshot> 
 function snapshotPipelineFields(state: WorkbenchUiState): PipelineFieldSnapshot {
   return {
     pipelineScript: state.pipelineScript,
+    pipelineImportedFiles: state.pipelineImportedFiles,
     pipelineShots: state.pipelineShots,
     pipelineDuration: state.pipelineDuration,
     pipelineManualPick: state.pipelineManualPick,
