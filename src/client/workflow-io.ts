@@ -12,6 +12,7 @@
  * @module dsh-image-video/client/workflow-io
  */
 import { normalizeGraph, type WorkflowEdge, type WorkflowNode, type WorkflowRecord } from '../workbench/workflow.ts'
+import { adaptExternalWorkflow, detectExternalFormat, type AdapterReport } from '../workbench/workflow-adapters.ts'
 
 /** 文件标识与版本（写进导出文件，导入时校验）。 */
 export const WORKFLOW_FILE_FORMAT = 'dsh-image-video-workflow'
@@ -22,6 +23,8 @@ export interface WorkflowImportFile {
   readonly name?: string
   readonly nodes: readonly WorkflowNode[]
   readonly edges: readonly WorkflowEdge[]
+  /** 外部格式适配报告；原生格式为 undefined。 */
+  readonly report?: AdapterReport
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -59,10 +62,11 @@ export function parseWorkflowFile(text: string): WorkflowImportFile {
     throw new Error('不是合法的 JSON 文件')
   }
   if (!isObject(raw)) throw new Error('工作流文件必须是 JSON 对象')
-  const format = raw['format']
-  if (format !== undefined && format !== WORKFLOW_FILE_FORMAT) {
-    throw new Error(`不支持的工作流格式：${String(format)}（本画布只认 ${WORKFLOW_FILE_FORMAT}）`)
-  }
+
+  // 自动识别外部格式：ComfyUI UI/LiblibAI（nodes+links）与 ComfyUI API（class_type）。
+  const detected = detectExternalFormat(raw)
+  if (detected !== 'native') return adaptExternalWorkflow(raw)
+
   const version = raw['version']
   if (version !== undefined && version !== WORKFLOW_FILE_VERSION) {
     throw new Error(`不支持的工作流文件版本：${String(version)}`)

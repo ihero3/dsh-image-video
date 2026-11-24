@@ -46,17 +46,32 @@ export function buildEpisodeWorkflow(episode: EpisodeRecord): EpisodeWorkflowGra
   shots.forEach((shot, index) => {
     const imageId = `img-${shot.id}`
     const videoId = `vid-${shot.id}`
+    // 按镜引用与模型写进节点参数：不改变图结构、不制造端口不匹配的连线，
+    // 但也让同步过去的工作流能看到每镜用的是哪个模型和哪些素材/资源。
+    const refText = shot.refs.length === 0 ? '' : JSON.stringify(shot.refs)
     nodes.push({
       id: imageId,
       kind: 'image-generate',
       position: { x: 0, y: index * 200 },
-      params: { ...defaultParams('image-generate'), prompt: shot.imagePrompt },
+      params: {
+        ...defaultParams('image-generate'),
+        prompt: shot.imagePrompt,
+        ...shot.imageModel === undefined ? {} : { model: shot.imageModel },
+        refs: refText,
+      },
     })
     nodes.push({
       id: videoId,
       kind: 'video-generate',
       position: { x: 280, y: index * 200 },
-      params: { ...defaultParams('video-generate'), prompt: shot.videoPrompt, duration: shot.durationSec, compare: false },
+      params: {
+        ...defaultParams('video-generate'),
+        prompt: shot.videoPrompt,
+        duration: shot.durationSec,
+        compare: false,
+        ...shot.videoModel === undefined ? {} : { model: shot.videoModel },
+        refs: refText,
+      },
     })
     if (previous === undefined) previous = imageId
     else link(previous, imageId)

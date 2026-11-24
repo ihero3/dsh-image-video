@@ -13,7 +13,7 @@ import { cleanup, renderHook } from '@testing-library/react'
 import {
   MODERN_THEME_STYLE, MODERN_THEME_STYLE_ID, MODERN_THEME_VERSION, useModernTheme,
 } from '../src/client/modern-theme.ts'
-import { WORKBENCH_STYLE_ID } from '../src/client/workbench-style.ts'
+import { WORKBENCH_STYLE, WORKBENCH_STYLE_ID } from '../src/client/workbench-style.ts'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { GuideOverlay } from '../src/client/screens/GuideOverlay.tsx'
 import { zh, type GuideLocaleKey } from '../src/client/screens/guide-locales.ts'
@@ -90,6 +90,20 @@ describe('modern theme coverage', () => {
     ]) {
       expect(MODERN_THEME_STYLE, `缺少覆盖规则 ${selector}`).toContain(selector)
     }
+  })
+
+  it('分镜提示词区：模型行紧贴输入框，下一组提示词留间隔，字段不被 flex-basis 撑高', () => {
+    // 纵向 flex 下 .iv-sb-field 的 flex:1 1 150px 会落在高度轴上，把提示词 label 拉高，
+    // textarea 下方的空白会一路把模型行顶远；必须局部复位为内容高度。
+    expect(WORKBENCH_STYLE).toContain('.iv-shot-prompt-main>.iv-sb-field{flex:0 0 auto}')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-shot-prompt-main>.iv-sb-field{flex:0 0 auto}')
+    // 输入框 → 模型行用紧凑间距；模型行 → 下一组提示词另加间隔，形成视觉分组
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-shot-prompt-main{display:flex;flex-direction:column;gap:4px;min-width:0}')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-shot-prompt-main>.iv-shot-tool-row+.iv-sb-field{margin-top:8px}')
+    // 通用 textarea 的 84px 最小高度会在两行提示词内部留空，分镜区要收窄
+    const baseTextarea = MODERN_THEME_STYLE.indexOf('.iv .iv-textarea,.iv textarea.iv-input{')
+    const shotTextarea = MODERN_THEME_STYLE.indexOf('.iv .iv-shot-prompt-main textarea.iv-input{min-height:56px}')
+    expect(shotTextarea).toBeGreaterThan(baseTextarea)
   })
 
   it('生图/生视频按钮的 hover 与静止态不同（鼠标移上有明确反馈）', () => {

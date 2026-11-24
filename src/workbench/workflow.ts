@@ -10,8 +10,14 @@
  * 并给出原因），对应阶段 3 的"预留能力边界"要求。
  */
 
-/** 节点可运行性。`planned` 的节点在画布上可见但不可加入。 */
-export type NodeAvailability = 'runnable' | 'planned'
+/**
+ * 节点可运行性。
+ * - `runnable`：可运行；
+ * - `planned`：规划中的能力，画布可见但不可运行；
+ * - `external`：从 ComfyUI / LiblibAI 导入的未知节点，保留原始配置供查看与再导出，
+ *   不出现在节点库、不可运行（语义与 planned 一样被运行前校验拒绝）。
+ */
+export type NodeAvailability = 'runnable' | 'planned' | 'external'
 
 /** 端口数据种类（用于后续宿主的类型匹配校验，画布只用来判断能否连线）。 */
 export type PortKind = 'any' | 'text' | 'media' | 'resource' | 'asset'
@@ -48,6 +54,8 @@ export type WorkflowNodeKind =
   | 'motion-track' | 'image-generate' | 'video-generate' | 'preview' | 'publish-asset'
   | 'subtitle' | 'render'
   | 'lip-sync' | 'face-swap' | 'voice-synthesize'
+  /** 外部工作流里无法映射到内置节点的种类；原始 JSON 存进 `config` 参数。 */
+  | 'external'
 
 /** 画布上的一个节点。 */
 export interface WorkflowNode {
@@ -161,6 +169,8 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
       { id: 'model', labelKey: 'paramModel', type: 'text', default: '' },
       { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
       { id: 'ratio', labelKey: 'paramRatio', type: 'select', default: '3:4', options: RATIO_OPTIONS },
+      // 分镜同步时按镜写入的引用（{kind,id,order}[] 的 JSON）；执行侧当元数据忽略。
+      { id: 'refs', labelKey: 'paramRefs', type: 'text', default: '' },
     ],
   },
   {
@@ -173,6 +183,8 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
       { id: 'resolution', labelKey: 'paramResolution', type: 'select', default: '', options: VIDEO_RESOLUTION_OPTIONS },
       { id: 'referenceVideo', labelKey: 'paramReferenceVideo', type: 'text', default: '' },
       { id: 'compare', labelKey: 'paramCompare', type: 'boolean', default: false },
+      // 同 image-generate：按镜引用的 JSON 元数据，不参与图执行。
+      { id: 'refs', labelKey: 'paramRefs', type: 'text', default: '' },
     ],
   },
   {
@@ -202,6 +214,15 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
   {
     kind: 'voice-synthesize', labelKey: 'nodeVoiceSynthesize', availability: 'planned', reasonKey: 'plannedVoice',
     input: 'text', output: 'media', params: [],
+  },
+  {
+    kind: 'external', labelKey: 'nodeExternal', availability: 'external', reasonKey: 'externalNotRunnable',
+    // 外部节点不知道自己的端口语义：一律 any，导回外部格式时按原始连线还原。
+    input: 'any', output: 'any',
+    params: [
+      { id: 'classType', labelKey: 'paramExternalClass', type: 'text', default: '' },
+      { id: 'config', labelKey: 'paramExternalConfig', type: 'textarea', default: '' },
+    ],
   },
 ]
 

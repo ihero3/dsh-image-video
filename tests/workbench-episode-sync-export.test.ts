@@ -78,6 +78,29 @@ describe('buildEpisodeWorkflow', () => {
     expect(third.nodes.filter(node => node.kind === 'video-generate')).toHaveLength(3)
   })
 
+  it('carries per-shot model and refs into the synced nodes', async () => {
+    const { store } = await makeStore()
+    const { episode } = await episodeWithShots(store)
+    const storyboard = episode.storyboards[0]!
+    await store.upsertStoryboard({
+      id: storyboard.id,
+      episodeId: episode.id,
+      segmentId: storyboard.segmentId,
+      shots: [{
+        ...storyboard.shots[0]!,
+        imageModel: 'img-model-x', videoModel: 'vid-model-y',
+        refs: [{ kind: 'asset', id: 'ast-7', order: 1 }],
+      }],
+    })
+    const graph = buildEpisodeWorkflow(await store.getEpisode(episode.id))
+    const image = graph.nodes.find(node => node.kind === 'image-generate')!
+    const video = graph.nodes.find(node => node.kind === 'video-generate')!
+    expect(image.params.model).toBe('img-model-x')
+    expect(video.params.model).toBe('vid-model-y')
+    expect(JSON.parse(String(image.params.refs))).toEqual([{ kind: 'asset', id: 'ast-7', order: 1 }])
+    expect(video.params.refs).toBe(image.params.refs)
+  })
+
   it('refuses to sync an episode without shots', async () => {
     const { store } = await makeStore()
     const project = await store.createProject('空集')

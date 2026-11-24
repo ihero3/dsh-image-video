@@ -782,6 +782,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const toggleDockFold = (key: keyof typeof dockFolded): void => {
     setDockFolded(current => ({ ...current, [key]: !current[key] }))
   }
+  /** 预览放大态：双击预览舞台或标题行按钮切换，Esc / 点遮罩还原。 */
+  const [previewExpanded, setPreviewExpanded] = useState(false)
+  /** 视频先显示首帧缩略图，点播放后才挂带控制的播放器。 */
+  const [previewPlaying, setPreviewPlaying] = useState(false)
+  /** 引用列表统一入口：清掉素材行选中（它会覆盖路径预览），再把目标送到右侧预览。 */
+  const previewAsset = (path: string, kind: 'image' | 'video'): void => {
+    setSelectedId(undefined)
+    setPreviewPath({ path, kind })
+    setPreviewPlaying(false)
+    setPreviewExpanded(false)
+    scrollToPane('panePreview')
+  }
   // 首次使用引导：只在「宿主连上了、但一对模型都没接」时自动弹；用户说过「稍后再说」就不再打扰
   const [guideOpen, setGuideOpen] = useState(false)
   const [guideDismissed, setGuideDismissed] = useState(false)
@@ -1753,6 +1765,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const previewTarget = selectedAsset === undefined
     ? previewPath
     : { path: selectedAsset.path, kind: selectedAsset.kind }
+  const previewSrc = previewTarget === undefined
+    ? undefined
+    : `/outputs/${encodeURIComponent(baseName(previewTarget.path))}`
+  // 换目标就回到缩略图；放大态只服务于当前这一张，不跟着上一次的媒体类型走。
+  useEffect(() => { setPreviewPlaying(false) }, [previewTarget?.path])
+  useEffect(() => {
+    if (!previewExpanded) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') { event.preventDefault(); setPreviewExpanded(false) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
+  }, [previewExpanded])
   /**
    * 素材面板最终展示的列表（`T6`）：kind 过滤 → 关键词搜索 → 排序。
    * 搜索匹配**文件名、生成提示词、模型名**三处——用户找素材时脑子里想的可能是任意一种。
@@ -3883,6 +3908,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         projectId={activeProject?.id ?? ''}
                         episode={activeEpisode}
                         assets={assets}
+                        onPreviewAsset={previewAsset}
                         onNotice={(text, tone) => { setNotice({ text, tone }) }}
                         onApplyPrompt={(text) => {
                           applyPrompt(text)
@@ -4023,6 +4049,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               setAssets(await apiRef.current.listAssets())
                               await loadTasks()
                             }}
+                            onPreviewAsset={previewAsset}
                             onNotice={(text, tone) => { setNotice({ text, tone }) }}
                           />
                         )}
@@ -5273,6 +5300,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </button>
                 </h3>
                 <div className="iv-pane-actions">
+                  {previewTarget === undefined
+                    ? null
+                    : (
+                      <button
+                        type="button"
+                        className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost"
+                        data-preview-expand="true"
+                        aria-pressed={previewExpanded}
+                        aria-label={previewExpanded ? t('previewShrink') : t('previewExpand')}
+                        title={previewExpanded ? t('previewShrink') : t('previewExpand')}
+                        onClick={() => { setPreviewExpanded(current => !current) }}
+                      >
+                        <Icon name={previewExpanded ? 'shrink' : 'expand'} size={12} />
+                      </button>
+                    )}
                   <button
                     type="button"
                     className="iv-btn iv-btn--icon iv-btn--sm iv-btn--ghost iv-pane-fold"
@@ -5300,7 +5342,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span>{t('hostHintRemote')}</span>
                     </p>
                   )}
-                <div className="iv-dock-preview" data-dock-preview="true">
+                {previewExpanded
+                  ? <div className="iv-preview-backdrop" data-preview-backdrop="true" onClick={() => { setPreviewExpanded(false) }} />
+                  : null}
+                <div
+                  className={`iv-dock-preview${previewExpanded ? ' iv-dock-preview--expanded' : ''}`}
+                  data-dock-preview="true"
+                  data-preview-expanded={previewExpanded ? 'true' : 'false'}
+                  onDoubleClick={event => {
+                    if (previewTarget === undefined) return
+                    const element = event.target as HTMLElement
+                    if (element.closest('button') !== null) return
+                    // 播放中的视频交给浏览器原生双击全屏，别和预览放大打架
+                    if (element.tagName === 'VIDEO' && previewPlaying) return
+                    setPreviewExpanded(current => !current)
+                  }}
+                >
                   {previewTarget === undefined
                     ? (
                       <div className="iv-empty">
@@ -5308,20 +5365,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         <strong>{t('previewEmpty')}</strong>
                       </div>
                     )
-                    : previewTarget.kind === 'video'
+                    : previewTarget.kind === 'video' && !previewPlaying
                       ? (
-                        <video
-                          key={previewTarget.path}
-                          src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
-                          controls
-                        />
+                        <div className="iv-preview-video-thumb" data-preview-video-thumb="true">
+                          <video src={`${previewSrc}#t=0.1`} muted preload="metadata" playsInline aria-hidden />
+                          <button
+                            type="button"
+                            className="iv-preview-play"
+                            data-preview-play="true"
+                            aria-label={t('previewPlay')}
+                            title={t('previewPlay')}
+                            onClick={() => { setPreviewPlaying(true) }}
+                          >
+                            <Icon name="play" size={20} />
+                          </button>
+                          <span className="iv-preview-video-name">{baseName(previewTarget.path)}</span>
+                        </div>
                       )
-                      : (
-                        <img
-                          alt={baseName(previewTarget.path)}
-                          src={`/outputs/${encodeURIComponent(baseName(previewTarget.path))}`}
-                        />
-                      )}
+                      : previewTarget.kind === 'video'
+                        ? <video key={previewTarget.path} src={previewSrc} controls autoPlay />
+                        : <img alt={baseName(previewTarget.path)} src={previewSrc} />}
                 </div>
                 {/* `T7` 从预览直接送往生成位：省掉「回素材区选中 → 回上方面板」的往返 */}
                 {previewTarget === undefined

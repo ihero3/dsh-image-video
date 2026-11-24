@@ -109,6 +109,10 @@ export type WorkbenchLocaleKey =
   | 'noOutputs'
   | 'noAssets'
   | 'previewEmpty'
+  | 'previewExpand'
+  | 'previewShrink'
+  | 'previewPlay'
+  | 'refPreview'
   | 'busy'
   | 'failed'
   | 'noTasks'
@@ -225,6 +229,11 @@ export type WorkbenchLocaleKey =
   | 'plannedLipSync'
   | 'plannedFaceSwap'
   | 'plannedVoice'
+  | 'nodeExternal'
+  | 'paramExternalClass'
+  | 'paramExternalConfig'
+  | 'externalNotRunnable'
+  | 'canvasExternalTag'
   | 'canvasPalette'
   | 'canvasAdd'
   | 'canvasParams'
@@ -247,6 +256,7 @@ export type WorkbenchLocaleKey =
   | 'paramDuration'
   | 'paramResolution'
   | 'paramReferenceVideo'
+  | 'paramRefs'
   | 'paramCompare'
   | 'paramAssetName'
   | 'ratioSquare'
@@ -1073,6 +1083,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   noOutputs: 'No media in the output directory yet',
   noAssets: 'No assets in this series yet',
   previewEmpty: 'Select an asset to preview it',
+  previewExpand: 'Enlarge preview',
+  previewShrink: 'Restore preview',
+  previewPlay: 'Play video in preview',
+  refPreview: 'View in preview',
   busy: 'Working…',
   failed: 'Operation failed',
   noTasks: 'No tasks recorded yet',
@@ -1194,6 +1208,11 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   plannedLipSync: 'Host does not expose lip-sync yet',
   plannedFaceSwap: 'Host does not expose face swap yet',
   plannedVoice: 'Per D6 this release keeps voice metadata only; no TTS yet',
+  nodeExternal: 'External node',
+  paramExternalClass: 'Original type',
+  paramExternalConfig: 'Original config (JSON)',
+  externalNotRunnable: 'Imported from a ComfyUI / LiblibAI workflow; kept for reference but not runnable here',
+  canvasExternalTag: 'External',
   canvasPalette: 'Node library',
   canvasAdd: 'Add to canvas',
   canvasParams: 'Node parameters',
@@ -1216,6 +1235,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   paramDuration: 'Duration (s)',
   paramResolution: 'Resolution',
   paramReferenceVideo: 'Reference video',
+  paramRefs: 'Refs (JSON)',
   paramCompare: 'Also render a comparison clip',
   paramAssetName: 'Asset name',
   ratioSquare: '1:1',
@@ -2109,6 +2129,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   noOutputs: 'outputs 目录里还没有产物',
   noAssets: '这个剧集还没有素材',
   previewEmpty: '选中素材后可在此预览',
+  previewExpand: '放大预览',
+  previewShrink: '还原预览',
+  previewPlay: '在预览里播放视频',
+  refPreview: '在预览区查看',
   busy: '处理中…',
   failed: '操作失败',
   noTasks: '还没有任务记录',
@@ -2230,6 +2254,11 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   plannedLipSync: '宿主尚未提供口型/唇形能力',
   plannedFaceSwap: '宿主尚未提供换脸能力',
   plannedVoice: 'D6 本期只做音色元数据，未接 TTS',
+  nodeExternal: '外部节点',
+  paramExternalClass: '原始类型',
+  paramExternalConfig: '原始配置（JSON）',
+  externalNotRunnable: '来自 ComfyUI / LiblibAI 工作流，保留供查看，本项目不运行它',
+  canvasExternalTag: '外部',
   canvasPalette: '节点库',
   canvasAdd: '加入画布',
   canvasParams: '节点参数',
@@ -2252,6 +2281,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   paramDuration: '时长（秒）',
   paramResolution: '分辨率',
   paramReferenceVideo: '参考视频',
+  paramRefs: '引用（JSON）',
   paramCompare: '同时生成对比片',
   paramAssetName: '素材名',
   ratioSquare: '1:1',

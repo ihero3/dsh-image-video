@@ -168,4 +168,28 @@ describe('提取提示词标签页', () => {
     addSource(view, 'ast-1')
     expect(screen.getByText(/1\/8/)).toBeTruthy()
   })
+
+  it('点已选引用或选择器里的预览按钮，右侧预览展示对应素材', async () => {
+    const { view } = renderStudio()
+    await openStudio(view)
+    addSource(view, 'ast-1')
+    addSource(view, 'ast-3')
+
+    fireEvent.click(view.container.querySelector('[data-studio-ref-preview="/tmp/outputs/shot.png"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-actions="image"]')).toBeTruthy() })
+    expect((view.container.querySelector('.iv-dock-preview img') as HTMLImageElement).getAttribute('src'))
+      .toBe('/outputs/shot.png')
+
+    fireEvent.click(view.container.querySelector('[data-studio-ref-preview="/tmp/outputs/clip.mp4"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-video-thumb]')).toBeTruthy() })
+    expect(screen.getByText(/2\/8/)).toBeTruthy()
+
+    // 选择器里不引用也能预览，点完浮层收起、引用数不变
+    fireEvent.click(view.container.querySelector('[data-studio-add-source="true"]') as HTMLElement)
+    fireEvent.click(view.container.querySelector('[data-studio-preview="ast-2"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-actions="image"]')).toBeTruthy() })
+    expect((view.container.querySelector('.iv-dock-preview img') as HTMLImageElement).getAttribute('src'))
+      .toBe('/outputs/wide.png')
+    expect(screen.getByText(/2\/8/)).toBeTruthy()
+  })
 })

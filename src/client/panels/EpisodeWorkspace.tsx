@@ -57,6 +57,8 @@ export interface EpisodeWorkspaceProps {
   readonly onEpisodeImported?: (episode: EpisodeRecord) => Promise<void> | void
   /** 生成了新素材 / 新任务后刷新素材库与任务列表。 */
   readonly onMediaGenerated: () => Promise<void>
+  /** 引用列表点选 → 右侧预览面板展示对应素材。 */
+  readonly onPreviewAsset: (path: string, kind: 'image' | 'video') => void
   readonly onNotice: (text: string, tone: 'info' | 'error') => void
 }
 
@@ -128,9 +130,11 @@ function refChips(
     readonly onInsert: ((order: number) => void) | undefined
     /** `[@n]` 与名称之间的可缩放缩略图。 */
     readonly thumb?: (ref: SegmentRef) => ReactNode
+    /** 点击缩略图 / 名称 → 右侧预览面板；资源引用没有文件路径，不传。 */
+    readonly onPreview?: (ref: SegmentRef) => void
   },
 ) {
-  const { refs, owner, t, label, onChange, onInsert, thumb } = props
+  const { refs, owner, t, label, onChange, onInsert, thumb, onPreview } = props
   if (refs.length === 0) return <span className="iv-meta">{t('segmentRefsEmpty')}</span>
   return (
     <ul className="iv-ref-list">
@@ -149,7 +153,19 @@ function refChips(
             </button>
           )}
           {thumb?.(ref)}
-          <span className="iv-ellipsis" title={label(ref)}>{label(ref)}</span>
+          {onPreview === undefined || ref.kind !== 'asset'
+            ? <span className="iv-ellipsis" title={label(ref)}>{label(ref)}</span>
+            : (
+              <button
+                type="button"
+                className="iv-ref-name"
+                data-ref-preview={`${ref.kind}:${ref.id}`}
+                title={`${t('refPreview')} · ${label(ref)}`}
+                onClick={() => { onPreview(ref) }}
+              >
+                <span className="iv-ellipsis" title={label(ref)}>{label(ref)}</span>
+              </button>
+            )}
           <button
             type="button"
             className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--up"
@@ -193,33 +209,24 @@ function RefThumb(props: { readonly asset: AssetRecord }) {
     : <img className="iv-ref-picker-thumb" src={src} alt="" />
 }
 
-/** 引用 chip 里的缩略图：点一下放大查看，再点遮罩关闭。 */
-function RefChipThumb(props: { readonly asset: AssetRecord; readonly t: (key: WorkbenchLocaleKey) => string }) {
-  const [open, setOpen] = useState(false)
+/** 引用 chip 里的缩略图：点一下把素材送到右侧预览面板（视频先出首帧，再点播放）。 */
+function RefChipThumb(props: {
+  readonly asset: AssetRecord
+  readonly t: (key: WorkbenchLocaleKey) => string
+  readonly onPreview: () => void
+}) {
   const name = fileName(props.asset.path)
   return (
-    <>
-      <button
-        type="button"
-        className="iv-ref-thumb-button"
-        data-ref-thumb={props.asset.id}
-        aria-label={`${props.t('refZoom')} ${name}`}
-        title={`${props.t('refZoom')} ${name}`}
-        onClick={() => { setOpen(true) }}
-      >
-        <RefThumb asset={props.asset} />
-      </button>
-      {open
-        ? (
-          <span className="iv-ref-zoom" role="dialog" aria-label={name} onClick={() => { setOpen(false) }}>
-            <span className="iv-ref-zoom-body" onClick={event => { event.stopPropagation() }}>
-              <RefThumb asset={props.asset} />
-              <span className="iv-meta">{name}</span>
-            </span>
-          </span>
-        )
-        : null}
-    </>
+    <button
+      type="button"
+      className="iv-ref-thumb-button"
+      data-ref-thumb={props.asset.id}
+      aria-label={`${props.t('refPreview')} ${name}`}
+      title={`${props.t('refPreview')} ${name}`}
+      onClick={props.onPreview}
+    >
+      <RefThumb asset={props.asset} />
+    </button>
   )
 }
 
@@ -234,6 +241,8 @@ interface RefPickerProps {
   /** 触发按钮上的定位属性，分段与镜头各一套。 */
   readonly trigger: Readonly<Record<string, string>>
   readonly onPick: (assetId: string) => void
+  /** 选择器里的缩略图 / 眼睛按钮也能直接预览，不必先引用。 */
+  readonly onPreview: (asset: AssetRecord) => void
 }
 
 /**
@@ -241,7 +250,7 @@ interface RefPickerProps {
  * 已引用的不再出现。分段与镜头共用同一份交互与搜索。
  */
 function RefPicker(props: RefPickerProps) {
-  const { id, label, assets, used, t, disabled, trigger, onPick } = props
+  const { id, label, assets, used, t, disabled, trigger, onPick, onPreview } = props
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -314,17 +323,28 @@ function RefPicker(props: RefPickerProps) {
               <div className="iv-pop-group" key={group.kind}>
                 <span className="iv-micro iv-pop-group-title">{group.title}</span>
                 {group.items.map(asset => (
-                  <button
-                    key={asset.id}
-                    type="button"
-                    className="iv-ref-picker-item"
-                    data-ref-option={`asset:${asset.id}`}
-                    onClick={() => { onPick(asset.id) }}
-                  >
-                    <RefThumb asset={asset} />
-                    <span className="iv-ellipsis" title={fileName(asset.path)}>{fileName(asset.path)}</span>
-                    <span className="iv-ref-picker-meta">{asset.kind}</span>
-                  </button>
+                  <div className="iv-ref-picker-row" key={asset.id}>
+                    <button
+                      type="button"
+                      className="iv-ref-picker-item"
+                      data-ref-option={`asset:${asset.id}`}
+                      onClick={() => { onPick(asset.id) }}
+                    >
+                      <RefThumb asset={asset} />
+                      <span className="iv-ellipsis" title={fileName(asset.path)}>{fileName(asset.path)}</span>
+                      <span className="iv-ref-picker-meta">{asset.kind}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--icon iv-btn--sm iv-ref-picker-preview"
+                      data-ref-preview-option={`asset:${asset.id}`}
+                      aria-label={`${t('refPreview')} ${fileName(asset.path)}`}
+                      title={`${t('refPreview')} ${fileName(asset.path)}`}
+                      onClick={() => { close(); onPreview(asset) }}
+                    >
+                      <Icon name="eye" size={11} />
+                    </button>
+                  </div>
                 ))}
               </div>
             ))}
@@ -335,7 +355,7 @@ function RefPicker(props: RefPickerProps) {
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
 
   // 目录由宿主过滤成纯文本模型；旧持久化值不在目录里时一律按「默认规则」处理
   const activeTextModelKey = textModels.some(model => `${model.provider}::${model.id}` === textModelKey) ? textModelKey : 'rules'
@@ -647,11 +667,18 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     return asset === undefined ? `${t('episodeRefMissing')} · ${ref.id}` : fileName(asset.path)
   }
 
+  /** 引用 chip 点选 → 右侧预览面板；资源引用没有可预览文件，静默忽略。 */
+  const previewRef = (ref: SegmentRef): void => {
+    if (ref.kind !== 'asset') return
+    const asset = assets.find(candidate => candidate.id === ref.id)
+    if (asset !== undefined) onPreviewAsset(asset.path, asset.kind)
+  }
+
   /** 引用 chip 的缩略图：素材引用取 `/outputs` 里的图 / 视频首帧，资源引用暂无图。 */
   const thumbOf = (ref: SegmentRef): ReactNode => {
     if (ref.kind !== 'asset') return undefined
     const asset = assets.find(candidate => candidate.id === ref.id)
-    return asset === undefined ? undefined : <RefChipThumb asset={asset} t={t} />
+    return asset === undefined ? undefined : <RefChipThumb asset={asset} t={t} onPreview={() => { previewRef(ref) }} />
   }
 
   /** 把 `[@n]` 追加到分段提示词（已存在则不重复追加）。 */
@@ -1054,6 +1081,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               disabled={busy}
               trigger={{ 'data-segment-ref-add': segment.id }}
               onPick={assetId => { addRef(segment, assetId) }}
+              onPreview={asset => { onPreviewAsset(asset.path, asset.kind) }}
             />
             {segment.refs.length > 0
               ? (
@@ -1066,6 +1094,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                     t,
                     label: labelOf,
                     thumb: thumbOf,
+                    onPreview: previewRef,
                     onChange: next => {
                       const updated = { ...segment, refs: next }
                       patchSegment(updated)
@@ -1390,6 +1419,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                                 : candidate)),
                             }))
                           }}
+                          onPreview={asset => { onPreviewAsset(asset.path, asset.kind) }}
                         />
                         {shot.refs.length > 0
                           ? (
@@ -1402,6 +1432,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                                 t,
                                 label: labelOf,
                                 thumb: thumbOf,
+                                onPreview: previewRef,
                                 onChange: next => {
                                   updateStoryboard(segment.id, current => ({
                                     ...current,

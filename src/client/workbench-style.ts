@@ -196,6 +196,23 @@ export const WORKBENCH_STYLE = `
 .iv-dock-preview .iv-empty{height:100%}
 .iv-dock .iv-dock-preview img,.iv-dock .iv-dock-preview video{width:100%;height:100%;object-fit:contain;
   border-radius:var(--iv-r-sm);background:transparent}
+/* 引用列表点选后的预览：视频先给首帧缩略图，播放按钮再切到带控制的播放器 */
+.iv-preview-video-thumb{position:relative;width:100%;height:100%;display:grid;place-items:center}
+.iv-preview-video-thumb video{filter:brightness(.76)}
+.iv-preview-play{display:grid;place-items:center;width:56px;height:56px;padding:0;border:1px solid color-mix(in srgb,var(--iv-on-solid) 76%,transparent);
+  border-radius:var(--iv-r-pill);background:color-mix(in srgb,var(--iv-solid) 88%,transparent);color:var(--iv-on-solid);
+  box-shadow:var(--iv-shadow-2);cursor:pointer;transition:transform var(--iv-dur-2) ease,background var(--iv-dur-2) ease}
+.iv-preview-play:hover{background:var(--iv-solid-hover);transform:scale(1.06)}
+.iv-preview-play:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px}
+.iv-preview-play .iv-ico{margin-left:2px}
+.iv-preview-video-name{position:absolute;left:var(--iv-sp-4);bottom:var(--iv-sp-3);max-width:calc(100% - 32px);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--iv-on-solid);font-size:var(--iv-fs-meta);opacity:.8}
+/* 双击放大：舞台抬成覆盖视口的浮层，遮罩点一下 / Esc 还原 */
+.iv-preview-backdrop{position:fixed;inset:0;z-index:var(--iv-z-overlay);background:color-mix(in srgb,#0b0d12 55%,transparent)}
+.iv-dock-preview--expanded{position:fixed;inset:var(--iv-sp-5);z-index:var(--iv-z-overlay);height:auto;
+  padding:var(--iv-sp-5);background:var(--iv-monitor);box-shadow:var(--iv-shadow-3);border-radius:var(--iv-r-sm)}
+.iv-dock-preview--expanded .iv-dock-preview img,.iv-dock-preview--expanded .iv-dock-preview video{border-radius:var(--iv-r-sm)}
+@media (prefers-reduced-motion:reduce){.iv-preview-play{transition:none}.iv-preview-play:hover{transform:none}}
 
 /* 窄档（面板 <900）：展示列变浮层，由顶栏按钮开合 */
 @container iv-panel (max-width:900px){
@@ -881,7 +898,13 @@ background:var(--iv-panel-3);cursor:pointer}
 /* 镜头提示词与引用列：有引用时右列展开，提示词区自动收缩 */
 .iv-shot-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--iv-sp-2);align-items:start}
 .iv-shot-prompt-row--with-refs{grid-template-columns:minmax(0,1fr) clamp(180px,28%,300px)}
-.iv-shot-prompt-main{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
+.iv-shot-prompt-main{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0}
+/* 提示词 label 在纵向 flex 里不能被 flex-basis 撑高，否则输入框与模型行之间空一大块 */
+.iv-shot-prompt-main>.iv-sb-field{flex:0 0 auto}
+/* 工具行紧贴所属提示词；下一组提示词前留更清晰的间隔 */
+.iv-shot-prompt-main>.iv-shot-tool-row+.iv-sb-field{margin-top:var(--iv-sp-2)}
+/* 分镜提示词固定 2 行，不需要通用 textarea 的 84px 最小高度 */
+.iv-shot-prompt-main textarea.iv-input{min-height:56px}
 /* 分镜的模型标签 + 下拉 + 生成按钮：同一行且紧贴提示词框，标签不再单独占一行 */
 .iv-shot-tool-row{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
 .iv-shot-tool-row .iv-meta{flex:none}
@@ -913,6 +936,19 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-ref-picker-item{display:flex;width:100%;align-items:center;gap:var(--iv-sp-3);padding:4px 6px;border:1px solid transparent;border-radius:var(--iv-r-xs);background:none;color:var(--iv-tx1);font-size:var(--iv-fs-meta);text-align:left;cursor:pointer}
 .iv-ref-picker-item:hover{background:var(--iv-panel-3);border-color:var(--iv-line)}
 .iv-ref-picker-item:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
+/* 引用行的「预览」眼睛按钮：可以不先引用就直接看画面 */
+.iv-ref-picker-row{display:flex;align-items:center;gap:var(--iv-sp-1);min-width:0}
+.iv-ref-picker-row .iv-ref-picker-item{flex:1 1 auto;min-width:0}
+.iv-ref-picker-preview{flex:none;border-color:transparent;background:transparent;color:var(--iv-tx3)}
+.iv-ref-picker-preview:hover:not(:disabled){border-color:var(--iv-line);background:var(--iv-acc-soft);color:var(--iv-acc)}
+.iv-ref-name{display:inline-flex;align-items:center;min-width:0;max-width:160px;padding:0;border:0;background:none;
+  color:inherit;font:inherit;text-align:left;cursor:pointer}
+.iv-ref-name:hover .iv-ellipsis{color:var(--iv-acc);text-decoration:underline}
+.iv-ref-name:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px}
+.iv-studio-ref-preview{display:flex;flex:1 1 auto;align-items:center;gap:var(--iv-sp-3);min-width:0;padding:0;
+  border:0;background:none;color:inherit;text-align:left;cursor:pointer}
+.iv-studio-ref-preview:hover .iv-ellipsis{color:var(--iv-acc)}
+.iv-studio-ref-preview:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px}
 /* 缩略图：自动命名的文件单看名字分不出来，选择器里直接给画面 */
 .iv-ref-picker-thumb{width:64px;height:44px;object-fit:cover;border-radius:var(--iv-r-xs);background:var(--iv-panel-3);flex:none;display:block}
 /* 面板内的通用图片规则会覆盖上面这行，这里按同层级写回固定尺寸（首图不能糊成整行宽） */

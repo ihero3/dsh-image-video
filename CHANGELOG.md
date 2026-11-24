@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+### 工作流画布兼容 ComfyUI / LiblibAI JSON，补齐拖拽粘贴与同步内容（2026-11-24）
+
+- **外部格式适配** `workbench/workflow-adapters.ts`：统一导入入口自动识别 ComfyUI UI 保存格式（`nodes`+`links`，LiblibAI 导出与之同构）、ComfyUI API 格式（节点 id → `class_type`/`inputs`）、项目包 `manifest.json`。常见基础节点映射到内置节点（文本编码→剧本、采样器/潜变量→生图、保存图片→预览、加载图片→素材引用、视频类→生视频）；映射不了的**不丢弃**，保留为 `external` 节点，原始 JSON 存在 `config` 参数里，在画布可见、可导回，但不可运行。
+- **画布入口**：新增拖拽 `.json` / `.png` 到画布、Ctrl/Cmd+V 粘贴工作流 JSON（剪贴板里是工作流就建图，否则保持原节点粘贴语义）；项目包 manifest 里有多个工作流时导入第一份并提示；PNG 出图若带 ComfyUI/LiblibAI 的 `workflow` / `prompt` 文本块，直接从元数据还原工作流。
+- **节点目录**：新增 `external` 种类（不出现在节点库、不可运行）；生图/生视频节点新增 `refs` 元数据参数（JSON 文本），用于承载按镜引用而不制造端口不匹配的连线。
+- **同步到工作流**：现在把每镜的 `imageModel` / `videoModel` 和 `refs` 写进对应节点；比例/分辨率因数据模型里没有集级取值，沿用节点默认。工作流 id 与幂等语义不变。
+- 测试：适配层 6 例（ComfyUI UI/API、Liblib 私有节点、项目包、格式识别）、同步补全 1 例，既有画布/目录测试随参数扩展通过。
+
 ### 单集导出补齐分镜、新增「导入本集」；工作流画布支持 JSON 导入/导出（2026-11-24）
 
 - **导出修复**：`episode.json` 升到 v2，补写 `storyboards`（分镜镜头）与 `resourceRefs` / `assetRefs`；此前的 v1 清单只有分段，拿到文件也还原不出分镜。

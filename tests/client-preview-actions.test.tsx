@@ -92,3 +92,41 @@ describe('预览送参考位（T7）', () => {
     })
   })
 })
+
+describe('预览放大 / 还原', () => {
+  function expectExpanded(container: HTMLElement, expanded: boolean): void {
+    const stage = container.querySelector('[data-dock-preview]') as HTMLElement
+    expect(stage.getAttribute('data-preview-expanded')).toBe(expanded ? 'true' : 'false')
+    expect(stage.classList.contains('iv-dock-preview--expanded')).toBe(expanded)
+    expect(container.querySelector('[data-preview-backdrop]') !== null).toBe(expanded)
+  }
+
+  it('双击预览舞台放大，再双击还原', async () => {
+    const { view } = renderWith([img('a1', '/tmp/outputs/pic.png')])
+    await preview(view.container, 'pic.png')
+    const stage = view.container.querySelector('[data-dock-preview]') as HTMLElement
+    fireEvent.doubleClick(stage)
+    await waitFor(() => { expectExpanded(view.container, true) })
+    fireEvent.doubleClick(stage)
+    await waitFor(() => { expectExpanded(view.container, false) })
+  })
+
+  it('标题行按钮、Esc 与遮罩都能还原放大态', async () => {
+    const { view } = renderWith([img('a1', '/tmp/outputs/pic.png')])
+    await preview(view.container, 'pic.png')
+    const toggle = view.container.querySelector('[data-preview-expand]') as HTMLElement
+    expect(toggle.getAttribute('aria-label')).toBe(en.previewExpand)
+    fireEvent.click(toggle)
+    await waitFor(() => { expectExpanded(view.container, true) })
+    expect((view.container.querySelector('[data-preview-expand]') as HTMLElement).getAttribute('aria-label'))
+      .toBe(en.previewShrink)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => { expectExpanded(view.container, false) })
+
+    fireEvent.click(toggle)
+    await waitFor(() => { expectExpanded(view.container, true) })
+    fireEvent.click(view.container.querySelector('[data-preview-backdrop]') as HTMLElement)
+    await waitFor(() => { expectExpanded(view.container, false) })
+  })
+})

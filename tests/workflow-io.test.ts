@@ -46,15 +46,19 @@ describe('workflow-io', () => {
       .toThrow('不支持的工作流文件版本')
   })
 
-  it('拒绝未知节点种类（含 ComfyUI 原生节点）与悬空连线', () => {
-    const comfyId = JSON.stringify({
-      nodes: [{ id: 1, type: 'KSampler', pos: [0, 0], widgets_values: [20] }], links: [],
-    })
-    expect(() => parseWorkflowFile(comfyId)).toThrow('non-empty id')
-    const comfyKind = JSON.stringify({
-      nodes: [{ id: 'n1', type: 'KSampler', pos: { x: 0, y: 0 }, widgets_values: [20] }], links: [],
-    })
-    expect(() => parseWorkflowFile(comfyKind)).toThrow('unknown workflow node kind')
+  it('ComfyUI 节点走适配层，原生格式仍拒绝未知 kind 与悬空连线', () => {
+    // ComfyUI UI 格式现在会被适配成外部节点，而不是被拒绝（见 workflow-adapters.test.ts）
+    const comfy = parseWorkflowFile(JSON.stringify({
+      nodes: [{ id: '1', type: 'KSampler', pos: [0, 0], widgets_values: [20] }], links: [],
+    }))
+    expect(comfy.report?.format).toBe('comfy-ui')
+    expect(comfy.nodes[0]?.kind).toBe('image-generate')
+
+    // 原生格式里凭空写一个不存在的 kind，仍然拒绝
+    const native = JSON.parse(serializeWorkflow(sample())) as Record<string, unknown>
+    const bogus = native['nodes'] as Record<string, unknown>[]
+    bogus[0]!['kind'] = 'not-a-real-kind'
+    expect(() => parseWorkflowFile(JSON.stringify(native))).toThrow('unknown workflow node kind')
 
     const file = JSON.parse(serializeWorkflow(sample())) as Record<string, unknown>
     file['edges'] = [{ id: 'bad', source: 'n1', target: 'missing' }]

@@ -14,7 +14,7 @@
  * CSS 打包链，所以 `@xyflow/react` 的官方样式表由 `scripts/sync-canvas-style.mjs`
  * 内嵌成字符串，在挂载时注入一次。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import {
   Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState,
   useReactFlow,
@@ -26,6 +26,7 @@ import {
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
 import { downloadWorkflowFile, parseWorkflowFile, serializeWorkflow } from './workflow-io.ts'
+import { readWorkflowFromImage } from './image-workflow.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 import { Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -117,6 +118,7 @@ const NODE_ICONS: Record<WorkflowNodeKind, IconName> = {
   'lip-sync': 'sparkles',
   'face-swap': 'sparkles',
   'voice-synthesize': 'sparkles',
+  'external': 'box',
 }
 
 /** 运行状态 → 徽章色调。 */
@@ -195,6 +197,7 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
   const [bubbleOpen, setBubbleOpen] = useState(false)
   const spec = nodeSpec(data.kind)
   const planned = spec.availability !== 'runnable'
+  const external = spec.availability === 'external'
   const summary = spec.params
     .filter(field => data.params[field.id] !== '' && data.params[field.id] !== false && data.params[field.id] !== undefined)
     .slice(0, 2)
@@ -219,7 +222,9 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
         <Icon name={NODE_ICONS[data.kind]} size={13} />
         <span className="iv-node-title">{t(spec.labelKey as WorkbenchLocaleKey)}</span>
         {planned
-          ? <span className="iv-node-planned" data-workflow-planned-tag="true"><Icon name="sparkles" size={9} />{t('canvasPlannedTag')}</span>
+          ? <span className="iv-node-planned" data-workflow-planned-tag="true">
+            <Icon name="sparkles" size={9} />{t(external ? 'canvasExternalTag' : 'canvasPlannedTag')}
+          </span>
           : null}
         {runStatus === undefined ? null : (
           <span
@@ -491,14 +496,24 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
   }, [nodes, edges, applyGraph])
 
   /** 导入工作流 JSON：先做结构校验，通过才替换整张图（可撤销）。 */
-  const importWorkflowFile = useCallback(async (file: File): Promise<void> => {
+  const importWorkflowText = useCallback(async (text: string): Promise<void> => {
     try {
-      const parsed = parseWorkflowFile(await file.text())
+      const parsed = parseWorkflowFile(text)
       const graph: WorkflowRecord = { ...record, nodes: [...parsed.nodes], edges: [...parsed.edges] }
       applyGraph({ nodes: toCanvasNodes(graph), edges: toCanvasEdges(graph) }, `import:${Date.now().toString(36)}`)
       setSelectedIds([])
       setError(undefined)
-      onNotice?.(t('canvasImportWorkflowDone').replace('{n}', String(parsed.nodes.length)), 'info')
+      const base = t('canvasImportWorkflowDone').replace('{n}', String(parsed.nodes.length))
+      const report = parsed.report
+      if (report === undefined) {
+        onNotice?.(base, 'info')
+      } else {
+        const detail = [
+          `映射 ${report.mapped.length} 类节点`,
+          ...report.warnings.slice(0, 3),
+        ].join(' · ')
+        onNotice?.(`${base} · ${detail}`, 'info')
+      }
       void fitView({ padding: 0.2 })
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
@@ -506,6 +521,26 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
       onNotice?.(`${t('canvasImportWorkflowFailed')}：${message}`, 'error')
     }
   }, [record, applyGraph, onNotice, t, fitView])
+
+  const importWorkflowFile = useCallback(async (file: File): Promise<void> => {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    // ComfyUI / LiblibAI 出图会把工作流写进 PNG 文本块：有就直接用它。
+    const fromImage = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
+      ? readWorkflowFromImage(bytes)
+      : undefined
+    await importWorkflowText(fromImage ?? new TextDecoder().decode(bytes))
+  }, [importWorkflowText])
+
+  /** 拖拽文件到画布：和文件选择走同一个导入入口。 */
+  const importDroppedFile = useCallback((event: DragEvent): void => {
+    event.preventDefault()
+    const file = event.dataTransfer.files?.[0]
+    const name = file?.name.toLowerCase() ?? ''
+    if (file !== undefined && (name.endsWith('.json') || name.endsWith('.png')
+      || file.type === 'application/json' || file.type === 'image/png')) {
+      void importWorkflowFile(file)
+    }
+  }, [importWorkflowFile])
 
   /** 导出工作流 JSON：带格式标识与版本，换一台机器也能按同一套校验导回来。 */
   const exportWorkflowFile = useCallback(() => {
@@ -550,14 +585,31 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
       }
       if (meta && key === 'y') { event.preventDefault(); redo(); return }
       if (meta && key === 'c') { event.preventDefault(); copySelected(); return }
-      if (meta && key === 'v') { event.preventDefault(); pasteClipboard(); return }
+      if (meta && key === 'v') {
+        event.preventDefault()
+        // 剪贴板里是工作流 JSON 就建图；否则保持原来的"复制节点"语义。
+        void (async () => {
+          try {
+            const text = await navigator.clipboard.readText()
+            const trimmed = text.trim()
+            if (trimmed.startsWith('{') && (trimmed.includes('"nodes"') || trimmed.includes('"class_type"'))) {
+              await importWorkflowText(trimmed)
+              return
+            }
+          } catch {
+            // 剪贴板不可用（无权限 / 非安全上下文）时照旧走内部粘贴
+          }
+          pasteClipboard()
+        })()
+        return
+      }
       if (!meta && (event.key === 'Delete' || event.key === 'Backspace')) {
         if (selectedIds.length > 0) { event.preventDefault(); deleteSelected() }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized])
+  }, [undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized, importWorkflowText])
 
   // 拖拽结束 = 一步历史（拖动过程中的每个 position 变化都合并进来）
   const onNodeDragStop = useCallback((_event: unknown, node: Node) => {
@@ -595,11 +647,11 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
             <span>{t(spec.labelKey as WorkbenchLocaleKey)}</span>
           </button>
         ))}
-        {NODE_CATALOG.some(spec => spec.availability !== 'runnable')
+        {NODE_CATALOG.some(spec => spec.availability === 'planned')
           ? (
             <>
               <span className="iv-pal-sep" role="separator" />
-              {NODE_CATALOG.filter(spec => spec.availability !== 'runnable').map(spec => (
+              {NODE_CATALOG.filter(spec => spec.availability === 'planned').map(spec => (
                 <button
                   key={spec.kind}
                   type="button"
@@ -671,7 +723,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
           <input
             ref={workflowFileRef}
             type="file"
-            accept=".json,application/json"
+            accept=".json,application/json,.png,image/png"
             data-workflow-import-file="true"
             style={{ display: 'none' }}
             onChange={event => {
@@ -728,7 +780,12 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
           </button>
         </div>
 
-        <div className="iv-flow" data-workflow-flow="true">
+        <div
+          className="iv-flow" data-workflow-flow="true"
+          data-workflow-drop-import="true"
+          onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
+          onDrop={importDroppedFile}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}

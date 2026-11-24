@@ -248,6 +248,22 @@ describe('本集工作区（剧本 → 分段 → 分镜）', () => {
     }
   })
 
+  it('分镜提示词与模型行按「图片提示词→图像模型→视频提示词→视频模型」交替排列', async () => {
+    const { view } = await renderWorkspace({
+      storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
+    })
+    const main = view.container.querySelector('.iv-shot-prompt-main') as HTMLElement
+    expect(main).not.toBeNull()
+    const order = Array.from(main.children).map(child => (
+      child.classList.contains('iv-sb-field') ? 'field'
+        : child.classList.contains('iv-shot-tool-row') ? 'tool' : 'other'
+    ))
+    // 每组提示词输入紧跟着自己的模型/生成按钮行，不出现标签独占一行或两组间距不一致
+    expect(order).toEqual(['field', 'tool', 'field', 'tool'])
+    expect(main.querySelectorAll(':scope > .iv-sb-field')).toHaveLength(2)
+    expect(main.querySelectorAll(':scope > .iv-shot-tool-row')).toHaveLength(2)
+  })
+
   it('saves a shot prompt edit on blur', async () => {
     const { host, view } = await renderWorkspace({
       storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
@@ -624,5 +640,55 @@ describe('本集工作区（剧本 → 分段 → 分镜）', () => {
     expect(host.generatePayloads[0]).toMatchObject({ shotId: 'shot-2', mediaMode: 'image', model: value })
     fireEvent.change(view.container.querySelector('[data-shot-video-model="shot-1"]') as HTMLSelectElement, { target: { value: '' } })
     await waitFor(() => { expect(host.episodes[0]?.storyboards[0]?.shots[0]?.videoModel).toBeUndefined() })
+  })
+})
+
+describe('引用列表 → 右侧预览面板', () => {
+  it('点分段引用的缩略图或名称，右侧直接展示图片', async () => {
+    const { view } = await renderWorkspace({
+      segments: [segment('seg-1', 1, { refs: [{ kind: 'asset', id: 'ast-1', order: 1 }] })],
+    })
+    fireEvent.click(view.container.querySelector('[data-ref-thumb="ast-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-actions="image"]')).toBeTruthy() })
+    expect((view.container.querySelector('.iv-dock-preview img') as HTMLImageElement).getAttribute('src'))
+      .toBe('/outputs/ref.png')
+    // 不再弹局部放大浮层，统一落到右侧预览
+    expect(view.container.querySelector('.iv-ref-zoom')).toBeNull()
+
+    fireEvent.click(view.container.querySelector('[data-ref-preview="asset:ast-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('.iv-dock-preview img')).toBeTruthy() })
+  })
+
+  it('点分镜的视频引用先出缩略图，点播放才在预览里播放', async () => {
+    const { view } = await renderWorkspace({
+      storyboards: [storyboard('seg-1', [shot('shot-1', 1, {
+        refs: [{ kind: 'asset', id: 'ast-2', order: 1 }],
+      })])],
+    })
+    fireEvent.click(view.container.querySelector('[data-ref-thumb="ast-2"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-video-thumb]')).toBeTruthy() })
+    expect((view.container.querySelector('[data-preview-video-thumb] video') as HTMLVideoElement).getAttribute('src'))
+      .toBe('/outputs/clip.mp4#t=0.1')
+    expect(view.container.querySelector('[data-preview-actions="video"]')).toBeTruthy()
+
+    fireEvent.click(view.container.querySelector('[data-preview-play]') as HTMLElement)
+    await waitFor(() => {
+      const player = view.container.querySelector('.iv-dock-preview video') as HTMLVideoElement
+      expect(player).toBeTruthy()
+      expect(player.hasAttribute('controls')).toBe(true)
+      expect(player.getAttribute('src')).toBe('/outputs/clip.mp4')
+    })
+  })
+
+  it('选择器里的预览按钮只看不引用，且会收起选择器', async () => {
+    const { host, view } = await renderWorkspace({
+      storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
+    })
+    fireEvent.click(view.container.querySelector('[data-shot-ref-add="shot-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-ref-preview-option="asset:ast-1"]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-ref-preview-option="asset:ast-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-actions="image"]')).toBeTruthy() })
+    expect(view.container.querySelector('[data-ref-picker="shot-1"]')).toBeNull()
+    expect(host.episodes[0]?.storyboards[0]?.shots[0]?.refs).toHaveLength(0)
   })
 })

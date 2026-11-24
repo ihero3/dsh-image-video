@@ -91,7 +91,13 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-seg-ref-side .iv-ref-list{margin-top:0;max-height:200px}
 .iv .iv-shot-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
 .iv .iv-shot-prompt-row--with-refs{grid-template-columns:minmax(0,1fr) clamp(180px,28%,300px)}
-.iv .iv-shot-prompt-main{display:flex;flex-direction:column;gap:8px;min-width:0}
+.iv .iv-shot-prompt-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+/* 提示词 label 不能被 .iv-sb-field 的 flex:1 1 150px 在高度轴上撑开：输入框与模型行之间会留一大片空白 */
+.iv .iv-shot-prompt-main>.iv-sb-field{flex:0 0 auto}
+/* 生成图片行紧贴图片提示词；再往下到视频提示词留足间隔，避免两组操作挤在一起 */
+.iv .iv-shot-prompt-main>.iv-shot-tool-row+.iv-sb-field{margin-top:8px}
+/* 分镜提示词只有 2 行，去掉通用 textarea 的 84px 最小高度带来的内部空白 */
+.iv .iv-shot-prompt-main textarea.iv-input{min-height:56px}
 .iv .iv-shot-tool-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .iv .iv-shot-tool-row .iv-meta{flex:none}
 .iv .iv-shot-tool-row .iv-input{flex:0 1 150px;width:auto}
@@ -111,9 +117,8 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-ref-chip{display:flex;align-items:center;gap:6px}
 .iv .iv-ref-thumb-button{display:inline-flex;padding:0;border:1px solid var(--iv-line);border-radius:var(--iv-r-xs);background:var(--iv-panel-3);cursor:zoom-in;overflow:hidden;flex:none}
 .iv .iv-ref-thumb-button .iv-ref-picker-thumb{width:34px;height:24px;border-radius:0}
-.iv .iv-ref-zoom{position:fixed;inset:0;z-index:var(--iv-z-overlay);display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--iv-tx) 38%,transparent)}
-.iv .iv-ref-zoom-body{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);box-shadow:var(--iv-shadow-3);max-width:min(720px,90vw)}
-.iv .iv-ref-zoom-body .iv-ref-picker-thumb{width:min(680px,86vw);height:auto;max-height:60vh;object-fit:contain}
+.iv .iv-ref-thumb-button:hover{border-color:var(--iv-acc);box-shadow:0 0 0 2px var(--iv-acc-soft)}
+.iv .iv-ref-picker-preview:hover{border-color:var(--iv-line-2)}
 .iv textarea[style*="border-radius"],.iv input[style*="border-radius"]{border-radius:10px!important}
 .iv .iv-check input{accent-color:var(--iv-solid);width:14px;height:14px}
 .iv .iv-field-label,.iv .iv-label{font-size:12px;font-weight:600;color:var(--iv-tx2)}

@@ -25,6 +25,8 @@ export interface PromptStudioPanelProps {
   readonly episode: EpisodeRecord | undefined
   /** 全局素材库（本集素材也在这里，集里只存引用）。 */
   readonly assets: readonly AssetRecord[]
+  /** 引用列表点选 → 右侧预览面板展示对应素材。 */
+  readonly onPreviewAsset: (path: string, kind: 'image' | 'video') => void
   readonly onNotice: (text: string, tone: 'info' | 'error') => void
   /** 把提示词带进内容生产页的输入框。 */
   readonly onApplyPrompt: (text: string) => void
@@ -50,7 +52,7 @@ function SourceThumb(props: { readonly kind: AssetRecord['kind'] | undefined, re
 }
 
 export function PromptStudioPanel(props: PromptStudioPanelProps) {
-  const { api, t, projectId, episode, assets, onNotice, onApplyPrompt } = props
+  const { api, t, projectId, episode, assets, onPreviewAsset, onNotice, onApplyPrompt } = props
   const [skills, setSkills] = useState<readonly SkillRecord[]>([])
   const [models, setModels] = useState<readonly TextModelOption[]>([])
   const [modelChoice, setModelChoice] = useState('')
@@ -268,8 +270,17 @@ export function PromptStudioPanel(props: PromptStudioPanelProps) {
                 const asset = sources.find(candidate => candidate.path === path)
                 return (
                   <li className="iv-studio-ref-row" key={path} data-studio-ref={path}>
-                    <SourceThumb kind={asset?.kind} path={path} />
-                    <span className="iv-ellipsis" title={fileName(path)}>{fileName(path)}</span>
+                    <button
+                      type="button"
+                      className="iv-studio-ref-preview"
+                      data-studio-ref-preview={path}
+                      aria-label={`${t('refPreview')} ${fileName(path)}`}
+                      title={`${t('refPreview')} ${fileName(path)}`}
+                      onClick={() => { onPreviewAsset(path, asset?.kind === 'video' ? 'video' : 'image') }}
+                    >
+                      <SourceThumb kind={asset?.kind} path={path} />
+                      <span className="iv-ellipsis" title={fileName(path)}>{fileName(path)}</span>
+                    </button>
                     <button
                       type="button"
                       className="iv-btn iv-btn--icon iv-btn--sm"
@@ -321,19 +332,30 @@ export function PromptStudioPanel(props: PromptStudioPanelProps) {
                         <div className="iv-pop-group" key={group.kind}>
                           <span className="iv-micro iv-pop-group-title">{group.title}</span>
                           {group.items.map(asset => (
-                            <button
-                              key={asset.id}
-                              type="button"
-                              className="iv-ref-picker-item"
-                              data-studio-option={asset.id}
-                              onClick={() => { addSource(asset.path) }}
-                            >
-                              <SourceThumb kind={asset.kind} path={asset.path} />
-                              <span className="iv-ellipsis" title={fileName(asset.path)}>{fileName(asset.path)}</span>
-                              <span className="iv-ref-picker-meta">
-                                {asset.kind === 'video' ? t('segmentRefVideos') : t('segmentRefImages')}
-                              </span>
-                            </button>
+                            <div className="iv-ref-picker-row" key={asset.id}>
+                              <button
+                                type="button"
+                                className="iv-ref-picker-item"
+                                data-studio-option={asset.id}
+                                onClick={() => { addSource(asset.path) }}
+                              >
+                                <SourceThumb kind={asset.kind} path={asset.path} />
+                                <span className="iv-ellipsis" title={fileName(asset.path)}>{fileName(asset.path)}</span>
+                                <span className="iv-ref-picker-meta">
+                                  {asset.kind === 'video' ? t('segmentRefVideos') : t('segmentRefImages')}
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="iv-btn iv-btn--icon iv-btn--sm iv-ref-picker-preview"
+                                data-studio-preview={asset.id}
+                                aria-label={`${t('refPreview')} ${fileName(asset.path)}`}
+                                title={`${t('refPreview')} ${fileName(asset.path)}`}
+                                onClick={() => { closePicker(); onPreviewAsset(asset.path, asset.kind) }}
+                              >
+                                <Icon name="eye" size={11} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       ))}
