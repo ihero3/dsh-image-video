@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../icons.tsx'
+import { SkillTokenSelect, activeSkillId, stripSkillTokens } from '../skill-tokens.tsx'
 import { useDialogFocus } from '../use-dialog-focus.ts'
 import type { WorkbenchApi, ExtractedPrompt, PromptRecord, TextModelOption } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
@@ -51,7 +52,6 @@ function SourceThumb(props: { readonly kind: AssetRecord['kind'] | undefined, re
 export function PromptStudioPanel(props: PromptStudioPanelProps) {
   const { api, t, projectId, episode, assets, onNotice, onApplyPrompt } = props
   const [skills, setSkills] = useState<readonly SkillRecord[]>([])
-  const [skillId, setSkillId] = useState('')
   const [models, setModels] = useState<readonly TextModelOption[]>([])
   const [modelChoice, setModelChoice] = useState('')
   const [rules, setRules] = useState('')
@@ -67,6 +67,7 @@ export function PromptStudioPanel(props: PromptStudioPanelProps) {
 
   /** 图片与视频都能作为提取输入。 */
   const sources = assets.filter(asset => asset.kind === 'image' || asset.kind === 'video')
+  const skillId = activeSkillId(rules, skills)
 
   const closePicker = useCallback(() => {
     setPickerOpen(false)
@@ -138,7 +139,7 @@ export function PromptStudioPanel(props: PromptStudioPanelProps) {
       const choice = separator <= 0
         ? undefined
         : { provider: modelChoice.slice(0, separator), model: modelChoice.slice(separator + 2) }
-      const instructions = rules.trim()
+      const instructions = stripSkillTokens(rules, skills)
       const pieces: string[] = []
       for (const path of selected) {
         pieces.push(promptText(await api.extractPrompt({
@@ -215,15 +216,15 @@ export function PromptStudioPanel(props: PromptStudioPanelProps) {
       <div className="iv-sb-row">
         <label className="iv-sb-field">
           <span className="iv-meta">{t('studioSkillLabel')}</span>
-          <select
+          <SkillTokenSelect
+            skills={skills}
+            text={rules}
+            t={t}
+            label={t('studioSkillLabel')}
             className="iv-select"
-            data-studio-skill="true"
-            value={skillId}
-            onChange={event => { setSkillId(event.target.value) }}
-          >
-            <option value="">{t('studioSkillDefault')}</option>
-            {skills.map(skill => <option key={skill.id} value={skill.id}>{skill.name}</option>)}
-          </select>
+            selectAttrs={{ 'data-studio-skill': 'true' }}
+            onTextChange={setRules}
+          />
         </label>
         <label className="iv-sb-field">
           <span className="iv-meta">{t('studioModelLabel')}</span>

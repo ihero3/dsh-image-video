@@ -6,15 +6,21 @@
  * 引用只存 `{kind,id}`，顺序号即正文 `[@n]`。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Icon } from '../icons.tsx'
 import { useDialogFocus } from '../use-dialog-focus.ts'
+import { SkillTokenSelect, activeSkillId, stripSkillTokens } from '../skill-tokens.tsx'
+import { bytesToBase64 } from '../script-import-shared.ts'
 import type { WorkbenchApi } from '../api.ts'
+import type { TextModelOption } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 import type { AssetRecord, ResourceRecord } from '../../workbench/records.ts'
 import { newWorkbenchId } from '../../workbench/records.ts'
 import {
-  episodeDurationSec, MAX_SEGMENT_DURATION_SEC, MIN_SEGMENT_DURATION_SEC, SEGMENT_DURATION_PRESETS,
+  distributeDurationToShots, episodeDurationSec, shotsDurationSec,
+  MAX_SEGMENT_DURATION_SEC, MIN_SEGMENT_DURATION_SEC, SEGMENT_DURATION_PRESETS,
 } from '../../workbench/episodes.ts'
+import { splitScriptIntoSegments } from '../../workbench/episode-plan.ts'
 import type {
   EpisodeRecord, SegmentPatch, SegmentRecord, SegmentRef, ShotRecord, StoryboardRecord,
 } from '../../workbench/episodes.ts'
@@ -33,16 +39,22 @@ export interface EpisodeWorkspaceProps {
   readonly options: WorkbenchOptions | undefined
   /** 导演库里启用中的技能（分段的 Skill 选择器）。 */
   readonly skills: readonly SkillRecord[]
-  /** 模块级选中的文本模型（自动拆段用）；`undefined` 表示宿主没有可用模型。 */
+  /** 文本模型目录：默认规则 + 各文本模型共用同一个选择（`provider::model` 作为值）。 */
+  readonly textModels: readonly TextModelOption[]
+  /** 分段模型选择：`rules` = 内置默认规则，其余是 `provider::model`。 */
+  readonly textModelKey: string
+  /** 当前选中的文本模型（规则模式为 undefined）。 */
   readonly textModel: { readonly provider: string; readonly model: string } | undefined
-  /** 新分段继承的默认值（模块级的图像模型 / 视频模型 / 导演 Skill）。 */
+  /** 新分段继承的默认值（仅保留导演 Skill；图像 / 视频模型由段级自己选）。 */
   readonly defaults: {
-    readonly imageModel?: string
-    readonly videoModel?: string
     readonly skillId?: string
   }
+  readonly onTextModelChange: (key: string) => void
+  readonly onSkillChange: (id: string) => void
   /** 集记录在宿主侧变化后刷新（剧本、分段、分镜都走这里）。 */
   readonly onEpisodeChanged: () => Promise<void>
+  /** 导入本集成功后切到新导入的集（父级负责刷新列表并选中）。 */
+  readonly onEpisodeImported?: (episode: EpisodeRecord) => Promise<void> | void
   /** 生成了新素材 / 新任务后刷新素材库与任务列表。 */
   readonly onMediaGenerated: () => Promise<void>
   readonly onNotice: (text: string, tone: 'info' | 'error') => void
@@ -58,9 +70,29 @@ function saveChipClass(state: 'saved' | 'dirty' | 'saving' | 'failed'): string {
   }
 }
 
+/** 分段之间用空行分隔：总输入框一段一行，下面每段提示词就是一块。 */
+const SEGMENT_TEXT_SEPARATOR = '\n\n'
+
 /** 文件路径 → 文件名（素材引用没有名字，用文件名标识）。 */
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
+}
+
+/** 把所有分段提示词拼成总输入框内容。 */
+function segmentScriptText(segments: readonly SegmentRecord[]): string {
+  return segments.map(segment => segment.promptText).join(SEGMENT_TEXT_SEPARATOR)
+}
+
+/** 有分段时总输入框展示所有分段；没有分段时展示原始剧本供「开始分段」使用。 */
+function scriptSourceText(script: string, segments: readonly SegmentRecord[]): string {
+  return segments.length === 0 ? script : segmentScriptText(segments)
+}
+
+/** 总输入框 → 分段提示词；末尾多余空行不算新段。 */
+function splitSegmentText(text: string): string[] {
+  const parts = text.split(/\n\s*\n/)
+  while (parts.length > 1 && (parts[parts.length - 1] ?? '').trim() === '') parts.pop()
+  return parts
 }
 
 /** 引用项重排：移动一项并重编号 1..n。 */
@@ -94,9 +126,11 @@ function refChips(
     readonly label: (ref: SegmentRef) => string
     readonly onChange: (next: SegmentRef[]) => void
     readonly onInsert: ((order: number) => void) | undefined
+    /** `[@n]` 与名称之间的可缩放缩略图。 */
+    readonly thumb?: (ref: SegmentRef) => ReactNode
   },
 ) {
-  const { refs, owner, t, label, onChange, onInsert } = props
+  const { refs, owner, t, label, onChange, onInsert, thumb } = props
   if (refs.length === 0) return <span className="iv-meta">{t('segmentRefsEmpty')}</span>
   return (
     <ul className="iv-ref-list">
@@ -114,6 +148,7 @@ function refChips(
               [@{index + 1}]
             </button>
           )}
+          {thumb?.(ref)}
           <span className="iv-ellipsis" title={label(ref)}>{label(ref)}</span>
           <button
             type="button"
@@ -156,6 +191,36 @@ function RefThumb(props: { readonly asset: AssetRecord }) {
   return props.asset.kind === 'video'
     ? <video className="iv-ref-picker-thumb" src={`${src}#t=0.1`} muted preload="metadata" playsInline aria-hidden />
     : <img className="iv-ref-picker-thumb" src={src} alt="" />
+}
+
+/** 引用 chip 里的缩略图：点一下放大查看，再点遮罩关闭。 */
+function RefChipThumb(props: { readonly asset: AssetRecord; readonly t: (key: WorkbenchLocaleKey) => string }) {
+  const [open, setOpen] = useState(false)
+  const name = fileName(props.asset.path)
+  return (
+    <>
+      <button
+        type="button"
+        className="iv-ref-thumb-button"
+        data-ref-thumb={props.asset.id}
+        aria-label={`${props.t('refZoom')} ${name}`}
+        title={`${props.t('refZoom')} ${name}`}
+        onClick={() => { setOpen(true) }}
+      >
+        <RefThumb asset={props.asset} />
+      </button>
+      {open
+        ? (
+          <span className="iv-ref-zoom" role="dialog" aria-label={name} onClick={() => { setOpen(false) }}>
+            <span className="iv-ref-zoom-body" onClick={event => { event.stopPropagation() }}>
+              <RefThumb asset={props.asset} />
+              <span className="iv-meta">{name}</span>
+            </span>
+          </span>
+        )
+        : null}
+    </>
+  )
 }
 
 interface RefPickerProps {
@@ -270,10 +335,17 @@ function RefPicker(props: RefPickerProps) {
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, options, skills, textModel, defaults, onEpisodeChanged, onMediaGenerated, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onNotice } = props
 
-  const [scriptDraft, setScriptDraft] = useState(episode.script.text)
-  const [scriptSavedText, setScriptSavedText] = useState(episode.script.text)
+  // 目录由宿主过滤成纯文本模型；旧持久化值不在目录里时一律按「默认规则」处理
+  const activeTextModelKey = textModels.some(model => `${model.provider}::${model.id}` === textModelKey) ? textModelKey : 'rules'
+  const activeTextModel = activeTextModelKey === 'rules' ? undefined : textModel
+  const modelMode = activeTextModelKey !== 'rules'
+  const validSegmentTextModel = (key: string | undefined): string =>
+    key !== undefined && textModels.some(model => `${model.provider}::${model.id}` === key) ? key : ''
+
+  const [scriptDraft, setScriptDraft] = useState(() => scriptSourceText(episode.script.text, episode.segments))
+  const [scriptSavedText, setScriptSavedText] = useState(() => scriptSourceText(episode.script.text, episode.segments))
   const [scriptState, setScriptState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [segments, setSegments] = useState<readonly SegmentRecord[]>(episode.segments)
   const [storyboards, setStoryboards] = useState<readonly StoryboardRecord[]>(episode.storyboards)
@@ -286,10 +358,25 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   const [generatingAll, setGeneratingAll] = useState<{ segmentId: string; mode: 'image' | 'video' } | undefined>(undefined)
   /** 折叠的分段 id：收起后只留标题行 + 提示词预览。 */
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
+  /** 切换一条分段的折叠态（整条标题行与折叠按钮共用）。 */
+  const toggleCollapsed = (id: string): void => {
+    setCollapsedIds(current => {
+      const next = new Set(current)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+  }
+  /** 总输入框右侧的分段跳转（选中后光标落到对应段落）。 */
+  const [jumpTarget, setJumpTarget] = useState('')
   /** 宿主最后确认过的分段；脚本/分段被父级刷新时用来避免覆盖正在输入的内容。 */
   const savedSegments = useRef(new Map<string, SegmentRecord>())
   const episodeIdRef = useRef(episode.id)
   const scriptStateRef = useRef(scriptState)
+  const aggregateFocused = useRef(false)
+  /** 总输入框里新增但尚未落库的分段：保存时走 createSegment 而不是 updateSegment。 */
+  const pendingNewSegments = useRef(new Set<string>())
+  const scriptRef = useRef<HTMLTextAreaElement | null>(null)
+  const episodeImportRef = useRef<HTMLInputElement | null>(null)
   const handlersRef = useRef({ onEpisodeChanged, onNotice, t })
 
   useEffect(() => {
@@ -297,48 +384,6 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   }, [onEpisodeChanged, onNotice, t])
 
   useEffect(() => { scriptStateRef.current = scriptState }, [scriptState])
-
-  /** 宿主记录变化（保存成功后的刷新）→ 本地列表跟随；正在输入的剧本不被覆盖。 */
-  useEffect(() => {
-    const switched = episodeIdRef.current !== episode.id
-    episodeIdRef.current = episode.id
-    setSegments(episode.segments)
-    setStoryboards(episode.storyboards)
-    savedSegments.current = new Map(episode.segments.map(segment => [segment.id, segment]))
-    if (switched || scriptStateRef.current === 'saved') {
-      setScriptDraft(episode.script.text)
-      setScriptSavedText(episode.script.text)
-    }
-  }, [episode])
-
-  /** 剧本自动保存；父级轮询引起的重渲染不会重启计时器（依赖只含正文本体）。 */
-  const saveScript = useCallback(async (text: string): Promise<void> => {
-    const { onEpisodeChanged: refresh, onNotice: notify, t: translate } = handlersRef.current
-    setScriptState('saving')
-    try {
-      await api.updateEpisode(episode.id, { script: { text } })
-      setScriptSavedText(text)
-      setScriptState('saved')
-      await refresh()
-    } catch (error) {
-      setScriptState('failed')
-      notify(`${translate('episodeScriptFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
-    }
-  }, [api, episode.id])
-
-  useEffect(() => {
-    if (scriptDraft === scriptSavedText) return
-    setScriptState('dirty')
-    const timer = window.setTimeout(() => { void saveScript(scriptDraft) }, 900)
-    return () => { window.clearTimeout(timer) }
-  }, [scriptDraft, scriptSavedText, saveScript])
-
-  /** 剧本失焦立即保存，避免用户改完就离开时等不到防抖。 */
-  const flushScript = (): void => {
-    const text = scriptDraft
-    if (text === scriptSavedText || scriptState === 'saving') return
-    void saveScript(text)
-  }
 
   /** 本地替换一条分段（保存成功后的回填）。 */
   const applySegment = (saved: SegmentRecord): void => {
@@ -349,6 +394,115 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   /** 本地改一条分段（未保存）。 */
   const patchSegment = (next: SegmentRecord): void => {
     setSegments(current => current.map(segment => (segment.id === next.id ? next : segment)))
+  }
+
+  /** 新分段继承的模块级选择：只有导演 Skill；图像 / 视频 / 文本模型由段级自己选。 */
+  const inherited = (): { skillId?: string } => ({
+    ...defaults.skillId === undefined || defaults.skillId === '' ? {} : { skillId: defaults.skillId },
+  })
+
+  /**
+   * 保存总输入框：有分段时按空行拆回所有分段（多出来的行新建分段），
+   * 没有分段时保持原来的整集剧本落库。Skill token 只留在界面文本里。
+   */
+  const persistScriptDraft = useCallback(async (text: string): Promise<void> => {
+    const { onEpisodeChanged: refresh, onNotice: notify, t: translate } = handlersRef.current
+    setScriptState('saving')
+    try {
+      if (segments.length === 0) {
+        await api.updateEpisode(episode.id, { script: { text } })
+      } else {
+        const parts = splitSegmentText(text)
+        const cleanParts = parts.map(part => stripSkillTokens(part, skills))
+        for (const [index, segment] of segments.entries()) {
+          // 本地已同步过 promptText，所以这里不能拿本地值做「没变」判断，否则不会落库。
+          const promptText = cleanParts[index] ?? ''
+          const skillId = activeSkillId(parts[index] ?? '', skills)
+          if (pendingNewSegments.current.has(segment.id)) {
+            if (promptText.trim() !== '') {
+              const created = await api.createSegment(episode.id, {
+                promptText,
+                durationSec: segment.durationSec,
+                ...skillId === '' ? {} : { skillId },
+              })
+              applySegment(created)
+            }
+            pendingNewSegments.current.delete(segment.id)
+            continue
+          }
+          const saved = await api.updateSegment(segment.id, { promptText, skillId })
+          applySegment(saved)
+        }
+        await api.updateEpisode(episode.id, { script: { text } })
+      }
+      setScriptSavedText(text)
+      setScriptState('saved')
+      await refresh()
+    } catch (error) {
+      setScriptState('failed')
+      notify(`${translate('episodeScriptFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+    }
+  }, [api, defaults.skillId, episode.id, segments, skills])
+
+  /** 宿主记录变化（保存成功后的刷新）→ 本地列表跟随；正在输入的剧本不被覆盖。 */
+  useEffect(() => {
+    const switched = episodeIdRef.current !== episode.id
+    episodeIdRef.current = episode.id
+    pendingNewSegments.current.clear()
+    setSegments(episode.segments)
+    setStoryboards(episode.storyboards)
+    savedSegments.current = new Map(episode.segments.map(segment => [segment.id, segment]))
+    if (switched || scriptStateRef.current === 'saved') {
+      const text = scriptSourceText(episode.script.text, episode.segments)
+      setScriptDraft(text)
+      setScriptSavedText(text)
+    }
+  }, [episode])
+
+  /** 段内提示词变动时，总输入框同步展示所有段；正在编辑总输入框时不反向覆盖。 */
+  useEffect(() => {
+    if (aggregateFocused.current) return
+    setScriptDraft(segments.length === 0 ? scriptSavedText : segmentScriptText(segments))
+  }, [segments, scriptSavedText])
+
+  /** 总输入框自动保存；父级轮询引起的重渲染不会重启计时器。 */
+  useEffect(() => {
+    if (scriptDraft === scriptSavedText) return
+    setScriptState('dirty')
+    const timer = window.setTimeout(() => { void persistScriptDraft(scriptDraft) }, 900)
+    return () => { window.clearTimeout(timer) }
+  }, [scriptDraft, scriptSavedText, persistScriptDraft])
+
+  /** 总输入框失焦立即保存，避免用户改完就离开时等不到防抖。 */
+  const flushScript = (): void => {
+    const text = scriptDraft
+    if (text === scriptSavedText || scriptState === 'saving') return
+    void persistScriptDraft(text)
+  }
+
+  /** 总输入框编辑：本地同步下方各段，并把 Skill token 状态回传给模块级默认值。 */
+  const updateScriptDraft = (value: string): void => {
+    setScriptDraft(value)
+    onSkillChange(activeSkillId(value, skills))
+    if (segments.length === 0) return
+    const parts = splitSegmentText(value)
+    setSegments(current => {
+      const next = current.map((segment, index) => ({ ...segment, promptText: parts[index] ?? '' }))
+      // 总输入框里多出来的空行就是新段：先建本地占位，失焦时统一落库。
+      for (let index = next.length; index < parts.length; index += 1) {
+        const id = newWorkbenchId('seg')
+        pendingNewSegments.current.add(id)
+        next.push({
+          id,
+          episodeId: episode.id,
+          order: next.length + 1,
+          durationSec: SEGMENT_DURATION_PRESETS[0]!,
+          promptText: parts[index] ?? '',
+          refs: [],
+        })
+      }
+      return next
+    })
   }
 
   /**
@@ -377,13 +531,6 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     }
   }
 
-  /** 新分段继承的模块级选择；空串表示"不指定"，交给宿主默认值。 */
-  const inherited = (): { imageModel?: string; videoModel?: string; skillId?: string } => ({
-    ...defaults.imageModel === undefined || defaults.imageModel === '' ? {} : { imageModel: defaults.imageModel },
-    ...defaults.videoModel === undefined || defaults.videoModel === '' ? {} : { videoModel: defaults.videoModel },
-    ...defaults.skillId === undefined || defaults.skillId === '' ? {} : { skillId: defaults.skillId },
-  })
-
   /** 新建分段：追加到集末尾，并默认选中它。 */
   const addSegment = async (): Promise<void> => {
     setBusy(true)
@@ -398,26 +545,53 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   }
 
   /**
-   * 自动拆段：把当前剧本（含未保存的输入）交给所选文本模型，按剧情拆成若干分段。
+   * 开始分段：规则模式按文本结构本地切段并逐段落库；模型模式交给所选文本模型。
    *
-   * 拆段与落库都在宿主侧一次完成；失败时已新建的分段仍然存在，因此先尽力刷新再报错。
+   * 重建语义（不是追加）：先把已有分段连同它们的分镜一起清掉，再按当前剧本整篇重建。
+   * 否则「有分段时再点一次」会把总输入框里展示的分段文本又切一遍追加进去，
+   * 造成同一段内容被复制、分段凭空多出来。失败时先刷新再报，避免界面与宿主脱节。
    */
   const autoSplit = async (): Promise<void> => {
-    if (textModel === undefined) {
-      onNotice(t('scriptSplitNeedsModel'), 'error')
+    const cleanScript = stripSkillTokens(scriptDraft, skills)
+    if (cleanScript.trim() === '') {
+      onNotice(t('scriptSplitNeedsScript'), 'error')
       return
     }
-    if (scriptDraft.trim() === '') {
-      onNotice(t('scriptSplitNeedsScript'), 'error')
+    if (modelMode && activeTextModel === undefined) {
+      onNotice(t('scriptSplitNeedsModel'), 'error')
       return
     }
     setSplitting(true)
     try {
+      // 重建前先清掉旧分段（宿主级联删分镜），本地列表同步置空，避免中间态展示重复内容
+      if (segments.length > 0) {
+        for (const segment of segments) await api.removeSegment(segment.id)
+        setSegments([])
+        savedSegments.current = new Map()
+        pendingNewSegments.current.clear()
+      }
+      if (!modelMode) {
+        const drafts = splitScriptIntoSegments(cleanScript)
+        if (drafts.length === 0) {
+          onNotice(t('scriptSplitNeedsScript'), 'error')
+          return
+        }
+        for (const draft of drafts) {
+          await api.createSegment(episode.id, {
+            promptText: draft.promptText,
+            durationSec: draft.durationSec,
+            ...inherited(),
+          })
+        }
+        await onEpisodeChanged()
+        onNotice(t('scriptSplitDone').replace('{n}', String(drafts.length)), 'info')
+        return
+      }
       const result = await api.splitEpisode({
         episodeId: episode.id,
-        provider: textModel.provider,
-        model: textModel.model,
-        script: scriptDraft,
+        provider: (textModel as { provider: string }).provider,
+        model: (textModel as { model: string }).model,
+        script: cleanScript,
         ...inherited(),
       })
       await onEpisodeChanged()
@@ -473,6 +647,13 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     return asset === undefined ? `${t('episodeRefMissing')} · ${ref.id}` : fileName(asset.path)
   }
 
+  /** 引用 chip 的缩略图：素材引用取 `/outputs` 里的图 / 视频首帧，资源引用暂无图。 */
+  const thumbOf = (ref: SegmentRef): ReactNode => {
+    if (ref.kind !== 'asset') return undefined
+    const asset = assets.find(candidate => candidate.id === ref.id)
+    return asset === undefined ? undefined : <RefChipThumb asset={asset} t={t} />
+  }
+
   /** 把 `[@n]` 追加到分段提示词（已存在则不重复追加）。 */
   const insertToken = (segment: SegmentRecord, order: number): void => {
     const mark = `[@${order}]`
@@ -489,24 +670,31 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     void commitSegment(next)
   }
 
-  /** 分镜生成：本段提示词 → 宿主拆镜 → 落库（每镜时长按段时长均分）。 */
+  /** 分镜生成：本段提示词 → 拆镜 → 落库（段选了文本模型就调它，否则走默认规则）。 */
   const planSegment = async (segment: SegmentRecord): Promise<void> => {
-    if (segment.promptText.trim() === '') {
+    const cleanPrompt = stripSkillTokens(segment.promptText, skills)
+    if (cleanPrompt.trim() === '') {
       onNotice(t('storyboardNeedsScript'), 'error')
       return
     }
     setPlanningId(segment.id)
     try {
-      const plan = await api.planStoryboard({ projectId, script: segment.promptText })
+      const selectedTextModel = validSegmentTextModel(segment.textModel)
+      const separator = selectedTextModel.indexOf('::')
+      const provider = separator > 0 ? selectedTextModel.slice(0, separator) : ''
+      const model = separator > 0 ? selectedTextModel.slice(separator + 2) : ''
+      const plan = await api.planStoryboard({
+        projectId,
+        script: cleanPrompt,
+        ...provider !== '' && model !== '' ? { provider, model } : {},
+      })
       const existing = storyboards.find(storyboard => storyboard.segmentId === segment.id)
-      const shotDuration = Math.max(
-        MIN_SEGMENT_DURATION_SEC,
-        Math.round(segment.durationSec / Math.max(1, plan.shots.length)),
-      )
+      // 精确平分：余数给靠前镜头，保证所有分镜之和 == 段时长
+      const shotDurations = distributeDurationToShots(segment.durationSec, plan.shots.length)
       const shots: ShotRecord[] = plan.shots.map((shot, index) => ({
         id: newWorkbenchId('shot'),
         order: index + 1,
-        durationSec: shotDuration,
+        durationSec: shotDurations[index]!,
         imagePrompt: shot.imagePrompt,
         videoPrompt: shot.videoPrompt,
         ...segment.imageModel === undefined ? {} : { imageModel: segment.imageModel },
@@ -571,6 +759,121 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     if (current !== undefined) void persistStoryboard(current)
   }
 
+  /** 时长夹到合法区间（分镜与段共用 1–180 秒）。 */
+  const clampDuration = (value: number): number =>
+    Math.min(MAX_SEGMENT_DURATION_SEC, Math.max(MIN_SEGMENT_DURATION_SEC, Math.round(Number.isFinite(value) ? value : MIN_SEGMENT_DURATION_SEC)))
+
+  /**
+   * 单个分镜可设的最大秒数：段时长 = 分镜之和且段落库上限 180，
+   * 因此某镜不能超过「180 − 其余镜头之和」，否则段时长会越界被拒。
+   */
+  const shotDurationCap = (segmentId: string, shotId: string): number => {
+    const storyboard = storyboards.find(candidate => candidate.segmentId === segmentId)
+    if (storyboard === undefined) return MAX_SEGMENT_DURATION_SEC
+    const others = storyboard.shots.reduce(
+      (sum, candidate) => candidate.id === shotId ? sum : sum + candidate.durationSec, 0,
+    )
+    return Math.max(MIN_SEGMENT_DURATION_SEC, MAX_SEGMENT_DURATION_SEC - others)
+  }
+
+  /**
+   * 段时长与分镜时长联动落库：保证「段时长 == 该段所有分镜时长之和」。
+   * 先存分镜再存段，最后统一刷新集，避免中途刷新覆盖本地状态。
+   * @param segment - 时长已同步好的分段。
+   * @param shots - 有分镜时传入已同步好的整组镜头；无分镜时传 undefined。
+   */
+  const commitDurations = async (segment: SegmentRecord, shots: readonly ShotRecord[] | undefined): Promise<void> => {
+    setBusy(true)
+    try {
+      if (shots !== undefined) {
+        const storyboard = storyboards.find(candidate => candidate.segmentId === segment.id)
+        if (storyboard !== undefined) {
+          const saved = await api.saveStoryboard({
+            id: storyboard.id,
+            episodeId: episode.id,
+            segmentId: segment.id,
+            ...storyboard.skillId === undefined ? {} : { skillId: storyboard.skillId },
+            shots: [...shots],
+          })
+          setStoryboards(list => list.map(candidate => (candidate.id === saved.id ? saved : candidate)))
+        }
+      }
+      const savedSegment = await api.updateSegment(segment.id, {
+        promptText: segment.promptText,
+        durationSec: segment.durationSec,
+        imageModel: segment.imageModel ?? '',
+        videoModel: segment.videoModel ?? '',
+        skillId: segment.skillId ?? '',
+        refs: segment.refs.map((ref, position) => ({ ...ref, order: position + 1 })),
+      })
+      applySegment(savedSegment)
+      await onEpisodeChanged()
+    } catch (error) {
+      onNotice(`${t('segmentSaveFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 改段时长：把新时长平分给该段所有分镜（余数给靠前镜头），使分镜之和恒等于段时长。
+   * 没有分镜时只改段时长本身。
+   */
+  const changeSegmentDuration = (segment: SegmentRecord, seconds: number): void => {
+    const storyboard = storyboards.find(candidate => candidate.segmentId === segment.id)
+    if (storyboard === undefined || storyboard.shots.length === 0) {
+      const next = { ...segment, durationSec: clampDuration(seconds) }
+      patchSegment(next)
+      void commitDurations(next, undefined)
+      return
+    }
+    // 镜头数多于秒数时每镜至少 1 秒，段时长随之抬到「镜头数」，仍保持相等。
+    const target = Math.max(storyboard.shots.length, clampDuration(seconds))
+    const durations = distributeDurationToShots(target, storyboard.shots.length)
+    const shots = storyboard.shots.map((shot, index) => ({ ...shot, durationSec: durations[index]! }))
+    const next = { ...segment, durationSec: shotsDurationSec(shots) }
+    patchSegment(next)
+    setStoryboards(list => list.map(candidate => (candidate.id === storyboard.id ? { ...candidate, shots } : candidate)))
+    void commitDurations(next, shots)
+  }
+
+  /**
+   * 改单个分镜时长后：段时长自动等于该段所有分镜之和，并落库两端。
+   * 分镜时长已在 onChange 里本地更新，这里从最新本地 storyboards 求和。
+   */
+  const syncSegmentToShots = (segmentId: string): void => {
+    const storyboard = storyboards.find(candidate => candidate.segmentId === segmentId)
+    const segment = segments.find(candidate => candidate.id === segmentId)
+    if (storyboard === undefined || segment === undefined) return
+    if (storyboard.shots.length === 0) return
+    const next = { ...segment, durationSec: shotsDurationSec(storyboard.shots) }
+    patchSegment(next)
+    void commitDurations(next, storyboard.shots)
+  }
+
+  /**
+   * 增删分镜后：按段时长把新的镜头列表重新均分，保持分镜之和 == 段时长，并同步落库。
+   * 删到空镜头时保留段时长，只落库空分镜组。
+   */
+  const respreadShotsAndSync = (segment: SegmentRecord, shots: readonly ShotRecord[]): void => {
+    if (shots.length === 0) {
+      const storyboard = storyboards.find(candidate => candidate.segmentId === segment.id)
+      if (storyboard !== undefined) {
+        const cleared = { ...storyboard, shots: [] }
+        setStoryboards(list => list.map(candidate => (candidate.id === cleared.id ? cleared : candidate)))
+        void persistStoryboard(cleared)
+      }
+      return
+    }
+    const target = Math.max(shots.length, segment.durationSec)
+    const durations = distributeDurationToShots(target, shots.length)
+    const spread = shots.map((shot, index) => ({ ...shot, durationSec: durations[index]! }))
+    const next = { ...segment, durationSec: shotsDurationSec(spread) }
+    patchSegment(next)
+    setStoryboards(list => list.map(candidate => (candidate.segmentId === segment.id ? { ...candidate, shots: spread } : candidate)))
+    void commitDurations(next, spread)
+  }
+
   /** 就地生成一镜：图片同步返回，视频进任务列表（`wait:false`）。 */
   const generateShot = async (segment: SegmentRecord, shot: ShotRecord, mode: 'image' | 'video'): Promise<void> => {
     const prompt = (mode === 'image' ? shot.imagePrompt : shot.videoPrompt).trim()
@@ -609,6 +912,10 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
    * 该镜并继续，最后给一条「已完成 n/总数」的汇总。
    */
   const generateAllShots = async (segment: SegmentRecord, mode: 'image' | 'video'): Promise<void> => {
+    if (mode === 'video' && segment.durationSec > 30) {
+      onNotice(t('segmentVideoTooLong'), 'error')
+      return
+    }
     const storyboard = storyboards.find(candidate => candidate.segmentId === segment.id)
     if (storyboard === undefined || storyboard.shots.length === 0) {
       onNotice(t('segmentStoryboardNone'), 'error')
@@ -621,8 +928,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         const prompt = (mode === 'image' ? shot.imagePrompt : shot.videoPrompt).trim()
         if (prompt === '') continue
         const model = mode === 'image'
-          ? shot.imageModel ?? defaults.imageModel
-          : shot.videoModel ?? defaults.videoModel
+          ? shot.imageModel ?? segment.imageModel
+          : shot.videoModel ?? segment.videoModel
         try {
           await api.generateMedia({
             mediaMode: mode,
@@ -659,9 +966,15 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     const storyboard = storyboards.find(candidate => candidate.segmentId === segment.id)
     const collapsed = collapsedIds.has(segment.id)
     const segmentOwner = `segment:${segment.id}`
+    const cleanPrompt = stripSkillTokens(segment.promptText, skills)
     return (
       <div className="iv-sb-shot-body">
-        <div className="iv-sb-seg-head">
+        <div
+          className="iv-sb-seg-head iv-sb-seg-head--clickable"
+          data-segment-head={segment.id}
+          title={collapsed ? t('segmentExpand') : t('segmentCollapse')}
+          onClick={() => { toggleCollapsed(segment.id) }}
+        >
           <span className="iv-micro" data-segment-name={segment.id}>
             {t('segmentName').replace('{n}', String(segment.order))}
           </span>
@@ -672,7 +985,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               data-segment-up={segment.id}
               aria-label={t('moveUp')}
               disabled={busy || segment.order <= 1}
-              onClick={() => { void moveSegment(segment, -1) }}
+              onClick={event => { event.stopPropagation(); void moveSegment(segment, -1) }}
             >
               <Icon name="chevron" size={11} className="iv-ico--up" />
             </button>
@@ -682,7 +995,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               data-segment-down={segment.id}
               aria-label={t('moveDown')}
               disabled={busy || segment.order >= segments.length}
-              onClick={() => { void moveSegment(segment, 1) }}
+              onClick={event => { event.stopPropagation(); void moveSegment(segment, 1) }}
             >
               <Icon name="chevron" size={11} className="iv-ico--down" />
             </button>
@@ -693,13 +1006,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               aria-expanded={!collapsed}
               aria-label={collapsed ? t('segmentExpand') : t('segmentCollapse')}
               title={collapsed ? t('segmentExpand') : t('segmentCollapse')}
-              onClick={() => {
-                setCollapsedIds(current => {
-                  const next = new Set(current)
-                  if (!next.delete(segment.id)) next.add(segment.id)
-                  return next
-                })
-              }}
+              onClick={event => { event.stopPropagation(); toggleCollapsed(segment.id) }}
             >
               <Icon name="chevron" size={11} className={collapsed ? undefined : 'iv-ico--down'} />
             </button>
@@ -710,7 +1017,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               aria-label={t('segmentRemove')}
               title={t('segmentRemove')}
               disabled={busy}
-              onClick={() => { void removeSegment(segment) }}
+              onClick={event => { event.stopPropagation(); void removeSegment(segment) }}
             >
               <Icon name="trash" size={11} />
             </button>
@@ -720,20 +1027,58 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           ? <div className="iv-seg-peek" data-segment-preview={segment.id}>{segment.promptText || t('segmentPromptPlaceholder')}</div>
           : (
           <>
-        <label className="iv-sb-field">
-          <span className="iv-meta">{t('segmentPromptLabel')}</span>
-          <textarea
-            className="iv-input"
-            rows={3}
-            value={segment.promptText}
-            placeholder={t('segmentPromptPlaceholder')}
-            data-segment-prompt={segment.id}
-            disabled={busy}
-            onChange={event => { patchSegment({ ...segment, promptText: event.target.value }) }}
-            onBlur={() => { void commitSegment(segment) }}
-            style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-          />
-        </label>
+        <div className={`iv-seg-prompt-row${segment.refs.length > 0 ? ' iv-seg-prompt-row--with-refs' : ''}`}>
+          <label className="iv-sb-field iv-seg-prompt-field">
+            <span className="iv-meta">{t('segmentPromptLabel')}</span>
+            <textarea
+              className="iv-input"
+              rows={4}
+              value={segment.promptText}
+              placeholder={t('segmentPromptPlaceholder')}
+              data-segment-prompt={segment.id}
+              disabled={busy}
+              onChange={event => {
+                const promptText = event.target.value
+                patchSegment({ ...segment, promptText, skillId: activeSkillId(promptText, skills) })
+              }}
+              onBlur={() => { void commitSegment(segments.find(candidate => candidate.id === segment.id) ?? segment) }}
+            />
+          </label>
+          <div className="iv-seg-ref-side">
+            <RefPicker
+              id={segment.id}
+              label={t('segmentAddRef')}
+              assets={assets}
+              used={segment.refs}
+              t={t}
+              disabled={busy}
+              trigger={{ 'data-segment-ref-add': segment.id }}
+              onPick={assetId => { addRef(segment, assetId) }}
+            />
+            {segment.refs.length > 0
+              ? (
+              <div className="iv-seg-refs-block" data-segment-refs={segment.id}>
+                <span className="iv-meta">{t('segmentRefsLabel')}</span>
+                <div className="iv-ref-row">
+                  {refChips({
+                    refs: segment.refs,
+                    owner: segmentOwner,
+                    t,
+                    label: labelOf,
+                    thumb: thumbOf,
+                    onChange: next => {
+                      const updated = { ...segment, refs: next }
+                      patchSegment(updated)
+                      void commitSegment(updated)
+                    },
+                    onInsert: order => insertToken(segment, order),
+                  })}
+                </div>
+              </div>
+              )
+              : null}
+          </div>
+        </div>
         <div className="iv-sb-row iv-sb-seg-meta">
           <label className="iv-sb-field">
             <span className="iv-meta">{t('segmentDurationLabel')}</span>
@@ -745,11 +1090,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                   key={seconds}
                   data-segment-duration={String(seconds)}
                   disabled={busy}
-                  onClick={() => {
-                    const next = { ...segment, durationSec: seconds }
-                    patchSegment(next)
-                    void commitSegment(next, { durationSec: seconds })
-                  }}
+                  onClick={() => { changeSegmentDuration(segment, seconds) }}
                 >
                   {seconds}s
                 </button>
@@ -763,12 +1104,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                 data-segment-duration-input={segment.id}
                 disabled={busy}
                 onChange={event => { patchSegment({ ...segment, durationSec: Number(event.target.value) }) }}
-                onBlur={() => {
-                  const clamped = Math.min(MAX_SEGMENT_DURATION_SEC, Math.max(MIN_SEGMENT_DURATION_SEC, Math.round(segment.durationSec)))
-                  const next = { ...segment, durationSec: clamped }
-                  patchSegment(next)
-                  void commitSegment(next, { durationSec: clamped })
-                }}
+                onBlur={() => { changeSegmentDuration(segment, segment.durationSec) }}
               />
             </div>
           </label>
@@ -807,63 +1143,52 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
             </select>
           </label>
           <label className="iv-sb-field">
-            <span className="iv-meta">{t('segmentSkillLabel')}</span>
+            <span className="iv-meta">{t('segmentTextModel')}</span>
             <select
               className="iv-input"
-              value={segment.skillId ?? ''}
-              data-segment-skill={segment.id}
-              disabled={busy}
-              title={t('segmentSkillHint')}
+              value={validSegmentTextModel(segment.textModel)}
+              data-segment-text-model={segment.id}
+              disabled={busy || planningId === segment.id}
+              title={t('scriptSplitHint')}
               onChange={event => {
-                const next = { ...segment, skillId: event.target.value === '' ? undefined : event.target.value }
+                const next = { ...segment, textModel: event.target.value === '' ? undefined : event.target.value }
                 patchSegment(next)
                 void commitSegment(next)
               }}
             >
-              <option value="">{t('segmentSkillDefault')}</option>
-              {skills.map(skill => <option key={skill.id} value={skill.id}>{skill.name}</option>)}
-              {segment.skillId === undefined || skills.some(skill => skill.id === segment.skillId)
-                ? null
-                : <option value={segment.skillId}>{`${segment.skillId} · ${t('segmentSkillMissing')}`}</option>}
+              <option value="">{t('scriptSplitModeRule')}</option>
+              {textModels.map(model => (
+                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                  {model.providerName} · {model.name}
+                </option>
+              ))}
             </select>
           </label>
-        </div>
-        <div className="iv-sb-field">
-          <span className="iv-meta">{t('segmentRefsLabel')}</span>
-          <div className="iv-ref-row">
-            {segment.refs.length === 0
-              ? <span className="iv-meta iv-ref-hint">{t('segmentRefsEmpty')}</span>
-              : refChips({
-                refs: segment.refs,
-                owner: segmentOwner,
-                t,
-                label: labelOf,
-                onChange: next => {
-                  const updated = { ...segment, refs: next }
-                  patchSegment(updated)
-                  void commitSegment(updated)
-                },
-                onInsert: order => insertToken(segment, order),
-              })}
-            <RefPicker
-              id={segment.id}
-              label={t('segmentAddRef')}
-              assets={assets}
-              used={segment.refs}
+          <label className="iv-sb-field">
+            <span className="iv-meta">{t('segmentSkillLabel')}</span>
+            <SkillTokenSelect
+              skills={skills}
+              text={segment.promptText}
               t={t}
+              label={t('segmentSkillLabel')}
               disabled={busy}
-              trigger={{ 'data-segment-ref-add': segment.id }}
-              onPick={assetId => { addRef(segment, assetId) }}
+              className="iv-input"
+              selectAttrs={{ 'data-segment-skill': segment.id }}
+              onTextChange={promptText => {
+                const next = { ...segment, promptText, skillId: activeSkillId(promptText, skills) }
+                patchSegment(next)
+                void commitSegment(next)
+              }}
             />
-          </div>
+          </label>
         </div>
         <div className="iv-sb-actions">
           <button
             type="button"
-            className={`iv-btn iv-btn--acc${planningId === segment.id ? ' iv-btn--busy' : ''}`}
+            className={`iv-btn iv-btn--action iv-btn--action--primary${planningId === segment.id ? ' iv-btn--busy' : ''}`}
             data-segment-plan={segment.id}
             aria-busy={planningId === segment.id ? 'true' : undefined}
-            disabled={planningId === segment.id || busy || segment.promptText.trim() === ''}
+            disabled={planningId === segment.id || busy || cleanPrompt.trim() === ''}
             onClick={() => { void planSegment(segment) }}
           >
             <Icon name="sparkles" size={11} />
@@ -871,7 +1196,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--sm"
+            className="iv-btn iv-btn--action iv-btn--action--soft"
             data-segment-generate-all-images={segment.id}
             disabled={busy || generatingAll !== undefined || storyboard === undefined || storyboard.shots.length === 0}
             onClick={() => { void generateAllShots(segment, 'image') }}
@@ -883,9 +1208,10 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--sm"
+            className="iv-btn iv-btn--action iv-btn--action--soft"
             data-segment-generate-all-videos={segment.id}
-            disabled={busy || generatingAll !== undefined || storyboard === undefined || storyboard.shots.length === 0}
+            disabled={busy || generatingAll !== undefined || storyboard === undefined || storyboard.shots.length === 0 || segment.durationSec > 30}
+            title={segment.durationSec > 30 ? t('segmentVideoTooLong') : undefined}
             onClick={() => { void generateAllShots(segment, 'video') }}
           >
             <Icon name="video" size={11} />
@@ -910,11 +1236,14 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                           className="iv-input"
                           type="number"
                           min={MIN_SEGMENT_DURATION_SEC}
-                          max={MAX_SEGMENT_DURATION_SEC}
+                          max={shotDurationCap(segment.id, shot.id)}
                           value={shot.durationSec}
                           data-shot-duration={shot.id}
-                          onChange={event => { patchShotLocal(segment.id, shot.id, { durationSec: Number(event.target.value) }) }}
-                          onBlur={() => { flushStoryboard(segment.id) }}
+                          onChange={event => {
+                            const capped = Math.min(shotDurationCap(segment.id, shot.id), clampDuration(Number(event.target.value)))
+                            patchShotLocal(segment.id, shot.id, { durationSec: capped })
+                          }}
+                          onBlur={() => { syncSegmentToShots(segment.id) }}
                           style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
                         />
                       </label>
@@ -948,136 +1277,144 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                         aria-label={t('storyboardRemoveShot')}
                         data-shot-remove={shot.id}
                         onClick={() => {
-                          updateStoryboard(segment.id, current => ({
-                            ...current,
-                            shots: current.shots
-                              .filter(candidate => candidate.id !== shot.id)
-                              .map((candidate, position) => ({ ...candidate, order: position + 1 })),
-                          }))
+                          const remaining = storyboard.shots
+                            .filter(candidate => candidate.id !== shot.id)
+                            .map((candidate, position) => ({ ...candidate, order: position + 1 }))
+                          respreadShotsAndSync(segment, remaining)
                         }}
                       >
                         <Icon name="trash" size={11} />
                       </button>
                     </div>
-                    <label className="iv-sb-field">
-                      <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
-                      <textarea
-                        className="iv-input"
-                        rows={2}
-                        value={shot.imagePrompt}
-                        data-shot-image-prompt={shot.id}
-                        onChange={event => { patchShotLocal(segment.id, shot.id, { imagePrompt: event.target.value }) }}
-                        onBlur={() => { flushStoryboard(segment.id) }}
-                        style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                      />
-                    </label>
-                    <div className="iv-sb-row">
-                      <label className="iv-sb-field" style={{ flex: '0 1 150px' }}>
-                        <span className="iv-meta">{t('generateImageModel')}</span>
-                        <select
-                          className="iv-input"
-                          value={shot.imageModel ?? ''}
-                          data-shot-image-model={shot.id}
-                          onChange={event => {
-                            const value = event.target.value
+                    <div className={`iv-shot-prompt-row${shot.refs.length > 0 ? ' iv-shot-prompt-row--with-refs' : ''}`}>
+                      <div className="iv-shot-prompt-main">
+                        <label className="iv-sb-field">
+                          <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
+                          <textarea
+                            className="iv-input"
+                            rows={2}
+                            value={shot.imagePrompt}
+                            data-shot-image-prompt={shot.id}
+                            onChange={event => { patchShotLocal(segment.id, shot.id, { imagePrompt: event.target.value }) }}
+                            onBlur={() => { flushStoryboard(segment.id) }}
+                            style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                          />
+                        </label>
+                        {/* 模型标签、下拉、生成按钮同一行，紧贴提示词输入框，不再让标签独占一行 */}
+                        <div className="iv-shot-tool-row">
+                          <span className="iv-meta">{t('generateImageModel')}</span>
+                          <select
+                            className="iv-input"
+                            value={shot.imageModel ?? ''}
+                            data-shot-image-model={shot.id}
+                            onChange={event => {
+                              const value = event.target.value
+                              updateStoryboard(segment.id, current => ({
+                                ...current,
+                                shots: current.shots.map(candidate => (candidate.id === shot.id
+                                  ? { ...candidate, imageModel: value === '' ? undefined : value }
+                                  : candidate)),
+                              }))
+                            }}
+                          >
+                            <option value="">{t('generateParamAuto')}</option>
+                            {(options?.imageProviders ?? []).map(id => <option key={id} value={id}>{id}</option>)}
+                          </select>
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--action iv-btn--action--soft"
+                            data-shot-generate-image={shot.id}
+                            disabled={generatingShotId === shot.id}
+                            onClick={() => { void generateShot(segment, shot, 'image') }}
+                          >
+                            <Icon name="image" size={11} />{t('shotGenerateImage')}
+                          </button>
+                        </div>
+                        <label className="iv-sb-field">
+                          <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
+                          <textarea
+                            className="iv-input"
+                            rows={2}
+                            value={shot.videoPrompt}
+                            data-shot-video-prompt={shot.id}
+                            onChange={event => { patchShotLocal(segment.id, shot.id, { videoPrompt: event.target.value }) }}
+                            onBlur={() => { flushStoryboard(segment.id) }}
+                            style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                          />
+                        </label>
+                        {/* 同上：视频模型标签、下拉、生成按钮压成一行 */}
+                        <div className="iv-shot-tool-row">
+                          <span className="iv-meta">{t('generateVideoModel')}</span>
+                          <select
+                            className="iv-input"
+                            value={shot.videoModel ?? ''}
+                            data-shot-video-model={shot.id}
+                            onChange={event => {
+                              const value = event.target.value
+                              updateStoryboard(segment.id, current => ({
+                                ...current,
+                                shots: current.shots.map(candidate => (candidate.id === shot.id
+                                  ? { ...candidate, videoModel: value === '' ? undefined : value }
+                                  : candidate)),
+                              }))
+                            }}
+                          >
+                            <option value="">{t('generateParamAuto')}</option>
+                            {(options?.videoProviders ?? []).map(id => <option key={id} value={id}>{id}</option>)}
+                          </select>
+                          <button
+                            type="button"
+                            className="iv-btn iv-btn--action iv-btn--action--soft"
+                            data-shot-generate-video={shot.id}
+                            disabled={generatingShotId === shot.id}
+                            onClick={() => { void generateShot(segment, shot, 'video') }}
+                          >
+                            <Icon name="video" size={11} />{generatingShotId === shot.id ? t('shotGenerating') : t('shotGenerateVideo')}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="iv-seg-ref-side iv-shot-ref-side">
+                        <RefPicker
+                          id={shot.id}
+                          label={t('shotRefAdd')}
+                          assets={assets}
+                          used={shot.refs}
+                          t={t}
+                          disabled={busy}
+                          trigger={{ 'data-shot-ref-add': shot.id }}
+                          onPick={assetId => {
                             updateStoryboard(segment.id, current => ({
                               ...current,
                               shots: current.shots.map(candidate => (candidate.id === shot.id
-                                ? { ...candidate, imageModel: value === '' ? undefined : value }
+                                ? { ...candidate, refs: [...candidate.refs, { kind: 'asset', id: assetId, order: candidate.refs.length + 1 }] }
                                 : candidate)),
                             }))
                           }}
-                        >
-                          <option value="">{t('generateParamAuto')}</option>
-                          {(options?.imageProviders ?? []).map(id => <option key={id} value={id}>{id}</option>)}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        className="iv-btn iv-btn--sm"
-                        data-shot-generate-image={shot.id}
-                        disabled={generatingShotId === shot.id}
-                        onClick={() => { void generateShot(segment, shot, 'image') }}
-                      >
-                        <Icon name="image" size={11} />{t('shotGenerateImage')}
-                      </button>
-                    </div>
-                    <label className="iv-sb-field">
-                      <span className="iv-meta">{t('storyboardVideoPromptLabel')}</span>
-                      <textarea
-                        className="iv-input"
-                        rows={2}
-                        value={shot.videoPrompt}
-                        data-shot-video-prompt={shot.id}
-                        onChange={event => { patchShotLocal(segment.id, shot.id, { videoPrompt: event.target.value }) }}
-                        onBlur={() => { flushStoryboard(segment.id) }}
-                        style={{ resize: 'vertical', font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                      />
-                    </label>
-                    <div className="iv-sb-row">
-                      <label className="iv-sb-field" style={{ flex: '0 1 150px' }}>
-                        <span className="iv-meta">{t('generateVideoModel')}</span>
-                        <select
-                          className="iv-input"
-                          value={shot.videoModel ?? ''}
-                          data-shot-video-model={shot.id}
-                          onChange={event => {
-                            const value = event.target.value
-                            updateStoryboard(segment.id, current => ({
-                              ...current,
-                              shots: current.shots.map(candidate => (candidate.id === shot.id
-                                ? { ...candidate, videoModel: value === '' ? undefined : value }
-                                : candidate)),
-                            }))
-                          }}
-                        >
-                          <option value="">{t('generateParamAuto')}</option>
-                          {(options?.videoProviders ?? []).map(id => <option key={id} value={id}>{id}</option>)}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        className="iv-btn iv-btn--sm"
-                        data-shot-generate-video={shot.id}
-                        disabled={generatingShotId === shot.id}
-                        onClick={() => { void generateShot(segment, shot, 'video') }}
-                      >
-                        <Icon name="video" size={11} />{generatingShotId === shot.id ? t('shotGenerating') : t('shotGenerateVideo')}
-                      </button>
-                    </div>
-                    <div className="iv-ref-row">
-                      {shot.refs.length === 0
-                        ? null
-                        : refChips({
-                          refs: shot.refs,
-                          owner: `shot:${shot.id}`,
-                          t,
-                          label: labelOf,
-                          onChange: next => {
-                            updateStoryboard(segment.id, current => ({
-                              ...current,
-                              shots: current.shots.map(candidate => (candidate.id === shot.id ? { ...candidate, refs: next } : candidate)),
-                            }))
-                          },
-                          onInsert: undefined,
-                        })}
-                      <RefPicker
-                        id={shot.id}
-                        label={t('shotRefAdd')}
-                        assets={assets}
-                        used={shot.refs}
-                        t={t}
-                        disabled={busy}
-                        trigger={{ 'data-shot-ref-add': shot.id }}
-                        onPick={assetId => {
-                          updateStoryboard(segment.id, current => ({
-                            ...current,
-                            shots: current.shots.map(candidate => (candidate.id === shot.id
-                              ? { ...candidate, refs: [...candidate.refs, { kind: 'asset', id: assetId, order: candidate.refs.length + 1 }] }
-                              : candidate)),
-                          }))
-                        }}
-                      />
+                        />
+                        {shot.refs.length > 0
+                          ? (
+                          <div className="iv-seg-refs-block" data-shot-refs={shot.id}>
+                            <span className="iv-meta">{t('segmentRefsLabel')}</span>
+                            <div className="iv-ref-row">
+                              {refChips({
+                                refs: shot.refs,
+                                owner: `shot:${shot.id}`,
+                                t,
+                                label: labelOf,
+                                thumb: thumbOf,
+                                onChange: next => {
+                                  updateStoryboard(segment.id, current => ({
+                                    ...current,
+                                    shots: current.shots.map(candidate => (candidate.id === shot.id ? { ...candidate, refs: next } : candidate)),
+                                  }))
+                                },
+                                onInsert: undefined,
+                              })}
+                            </div>
+                          </div>
+                          )
+                          : null}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1088,17 +1425,14 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                   className="iv-btn iv-btn--ghost iv-btn--sm"
                   data-shot-add={segment.id}
                   onClick={() => {
-                    updateStoryboard(segment.id, current => ({
-                      ...current,
-                      shots: [...current.shots, {
-                        id: newWorkbenchId('shot'),
-                        order: current.shots.length + 1,
-                        durationSec: segment.durationSec,
-                        imagePrompt: '',
-                        videoPrompt: '',
-                        refs: [],
-                      }],
-                    }))
+                    respreadShotsAndSync(segment, [...storyboard.shots, {
+                      id: newWorkbenchId('shot'),
+                      order: storyboard.shots.length + 1,
+                      durationSec: MIN_SEGMENT_DURATION_SEC,
+                      imagePrompt: '',
+                      videoPrompt: '',
+                      refs: [],
+                    }])
                   }}
                 >
                   <Icon name="plus" size={11} />{t('storyboardAddShot')}
@@ -1120,11 +1454,25 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     )
   }
 
+  const cleanScript = stripSkillTokens(scriptDraft, skills)
+  const jumpParts = segments.length === 0 ? [] : segments.map(segment => segment.promptText)
+  const jumpToSegment = (segmentId: string): void => {
+    setJumpTarget('')
+    const index = segments.findIndex(segment => segment.id === segmentId)
+    if (index < 0) return
+    const before = jumpParts.slice(0, index).join(SEGMENT_TEXT_SEPARATOR)
+    const start = before === '' ? 0 : before.length + SEGMENT_TEXT_SEPARATOR.length
+    const end = start + (jumpParts[index]?.length ?? 0)
+    const textarea = scriptRef.current
+    if (textarea === null) return
+    textarea.focus()
+    textarea.setSelectionRange(start, end)
+  }
+
   return (
     <section className="iv-sb" data-episode-workspace={episode.id}>
-      <div className="iv-sb-head">
-        <span className="iv-chip"><Icon name="storyboard" size={11} />{t('episodeWorkspaceTitle')}</span>
-        <span className="iv-meta" data-episode-duration="true">
+      <div className="iv-sb-head" data-episode-status="true">
+        <span className="iv-meta" data-episode-duration="true" data-episode-total-seconds={episodeDurationSec(segments)}>
           {t('episodeTotalDuration').replace('{n}', String(episodeDurationSec(segments)))}
         </span>
         <span className={saveChipClass(scriptState)} data-episode-script-state={scriptState}>
@@ -1135,40 +1483,93 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               : scriptState === 'failed' ? 'episodeScriptFailed' : 'episodeScriptDirty')}
         </span>
       </div>
-      <label className="iv-sb-field">
-        <span className="iv-meta">{t('storyboardScriptLabel')}</span>
+      <div className="iv-episode-script" data-episode-script-block="true">
+        <div className="iv-episode-script-head">
+          <span className="iv-meta">{t('episodeScriptJump')}</span>
+          <select
+            className="iv-select iv-select--sm"
+            aria-label={t('episodeScriptJump')}
+            data-episode-script-jump="true"
+            value={jumpTarget}
+            disabled={segments.length === 0}
+            onChange={event => { jumpToSegment(event.target.value) }}
+          >
+            <option value="">{t('episodeScriptAll')}</option>
+            {segments.map(segment => (
+              <option key={segment.id} value={segment.id}>
+                {t('segmentName').replace('{n}', String(segment.order))}
+              </option>
+            ))}
+          </select>
+        </div>
         <textarea
-          className="iv-input"
-          rows={4}
+          ref={scriptRef}
+          className="iv-input iv-episode-script-editor"
+          rows={10}
           value={scriptDraft}
           placeholder={t('storyboardScriptPlaceholder')}
+          aria-label={t('storyboardScriptPlaceholder')}
           data-episode-script="true"
-          onChange={event => { setScriptDraft(event.target.value) }}
-          onBlur={flushScript}
-          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
+          onFocus={() => { aggregateFocused.current = true }}
+          onChange={event => { updateScriptDraft(event.target.value) }}
+          onBlur={() => { aggregateFocused.current = false; flushScript() }}
         />
-      </label>
-      <div className="iv-sb-head">
+      </div>
+      {/* 分段模型与 Skill 都是分段设置：默认规则不调 AI，其余值走对应文本模型。 */}
+      <div className="iv-sb-row" data-script-selectors="true">
+        <label className="iv-sb-field">
+          <span className="iv-meta">{t('scriptTextModel')}</span>
+          <select
+            className="iv-select iv-select--sm"
+            aria-label={t('scriptTextModel')}
+            data-script-text-model="true"
+            value={activeTextModelKey}
+            disabled={busy || splitting}
+            onChange={event => { onTextModelChange(event.target.value) }}
+          >
+            <option value="rules">{t('scriptSplitModeRule')}</option>
+            {textModels.map(model => (
+              <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                {model.providerName} · {model.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="iv-sb-field">
+          <span className="iv-meta">{t('scriptDirectorSkill')}</span>
+          <SkillTokenSelect
+            skills={skills}
+            text={scriptDraft}
+            t={t}
+            label={t('scriptDirectorSkill')}
+            disabled={busy || splitting}
+            className="iv-select iv-select--sm"
+            selectAttrs={{ 'data-script-skill': 'true' }}
+            onTextChange={updateScriptDraft}
+          />
+        </label>
+      </div>
+      <div className="iv-sb-head iv-sb-segment-head">
         <span className="iv-micro">{t('segmentTitle')}</span>
         <span className="iv-sb-count">
           <button
             type="button"
-            className="iv-btn iv-btn--ghost iv-btn--sm"
+            className="iv-btn iv-btn--action iv-btn--action--primary"
             data-segment-auto="true"
-            disabled={busy || splitting || textModel === undefined || scriptDraft.trim() === ''}
-            title={textModel === undefined ? t('scriptSplitNeedsModel') : t('scriptSplitHint')}
+            disabled={busy || splitting || cleanScript.trim() === '' || (modelMode && activeTextModel === undefined)}
+            title={modelMode && activeTextModel === undefined ? t('scriptSplitNeedsModel') : t('scriptSplitHint')}
             onClick={() => { void autoSplit() }}
           >
-            <Icon name="sparkles" size={11} />{splitting ? t('scriptSplitting') : t('scriptSplit')}
+            <Icon name="sparkles" size={12} />{splitting ? t('scriptSplitting') : t('scriptSplit')}
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--ghost iv-btn--sm"
+            className="iv-btn iv-btn--action"
             data-segment-add="true"
             disabled={busy || splitting}
             onClick={() => { void addSegment() }}
           >
-            <Icon name="plus" size={11} />{t('segmentAdd')}
+            <Icon name="plus" size={12} />{t('segmentAdd')}
           </button>
         </span>
       </div>
@@ -1214,6 +1615,47 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           }}
         >
           <Icon name="download" size={11} />{t('episodeExport')}
+        </button>
+        <input
+          ref={episodeImportRef}
+          type="file"
+          accept=".json,application/json"
+          data-episode-import-file="true"
+          style={{ display: 'none' }}
+          onChange={event => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file === undefined) return
+            void (async () => {
+              setBusy(true)
+              try {
+                const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
+                const result = await api.importEpisode({ projectId, base64 })
+                const notice = t('episodeImportDone')
+                  .replace('{no}', String(result.episode.no))
+                  .replace('{title}', result.episode.title)
+                onNotice(result.warnings.length === 0
+                  ? notice
+                  : `${notice} · ${result.warnings.join('；')}`, 'info')
+                await onEpisodeImported?.(result.episode)
+                await onEpisodeChanged()
+              } catch (error) {
+                onNotice(`${t('episodeImportFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+              } finally {
+                setBusy(false)
+              }
+            })()
+          }}
+        />
+        <button
+          type="button"
+          className="iv-btn iv-btn--ghost iv-btn--sm"
+          data-episode-import="true"
+          title={t('episodeImportHint')}
+          disabled={busy}
+          onClick={() => episodeImportRef.current?.click()}
+        >
+          <Icon name="upload" size={11} />{t('episodeImport')}
         </button>
       </div>
       {segments.length === 0

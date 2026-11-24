@@ -17,6 +17,7 @@ import type {
 import type { SkillKind, SkillRecord } from '../workbench/skills.ts'
 import type { ExtractCategory, ExtractItem } from '../workbench/entity-extract.ts'
 import type { EpisodeExportResult } from '../workbench/episode-export.ts'
+import type { EpisodeImportResult } from '../workbench/episode-import.ts'
 import type { PipelineMode, PipelineShot } from '../workbench/pipeline.ts'
 import type { TimelineRecord } from '../workbench/timeline.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
@@ -723,6 +724,8 @@ export interface WorkbenchApi {
   revealSkill: (id: string) => Promise<RevealResultView>
   /** 导出单集（剧本 + 分段 + 分镜 + 引用素材副本）到输出目录。 */
   exportEpisode: (episodeId: string) => Promise<EpisodeExportResult>
+  /** 导入单集清单，在目标剧集下新建一集（不覆盖现有集）。 */
+  importEpisode: (input: { readonly projectId: string; readonly base64: string }) => Promise<EpisodeImportResult>
   /** 把本集分镜同步成固定的工作流文档（幂等）。 */
   syncEpisodeWorkflow: (episodeId: string) => Promise<WorkflowRecord>
   /**
@@ -1033,6 +1036,7 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     removeSkill: async id => (await call<{ removed: boolean }>('skills/remove', { id })).removed,
     revealSkill: async id => (await call<{ reveal: RevealResultView }>('skills/reveal', { id })).reveal,
     exportEpisode: async episodeId => (await call<{ export: EpisodeExportResult }>('episodes/export', { episodeId })).export,
+    importEpisode: async input => (await call<{ imported: EpisodeImportResult }>('episodes/import', input)).imported,
     syncEpisodeWorkflow: async episodeId => (await call<{ workflow: WorkflowRecord }>('workflows/sync-episode', { episodeId })).workflow,
     listRunningTasks: async () => (await call<{ running: RunningGeneration[] }>('tasks/running')).running,
     probeFfmpeg: async path => (await call<{ ffmpeg: FfmpegProbe }>('media/ffmpeg', path === undefined ? {} : { path })).ffmpeg,

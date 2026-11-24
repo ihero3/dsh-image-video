@@ -7,9 +7,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_EPISODE_NO, MAX_EPISODE_REMARK_LENGTH, MAX_EPISODE_TITLE_LENGTH, MAX_SCRIPT_LENGTH,
-  MAX_SEGMENT_DURATION_SEC, MAX_SEGMENT_PROMPT_LENGTH, applyReorder, nextOrder, normalizeEpisodeNo,
-  normalizeEpisodeRefCategory, normalizeEpisodeTitle, normalizeOptionalId, normalizePromptText,
-  normalizeRemark, normalizeScriptText, normalizeSegmentDuration, normalizeSegmentRefs, normalizeShots,
+  MAX_SEGMENT_DURATION_SEC, MAX_SEGMENT_PROMPT_LENGTH, applyReorder, distributeDurationToShots, nextOrder,
+  normalizeEpisodeNo, normalizeEpisodeRefCategory, normalizeEpisodeTitle, normalizeOptionalId, normalizePromptText,
+  normalizeRemark, normalizeScriptText, normalizeSegmentDuration, normalizeSegmentRefs, normalizeShots, shotsDurationSec,
 } from '../src/workbench/episodes.ts'
 
 describe('episode field validation', () => {
@@ -108,5 +108,24 @@ describe('episode field validation', () => {
     expect(() => applyReorder(items, ['a', 'c'], '分段')).toThrow(/未知 id/)
     expect(nextOrder([])).toBe(1)
     expect(nextOrder(items)).toBe(3)
+  })
+
+  it('distributes a segment duration across shots with the sum exactly preserved', () => {
+    expect(distributeDurationToShots(5, 2)).toEqual([3, 2])
+    expect(distributeDurationToShots(60, 3)).toEqual([20, 20, 20])
+    expect(distributeDurationToShots(10, 3)).toEqual([4, 3, 3])
+    for (let total = 1; total <= 180; total += 1) {
+      for (let count = 1; count <= 20; count += 1) {
+        const durations = distributeDurationToShots(total, count)
+        expect(durations).toHaveLength(count)
+        expect(Math.min(...durations)).toBeGreaterThanOrEqual(1)
+        expect(durations.reduce((sum, value) => sum + value, 0))
+          .toBe(Math.max(total, count)) // 镜头多于秒数时每镜保底 1 秒
+      }
+    }
+    expect(shotsDurationSec([
+      { id: 's1', order: 1, durationSec: 3, imagePrompt: '', videoPrompt: '', refs: [] },
+      { id: 's2', order: 2, durationSec: 2, imagePrompt: '', videoPrompt: '', refs: [] },
+    ])).toBe(5)
   })
 })

@@ -772,7 +772,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
    * 收起就把整块内容一起藏起来。
    */
-  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean }>({ pipeline: true, quick: true })
+  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; episode: boolean }>({ pipeline: true, quick: true, episode: true })
   // 展示列开合（宽档两栏 / 窄档浮层，见样式表容器查询）
   const [dockOpen, setDockOpen] = useWorkbenchField(api, 'dockOpen')
   // 展示列各块的收起态：高频块（预览）默认展开，低频块（资源/导出/任务）默认收起。
@@ -801,7 +801,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [])
 
   useEffect(() => { void loadAuthLabel() }, [loadAuthLabel])
-  const toggleModule = (key: 'pipeline' | 'quick'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
+  const toggleModule = (key: 'pipeline' | 'quick' | 'episode'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -859,17 +859,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     void reloadDirectorSkills()
   }, [reloadDirectorSkills])
 
-  // 剧本模块：文本模型目录（拆段用）与三个"新分段默认值"（图像模型 / 视频模型 / 导演 Skill）。
-  // 目录按需拉一次；宿主没装配文本模型时接口会报错，这里只提示不阻断手动加段。
+  // 剧本模块：文本模型目录、分段方式与导演 Skill（都服务于本集工作区的「开始分段」）。
+  // 目录按需拉一次；宿主没装配文本模型时接口会报错，这里只提示不阻断规则分段。
   const [scriptModels, setScriptModels] = useState<readonly TextModelOption[]>([])
-  const [scriptTextModel, setScriptTextModel] = useState('')
-  const [scriptImageModel, setScriptImageModel] = useState('')
-  const [scriptVideoModel, setScriptVideoModel] = useState('')
+  const [scriptTextModel, setScriptTextModel] = useState('rules')
   const [scriptSkillId, setScriptSkillId] = useState('')
   const scriptModelsLoaded = useRef(false)
 
   useEffect(() => {
-    if (scriptModelsLoaded.current || mode !== 'script') return
+    if (scriptModelsLoaded.current) return
     scriptModelsLoaded.current = true
     void apiRef.current.listTextModels()
       .then(catalog => { setScriptModels(catalog.models) })
@@ -880,10 +878,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           tone: 'error',
         })
       })
-  }, [mode, t])
+  }, [t])
 
-  /** 文本模型下拉值 `provider::id` → 拆段入参；未选时返回 undefined。 */
+  // 文本模型目录只含文本模型；旧选中项若已不在目录里（例如之前选过生图模型），回到默认规则
+  useEffect(() => {
+    if (scriptTextModel === '' || scriptTextModel === 'rules') return
+    if (scriptModels.some(model => `${model.provider}::${model.id}` === scriptTextModel)) return
+    setScriptTextModel('rules')
+  }, [scriptModels, scriptTextModel])
+
+  /** 文本模型下拉值 `provider::id` → 拆段入参；`rules` / 空值走内置默认规则。 */
   const scriptTextModelChoice = ((): { provider: string; model: string } | undefined => {
+    if (scriptTextModel === '' || scriptTextModel === 'rules') return undefined
     const separator = scriptTextModel.indexOf('::')
     if (separator <= 0) return undefined
     const provider = scriptTextModel.slice(0, separator)
@@ -2858,7 +2864,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         : null}
 
       {/* ============ 默认值摘要条 + 弹层 ============ */}
-      {defaultRows.length === 0
+      {defaultRows.length === 0 && scriptModels.length === 0
         ? null
         : (
           <div className="iv-defaults" data-workbench-defaults="true" onDoubleClick={onWindowStripDoubleClick}>
@@ -2877,6 +2883,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   )}
               </span>
             ))}
+            {scriptModels.length === 0
+              ? null
+              : (
+                <span className="iv-def iv-def--select" data-workbench-text-model-row="true" data-default-source="none">
+                  <i>{t('defaultTextModel')}</i>
+                  <select
+                    className="iv-select iv-select--sm"
+                    aria-label={t('defaultTextModel')}
+                    data-workbench-text-model="true"
+                    value={scriptTextModel}
+                    onChange={event => { setScriptTextModel(event.target.value) }}
+                  >
+                    <option value="rules">{t('scriptSplitModeRule')}</option>
+                    {scriptModels.map(model => (
+                      <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                        {model.providerName} · {model.name}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              )}
             <span className="iv-pop">
               <button
                 type="button"
@@ -3930,80 +3957,75 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       if (first !== undefined) setActiveEpisodeId(first.id)
                     }}
                   />
-                  {/* 本集默认值：新分段与「生成剧本」的落库都继承这一组选择 */}
-                  {activeProject === undefined || activeEpisode === undefined
-                    ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
-                    : (
-                      <>
-                        <div className="iv-sb-row" data-script-selectors="true">
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptTextModel')}</span>
-                            <select
-                              className="iv-select iv-select--sm"
-                              aria-label={t('scriptTextModel')}
-                              data-script-text-model="true"
-                              value={scriptTextModel}
-                              onChange={event => { setScriptTextModel(event.target.value) }}
-                            >
-                              <option value="">{t('scriptTextModelEmpty')}</option>
-                              {scriptModels.map(model => (
-                                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
-                                  {model.providerName} · {model.name}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptImageModel')}</span>
-                            <ModelPicker
-                              api={apiRef.current} t={t} mediaMode="image"
-                              value={scriptImageModel} onChange={setScriptImageModel}
-                            />
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptVideoModel')}</span>
-                            <ModelPicker
-                              api={apiRef.current} t={t} mediaMode="video"
-                              value={scriptVideoModel} onChange={setScriptVideoModel}
-                            />
-                          </label>
-                          <label className="iv-sb-field">
-                            <span className="iv-meta">{t('scriptDirectorSkill')}</span>
-                            <select
-                              className="iv-select iv-select--sm"
-                              aria-label={t('scriptDirectorSkill')}
-                              data-script-skill="true"
-                              value={scriptSkillId}
-                              onChange={event => { setScriptSkillId(event.target.value) }}
-                            >
-                              <option value="">{t('scriptFollowDefault')}</option>
-                              {directorSkills.map(skill => (
-                                <option key={skill.id} value={skill.id}>{skill.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                        <EpisodeWorkspace
-                          api={apiRef.current}
-                          t={t}
-                          projectId={activeProject.id}
-                          episode={activeEpisode}
-                          resources={resources}
-                          assets={assets}
-                          options={options}
-                          skills={directorSkills}
-                          textModel={scriptTextModelChoice}
-                          defaults={{ imageModel: scriptImageModel, videoModel: scriptVideoModel, skillId: scriptSkillId }}
-                          onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
-                          onMediaGenerated={async () => {
-                            setAssets(await apiRef.current.listAssets())
-                            await loadTasks()
-                          }}
-                          onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                        />
-                      </>
-                    )}
+                    </div>
+                  </section>
 
+                  {/* 模块2：本集工作区——选一集，编辑剧本 / 分段 / 分镜 / 生图生视频 / 工作流 */}
+                  <section className="iv-module" data-module="episode">
+                    <button
+                      type="button"
+                      className="iv-module-head"
+                      data-module-toggle="episode"
+                      aria-expanded={openModules.episode}
+                      aria-label={`${openModules.episode ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleEpisode')}`}
+                      onClick={() => { toggleModule('episode') }}
+                    >
+                      <span className="iv-module-n">2</span>
+                      <span className="iv-module-text">
+                        <span className="iv-module-title" data-module-title="episode">{t('moduleEpisode')}</span>
+                        <span className="iv-meta">{t('moduleEpisodeDesc')}</span>
+                      </span>
+                      <span className="iv-module-toggle" aria-hidden="true">
+                        <Icon name="chevron" size={11} />{openModules.episode ? t('moduleCollapse') : t('moduleExpand')}
+                      </span>
+                    </button>
+                    <div className="iv-module-body" data-module-body="episode" hidden={!openModules.episode}>
+                      <div className="iv-plan-row" data-module-episode-picker="true">
+                        <span className="iv-meta">{t('sectionEpisode')}</span>
+                        <select
+                          className="iv-select iv-select--sm"
+                          aria-label={t('sectionEpisode')}
+                          data-module-episode-select="true"
+                          value={activeEpisodeId ?? ''}
+                          onChange={event => { setActiveEpisodeId(event.target.value) }}
+                        >
+                          {episodes.length === 0
+                            ? <option value="">{t('episodeNone')}</option>
+                            : episodes.map(episode => (
+                              <option key={episode.id} value={episode.id}>{episode.title}</option>
+                            ))}
+                        </select>
+                      </div>
+                      {activeProject === undefined || activeEpisode === undefined
+                        ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
+                        : (
+                          <EpisodeWorkspace
+                            api={apiRef.current}
+                            t={t}
+                            projectId={activeProject.id}
+                            episode={activeEpisode}
+                            resources={resources}
+                            assets={assets}
+                            options={options}
+                            skills={directorSkills}
+                            textModels={scriptModels}
+                            textModelKey={scriptTextModel}
+                            textModel={scriptTextModelChoice}
+                            defaults={{ skillId: scriptSkillId }}
+                            onTextModelChange={setScriptTextModel}
+                            onSkillChange={setScriptSkillId}
+                            onEpisodeChanged={async () => { await refreshEpisode(activeEpisode.id) }}
+                            onEpisodeImported={async imported => {
+                              await loadEpisodes(activeProject.id)
+                              setActiveEpisodeId(imported.id)
+                            }}
+                            onMediaGenerated={async () => {
+                              setAssets(await apiRef.current.listAssets())
+                              await loadTasks()
+                            }}
+                            onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                          />
+                        )}
                     </div>
                   </section>
 
@@ -4101,6 +4123,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     record={workflow}
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
                     t={t}
+                    onNotice={(text, tone) => { setNotice({ text, tone }) }}
                     run={{
                       ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined
                         ? {}

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
-import { catalogConsistencyIssues, modelCards } from '../src/media/model-catalog.ts'
+import { catalogConsistencyIssues, isTextModelEntry, modelCards } from '../src/media/model-catalog.ts'
 import { assertPromptAllowed, scanPrompt } from '../src/media/prompt-safety.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 import type { GenerationTool } from '../src/workbench/runner.ts'
@@ -26,7 +26,7 @@ async function temp(prefix: string): Promise<string> {
   return directory
 }
 
-async function harness() {
+async function harness(llm?: unknown) {
   const store = new WorkbenchStore({ directory: await temp('dsh-catalog-store-') })
   const outputsDir = await temp('dsh-catalog-out-')
   const calls: Array<Record<string, unknown>> = []
@@ -42,6 +42,7 @@ async function harness() {
     provider: 'threevideo', outputsDir, store,
     registry: new GenerationRegistry(), runner: {} as never, renders: {} as never,
     generate: { image, video: { async execute() { throw new Error('no video') } } },
+    ...llm === undefined ? {} : { llm: llm as never },
   })
   return { call, store, project: await store.createProject('能力卡'), calls }
 }
@@ -49,6 +50,68 @@ async function harness() {
 describe('模型能力卡', () => {
   it('与运行时能力常量逐项一致（改一边忘另一边会立刻红）', () => {
     expect(catalogConsistencyIssues()).toEqual([])
+  })
+
+  it('文本模型目录只保留文本服务商的文本模型，不把生图/生视频服务商的模型发给任何选择器', async () => {
+    const textIds = ['deepseek-chat', 'deepseek-v4-pro', 'DeepSeek-V4-Flash', 'qwen3.5']
+    const mediaIds = [
+      'image-01', 'minimax-image-01', 'qwen-image-3.0', 'minimax-h3',
+      'wan2.7-t2v', 'wan2.2-i2v-plus', 'wan3.0-video', 'wanx2.1-t2i-turbo', 'doubao-seedream-1-0',
+    ]
+    for (const id of textIds) expect(isTextModelEntry({ id }), id).toBe(true)
+    for (const id of mediaIds) expect(isTextModelEntry({ id }), id).toBe(false)
+    expect(isTextModelEntry({ id: 'vision-only', inputModalities: ['image'] })).toBe(false)
+    // 服务商维度：生成服务商整组排除，哪怕模型 id 看起来像文本模型
+    for (const provider of ['threevideo', 'wanx', 'minimax', 'seedance']) {
+      expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider }), provider).toBe(false)
+      expect(isTextModelEntry({ id: 'deepseek-flash', provider }), provider).toBe(false)
+    }
+    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'deepseek-account' })).toBe(true)
+    // 大小写与相似子串不误伤文本服务商
+    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'ThreeVideo' })).toBe(false)
+    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'threevideo-text-gateway' })).toBe(true)
+
+    // 真实目录形状：文本服务商 + 生成服务商并存；生成服务商下混入名字像文本的模型，
+    // 这些都必须被排除，只留真正文本服务商的模型。
+    const llm = {
+      listProviders: () => [
+        { id: 'deepseek-account', name: 'DeepSeek Account' },
+        { id: 'threevideo', name: 'Threevideo' },
+      ],
+      listModels: async (provider: string) => provider === 'deepseek-account'
+        ? textIds.map(id => ({ provider, id, name: id }))
+        : ['deepseek-flash', 'deepseek-v4-pro', ...mediaIds].map(id => ({ provider, id, name: id })),
+    }
+    const { call } = await harness(llm)
+    const result = await call('llm/models', {}, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(true)
+    expect((result.value as { models: readonly { id: string }[] }).models.map(model => model.id))
+      .toEqual(textIds)
+  })
+
+  it('文本模型目录只给可用模型：拉取失败的服务商不入列表，但如实报告失败原因', async () => {
+    const llm = {
+      listProviders: () => [
+        { id: 'ok-provider', name: '可用' },
+        { id: 'down-provider', name: '不可用' },
+      ],
+      listModels: async (provider: string) => {
+        if (provider === 'down-provider') throw new Error('连接不上')
+        return [{ provider, id: 'deepseek-chat', name: 'Chat' }]
+      },
+    }
+    const { call } = await harness(llm)
+    const result = await call('llm/models', {}, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(true)
+    const value = result.value as {
+      models: readonly { provider: string; id: string }[]
+      failures: readonly { provider: string; message: string }[]
+    }
+    // 选择器只拿到可用服务商的模型，down-provider 的一个都不出现
+    expect(value.models).toEqual([{ provider: 'ok-provider', providerName: '可用', id: 'deepseek-chat', name: 'Chat' }])
+    expect(value.models.every(model => model.provider === 'ok-provider')).toBe(true)
+    // 失败如实上报，方便界面提示「部分服务商不可用」
+    expect(value.failures.map(failure => failure.provider)).toEqual(['down-provider'])
   })
 
   it('卡片结构完整：id 唯一、有擅长与提示词建议、视频卡有时长', () => {

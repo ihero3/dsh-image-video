@@ -24,7 +24,7 @@ import { useEffect } from 'react'
 export const MODERN_THEME_STYLE_ID = 'dsh-image-video-modern-theme'
 
 /** 样式表版本戳：同 id 但内容不同时整表覆盖，避免热替换后残留旧规则。 */
-export const MODERN_THEME_VERSION = '2026-11-13.2'
+export const MODERN_THEME_VERSION = '2026-11-24.1'
 
 /** 主题层样式表：令牌 + 控件 + 容器 + 引导层，布局规则（grid / flex / 定位）一律不动。 */
 export const MODERN_THEME_STYLE = `
@@ -79,6 +79,41 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-select{background-position:right 12px center}
 .iv .iv-select--sm{height:28px;padding:0 28px 0 10px;font-size:12px;border-radius:8px}
 .iv .iv-textarea,.iv textarea.iv-input{height:auto;min-height:84px;padding:10px 12px;line-height:1.55;font-size:13px;border-radius:10px}
+.iv .iv-episode-script{display:flex;flex-direction:column;gap:8px}
+.iv .iv-episode-script-head{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.iv .iv-episode-script-editor{min-height:180px;line-height:1.7;font-size:13px}
+.iv .iv-seg-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+.iv .iv-seg-prompt-row--with-refs{grid-template-columns:minmax(0,1fr) clamp(180px,28%,300px)}
+.iv .iv-seg-ref-side{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:0}
+.iv .iv-seg-prompt-row .iv-ref-pop{margin-left:0;align-self:start}
+.iv .iv-seg-refs-block{display:flex;flex-direction:column;gap:6px;min-width:0}
+.iv .iv-seg-ref-side .iv-seg-refs-block{width:100%}
+.iv .iv-seg-ref-side .iv-ref-list{margin-top:0;max-height:200px}
+.iv .iv-shot-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:start}
+.iv .iv-shot-prompt-row--with-refs{grid-template-columns:minmax(0,1fr) clamp(180px,28%,300px)}
+.iv .iv-shot-prompt-main{display:flex;flex-direction:column;gap:8px;min-width:0}
+.iv .iv-shot-tool-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.iv .iv-shot-tool-row .iv-meta{flex:none}
+.iv .iv-shot-tool-row .iv-input{flex:0 1 150px;width:auto}
+.iv .iv-shot-prompt-row .iv-ref-pop{margin-left:0;align-self:start}
+.iv .iv-sb-segment-head{margin-top:var(--iv-sp-6)}
+.iv .iv-btn--action{height:34px;padding:0 14px;border-radius:10px;font-size:12.5px;font-weight:600;box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 10%,transparent);transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}
+.iv .iv-btn--action--primary{background:var(--iv-solid);border-color:transparent;color:var(--iv-on-solid)}
+.iv .iv-btn--action--soft{background:var(--iv-panel-2);border-color:var(--iv-line-2);color:var(--iv-tx)}
+/* 生图 / 生视频主操作：悬停要有明确反馈（提亮 + 微抬 + 加深阴影），按下回落 */
+.iv .iv-btn--action--primary:hover:not(:disabled){background:var(--iv-solid-hover);box-shadow:0 4px 12px color-mix(in srgb,var(--iv-solid) 34%,transparent);transform:translateY(-1px)}
+.iv .iv-btn--action--soft:hover:not(:disabled){background:var(--iv-acc-soft);border-color:var(--iv-acc);color:var(--iv-acc);box-shadow:0 3px 9px color-mix(in srgb,var(--iv-acc) 18%,transparent);transform:translateY(-1px)}
+.iv .iv-btn--action:hover:not(:disabled){filter:brightness(1.04)}
+.iv .iv-btn--action:active:not(:disabled){transform:translateY(0);box-shadow:0 1px 2px color-mix(in srgb,#0b0d12 12%,transparent)}
+@media (prefers-reduced-motion:reduce){.iv .iv-btn--action{transition:none}.iv .iv-btn--action:hover:not(:disabled),.iv .iv-btn--action:active:not(:disabled){transform:none}}
+.iv .iv-def--select{gap:6px}
+.iv .iv-def--select select{height:28px;max-width:190px}
+.iv .iv-ref-chip{display:flex;align-items:center;gap:6px}
+.iv .iv-ref-thumb-button{display:inline-flex;padding:0;border:1px solid var(--iv-line);border-radius:var(--iv-r-xs);background:var(--iv-panel-3);cursor:zoom-in;overflow:hidden;flex:none}
+.iv .iv-ref-thumb-button .iv-ref-picker-thumb{width:34px;height:24px;border-radius:0}
+.iv .iv-ref-zoom{position:fixed;inset:0;z-index:var(--iv-z-overlay);display:grid;place-items:center;padding:24px;background:color-mix(in srgb,var(--iv-tx) 38%,transparent)}
+.iv .iv-ref-zoom-body{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);box-shadow:var(--iv-shadow-3);max-width:min(720px,90vw)}
+.iv .iv-ref-zoom-body .iv-ref-picker-thumb{width:min(680px,86vw);height:auto;max-height:60vh;object-fit:contain}
 .iv textarea[style*="border-radius"],.iv input[style*="border-radius"]{border-radius:10px!important}
 .iv .iv-check input{accent-color:var(--iv-solid);width:14px;height:14px}
 .iv .iv-field-label,.iv .iv-label{font-size:12px;font-weight:600;color:var(--iv-tx2)}

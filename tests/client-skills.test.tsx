@@ -82,7 +82,7 @@ describe('双技能库', () => {
     })
   })
 
-  it('shows a disabled chip when the selected skill is no longer enabled', async () => {
+  it('does not list a disabled skill in the token dropdown', async () => {
     const host = fakeApi({
       episodes: [episode({ segments: [segment({ skillId: 'dir-off' })] })],
       skills: [skill('dir-off', 'director', { name: '停用技能', enabled: false })],
@@ -92,8 +92,8 @@ describe('双技能库', () => {
 
     await waitFor(() => { expect(view.container.querySelector('[data-segment-skill="seg-1"]')).toBeTruthy() })
     const select = view.container.querySelector('[data-segment-skill="seg-1"]') as HTMLSelectElement
-    expect(select.value).toBe('dir-off')
-    expect(select.selectedOptions[0]?.textContent).toContain('Disabled skill')
+    expect(select.value).toBe('')
+    expect([...select.options].map(option => option.value)).not.toContain('dir-off')
   })
 
   it('switches libraries, imports a local skill and removes a user skill', async () => {

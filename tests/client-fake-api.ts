@@ -766,6 +766,22 @@ export function fakeApi(options: {
       return true
     },
     revealSkill: async id => ({ ok: true, path: `/tmp/skills/${id}` }),
+    importEpisode: async input => {
+      calls.push('episodes/import')
+      const parsed = JSON.parse(Buffer.from(input.base64, 'base64').toString('utf8')) as {
+        episode?: { title?: string; script?: string }
+      }
+      const no = episodeRecords.filter(episode => episode.projectId === input.projectId).length + 1
+      const created: EpisodeRecord = {
+        schemaVersion: 1, id: `ep-import-${episodeRecords.length + 1}`, projectId: input.projectId, no,
+        title: parsed.episode?.title ?? `第${no}集`,
+        script: { text: parsed.episode?.script ?? '', updatedAt: '2026-11-09T00:00:00.000Z' },
+        segments: [], storyboards: [], resourceRefs: [], assetRefs: [],
+        createdAt: '2026-11-09T00:00:00.000Z', updatedAt: '2026-11-09T00:00:00.000Z',
+      }
+      episodeRecords.push(created)
+      return { episode: created, warnings: [] }
+    },
     exportEpisode: async episodeId => {
       calls.push('episodes/export')
       return {

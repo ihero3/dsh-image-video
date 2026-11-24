@@ -8,9 +8,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_PLAN_EPISODES, buildEpisodePlanPrompt, parseEpisodePlan, planEpisodesByRules,
+  MAX_PLAN_EPISODES, autoCountsForScript, buildEpisodePlanPrompt, parseEpisodePlan, planEpisodesByRules,
   type EpisodePlanRequest,
 } from '../src/workbench/episode-plan.ts'
+import { MAX_SCRIPT_LENGTH, normalizeScriptText } from '../src/workbench/episodes.ts'
 
 const request: EpisodePlanRequest = {
   script: '第一场 雨夜街头。林夏撑伞走来。第二场 天台。她抬头看霓虹。第三场 地铁。车门关上。',
@@ -128,5 +129,37 @@ describe('episode plan', () => {
     expect(plan).toHaveLength(3)
     expect(plan.every(episode => episode.script === '只有一句')).toBe(true)
     expect(plan.every(episode => episode.segments.length === 2)).toBe(true)
+  })
+
+  it('autoCountsForScript scales with script length and stays within maxima', () => {
+    // 短文本给最小结构
+    expect(autoCountsForScript('')).toEqual({ episodes: 1, segments: 3, shots: 4 })
+    expect(autoCountsForScript('雨夜街头。林夏抬头。').episodes).toBe(1)
+    // 长文本随字数增长，但集数封顶在产品上限内
+    const long = autoCountsForScript('句。'.repeat(100_000))
+    expect(long.episodes).toBeGreaterThan(1)
+    expect(long.episodes).toBeLessThanOrEqual(MAX_PLAN_EPISODES)
+    expect(long.segments).toBeGreaterThanOrEqual(1)
+    expect(long.shots).toBeGreaterThanOrEqual(1)
+  })
+
+  it('autoCountsForScript never yields an episode too long to persist', () => {
+    // 29 万字整本剧本：推算出的集数要让每集正文都低于落库上限
+    const script = '这是一个足够长的句子用来模拟正文。'.repeat(20_000)
+    const counts = autoCountsForScript(script)
+    const plan = planEpisodesByRules({ ...request, script, ...counts })
+    expect(plan.length).toBeGreaterThan(1)
+    for (const episode of plan) {
+      expect(() => normalizeScriptText(episode.script)).not.toThrow()
+      expect(episode.script.length).toBeLessThanOrEqual(MAX_SCRIPT_LENGTH)
+    }
+  })
+
+  it('rule splitting lifts a single episode to a safe count for very long scripts', () => {
+    // 即使上游固定传 1 集，规则拆分也要自动补足集数，避免"0 集后失败"
+    const script = '长句子 describes 一个场景。'.repeat(30_000)
+    const plan = planEpisodesByRules({ ...request, script, episodes: 1, segments: 1, shots: 1 })
+    expect(plan.length).toBeGreaterThan(1)
+    for (const episode of plan) expect(episode.script.length).toBeLessThanOrEqual(MAX_SCRIPT_LENGTH)
   })
 })

@@ -15,7 +15,7 @@ import { planDub } from '../workbench/voice.ts'
 import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
 import { cropImage } from '../media/image-crop.ts'
 import { planRatioSlices } from '../workbench/derive-ratios.ts'
-import { catalogConsistencyIssues, modelCards } from '../media/model-catalog.ts'
+import { catalogConsistencyIssues, isTextModelEntry, modelCards } from '../media/model-catalog.ts'
 import { compareCardsAgainstRegistry, type ModelCatalogLive, type ModelRegistryProbe } from '../media/model-health.ts'
 import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
 import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
@@ -1292,6 +1292,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         try {
           const listed = await llm.listModels(provider.id)
           for (const entry of listed) {
+            // 生图 / 生视频模型也能从 llm 目录里列出来，但文本模型选择器不该看到它们。
+            // 带上 provider 一起判定：生成服务商网关下的整组模型（含名字像文本的别名）都排除。
+            if (!isTextModelEntry({ ...entry, provider: provider.id })) continue
             models.push({ provider: provider.id, providerName: provider.name, id: entry.id, name: entry.name })
           }
         } catch (error) {
@@ -1326,6 +1329,21 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           targetDir: join(deps.outputsDir, 'episodes', episodeId),
         }),
       }
+    }
+    // 单集导入：浏览器没有真实路径，走 base64 文本；桌面壳也可传 path。
+    case 'episodes/import': {
+      const projectId = text(payload, 'projectId')
+      const base64 = optionalText(payload, 'base64')
+      const content = base64 === undefined
+        ? await readFile(text(payload, 'path'), 'utf8')
+        : Buffer.from(base64, 'base64').toString('utf8')
+      let manifest: unknown
+      try {
+        manifest = JSON.parse(content)
+      } catch {
+        throw new Error('导入失败：文件不是合法的 JSON')
+      }
+      return { imported: await deps.store.importEpisode({ projectId, manifest }) }
     }
     // ---- 双技能库（导演库 / 逆向库）--------------------------------------------
     case 'skills/list': {
@@ -2496,7 +2514,7 @@ function refInput(payload: unknown): EpisodeRefInput {
 
 /** Read the optional fields shared by segment create and update. */
 function segmentInput(payload: unknown): SegmentInput {
-  const keys = ['promptText', 'durationSec', 'order', 'imageModel', 'videoModel', 'skillId', 'refs'] as const
+  const keys = ['promptText', 'durationSec', 'order', 'imageModel', 'videoModel', 'textModel', 'skillId', 'refs'] as const
   const input: Record<string, unknown> = {}
   for (const key of keys) {
     const value = field(payload, key)

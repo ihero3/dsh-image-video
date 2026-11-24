@@ -10,10 +10,14 @@
 
 import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import type { EpisodeRecord } from './episodes.ts'
 import type { WorkbenchStore } from './store.ts'
 
-/** 单集清单版本。 */
-export const EPISODE_EXPORT_VERSION = 1
+/**
+ * 单集清单版本。
+ * v1 只写了分段，漏了分镜镜头；v2 补齐 storyboards 与两类引用，导入才能完整还原一集。
+ */
+export const EPISODE_EXPORT_VERSION = 2
 
 /** 单集清单里的一条文件。 */
 interface EpisodeExportFile {
@@ -36,7 +40,12 @@ export interface EpisodeExportManifest {
     readonly script: string
     readonly durationSec: number
   }
-  readonly segments: readonly unknown[]
+  readonly segments: EpisodeRecord['segments']
+  /** v2 新增：分镜镜头（分段的 `storyboardId` 指向这里）。v1 清单缺这个字段。 */
+  readonly storyboards: EpisodeRecord['storyboards']
+  /** v2 新增：集级资源 / 素材引用。 */
+  readonly resourceRefs: EpisodeRecord['resourceRefs']
+  readonly assetRefs: EpisodeRecord['assetRefs']
   readonly files: readonly EpisodeExportFile[]
   readonly missing: readonly string[]
 }
@@ -95,6 +104,9 @@ export async function exportEpisode(input: {
       durationSec: episode.segments.reduce((total, segment) => total + segment.durationSec, 0),
     },
     segments: episode.segments,
+    storyboards: episode.storyboards,
+    resourceRefs: episode.resourceRefs,
+    assetRefs: episode.assetRefs,
     files,
     missing,
   }

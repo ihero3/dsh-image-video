@@ -9,8 +9,8 @@
 import type { ImportedScriptView, WorkbenchApi } from './api.ts'
 import type { WorkbenchFieldSetter } from './workbench-store.ts'
 
-/** 浏览器没有 Buffer：把文件字节转 base64。 */
-function bytesToBase64(bytes: Uint8Array): string {
+/** 浏览器没有 Buffer：把文件字节转 base64（导入本集等文件入口共用）。 */
+export function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''
   const chunkSize = 0x8000
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {

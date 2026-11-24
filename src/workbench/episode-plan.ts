@@ -13,10 +13,34 @@
  *
  * @module dsh-image-video/workbench/episode-plan
  */
+import { MAX_SCRIPT_LENGTH, MAX_SEGMENT_PROMPT_LENGTH } from './episodes.ts'
 import { planStoryboard, type PlanResource } from './storyboard.ts'
 
 /** 一次生成的集数上限。 */
 export const MAX_PLAN_EPISODES = 12
+
+/**
+ * 自动推算：每集剧本文字目标。
+ *
+ * 取一个"短剧一集"的量级：字数越多集数越多，直到撞上 {@link MAX_PLAN_EPISODES}。
+ * 这只是目标尺寸，真正决定下限的是 {@link SAFE_EPISODE_CHARS}（落库安全线）。
+ */
+export const AUTO_CHARS_PER_EPISODE = 8_000
+
+/** 自动推算：每段文字目标（换算每集段数）。 */
+const AUTO_CHARS_PER_SEGMENT = 1_200
+
+/** 自动推算：每镜文字目标（换算每段分镜数）。 */
+const AUTO_CHARS_PER_SHOT = 250
+
+/**
+ * 单集正文安全线：低于落库上限 {@link MAX_SCRIPT_LENGTH}，给句子拼接的标点留余量。
+ * 任何分集方案都必须保证每集正文不超过它，否则会像之前 29 万字塞一集那样落库失败。
+ */
+export const SAFE_EPISODE_CHARS = Math.floor(MAX_SCRIPT_LENGTH * 0.9)
+
+/** 单段提示词安全线：低于落库上限，给分段正文拼接留余量。 */
+const SAFE_SEGMENT_CHARS = Math.floor(MAX_SEGMENT_PROMPT_LENGTH * 0.9)
 
 /** 每集分段数上限。 */
 export const MAX_PLAN_SEGMENTS = 20
@@ -84,6 +108,44 @@ function countsOf(request: EpisodePlanRequest): { episodes: number, segments: nu
     segments: clampInt(request.segments, 1, MAX_PLAN_SEGMENTS),
     shots: clampInt(request.shots, 1, MAX_PLAN_SHOTS),
   }
+}
+
+/**
+ * 按剧本文字长度推算三级数量（"自动"的确定性实现，不依赖文本模型）。
+ *
+ * 核心保证：先把正文按安全线切成足够的集——`ceil(字数 / 安全线)`，
+ * 这样每集正文都不会超过落库上限，长剧本不再是"0 集失败"；集数目标量级再按
+ * {@link AUTO_CHARS_PER_EPISODE} 细化，最后都夹到产品上限内。
+ * 每集字数再推算段数，每段字数推算分镜数，让读者拿到的是有内容的层级结构。
+ *
+ * @param script - 剧本文字（空串时给出最小结构 1 集 / 3 段 / 4 镜）。
+ * @returns 集 / 每集段 / 每段镜三级数量。
+ */
+export function autoCountsForScript(script: string): { episodes: number, segments: number, shots: number } {
+  const chars = script.trim().length
+  if (chars === 0) {
+    return { episodes: DEFAULT_PLAN_EPISODES, segments: DEFAULT_PLAN_SEGMENTS, shots: DEFAULT_PLAN_SHOTS }
+  }
+  // 安全集数优先：即便用户没选模型，长剧本也一定拆得开、落得进去。
+  const safeEpisodes = Math.ceil(chars / SAFE_EPISODE_CHARS)
+  const episodes = clampInt(
+    Math.max(safeEpisodes, Math.ceil(chars / AUTO_CHARS_PER_EPISODE)),
+    1,
+    MAX_PLAN_EPISODES,
+  )
+  const charsPerEpisode = Math.ceil(chars / episodes)
+  // 段 / 镜取"字数推算"与缺省值的较大者：短剧本文字少时保持 3 段 4 镜的缺省结构，
+  // 长剧本才随字数增长（仍受各自上限约束）。
+  const segments = clampInt(
+    Math.max(DEFAULT_PLAN_SEGMENTS, Math.ceil(charsPerEpisode / AUTO_CHARS_PER_SEGMENT)),
+    1, MAX_PLAN_SEGMENTS,
+  )
+  const charsPerSegment = Math.ceil(charsPerEpisode / segments)
+  const shots = clampInt(
+    Math.max(DEFAULT_PLAN_SHOTS, Math.ceil(charsPerSegment / AUTO_CHARS_PER_SHOT)),
+    1, MAX_PLAN_SHOTS,
+  )
+  return { episodes, segments, shots }
 }
 
 /**
@@ -215,7 +277,32 @@ function spread(items: readonly string[], count: number): string[][] {
 }
 
 /**
- * 规则拆分：剧本 → 集 → 段 → 镜。
+ * 规则分段：按空行与句末标点把剧本文本切成可直接落库的分段提示词。
+ *
+ * 与模型分段并列供「开始分段」使用：不调模型、不猜剧情，只按文本结构切。
+ * 每段时长按缺省镜头数 × 每镜时长估算并夹取到合法区间。
+ * @param script - 本集剧本文本。
+ * @param shotSec - 每镜时长（秒）。
+ * @returns 分段草案（至少一段；空剧本返回空数组）。
+ */
+export function splitScriptIntoSegments(script: string, shotSec = DEFAULT_PLAN_SHOT_SEC): readonly {
+  readonly promptText: string
+  readonly durationSec: number
+}[] {
+  const blocks = script
+    .split(/\n{2,}/u)
+    .flatMap(block => block.split(/(?<=[。！？!?；;])\s*/u))
+    .map(chunk => chunk.trim())
+    .filter(chunk => chunk !== '')
+  const sec = clampInt(shotSec, 1, 60)
+  return blocks.map(promptText => ({
+    promptText,
+    durationSec: Math.min(60, Math.max(1, Math.ceil(promptText.length / 12) * sec)),
+  }))
+}
+
+/**
+ * 规则分段：剧本 → 集 → 段 → 镜。
  *
  * 集与段按句子数均匀切；每段再交给确定性的 `planStoryboard` 出提示词。
  * 句子比要求的镜数还少时以句子数为准（不注水）。
@@ -232,9 +319,17 @@ export function planEpisodesByRules(
   const chunks = splitScript(request.script)
   if (chunks.length === 0) throw new Error('剧本不能为空：至少需要一句话')
   const shotSec = clampInt(request.shotDurationSec, 1, 60)
-  return spread(chunks, episodes).map((episodeSlice): EpisodePlanEpisode => {
+  // 安全兜底：按正文长度保证每集不超落库上限。上游传入的集数偏小（旧前端固定 1 集、
+  // 模型推荐过小、手填过小）时自动补足，绝不让长剧本因"一集装不下"整批失败。
+  const safeEpisodes = clampInt(Math.ceil(request.script.length / SAFE_EPISODE_CHARS), 1, MAX_PLAN_EPISODES)
+  const effectiveEpisodes = Math.max(episodes, safeEpisodes)
+  return spread(chunks, effectiveEpisodes).map((episodeSlice): EpisodePlanEpisode => {
     const script = episodeSlice.join('。')
-    const segmentChunks = spread(episodeSlice, segments)
+    // 同样的道理给段兜底：单集很长而段数偏小时，段正文会超过提示词上限，
+    // 补足段数保证每段都落得进去。
+    const safeSegments = clampInt(Math.ceil(script.length / SAFE_SEGMENT_CHARS), 1, MAX_PLAN_SEGMENTS)
+    const effectiveSegments = Math.max(segments, safeSegments)
+    const segmentChunks = spread(episodeSlice, effectiveSegments)
     return {
       title: '',
       script,

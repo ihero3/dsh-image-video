@@ -18,6 +18,7 @@ export type WorkbenchLocaleKey =
   | 'generateUseSelected'
   | 'generateClearReference'
   | 'referenceAsset'
+  | 'refZoom'
   | 'generateHeading'
   | 'generatePromptLabel'
   | 'generatePromptPlaceholder'
@@ -60,6 +61,8 @@ export type WorkbenchLocaleKey =
   | 'extractAdded'
   | 'extractExisting'
   | 'modulePipeline'
+  | 'moduleEpisode'
+  | 'moduleEpisodeDesc'
   | 'modulePipelineDesc'
   | 'scriptTextModel'
   | 'scriptTextModelEmpty'
@@ -70,6 +73,11 @@ export type WorkbenchLocaleKey =
   | 'scriptSplit'
   | 'scriptSplitting'
   | 'scriptSplitHint'
+  | 'scriptSplitMode'
+  | 'scriptSplitModeRule'
+  | 'scriptSplitModeModel'
+  | 'episodeScriptJump'
+  | 'episodeScriptAll'
   | 'scriptSplitNeedsModel'
   | 'scriptSplitNeedsScript'
   | 'scriptSplitDone'
@@ -115,6 +123,7 @@ export type WorkbenchLocaleKey =
   | 'defaultsGroupMode'
   | 'defaultsGroupImage'
   | 'defaultsGroupVideo'
+  | 'defaultTextModel'
   | 'optModeText'
   | 'optModeImage'
   | 'optModeVideo'
@@ -301,6 +310,8 @@ export type WorkbenchLocaleKey =
   | 'segmentPromptPlaceholder'
   | 'segmentDurationLabel'
   | 'segmentSkillLabel'
+  | 'segmentTextModel'
+  | 'segmentVideoTooLong'
   | 'segmentSkillDefault'
   | 'segmentSkillHint'
   | 'segmentSkillMissing'
@@ -337,6 +348,8 @@ export type WorkbenchLocaleKey =
   | 'skillBuiltinReadonly'
   | 'skillsHint'
   | 'skillsRefresh'
+  | 'skillInsert'
+  | 'skillInsertHint'
   | 'quickTabProduce'
   | 'quickTabPrompt'
   | 'studioTitle'
@@ -382,6 +395,10 @@ export type WorkbenchLocaleKey =
   | 'episodeExport'
   | 'episodeExportDone'
   | 'episodeExportFailed'
+  | 'episodeImport'
+  | 'episodeImportHint'
+  | 'episodeImportDone'
+  | 'episodeImportFailed'
   | 'segmentRefsEmpty'
   | 'segmentAddRef'
   | 'segmentRefSearch'
@@ -464,6 +481,10 @@ export type WorkbenchLocaleKey =
   | 'canvasRedo'
   | 'canvasCopy'
   | 'canvasPaste'
+  | 'canvasImportWorkflow'
+  | 'canvasExportWorkflow'
+  | 'canvasImportWorkflowDone'
+  | 'canvasImportWorkflowFailed'
   | 'canvasPasteEmpty'
   | 'canvasDeleteSelected'
   | 'canvasRunNode'
@@ -665,8 +686,6 @@ export type WorkbenchLocaleKey =
   | 'pipelinePlanShots'
   | 'pipelineAuto'
   | 'pipelineAutoCountsHint'
-  | 'pipelineAutoCountsDone'
-  | 'pipelineAutoNeedsModel'
   | 'pipelineGenerate'
   | 'pipelineGeneratingScript'
   | 'pipelineGenerateDone'
@@ -757,8 +776,7 @@ export type WorkbenchLocaleKey =
   | 'pipelineTextModelHint'
   | 'pipelineTextModelMissing'
   | 'pipelineImportScript'
-  | 'pipelineWindowsSummary'
-  | 'pipelineWindowHint'
+  | 'pipelineScriptChars'
   | 'pipelineImportScriptHint'
   | 'pipelineImporting'
   | 'pipelineImportedLabel'
@@ -915,9 +933,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelinePlanSegments: 'Segments / episode',
   pipelinePlanShots: 'Shots / segment',
   pipelineAuto: 'Auto',
-  pipelineAutoCountsHint: 'Ask the text model to recommend all three counts from the script — still editable afterwards',
-  pipelineAutoCountsDone: 'Auto-filled: {episodes} episodes / {segments} segments / {shots} shots — still editable',
-  pipelineAutoNeedsModel: 'Pick a text model first to auto-fill the counts',
+  pipelineAutoCountsHint: 'Auto counts are estimated from script length (or recommended by the text model when selected) — still editable afterwards',
   pipelineGenerate: 'Generate script',
   pipelineGeneratingScript: 'Generating…',
   pipelineGenerateDone: '{n} episode(s) written into this series',
@@ -970,16 +986,23 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   extractExisting: 'In library',
   modulePipeline: 'Script → film',
   modulePipelineDesc: 'Script → episode → segments → shots → images and clips. Every level can be added to, edited or reordered below.',
+  moduleEpisode: 'Episode workspace',
+  moduleEpisodeDesc: 'Pick an episode to edit its script, segments, shots, generated images/clips and workflow.',
   scriptTextModel: 'Text model',
   scriptTextModelEmpty: 'Not selected',
   scriptImageModel: 'Image model',
   scriptVideoModel: 'Video model',
   scriptDirectorSkill: 'Director skill',
   scriptFollowDefault: 'Use default',
-  scriptSplit: 'Auto-split',
+  scriptSplit: 'Start splitting',
   scriptSplitting: 'Splitting…',
-  scriptSplitHint: 'Split by plot with the selected text model',
-  scriptSplitNeedsModel: 'The host provides no text model, so segments cannot be generated automatically.',
+  scriptSplitHint: 'Split the script into segments with rules or the selected text model',
+  scriptSplitMode: 'Split by',
+  scriptSplitModeRule: 'Default rules',
+  scriptSplitModeModel: 'Text model',
+  episodeScriptJump: 'Jump to segment',
+  episodeScriptAll: 'All segments',
+  scriptSplitNeedsModel: 'The host provides no text model, so model splitting cannot be used.',
   scriptSplitNeedsScript: 'Write a script before auto-splitting.',
   scriptSplitDone: 'Created {n} segments',
   scriptSplitFailed: 'Auto-split failed',
@@ -1016,6 +1039,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateUseSelected: 'Use selected asset',
   generateClearReference: 'Clear reference',
   referenceAsset: 'Reference in prompt',
+  refZoom: 'Zoom',
 
   generateHeading: 'Generate here',
   generatePromptLabel: 'Prompt',
@@ -1063,6 +1087,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsGroupMode: 'Media type',
   defaultsGroupImage: 'Image',
   defaultsGroupVideo: 'Video',
+  defaultTextModel: 'Text model',
   optModeText: 'Text',
   optModeImage: 'Image',
   optModeVideo: 'Video',
@@ -1254,6 +1279,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   segmentPromptPlaceholder: 'Within these seconds: who, where, what happens…',
   segmentDurationLabel: 'Seconds',
   segmentSkillLabel: 'Director skill',
+  segmentTextModel: 'Text model for storyboard',
+  segmentVideoTooLong: 'One-click video supports up to 30s per segment. Split it into shots first to generate a longer video.',
   segmentSkillDefault: 'Default skill',
   segmentSkillHint: 'Active director skills from the skill library; with none selected the default skill is used.',
   segmentSkillMissing: 'Disabled skill',
@@ -1290,6 +1317,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   skillBuiltinReadonly: 'Built-in skills are read-only; they can only be disabled',
   skillsHint: 'Skills live under skills/ in the workbench data directory; built-in skills are read-only but can be disabled.',
   skillsRefresh: 'Refresh',
+  skillInsert: 'Insert skill',
+  skillInsertHint: 'Selected skills appear in the text area; delete the token to show it here again',
   quickTabProduce: 'Content production',
   quickTabPrompt: 'Extract prompts',
   studioTitle: 'Extract prompts',
@@ -1334,6 +1363,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   episodeExport: 'Export this episode',
   episodeExportDone: 'Episode exported to {path}',
   episodeExportFailed: 'Export failed',
+  episodeImport: 'Import episode',
+  episodeImportHint: 'Pick the episode.json from "Export this episode"; import always creates a new episode and never overwrites existing ones',
+  episodeImportDone: 'Imported as episode {no} · {title}',
+  episodeImportFailed: 'Import failed',
   segmentRefsLabel: 'References',
   segmentRefsEmpty: 'No references yet — pick images or videos from the asset library.',
   segmentAddRef: 'Add reference',
@@ -1417,6 +1450,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasRedo: 'Redo',
   canvasCopy: 'Copy nodes',
   canvasPaste: 'Paste nodes',
+  canvasImportWorkflow: 'Import workflow',
+  canvasExportWorkflow: 'Export workflow',
+  canvasImportWorkflowDone: 'Workflow imported: {n} nodes',
+  canvasImportWorkflowFailed: 'Workflow import failed',
   canvasPasteEmpty: 'Clipboard is empty — select nodes and copy first',
   canvasDeleteSelected: 'Delete selected nodes',
   canvasRunNode: 'Run this node (with downstream)',
@@ -1652,10 +1689,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   helpModeQuick: 'Quick create — generate images or videos right here, with reference images.',
   helpModeWorkflow: 'Workflow — chain script → storyboard → image → video → render on the canvas.',
   helpModeTimeline: 'Timeline — assemble clips, subtitles and audio, then export the film.',
-  helpModeScript: 'Script generation — script → episode → segments → shots → images/videos → canvas. Every episode, segment and shot can be added, edited or removed at any time.',
+  helpModeScript: 'Script generation — script → episode → segments → shots → images/videos → canvas.',
   helpContactTitle: 'Contact',
   helpContactOrg: 'Beijing Peiji Qizhi Technology Co., Ltd.',
-  helpContactWechat: 'WeChat: i-hero',
+  helpContactWechat: 'WeChat: i-hero — add me and I will invite you to the group',
   helpVersionTitle: 'Version',
   helpVersionUnknown: 'Host not connected',
   helpClose: 'Close',
@@ -1772,11 +1809,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
   pipelineTextModel: 'Script model',
   pipelineTextModelRules: 'Rules only (no model)',
-  pipelineTextModelHint: 'Picks characters, props, scenes and shots step by step; falls back to rules when the model fails.',
+  pipelineTextModelHint: 'Turns a one-line idea into a script and suggests the three counts; falls back to rules when the model fails.',
   pipelineTextModelMissing: 'No text model available in this host — rules only.',
   pipelineImportScript: 'Import local file',
-  pipelineWindowsSummary: 'Full script: {chars} characters, split into {count} parts.',
-  pipelineWindowHint: 'Only the selected part is storyboarded; move to the next part afterwards.',
+  pipelineScriptChars: 'Full script: {chars} characters.',
   pipelineImportScriptHint: 'Pick one or more txt / md / docx / pdf scripts',
   pipelineImporting: 'Importing…',
   pipelineImportedLabel: 'Referenced files:',
@@ -1785,7 +1821,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineImportDone: 'Imported {name}',
   pipelineImportFailed: 'Could not import the script file',
   pipelineSkill: 'Skill',
-  pipelineSkillHint: 'Enhances storyboard, image and video prompts with the selected skill',
+  pipelineSkillHint: 'Pick a skill as many times as you like — each pick adds a token to the script; delete the token to remove it',
   pipelineSkillNone: 'No skill',
   pipelineSkillMissing: 'No director skill available — prompts use the built-in rules.',
   pipelineExport: 'Export storyboard',
@@ -1933,9 +1969,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelinePlanSegments: '每集段数',
   pipelinePlanShots: '每段分镜数',
   pipelineAuto: '自动',
-  pipelineAutoCountsHint: '调用文本模型按剧本内容推荐这三个数量，填好后仍可手动修改',
-  pipelineAutoCountsDone: '已自动推荐：{episodes} 集 / {segments} 段 / {shots} 镜，可继续手动修改',
-  pipelineAutoNeedsModel: '自动取数需要先在「剧本模型」里选一个文本模型',
+  pipelineAutoCountsHint: '自动：按剧本文字长度推算这三个数量（选了文本模型则由模型推荐），填好后仍可手动修改',
   pipelineGenerate: '生成剧本',
   pipelineGeneratingScript: '生成中…',
   pipelineGenerateDone: '已写入 {n} 集，可在下面逐级增删',
@@ -1988,16 +2022,23 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   extractExisting: '已在资源库',
   modulePipeline: '剧本 → 成片',
   modulePipelineDesc: '剧本 → 集 → 分段 → 分镜 → 出图出片；每一级都能在下面继续增删、修改。',
+  moduleEpisode: '本集工作区',
+  moduleEpisodeDesc: '选一集编辑剧本、分段、分镜、生图生视频与工作流；每一集的内容独立归属。',
   scriptTextModel: '文本模型',
   scriptTextModelEmpty: '未选择',
   scriptImageModel: '图像模型',
   scriptVideoModel: '视频模型',
   scriptDirectorSkill: '导演 Skill',
   scriptFollowDefault: '跟随默认',
-  scriptSplit: '自动生成分段',
-  scriptSplitting: '拆分中…',
-  scriptSplitHint: '用所选文本模型按剧情拆成分段',
-  scriptSplitNeedsModel: '宿主没有提供文本模型，无法自动生成分段。',
+  scriptSplit: '开始分段',
+  scriptSplitting: '分段中…',
+  scriptSplitHint: '用默认规则或所选文本模型把剧本拆成分段',
+  scriptSplitMode: '分段方式',
+  scriptSplitModeRule: '默认规则',
+  scriptSplitModeModel: '调用大模型',
+  episodeScriptJump: '跳到分段',
+  episodeScriptAll: '全部内容',
+  scriptSplitNeedsModel: '宿主没有提供文本模型，无法用大模型分段。',
   scriptSplitNeedsScript: '先写一段剧本再自动拆段。',
   scriptSplitDone: '已生成 {n} 个分段',
   scriptSplitFailed: '自动拆段失败',
@@ -2034,6 +2075,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateUseSelected: '用选中素材',
   generateClearReference: '清除参考',
   referenceAsset: '引用到提示词',
+  refZoom: '放大查看',
 
   generateHeading: '直接生成',
   generatePromptLabel: '提示词',
@@ -2081,6 +2123,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsGroupMode: '媒体类型',
   defaultsGroupImage: '图像',
   defaultsGroupVideo: '视频',
+  defaultTextModel: '文本模型',
   optModeText: '文本',
   optModeImage: '图片',
   optModeVideo: '视频',
@@ -2272,6 +2315,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   segmentPromptPlaceholder: '这几秒里：谁、在哪、发生什么…',
   segmentDurationLabel: '秒数',
   segmentSkillLabel: '导演 Skill',
+  segmentTextModel: '分镜文本模型',
+  segmentVideoTooLong: '一键生成视频只支持 30 秒以内的分段；超过 30 秒请先生成分镜，再逐镜生成视频。',
   segmentSkillDefault: '默认 Skill',
   segmentSkillHint: '只列出技能库里启用中的导演 Skill；不选时使用默认 Skill。',
   segmentSkillMissing: '已停用',
@@ -2308,6 +2353,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   skillBuiltinReadonly: '内置技能只读，只能禁用',
   skillsHint: '技能保存在工作台数据目录的 skills/ 下；内置技能只读但可以禁用。',
   skillsRefresh: '刷新',
+  skillInsert: '插入 Skill',
+  skillInsertHint: '选中后插入文本区；在文本区删掉标记后会重新出现在这里',
   quickTabProduce: '内容生产',
   quickTabPrompt: '提取提示词',
   studioTitle: '提取提示词',
@@ -2352,6 +2399,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   episodeExport: '导出本集',
   episodeExportDone: '本集已导出到 {path}',
   episodeExportFailed: '导出失败',
+  episodeImport: '导入本集',
+  episodeImportHint: '选择「导出本集」生成的 episode.json；导入会新建一集，不覆盖现有内容',
+  episodeImportDone: '已导入为第{no}集 · {title}',
+  episodeImportFailed: '导入失败',
   segmentRefsLabel: '引用',
   segmentRefsEmpty: '还没有引用——从素材库挑图片或视频。',
   segmentAddRef: '添加引用',
@@ -2435,6 +2486,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasRedo: '重做',
   canvasCopy: '复制节点',
   canvasPaste: '粘贴节点',
+  canvasImportWorkflow: '导入工作流',
+  canvasExportWorkflow: '导出工作流',
+  canvasImportWorkflowDone: '工作流已导入 · {n} 个节点',
+  canvasImportWorkflowFailed: '工作流导入失败',
   canvasPasteEmpty: '剪贴板是空的——先选中节点再复制',
   canvasDeleteSelected: '删除选中节点',
   canvasRunNode: '运行此节点（含下游）',
@@ -2670,10 +2725,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   helpModeQuick: '快速创作——就在这里生成图片或视频，可带多张参考图。',
   helpModeWorkflow: '工作流——在画布上串起 剧本→分镜→生图→视频→导出。',
   helpModeTimeline: '时间轴——组装片段、字幕与音轨，然后导出成片。',
-  helpModeScript: '剧本生成——剧本 → 集 → 分段 → 分镜 → 出图/出视频 → 导进画布；每一集、每一段、每一个分镜都能随时增删改查。',
+  helpModeScript: '剧本生成——剧本 → 集 → 分段 → 分镜 → 出图/出视频 → 导进画布；',
   helpContactTitle: '联系方式',
   helpContactOrg: '北京培基启智科技有限公司',
-  helpContactWechat: '微信：i-hero',
+  helpContactWechat: '微信：i-hero，加好友然后拉你入群',
   helpVersionTitle: '版本',
   helpVersionUnknown: '未连接宿主',
   helpClose: '关闭',
@@ -2682,11 +2737,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   // ---- B-20 分镜合并：文本模型拆解 / 文件导入 / 局部重拆 / 导出落库 ----
   pipelineTextModel: '剧本模型',
   pipelineTextModelRules: '只用规则（不调模型）',
-  pipelineTextModelHint: '分角色、道具、场景、分镜四步拆解；模型失败会如实回落规则拆解。',
+  pipelineTextModelHint: '一句话创意由模型扩写成剧本，并推荐三级数量；模型失败时回落到内置规则。',
   pipelineTextModelMissing: '当前宿主没有可用的文本模型——只能走规则拆解。',
   pipelineImportScript: '导入本地文件',
-  pipelineWindowsSummary: '全文 {chars} 字，已切为 {count} 段。',
-  pipelineWindowHint: '本次只拆选中的一段，拆完换下一段继续。',
+  pipelineScriptChars: '全文 {chars} 字',
   pipelineImportScriptHint: '可一次选多个 txt / md / docx / pdf 剧本',
   pipelineImporting: '导入中…',
   pipelineImportedLabel: '已引用文件：',
@@ -2695,7 +2749,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineImportDone: '已导入 {name}',
   pipelineImportFailed: '剧本文件导入失败',
   pipelineSkill: '技能',
-  pipelineSkillHint: '分镜、生成图片与生成视频的提示词都会按这个技能增强',
+  pipelineSkillHint: '可多次选择导演技能：每选一次就往剧本里追加一个技能标记，删掉标记即取消',
   pipelineSkillNone: '不使用技能',
   pipelineSkillMissing: '技能库里没有导演技能——提示词按内置规则生成。',
   pipelineExport: '导出分镜表',

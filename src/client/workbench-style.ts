@@ -871,11 +871,21 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-seg-cell:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
 /* B-15 分镜工坊：剧本输入 + 可编辑镜头表 */
 .iv-sb-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:space-between}
+/* 分段操作行与上方「文本模型 / 导演 Skill」拉开距离，避免按钮贴着选择器 */
+.iv-sb-segment-head{margin-top:var(--iv-sp-5)}
 .iv-sb-count{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:center}
 .iv-sb-list{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}
 .iv-sb-shot{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--iv-sp-4);padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
 .iv-sb-shot-index{display:grid;place-items:center;min-width:26px;height:26px;border-radius:50%;background:var(--iv-acc-soft);color:var(--iv-acc);font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium)}
 .iv-sb-shot-body{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
+/* 镜头提示词与引用列：有引用时右列展开，提示词区自动收缩 */
+.iv-shot-prompt-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--iv-sp-2);align-items:start}
+.iv-shot-prompt-row--with-refs{grid-template-columns:minmax(0,1fr) clamp(180px,28%,300px)}
+.iv-shot-prompt-main{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
+/* 分镜的模型标签 + 下拉 + 生成按钮：同一行且紧贴提示词框，标签不再单独占一行 */
+.iv-shot-tool-row{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+.iv-shot-tool-row .iv-meta{flex:none}
+.iv-shot-tool-row .iv-input{flex:0 1 150px;width:auto}
 .iv-sb-row{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:flex-end}
 .iv-sb-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;flex:1 1 150px}
 /* 纵向容器里 flex-basis 落在高度轴上：卡片直挂的字段会被撑到 150px 高，
@@ -888,6 +898,9 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-actions{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;justify-content:flex-end}
 /* 分段卡：标题行动作簇、折叠预览、引用选择面板 */
 .iv-sb-seg-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
+.iv-sb-seg-head--clickable{cursor:pointer}
+.iv-sb-seg-head--clickable:hover .iv-micro{color:var(--iv-tx)}
+.iv-sb-seg-head--clickable:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px;border-radius:var(--iv-r-xs)}
 .iv-sb-seg-actions{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2)}
 .iv-seg-peek{font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 100%}
 .iv-dur-row{display:flex;align-items:center;gap:var(--iv-sp-2)}

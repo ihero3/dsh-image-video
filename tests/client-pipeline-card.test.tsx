@@ -1,17 +1,12 @@
 // @vitest-environment jsdom
 /**
- * 「一键成片」卡片的渲染与交互契约（`P0-2` + 2026-11-05 产品口径 `B1`/`B2`/`B4`/`B5`/`B5.1`/`B6`）。
+ * 剧本生成卡片（2026-11-24 精简）：这一块**只生成剧本**。
  *
- * 这个用例最早是被真机崩溃逼出来的：`pipelines/compose` 的响应是 `{ pipeline }`，api 层当初没解包，
- * 卡片读 `result.warnings.length` 直接炸掉整个快速创作面板。所以基础两条一直是：
- * 1. 点击「生成分镜」后，结果条要正常渲染出分镜数与工作流 id；
- * 2. `warnings` 缺失（旧宿主/历史数据）时**不许崩**——渲染仍然完成。
- *
- * 2026-11-05 起新增的口径各自钉一组：
- * - `B1` 剧本 6 行；`B2` 第三种模式「视频生视频（复刻）」+ 参考片；`B4` 每镜默认 6 秒；
- * - `B5` 生成后可逐条改画面/视频提示词与本镜时长，改过时长再用 `shotDurations` 重排；
- * - `B5.1`「生成画布」只落库切画布、**不起跑**；`B6`「就地生成」逐镜调 `generateMedia`，
- *   串行推进，失败能看出是第几镜。
+ * 钉住产品口径：
+ * - 导入文件后只展示「全文 N 字」，不再切段 / 展示第几段下拉 / 「本次只拆选中的一段」；
+ * - 每镜秒数、生成分镜、生成画布、生成图片、生成视频及逐镜编辑全部移除；
+ * - 集数 / 每集段数 / 每段分镜数默认「自动」，剧本模型默认只用规则，技能可多次选择；
+ * - 剧本文本与导入文件仍写在共享 store，角色 / 场景 / 道具分区继续拿它们当输入。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
@@ -23,327 +18,136 @@ afterEach(() => { cleanup() })
 
 const t = (key: WorkbenchLocaleKey): string => en[key]
 
-/**
- * 造一份假宿主：`composePipeline` 默认回 3 镜成功结果；
- * `runPipeline` 只留作哨兵——卡片已不应该再起跑任何工作流（每次断言 `not.toHaveBeenCalled`）。
- */
+/** 假宿主：只实现本卡片会走到的端点。 */
 function makeApi(overrides: Partial<WorkbenchApi> = {}): WorkbenchApi {
   return {
-    composePipeline: vi.fn(async () => ({
-      workflowId: 'wfl-pipe-1', name: '一键成片 · 3 镜（图生视频）', mode: 'image-to-video',
-      shots: 3, nodes: 6, warnings: ['未指定生图模型：将使用宿主默认模型'], missingResources: [],
+    listTextModels: vi.fn(async () => ({ models: [] })),
+    listSkills: vi.fn(async () => []),
+    generateEpisodes: vi.fn(async () => ({ episodes: [{ id: 'ep-9' }] })),
+    importScript: vi.fn(async (input: { fileName: string }) => ({
+      fileName: input.fileName, text: '导入的正文。', bytes: 12,
     })),
-    runPipeline: vi.fn(),
-    listResources: vi.fn(async () => []),
-    createResource: vi.fn(async () => ({ id: 'res-new' })),
-    // `C5`：视频 `wait:false` 提交后按任务 id 轮询成片；默认让每条任务都立刻成功
-    listTasks: vi.fn(async () => [
-      { id: 'tsk-video', status: 'succeeded', outputPath: '/tmp/outputs/shot.mp4' },
-      { id: 'tsk-1', status: 'succeeded', outputPath: '/tmp/outputs/shot-1.mp4' },
-      { id: 'tsk-2', status: 'succeeded', outputPath: '/tmp/outputs/shot-2.mp4' },
-      { id: 'tsk-3', status: 'succeeded', outputPath: '/tmp/outputs/shot-3.mp4' },
-    ]),
-    generateMedia: vi.fn(async (input: { mediaMode: 'image' | 'video' }) => (
-      input.mediaMode === 'video'
-        ? { mediaMode: 'video' as const, pending: true, taskId: 'tsk-video' }
-        : { mediaMode: 'image' as const, path: '/tmp/outputs/shot.png' }
-    )),
     ...overrides,
   } as unknown as WorkbenchApi
 }
 
-/** 走到「生成分镜」排完版：填剧本 → 点生成分镜 → 等可编辑分镜出现。 */
-async function composeShots(container: HTMLElement, script = '雨夜街头。林夏抬头。镜头推近。'): Promise<void> {
-  fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: script } })
-  fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-  await waitFor(() => { expect(container.querySelector('[data-pipeline-shots-panel]')).not.toBeNull() })
-}
+const scriptInput = (container: HTMLElement): HTMLTextAreaElement =>
+  container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement
+const generateButton = (container: HTMLElement): HTMLButtonElement =>
+  container.querySelector('[data-pipeline-script-generate]') as HTMLButtonElement
 
-describe('PipelineCard', () => {
-  it('生成分镜后渲染结果条：分镜数 + 工作流 id + 提醒，且不起跑', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头。林夏抬头。镜头推近。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-result]')).not.toBeNull() })
-    const result = container.querySelector('[data-pipeline-result]') as HTMLElement
-    expect(result.textContent).toContain(en.pipelineComposed)
-    expect(result.textContent).toContain('3 shots')
-    expect(result.textContent).toContain('wfl-pipe-1')
-    expect(result.textContent).toContain('未指定生图模型')
-    // 只编排绝不起跑
-    expect(api.runPipeline).not.toHaveBeenCalled()
+describe('PipelineCard · 只生成剧本', () => {
+  it('没有分镜 / 画布 / 图片 / 视频 / 每镜秒数 / 切段这些入口', () => {
+    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" onStarted={() => {}} />)
+    for (const attr of [
+      'data-pipeline-compose', 'data-pipeline-to-canvas', 'data-pipeline-inline-image',
+      'data-pipeline-inline-run', 'data-pipeline-duration', 'data-pipeline-cancel',
+      'data-pipeline-shots-panel', 'data-pipeline-inline', 'data-pipeline-result',
+      'data-pipeline-export', 'data-pipeline-save-episode', 'data-pipeline-pick',
+      'data-pipeline-windows', 'data-pipeline-window-select', 'data-pipeline-button-hints',
+    ]) {
+      expect(container.querySelector(`[${attr}]`), attr).toBeNull()
+    }
+    expect(container.textContent).not.toContain('split into')
+    expect(container.textContent).not.toContain('本次只拆')
+    expect(container.querySelector('[data-pipeline-script-generate]')).not.toBeNull()
   })
 
-  it('warnings 缺失时不崩（旧宿主/历史数据）', async () => {
-    const api = makeApi({
-      composePipeline: vi.fn(async () => ({
-        workflowId: 'wfl-pipe-2', name: '一键成片 · 1 镜', mode: 'text-to-video',
-        shots: 1, nodes: 1, missingResources: [],
-      })) as unknown as WorkbenchApi['composePipeline'],
-    })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句话。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-result]')).not.toBeNull() })
-    expect((container.querySelector('[data-pipeline-result]') as HTMLElement).textContent).toContain('wfl-pipe-2')
-    expect(container.querySelector('[data-pipeline-error]')).toBeNull()
+  it('剧本框 6 行；三级数量默认用占位「自动」，点击直接输入数字，清空后仍是自动', () => {
+    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" onStarted={() => {}} />)
+    expect(scriptInput(container).rows).toBe(6)
+    for (const attr of ['data-pipeline-plan-episodes', 'data-pipeline-plan-segments', 'data-pipeline-plan-shots']) {
+      const input = container.querySelector(`[${attr}]`) as HTMLInputElement
+      expect(input.value).toBe('')
+      expect(input.placeholder).toBe(en.pipelineAuto)
+    }
+    expect((container.querySelector('[data-pipeline-text-model]') as HTMLSelectElement).value).toBe('')
+    expect(generateButton(container).disabled).toBe(true)
+
+    const episodes = container.querySelector('[data-pipeline-plan-episodes]') as HTMLInputElement
+    fireEvent.focus(episodes)
+    fireEvent.change(episodes, { target: { value: '3' } })
+    expect(episodes.value).toBe('3')
+    fireEvent.change(episodes, { target: { value: '' } })
+    expect(episodes.value).toBe('')
+    expect(episodes.placeholder).toBe(en.pipelineAuto)
   })
 
-  it('B5.1/B6：卡片不再有一键起跑按钮（起跑只发生在画布或就地生成）', async () => {
-    const started: string[] = []
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={id => { started.push(id) }} />)
-    // 旧「一键生成」（pipelines/run：起跑 + 跳画布）与 B5.1/B6 口径冲突，已按产品决定删除
-    expect(container.querySelector('[data-pipeline-run]')).toBeNull()
-    expect(container.querySelectorAll('[data-pipeline-compose], [data-pipeline-to-canvas], [data-pipeline-inline-image], [data-pipeline-inline-run]').length).toBe(4)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-result]')).not.toBeNull() })
-    // 生成分镜只是排版：既不起跑、也不切画布
-    expect(api.runPipeline).not.toHaveBeenCalled()
-    expect(started).toEqual([])
-  })
+  it('生成剧本按钮是独占一行的主按钮，点击后把全文交给宿主并交回集', async () => {
+    const created = [{ id: 'ep-9', no: 0 }]
+    const generateEpisodes = vi.fn(async () => ({ episodes: created }))
+    const onEpisodesGenerated = vi.fn()
+    const api = makeApi({ generateEpisodes } as unknown as Partial<WorkbenchApi>)
+    const { container } = render(
+      <PipelineCard api={api} t={t} projectId="prj-1" episodeId="ep-1"
+        onStarted={() => {}} onEpisodesGenerated={onEpisodesGenerated} />,
+    )
+    expect(generateButton(container).className).toContain('iv-btn--action--primary')
 
-  it('没有严格模式开关：缺料只提示、不拦（用户 2026-11-04 要求删掉）', async () => {
-    const composePipeline = vi.fn(async () => ({
-      workflowId: 'wfl-loose-1', name: '一键成片 · 1 镜', mode: 'image-to-video',
-      shots: 1, nodes: 2, warnings: [], missingResources: ['林夏'],
+    fireEvent.change(scriptInput(container), { target: { value: '雨夜街头。林夏抬头。' } })
+    fireEvent.click(generateButton(container))
+
+    await waitFor(() => { expect(generateEpisodes).toHaveBeenCalledTimes(1) })
+    expect(generateEpisodes).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: 'prj-1', episodeId: 'ep-1', script: '雨夜街头。林夏抬头。',
+      episodes: 1, segments: 3, shots: 4,
     }))
-    const api = makeApi({ composePipeline: composePipeline as unknown as WorkbenchApi['composePipeline'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    // ① 复选框已经删掉
-    expect(container.querySelector('[data-pipeline-strict]')).toBeNull()
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头，林夏走来。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    // ② 缺料照常能编排（不再有"严格模式拒绝执行"这条路）
-    await waitFor(() => { expect(composePipeline).toHaveBeenCalledTimes(1) })
-    // ③ 请求不再带 strictResources（宿主默认宽松）
-    expect(composePipeline.mock.calls[0]?.[0]).not.toHaveProperty('strictResources')
-    // ④ 缺料信息仍然给出来（带登记入口）
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-missing-item="林夏"]')).toBeTruthy() })
+    await waitFor(() => { expect(onEpisodesGenerated).toHaveBeenCalledWith(created) })
+    expect(container.querySelector('[data-pipeline-notice]')?.textContent)
+      .toBe(en.pipelineGenerateDone.replace('{n}', '1'))
   })
 
-  // ---- B1：剧本 6 行 / B4：每镜默认 6 秒 --------------------------------------
-  it('B1/B4：剧本输入框 6 行，每镜时长默认 6 秒', () => {
+  it('生成中按钮禁用并显示进行态；失败如实报错', async () => {
+    let resolve!: (value: { episodes: readonly unknown[] }) => void
+    const generateEpisodes = vi.fn(() => new Promise<{ episodes: readonly unknown[] }>(done => { resolve = done }))
+    const api = makeApi({ generateEpisodes } as unknown as Partial<WorkbenchApi>)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    fireEvent.change(scriptInput(container), { target: { value: '一句话创意。' } })
+    fireEvent.click(generateButton(container))
+    await waitFor(() => {
+      expect(generateButton(container).disabled).toBe(true)
+      expect(generateButton(container).textContent).toContain(en.pipelineGeneratingScript)
+    })
+    resolve({ episodes: [{ id: 'ep-1' }] })
+    await waitFor(() => { expect(generateButton(container).disabled).toBe(false) })
+
+    const failing = makeApi({ generateEpisodes: vi.fn(async () => { throw new Error('宿主拒绝了') }) } as unknown as Partial<WorkbenchApi>)
+    const view = render(<PipelineCard api={failing} t={t} projectId="prj-1" onStarted={() => {}} />)
+    fireEvent.change(scriptInput(view.container), { target: { value: '另一句话。' } })
+    fireEvent.click(generateButton(view.container))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-pipeline-error]')?.textContent).toContain('宿主拒绝了')
+    })
+  })
+
+  it('导入后展示全文总字数（不切段），原文并入剧本框', async () => {
     const api = makeApi()
     const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    expect((container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement).rows).toBe(6)
-    expect((container.querySelector('[data-pipeline-duration]') as HTMLInputElement).value).toBe('6')
+    const file = new File(['正文'], 'episode.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+    fireEvent.change(container.querySelector('[data-pipeline-import-file]') as HTMLInputElement, { target: { files: [file] } })
+    await waitFor(() => { expect(scriptInput(container).value).toBe('导入的正文。') })
+    expect(container.querySelector('[data-pipeline-script-chars]')?.textContent)
+      .toBe(en.pipelineScriptChars.replace('{chars}', '6'))
+    expect(container.querySelector('[data-pipeline-window-select]')).toBeNull()
+    expect(container.querySelector('[data-pipeline-imported-item="episode.docx"]')).not.toBeNull()
+    expect(container.querySelector('[data-pipeline-notice]')?.textContent).toContain('episode.docx')
   })
 
-  // ---- B-21：去掉模式下拉，改用「生成图片」「生成视频」两个按钮 ----------------
-  it('B-21：没有模式与参考片入口，动作按钮是生成分镜 / 生成画布 / 生成图片 / 生成视频', () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    expect(container.querySelector('[data-pipeline-mode]')).toBeNull()
-    expect(container.querySelector('[data-pipeline-ref-video]')).toBeNull()
-    expect(container.querySelector('[data-pipeline-inline-image]')?.textContent).toContain(en.pipelineInlineImage)
-    expect(container.querySelector('[data-pipeline-inline-run]')?.textContent).toContain(en.pipelineInlineRun)
+  it('没有项目时按钮禁用并说明原因', () => {
+    const { container } = render(<PipelineCard api={makeApi()} t={t} onStarted={() => {}} />)
+    fireEvent.change(scriptInput(container), { target: { value: '剧本' } })
+    expect(generateButton(container).disabled).toBe(true)
+    expect(container.textContent).toContain(en.pipelineNeedsProject)
   })
 
-  it('B-21：编排统一按「图 + 视频」铺，不再随模式切换', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '雨夜街头。林夏抬头。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(api.composePipeline).toHaveBeenCalledTimes(1) })
-    expect((api.composePipeline as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0]).toMatchObject({ mode: 'image-to-video' })
-  })
-
-  it('没有物料时不再出现「高级设置」与空物料提示；有分镜才出现导出 / 落库', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    expect(container.querySelector('[data-pipeline-advanced]')).toBeNull()
-    expect(container.querySelector('[data-pipeline-pick]')).toBeNull()
-    expect(container.querySelector('[data-pipeline-export]')).toBeNull()
-    await composeShots(container)
-    expect(container.querySelector('[data-pipeline-export]')).not.toBeNull()
-  })
-
-  // ---- 切换剧集：成片表单按项目保存 / 恢复 ------------------------------------
-  it('切换剧集：上一部的剧本不会留在下一部，切回来还能恢复', () => {
+  it('切换剧集：上一部剧本不会留在下一部，导入文件也跟着切', () => {
     const api = makeApi()
     const { container, rerender } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    const script = (): HTMLTextAreaElement => container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement
-    fireEvent.change(script(), { target: { value: '第一部的剧本' } })
-    expect(script().value).toBe('第一部的剧本')
-
+    fireEvent.change(scriptInput(container), { target: { value: '第一部的剧本' } })
     rerender(<PipelineCard api={api} t={t} projectId="prj-2" onStarted={() => {}} />)
-    expect(script().value).toBe('')
-
-    fireEvent.change(script(), { target: { value: '第二部的剧本' } })
+    expect(scriptInput(container).value).toBe('')
+    fireEvent.change(scriptInput(container), { target: { value: '第二部的剧本' } })
     rerender(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    expect(script().value).toBe('第一部的剧本')
-  })
-
-  // ---- B5：可编辑分镜（提示词 + 本镜时长 + 用 shotDurations 重排） ------------
-  it('B5：生成分镜后列出可编辑分镜，改过本镜时长就用 shotDurations 重排', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container)
-    // 三句话 → 三镜；每镜都有画面/视频提示词与本镜时长
-    expect(container.querySelectorAll('[data-pipeline-shot]').length).toBe(3)
-    expect(container.querySelectorAll('[data-pipeline-shot-video-prompt]').length).toBe(3)
-    expect(container.querySelectorAll('[data-pipeline-shot-image-prompt]').length).toBe(3)
-    expect((container.querySelector('[data-pipeline-shot-duration="2"]') as HTMLInputElement).value).toBe('6')
-    expect(container.querySelector('[data-pipeline-shots-panel]')?.textContent).toContain(en.pipelineShotEditable)
-    expect(container.querySelector('[data-pipeline-shots-panel]')?.textContent).toContain(en.pipelineShotDuration)
-    // 首次编排不下发逐镜时长（没有改动就没有噪音）
-    expect(api.composePipeline).toHaveBeenCalledTimes(1)
-    expect((api.composePipeline as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0]).not.toHaveProperty('shotDurations')
-
-    // 改第 2 镜时长 → 再点生成分镜：按逐镜时长重排
-    fireEvent.change(container.querySelector('[data-pipeline-shot-duration="2"]') as HTMLInputElement, { target: { value: '9' } })
-    fireEvent.click(container.querySelector('[data-pipeline-compose]') as HTMLButtonElement)
-    await waitFor(() => { expect(api.composePipeline).toHaveBeenCalledTimes(2) })
-    expect((api.composePipeline as unknown as { mock: { calls: unknown[][] } }).mock.calls[1]?.[0]).toMatchObject({ shotDurations: [6, 9, 6] })
-  })
-
-  it('B5：宿主回传 shotDetails 时以宿主为准（不拿本地推算覆盖）', async () => {
-    const api = makeApi({
-      composePipeline: vi.fn(async () => ({
-        workflowId: 'wfl-detail', name: '一键成片 · 2 镜', mode: 'image-to-video',
-        shots: 2, nodes: 4, warnings: [], missingResources: [],
-        shotDetails: [
-          { index: 1, shot: '宿主第 1 镜', duration: 4, imagePrompt: '宿主图 1', videoPrompt: '宿主视频 1' },
-          { index: 2, shot: '宿主第 2 镜', duration: 11, imagePrompt: '宿主图 2', videoPrompt: '宿主视频 2' },
-        ],
-      })) as unknown as WorkbenchApi['composePipeline'],
-    })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container, '一句。两句。三句。')
-    // 宿主给了 2 镜（不是脚本句数），提示词与时长都用宿主那份
-    expect(container.querySelectorAll('[data-pipeline-shot]').length).toBe(2)
-    expect((container.querySelector('[data-pipeline-shot-duration="2"]') as HTMLInputElement).value).toBe('11')
-    expect((container.querySelector('[data-pipeline-shot-video-prompt="1"]') as HTMLTextAreaElement).value).toBe('宿主视频 1')
-    expect((container.querySelector('[data-pipeline-shot-label="2"]') as HTMLInputElement).value).toBe('宿主第 2 镜')
-  })
-
-  // ---- B5.1：生成画布（落库 + 切画布，但不起跑） ------------------------------
-  it('B5.1：生成画布只编排并切画布，不调用 workflows/run', async () => {
-    const started: string[] = []
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={id => { started.push(id) }} />)
-    // 提示文案也在（说清"不生成"）
-    expect(container.querySelector('[data-pipeline-button-hints]')?.textContent).toContain(en.pipelineToCanvasHint)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-to-canvas]') as HTMLButtonElement)
-    await waitFor(() => { expect(started).toEqual(['wfl-pipe-1']) })
-    expect(api.composePipeline).toHaveBeenCalledTimes(1)
-    expect(api.runPipeline).not.toHaveBeenCalled()
-    expect(api.generateMedia).not.toHaveBeenCalled()
-  })
-
-  // ---- B6：就地生成（逐镜 generateMedia，串行推进） ---------------------------
-  it('B6：生成视频逐镜只调视频，并带本镜时长', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container)
-    fireEvent.change(container.querySelector('[data-pipeline-shot-duration="3"]') as HTMLInputElement, { target: { value: '8' } })
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => {
-      expect(container.querySelectorAll('[data-pipeline-inline-row]').length).toBe(3)
-      expect(container.querySelector('[data-pipeline-inline-progress]')?.textContent).not.toContain('#')
-    })
-    const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
-    // 3 镜只出视频，串行推进
-    expect(calls.map(call => call.mediaMode)).toEqual(['video', 'video', 'video'])
-    // 每镜用自己的时长（第 3 镜改成 8 秒）
-    expect(calls.map(call => call.duration)).toEqual([6, 6, 8])
-    // 没有先出图：视频请求不带首帧
-    expect(calls[0]?.image).toBeUndefined()
-    // 都提交成功：每镜一行、没有错误条
-    expect(container.querySelector('[data-pipeline-inline-error]')).toBeNull()
-    expect(container.querySelectorAll('[data-pipeline-inline-state="submitted"]').length).toBe(3)
-  })
-
-  it('B6：生成图片只出图，不出视频', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container)
-    fireEvent.click(container.querySelector('[data-pipeline-inline-image]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-inline-state="image"]').length).toBe(3) })
-    const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
-    expect(calls.map(call => call.mediaMode)).toEqual(['image', 'image', 'image'])
-  })
-
-  it('B6：就地生成失败要看出是第几镜，且后面的镜不再偷偷跑', async () => {
-    let videoCalls = 0
-    const generateMedia = vi.fn(async (input: { mediaMode: 'image' | 'video' }) => {
-      if (input.mediaMode === 'video') {
-        videoCalls += 1
-        if (videoCalls === 2) throw new Error('上游拒绝了')
-        return { mediaMode: 'video' as const, pending: true, taskId: `tsk-${videoCalls}` }
-      }
-      return { mediaMode: 'image' as const, path: '/tmp/outputs/shot.png' }
-    })
-    const api = makeApi({ generateMedia: generateMedia as unknown as WorkbenchApi['generateMedia'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container)
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-inline-error]')).not.toBeNull() })
-    const text = (container.querySelector('[data-pipeline-inline-error]') as HTMLElement).textContent ?? ''
-    expect(text).toContain('#2')
-    expect(text).toContain('上游拒绝了')
-    // 第 2 镜被打上失败态，第 3 镜没有开跑
-    expect(container.querySelector('[data-pipeline-inline-state="failed"]')?.getAttribute('data-pipeline-inline-row')).toBe('2')
-    expect(videoCalls).toBe(2)
-  })
-
-  it('C5：视频 `wait:false` 提交后要等任务落成片，才算这一镜跑完', async () => {
-    let polls = 0
-    const listTasks = vi.fn(async () => {
-      polls += 1
-      return polls < 2
-        ? [{ id: 'tsk-video', status: 'running' }]
-        : [{ id: 'tsk-video', status: 'succeeded', outputPath: '/tmp/outputs/shot.mp4' }]
-    })
-    const api = makeApi({ listTasks: listTasks as unknown as WorkbenchApi['listTasks'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => {
-      expect((container.querySelector('[data-pipeline-inline-row="1"]') as HTMLElement).textContent).toContain('/tmp/outputs/shot.mp4')
-    }, { timeout: 5000 })
-    // 第一次轮询还在跑、第二次才拿到成片——不是"提交成功就收工"
-    expect(polls).toBeGreaterThanOrEqual(2)
-    expect(container.querySelector('[data-pipeline-inline-error]')).toBeNull()
-  })
-
-  it('C5：视频任务失败要停在本镜并给出原因', async () => {
-    const listTasks = vi.fn(async () => [{ id: 'tsk-video', status: 'failed', error: '内容审核未通过' }])
-    const api = makeApi({ listTasks: listTasks as unknown as WorkbenchApi['listTasks'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelector('[data-pipeline-inline-error]')).not.toBeNull() })
-    const text = (container.querySelector('[data-pipeline-inline-error]') as HTMLElement).textContent ?? ''
-    expect(text).toContain('#1')
-    expect(text).toContain('内容审核未通过')
-    expect(container.querySelectorAll('[data-pipeline-inline-state="failed"]').length).toBe(1)
-  })
-
-  it('B6：没先「生成分镜」也能就地生成（客户端按同一纯函数先排版）', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, { target: { value: '一句。两句。' } })
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-inline-state="submitted"]').length).toBe(2) })
-    // 顺带把分镜列出来（用户能对照"刚刚生成的是哪几镜"），但没有落库工作流
-    expect(container.querySelectorAll('[data-pipeline-shot]').length).toBe(2)
-    expect(api.composePipeline).not.toHaveBeenCalled()
-  })
-
-  it('B6：生成视频不再带参考片（复刻入口已移除）', async () => {
-    const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
-    await composeShots(container, '两句。话。')
-    fireEvent.click(container.querySelector('[data-pipeline-inline-run]') as HTMLButtonElement)
-    await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-inline-row]').length).toBeGreaterThan(0) })
-    const calls = (api.generateMedia as unknown as { mock: { calls: { 0: Record<string, unknown> }[] } }).mock.calls.map(call => call[0])
-    expect(calls.every(call => call.mediaMode === 'video')).toBe(true)
-    expect(calls[0]?.image).toBeUndefined()
-    expect(calls[0]?.media).toBeUndefined()
+    expect(scriptInput(container).value).toBe('第一部的剧本')
   })
 })

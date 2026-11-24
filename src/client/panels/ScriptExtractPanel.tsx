@@ -63,11 +63,15 @@ export function ScriptExtractPanel(props: ScriptExtractPanelProps) {
   // 与「剧本分段」共享同一份导入文件：文件名和原文都长期留着
   const [importedFiles, setImportedFiles] = useWorkbenchField(api, 'pipelineImportedFiles')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // 模块1输入框里的剧本也属于这部剧：和当前集剧本、导入文件原文一起当提取来源
+  const [pipelineScript] = useWorkbenchField(api, 'pipelineScript')
   const importedText = importedFiles
     .filter(file => file.status === 'done' && file.text.trim() !== '')
     .map(file => file.text)
     .join('\n\n')
-  const source = [script, importedText].filter(part => part.trim() !== '').join('\n\n')
+  const source = [...new Set([script, pipelineScript, importedText])]
+    .filter(part => part.trim() !== '')
+    .join('\n\n')
   const ready = projectId !== undefined && source.trim() !== '' && model !== undefined
 
   /** 导入文件既进共享列表（文件名/原文常驻），也直接成为本分区的提取输入。 */

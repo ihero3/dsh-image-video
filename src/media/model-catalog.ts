@@ -15,7 +15,9 @@
  *
  * @module dsh-image-video/media/model-catalog
  */
-import { MULTI_FRAME_CAPABLE_MODELS, REFERENCE_VIDEO_CAPABLE_MODELS, VIDEO_DURATION_UNSUPPORTED } from '../runtime-defaults.ts'
+import {
+  MULTI_FRAME_CAPABLE_MODELS, PROVIDERS, REFERENCE_VIDEO_CAPABLE_MODELS, VIDEO_DURATION_UNSUPPORTED,
+} from '../runtime-defaults.ts'
 
 /** 卡片描述的一个能力项：支持/不支持 + 人话说明。 */
 export interface CapabilityFlag {
@@ -215,6 +217,62 @@ export const MODEL_CARDS: readonly ModelCapabilityCard[] = [
 export function modelCards(kind?: 'image' | 'video'): readonly ModelCapabilityCard[] {
   const cards = kind === undefined ? MODEL_CARDS : MODEL_CARDS.filter(card => card.kinds.includes(kind))
   return [...cards].sort((left, right) => Number(right.verified) - Number(left.verified))
+}
+
+/**
+ * 文本模型选择器的目录过滤：生图 / 生视频模型不能混进「剧本模型」「分段模型」等下拉。
+ *
+ * 判定顺序：能力卡里登记过的生成模型 → 聚合器别名 → 明显的生成任务标记（t2i / i2v / video…）
+ * → 只做生成任务的模型家族。没有明确生成标记的模型一律保留，避免误伤新接入的文本模型。
+ */
+export interface TextModelCatalogEntry {
+  readonly id: string
+  /** 所属服务商路由键；生成服务商名下的模型一律不是文本模型。 */
+  readonly provider?: string
+  readonly inputModalities?: readonly ('text' | 'image')[]
+}
+
+const MEDIA_MODEL_IDS = new Set([
+  ...MODEL_CARDS.map(card => card.id.toLowerCase()),
+  // MiniMax 官方原生图片模型名，和能力卡里的聚合器别名不同
+  'image-01',
+])
+const MEDIA_MODEL_ID_PATTERN = /(?:^|[-_])(?:image|img|t2i|i2i|t2v|i2v|v2v|video)(?:[-_]|$)/i
+const MEDIA_ONLY_FAMILY_PATTERN = /(?:^|[-_])(?:seedream|seedance|hailuo)(?:[-_]|$)/i
+/** 图片 / 视频生成服务商：它们网关下的模型（哪怕名字像 deepseek-chat）都用于生图 / 生视频。 */
+const MEDIA_PROVIDER_KEYS = new Set(PROVIDERS.map(provider => provider.toLowerCase()))
+
+/**
+ * 服务商是不是图片 / 视频生成服务商（threevideo / wanx / minimax / seedance）。
+ * @param provider - 服务商路由键。
+ * @returns 是生成服务商时返回 true。
+ */
+export function isMediaProvider(provider: string): boolean {
+  return MEDIA_PROVIDER_KEYS.has(provider.trim().toLowerCase())
+}
+
+/**
+ * 文本模型目录过滤：生图 / 生视频模型不能混进「剧本模型 / 文本模型」下拉。
+ *
+ * 判定顺序（任一命中即排除）：
+ * 1. **服务商维度**：生成服务商网关下的模型整组排除——同一个模型 id（如 `deepseek-v4-pro`）
+ *    在文本服务商和生成服务商下含义不同，只能靠 provider 区分；
+ * 2. 能力卡登记过的生成模型、MiniMax 原生图片名；
+ * 3. id 上的生成任务标记（t2i / i2v / video…）与纯生成家族（seedream / seedance / hailuo）；
+ * 4. 显式模态声明里不含 text 的条目。
+ *
+ * 没有明确生成标记的模型一律保留，避免误伤新接入的文本模型。
+ */
+export function isTextModelEntry(entry: TextModelCatalogEntry): boolean {
+  const id = entry.id.trim().toLowerCase()
+  if (id === '') return false
+  if (entry.provider !== undefined && isMediaProvider(entry.provider)) return false
+  if (MEDIA_MODEL_IDS.has(id)) return false
+  if (MEDIA_MODEL_ID_PATTERN.test(id) || MEDIA_ONLY_FAMILY_PATTERN.test(id)) return false
+  // 模态是显式声明时，至少要接受文本输入才配叫文本模型；缺省目录不据此猜测。
+  const modalities = entry.inputModalities
+  if (modalities !== undefined && modalities.length > 0 && !modalities.includes('text')) return false
+  return true
 }
 
 /** 自检：能力卡与运行时能力常量必须一致（改一边忘另一边 = 卡片骗人）。 */

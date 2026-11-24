@@ -3,8 +3,9 @@
  * 页面模块化分区（用户 2026-11-04；2026-11-20 拆出「剧本生成」模式）：
  *
  * - 快速创作页只有 1 个编号模块卡：① 一句话出一镜（单条生成 + 融合生图）
- * - 剧本生成页只有 1 个编号模块卡：① 剧本 → 成片（剧本、集 / 分段 / 分镜、
- *   模型与 Skill 选择、本集工作区）
+ * - 剧本生成页有 2 个编号模块卡：① 剧本 → 成片（剧本 / 集 · 段 · 分镜规模 /
+ *   文本模型与 Skill）、② 本集工作区（选集、模型 / Skill 选择、分段、分镜、
+ *   生图生视频与工作流）。两卡并列、各自可展开合并。
  *
  * 断言的是**结构**：顺序、标题、各自的内容归属（生成输入框属于快速创作页）。
  */
@@ -13,6 +14,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import { clientProps, cleanup, fakeApi, openCreateTab, render } from './client-fake-api.ts'
+import type { SkillRecord } from '../src/workbench/skills.ts'
 
 afterEach(cleanup)
 
@@ -46,7 +48,7 @@ async function renderScriptWithEpisode() {
   const view = render(<Workbench {...clientProps({ api: host.api })} />)
   await switchMode(view, 'modeScript', '[data-module="pipeline"]')
   await waitFor(() => {
-    expect(view.container.querySelector('[data-module="pipeline"] [data-episode-workspace]')).toBeTruthy()
+    expect(view.container.querySelector('[data-module="episode"] [data-episode-workspace]')).toBeTruthy()
   })
   return { host, view }
 }
@@ -59,11 +61,16 @@ describe('页面 · 模块化分区', () => {
     expect(quickModules[0]!.querySelector('.iv-module-n')?.textContent).toBe('1')
     expect(quickModules[0]!.querySelector('[data-module-title="quick"]')?.textContent).toBe(en.moduleQuick)
 
-    // 「剧本生成」是独立模式页：① 剧本 → 成片
+    // 「剧本生成」是独立模式页：① 剧本 → 成片、② 本集工作区（并列）
     await switchMode(view, 'modeScript', '[data-module="pipeline"]')
+    const scriptModules = [...view.container.querySelectorAll('.iv-modules > [data-module]')]
+    expect(scriptModules.map(element => element.getAttribute('data-module'))).toEqual(['pipeline', 'episode'])
     const pipeline = view.container.querySelector('[data-module="pipeline"]') as HTMLElement
     expect(pipeline.querySelector('.iv-module-n')?.textContent).toBe('1')
     expect(pipeline.querySelector('[data-module-title="pipeline"]')?.textContent).toBe(en.modulePipeline)
+    const episode = view.container.querySelector('[data-module="episode"]') as HTMLElement
+    expect(episode.querySelector('.iv-module-n')?.textContent).toBe('2')
+    expect(episode.querySelector('[data-module-title="episode"]')?.textContent).toBe(en.moduleEpisode)
     // 快速创作页不再承载剧本层级
     expect(view.container.querySelector('[data-quick-modules]')).toBeNull()
   })
@@ -71,13 +78,14 @@ describe('页面 · 模块化分区', () => {
   it('keeps each kind of input inside its own page, so the boundary is visible', async () => {
     const { view } = await renderScriptWithEpisode()
 
-    // 剧本生成页：剧本卡 + 模型/Skill 选择器 + 本集工作区
+    // 剧本生成页：① 剧本卡（含导入与文本模型）；② 模型/Skill 选择器 + 本集工作区
     const pipeline = view.container.querySelector('[data-module="pipeline"]') as HTMLElement
+    const episode = view.container.querySelector('[data-module="episode"]') as HTMLElement
     expect(pipeline.querySelector('[data-pipeline-script]')).toBeTruthy()
-    expect(pipeline.querySelector('[data-script-selectors]')).toBeTruthy()
-    expect(pipeline.querySelector('[data-episode-workspace]')).toBeTruthy()
+    expect(episode.querySelector('[data-script-selectors]')).toBeTruthy()
+    expect(episode.querySelector('[data-episode-workspace]')).toBeTruthy()
     expect(pipeline.querySelector('[data-generate-prompt]')).toBeNull()
-    // 2026-11-19（B-20）分镜工坊并入「一键成片」卡片，① 里不再有独立的分镜折叠区。
+    // 2026-11-19（B-20）分镜工坊并入「一键成片」卡片，模块卡里不再有独立的分镜折叠区。
     expect(pipeline.querySelector('[data-pipeline-text-model]')).toBeTruthy()
     expect(pipeline.querySelector('[data-pipeline-import-file]')).toBeTruthy()
     expect(pipeline.querySelector('[data-storyboard-entry]')).toBeNull()
@@ -185,5 +193,38 @@ describe('页面 · 模块化分区', () => {
     fireEvent.click(toggle)
     await waitFor(() => { expect(view.container.querySelector('[data-model-details]')).toBeNull() })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('shows supported text models in the top params strip and shares the selection with module 2', async () => {
+    const { view } = await renderScriptWithEpisode()
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-text-model]')).toBeTruthy() })
+    const top = view.container.querySelector('[data-workbench-text-model]') as HTMLSelectElement
+    expect([...top.options].map(option => option.value)).toEqual(expect.arrayContaining(['rules', 'fake::fake-text']))
+    const moduleSelect = () => view.container.querySelector('[data-script-text-model]') as HTMLSelectElement
+    expect(moduleSelect().value).toBe('rules')
+    fireEvent.change(top, { target: { value: 'fake::fake-text' } })
+    await waitFor(() => { expect(moduleSelect().value).toBe('fake::fake-text') })
+  })
+
+  it('inserts a pipeline skill into the script and hides it from the dropdown', async () => {
+    const stamp = '2026-11-24T00:00:00.000Z'
+    const skill: SkillRecord = {
+      schemaVersion: 1, id: 'skl-p', kind: 'director', name: '镜头感', description: '',
+      prompt: 'prompt', builtin: false, enabled: true, createdAt: stamp, updatedAt: stamp,
+    }
+    const host = fakeApi({ skills: [skill] })
+    host.projects.push({ schemaVersion: 1, id: 'prj-1', name: '剧', createdAt: stamp, updatedAt: stamp } as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await switchMode(view, 'modeScript', '[data-module="pipeline"]')
+    const select = () => view.container.querySelector('[data-pipeline-skill]') as HTMLSelectElement
+    const script = () => view.container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement
+    await waitFor(() => { expect([...select().options].map(option => option.value)).toContain('skl-p') })
+    fireEvent.change(select(), { target: { value: 'skl-p' } })
+    await waitFor(() => {
+      expect(script().value).toContain('【@镜头感】')
+      expect([...select().options].map(option => option.value)).not.toContain('skl-p')
+    })
+    fireEvent.change(script(), { target: { value: '纯剧本' } })
+    await waitFor(() => { expect([...select().options].map(option => option.value)).toContain('skl-p') })
   })
 })

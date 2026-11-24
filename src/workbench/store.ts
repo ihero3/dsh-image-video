@@ -23,6 +23,7 @@ import { planArchive } from './archive.ts'
 import { inspectIntegrity } from './integrity.ts'
 import { duplicateTimeline, DEFAULT_FRAME_RATE, normalizeExportFormat, normalizeTimelineTracks, type TimelineRecord, type TimelineTrack } from './timeline.ts'
 import { buildEpisodeWorkflow } from './storyboard-workflow.ts'
+import { buildImportedEpisode, type EpisodeImportResult } from './episode-import.ts'
 import { describeReferences, findAssetReferences, findResourceReferences } from './references.ts'
 import {
   applyReorder, DEFAULT_EPISODE_REF_CATEGORY, emptySegment, EPISODE_REF_CATEGORIES, FIRST_EPISODE_NO, FIRST_ORDER, newEpisode, nextOrder,
@@ -479,6 +480,28 @@ export class WorkbenchStore {
       nodes: graph.nodes,
       edges: graph.edges,
     })
+  }
+
+  /**
+   * 导入一份单集清单：在目标剧集下**新建**一集（集号追加到末尾），不覆盖任何现有集。
+   * @param input.projectId - 导入目标剧集。
+   * @param input.manifest - 已解析的 episode.json 内容。
+   * @returns 新集与清单完整性提示。
+   * @throws {Error} 剧集不存在、集号越界或清单不合法时。
+   */
+  async importEpisode(input: { projectId: string; manifest: unknown }): Promise<EpisodeImportResult> {
+    const document = await this.load()
+    this.assertProject(document, input.projectId)
+    const siblings = document.episodes.filter(episode => episode.projectId === input.projectId)
+    const fallback = siblings.length === 0 ? FIRST_EPISODE_NO : Math.max(...siblings.map(episode => episode.no)) + 1
+    const no = normalizeEpisodeNo(fallback, fallback)
+    if (siblings.some(episode => episode.no === no)) throw new Error(`第${no}集已存在，无法导入`)
+    const result = buildImportedEpisode({
+      manifest: input.manifest, projectId: input.projectId, no, stamp: this.now().toISOString(),
+    })
+    document.episodes.push(result.episode)
+    await this.save(document)
+    return result
   }
 
   /**
@@ -1237,6 +1260,7 @@ export class WorkbenchStore {
     const current = this.findEpisode(document, episodeId)
     const imageModel = normalizeOptionalId(input.imageModel, '图片模型')
     const videoModel = normalizeOptionalId(input.videoModel, '视频模型')
+    const textModel = normalizeOptionalId(input.textModel, '文本模型')
     const skillId = normalizeOptionalId(input.skillId, 'director 技能')
     const segment: SegmentRecord = {
       ...emptySegment(episodeId),
@@ -1245,6 +1269,7 @@ export class WorkbenchStore {
       promptText: normalizePromptText(input.promptText),
       ...imageModel === undefined ? {} : { imageModel },
       ...videoModel === undefined ? {} : { videoModel },
+      ...textModel === undefined ? {} : { textModel },
       ...skillId === undefined ? {} : { skillId },
       refs: normalizeSegmentRefs(input.refs),
     }
@@ -1267,6 +1292,7 @@ export class WorkbenchStore {
     const { episode, segment } = this.findSegment(document, segmentId)
     const imageModel = normalizeOptionalId(patch.imageModel, '图片模型')
     const videoModel = normalizeOptionalId(patch.videoModel, '视频模型')
+    const textModel = normalizeOptionalId(patch.textModel, '文本模型')
     const skillId = normalizeOptionalId(patch.skillId, 'director 技能')
     const next: SegmentRecord = {
       ...segment,
@@ -1274,6 +1300,7 @@ export class WorkbenchStore {
       ...patch.durationSec === undefined ? {} : { durationSec: normalizeSegmentDuration(patch.durationSec) },
       ...patch.imageModel === undefined ? {} : { imageModel },
       ...patch.videoModel === undefined ? {} : { videoModel },
+      ...patch.textModel === undefined ? {} : { textModel },
       ...patch.skillId === undefined ? {} : { skillId },
       ...patch.refs === undefined ? {} : { refs: normalizeSegmentRefs(patch.refs) },
     }

@@ -106,6 +106,8 @@ export interface SegmentRecord {
   readonly promptText: string
   readonly imageModel?: string
   readonly videoModel?: string
+  /** 段级文本模型（`provider::model`）：拆本段分镜时调用它；空/缺省走规则。 */
+  readonly textModel?: string
   readonly skillId?: string
   readonly refs: readonly SegmentRef[]
   readonly storyboardId?: string
@@ -141,6 +143,7 @@ export interface SegmentInput {
   readonly order?: unknown
   readonly imageModel?: unknown
   readonly videoModel?: unknown
+  readonly textModel?: unknown
   readonly skillId?: unknown
   readonly refs?: unknown
 }
@@ -369,6 +372,32 @@ export function normalizeShots(value: unknown): ShotRecord[] {
  */
 export function episodeDurationSec(segments: readonly SegmentRecord[]): number {
   return segments.reduce((total, segment) => total + segment.durationSec, 0)
+}
+
+/** 一组分镜的时长之和。 */
+export function shotsDurationSec(shots: readonly ShotRecord[]): number {
+  return shots.reduce((total, shot) => total + shot.durationSec, 0)
+}
+
+/**
+ * 把一段的总秒数分配到N个分镜，保证「每个分镜时长之和 == 段时长」。
+ *
+ * 用整除 + 余数分摊（余数给靠前的镜头）：例如 5 秒 / 2 镜 → [3, 2]，总和仍是 5。
+ * 每镜至少 1 秒，因此当镜头数多于目标秒数时，按每镜 1 秒返回（总和会大于目标）——
+ * 这种情况由调用方以「镜头数 × 1 秒」作为可读的最小时长提示。
+ *
+ * @param totalSec - 段时长（应已在合法区间内）。
+ * @param count - 分镜数量。
+ * @returns 长度等于 count 的每个分镜时长数组。
+ */
+export function distributeDurationToShots(totalSec: number, count: number): number[] {
+  if (count <= 0) return []
+  const requested = Math.max(1, Math.round(Number.isFinite(totalSec) ? totalSec : MIN_SEGMENT_DURATION_SEC))
+  // 每镜至少 1 秒：镜头数多于目标秒数时把总量抬到镜头数，避免 0 秒分镜落库失败。
+  const total = Math.max(requested, count)
+  const base = Math.floor(total / count)
+  const remainder = total - base * count
+  return Array.from({ length: count }, (_, index) => base + (index < remainder ? 1 : 0))
 }
 
 /**

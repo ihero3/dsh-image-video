@@ -92,6 +92,23 @@ describe('modern theme coverage', () => {
     }
   })
 
+  it('生图/生视频按钮的 hover 与静止态不同（鼠标移上有明确反馈）', () => {
+    // primary（生成分镜脚本）与 soft（一键生图/生视频、逐镜生成）都要有独立 hover 规则
+    for (const variant of ['primary', 'soft']) {
+      const base = `.iv .iv-btn--action--${variant}{`
+      const hover = `.iv .iv-btn--action--${variant}:hover:not(:disabled){`
+      expect(MODERN_THEME_STYLE, `缺少静止态 ${base}`).toContain(base)
+      const hoverAt = MODERN_THEME_STYLE.indexOf(hover)
+      expect(hoverAt, `缺少 hover 规则 ${hover}`).toBeGreaterThan(-1)
+      // hover 规则体里要有真实的视觉变化，不能与静止态一样只有背景色声明
+      const hoverBody = MODERN_THEME_STYLE.slice(hoverAt, MODERN_THEME_STYLE.indexOf('}', hoverAt))
+      expect(hoverBody).toMatch(/box-shadow|transform|background:var\(--iv-solid-hover\)|border-color:var\(--iv-acc\)/)
+    }
+    // 按下要有回落反馈，且尊重减少动效偏好
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-btn--action:active:not(:disabled){')
+    expect(MODERN_THEME_STYLE).toContain('prefers-reduced-motion:reduce')
+  })
+
   it('keeps every selector scoped to the plugin (no bare global overrides)', () => {
     // 每条规则独占一行；只取含选择器的行，跳过根块的属性行与 @media 包裹行。
     const rules = MODERN_THEME_STYLE

@@ -25,6 +25,7 @@ import {
   type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
+import { downloadWorkflowFile, parseWorkflowFile, serializeWorkflow } from './workflow-io.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 import { Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -60,6 +61,8 @@ export interface WorkflowCanvasProps {
   readonly onChange: (record: WorkflowRecord) => void
   /** 文案取用。 */
   readonly t: (key: WorkbenchLocaleKey) => string
+  /** 导入 / 导出的结果提示（上层接到全局通知条）。 */
+  readonly onNotice?: (text: string, tone: 'info' | 'error') => void
   /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
@@ -252,7 +255,7 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -266,6 +269,7 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
   const lastPushed = useRef<string>('')
   const seededId = useRef<string>(record.id)
   const clipboard = useRef<CanvasClipboard | undefined>(undefined)
+  const workflowFileRef = useRef<HTMLInputElement | null>(null)
   // B4：快照历史栈（A3 落地前撤销/重做的家）。解构出稳定身份的回调，
   // 避免每渲染重建 handler（否则键盘监听会每帧重绑）。
   const {
@@ -486,6 +490,28 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
     applyGraph({ nodes: nextNodes, edges: nextEdges }, `paste:${Date.now().toString(36)}`)
   }, [nodes, edges, applyGraph])
 
+  /** 导入工作流 JSON：先做结构校验，通过才替换整张图（可撤销）。 */
+  const importWorkflowFile = useCallback(async (file: File): Promise<void> => {
+    try {
+      const parsed = parseWorkflowFile(await file.text())
+      const graph: WorkflowRecord = { ...record, nodes: [...parsed.nodes], edges: [...parsed.edges] }
+      applyGraph({ nodes: toCanvasNodes(graph), edges: toCanvasEdges(graph) }, `import:${Date.now().toString(36)}`)
+      setSelectedIds([])
+      setError(undefined)
+      onNotice?.(t('canvasImportWorkflowDone').replace('{n}', String(parsed.nodes.length)), 'info')
+      void fitView({ padding: 0.2 })
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+      onNotice?.(`${t('canvasImportWorkflowFailed')}：${message}`, 'error')
+    }
+  }, [record, applyGraph, onNotice, t, fitView])
+
+  /** 导出工作流 JSON：带格式标识与版本，换一台机器也能按同一套校验导回来。 */
+  const exportWorkflowFile = useCallback(() => {
+    downloadWorkflowFile(serializeWorkflow(merge(record, nodes, edges)), record.name || 'workflow')
+  }, [record, nodes, edges])
+
   /** 撤销/重做：取历史栈的上一态，应用到画布（回写由 effect 完成）。 */
   const undo = useCallback(() => {
     const previous = undoHistory()
@@ -640,6 +666,29 @@ function CanvasSurface({ record, onChange, t, run }: WorkflowCanvasProps): JSX.E
             aria-label={t('canvasDeleteSelected')} title={`${t('canvasDeleteSelected')}（Delete）`}
             disabled={selectedIds.length === 0} onClick={deleteSelected}>
             <Icon name="trash" />{t('canvasDeleteSelected')}{selectedIds.length > 1 ? ` · ${selectedIds.length}` : ''}
+          </button>
+          <span className="iv-toolbar-sep" role="separator" aria-hidden="true" />
+          <input
+            ref={workflowFileRef}
+            type="file"
+            accept=".json,application/json"
+            data-workflow-import-file="true"
+            style={{ display: 'none' }}
+            onChange={event => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file !== undefined) void importWorkflowFile(file)
+            }}
+          />
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="import"
+            aria-label={t('canvasImportWorkflow')} title={t('canvasImportWorkflow')}
+            onClick={() => workflowFileRef.current?.click()}>
+            <Icon name="upload" />{t('canvasImportWorkflow')}
+          </button>
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="export"
+            aria-label={t('canvasExportWorkflow')} title={t('canvasExportWorkflow')}
+            onClick={exportWorkflowFile}>
+            <Icon name="download" />{t('canvasExportWorkflow')}
           </button>
           {run === undefined
             ? null

@@ -198,7 +198,8 @@
 | `entities/extract` | `{script,category,provider,model}` | `{items}`（剧本实体提取：`category` = `role/scene/prop`，把当前集剧本交给文本模型，返回 `{name,note}` 候选；同名去重、最多 20 条；剧本为空、无文本模型、输出不可解析时如实报错） |
 | `episodes/resources` | `{id,action,resourceId?,category?,order?}` | `{refs}`（`action` = `list/add/remove/move`；剧集级资源库引用，只存 id） |
 | `episodes/assets` | `{id,action,assetId?,category?,order?}` | `{refs}`（全局素材库引用，只存 id） |
-| `episodes/export` | `{episodeId}` | `{export}`（只导这一集：`outputs/episodes/<id>/episode.json` + `files/` 里被本集镜头引用的素材副本；缺失文件记进 `missing`） |
+| `episodes/export` | `{episodeId}` | `{export}`（只导这一集：`outputs/episodes/<id>/episode.json` + `files/` 里被本集镜头引用的素材副本；缺失文件记进 `missing`；清单 v2 含 `storyboards` 与两类引用，v1 只有分段） |
+| `episodes/import` | `{projectId,base64?,path?}` | `{imported: {episode,warnings}}`（导入单集 JSON：浏览器传 `base64` 文本，桌面壳可传 `path`；**只新建集**、集号追加、实例 id 全量重发，不覆盖现有集；v1 清单缺分镜时给 warning；非合法 JSON / 格式版本不符如实报错） |
 | `segments/list` | `{episodeId}` | `{segments}` |
 | `segments/create` | `{episodeId,promptText?,durationSec?,order?,imageModel?,videoModel?,skillId?,refs?}` | `{segment}`（时长 1–180 秒，缺省 30） |
 | `segments/update` | `{id,promptText?,durationSec?,order?,imageModel?,videoModel?,skillId?,refs?}` | `{segment}`（改 `order` 即移动位置） |
