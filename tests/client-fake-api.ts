@@ -119,12 +119,16 @@ export function fakeApi(options: {
   const generatePayloads: Array<{
     mediaMode: 'image' | 'video'
     prompt: string
+    projectId?: string
     continuation?: boolean
     episodeId?: string
     segmentId?: string
     shotId?: string
     model?: string
+    size?: string
   }> = []
+  /** `entities/extract` 收到的入参（角色提取提示词测试断言用）。 */
+  const entityExtractInputs: Array<{ category: string; provider: string; model: string; instructions?: string; skillId?: string }> = []
   /** `B-6`：`modelsCatalog` 返回的卡片（测试替身，固定两份）。 */
   const modelCards: Array<{ id: string; name: string }> = [
     { id: 'm1', name: 'Model One' },
@@ -168,11 +172,13 @@ export function fakeApi(options: {
   generateMedia: async input => {
     generatePayloads.push({
       mediaMode: input.mediaMode, prompt: input.prompt,
+      ...input.projectId === undefined ? {} : { projectId: input.projectId },
       ...input.continuation === true ? { continuation: true } : {},
       ...input.episodeId === undefined ? {} : { episodeId: input.episodeId },
       ...input.segmentId === undefined ? {} : { segmentId: input.segmentId },
       ...input.shotId === undefined ? {} : { shotId: input.shotId },
       ...input.model === undefined ? {} : { model: input.model },
+      ...input.size === undefined ? {} : { size: input.size },
     })
     if (input.mediaMode === 'video') {
       const task = {
@@ -413,6 +419,7 @@ export function fakeApi(options: {
         ...input.note === undefined ? {} : { note: input.note },
         ...input.assetPath === undefined ? {} : { assetPath: input.assetPath },
         ...input.assetPaths === undefined || input.assetPaths.length === 0 ? {} : { assetPaths: [...input.assetPaths] },
+        ...input.keyframes === undefined || input.keyframes.length === 0 ? {} : { keyframes: [...input.keyframes] },
       }
       resources.push(resource)
       return resource
@@ -434,6 +441,10 @@ export function fakeApi(options: {
       if (input.assetPaths !== undefined) {
         if (input.assetPaths === null) delete mutable.assetPaths
         else mutable.assetPaths = [...input.assetPaths]
+      }
+      if (input.keyframes !== undefined) {
+        if (input.keyframes === null) delete mutable.keyframes
+        else mutable.keyframes = [...input.keyframes]
       }
       const updated = mutable as unknown as ResourceRecord
       resources[index] = updated
@@ -513,6 +524,14 @@ export function fakeApi(options: {
         const kept = refs.filter(ref => ref.resourceId !== input?.resourceId)
         episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, resourceRefs: kept }
         return kept
+      }
+      if (action === 'move' && input?.category !== undefined) {
+        for (let index = 0; index < refs.length; index += 1) {
+          const current = refs[index]!
+          if (current.resourceId === input.resourceId) {
+            refs[index] = { ...current, category: input.category as EpisodeRefCategory }
+          }
+        }
       }
       episodeRecords[episodeRecords.indexOf(episode)] = { ...episode, resourceRefs: refs }
       return refs
@@ -601,6 +620,17 @@ export function fakeApi(options: {
       models: [{ provider: 'fake', providerName: 'Fake', id: 'fake-text', name: 'Fake text' }],
       failures: [],
     }),
+    // 音色状态夹具：默认未接入（TTS 真实实现仍待联调），带两个预设音色供下拉选择。
+    voiceStatus: async () => ({
+      available: false,
+      provider: 'threevideo',
+      reason: 'TTS 接口未接入：音色卡与配音计划可用，合成暂不可用',
+      voices: [
+        { id: 'v-male', name: '低沉男声', gender: 'male' as const, languages: ['zh'] },
+        { id: 'v-female', name: '清亮女声', gender: 'female' as const, languages: ['zh'] },
+      ],
+      defaultVoice: 'v-male',
+    }),
     // 拆段夹具：按空行切分剧本，逐段建记录（真实拆段由宿主调模型完成）。
     splitEpisode: async input => {
       const chunks = (input.script ?? '').split(/\n{2,}/).map(part => part.trim()).filter(part => part !== '')
@@ -654,7 +684,16 @@ export function fakeApi(options: {
     // 剧本实体提取夹具：按分区回固定候选，真实提取由宿主调模型完成。
     extractEntities: async input => {
       calls.push('entities/extract')
-      const names = input.category === 'role' ? ['林夏', '老周'] : input.category === 'scene' ? ['雨夜街头'] : ['红伞']
+      entityExtractInputs.push({
+        category: input.category, provider: input.provider, model: input.model,
+        ...input.instructions === undefined ? {} : { instructions: input.instructions },
+        ...input.skillId === undefined ? {} : { skillId: input.skillId },
+      })
+      const names = input.category === 'role' ? ['林夏', '老周']
+        : input.category === 'scene' ? ['雨夜街头']
+          : input.category === 'costume' ? ['红色雨衣']
+            : input.category === 'voice' ? ['林夏（音色）']
+              : input.category === 'motion' ? ['推进镜头'] : ['红伞']
       return { items: names.map(name => ({ name, note: `${input.category} 说明` })) }
     },
     listStoryboards: async episodeId => (await api.getEpisode(episodeId)).storyboards,
@@ -1092,7 +1131,7 @@ export function fakeApi(options: {
       }
     },
   }
-  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords, generatePayloads, modelCards, ratioPayloads, redrawPayloads, riskPayloads, pipelinePayloads, episodes: episodeRecords, skills: skillRecords }
+  return { api, calls, projects, assets, tasks, resources, workflows, timelines, savedDefaults, runPayloads, runningGenerations, referencedAssetIds, composePayloads, extractInputs, entityExtractInputs, prompts, exportOptions: () => lastExportOptions, storyboardPayloads, exports: exportRecords, generatePayloads, modelCards, ratioPayloads, redrawPayloads, riskPayloads, pipelinePayloads, episodes: episodeRecords, skills: skillRecords }
 }
 
 /** Props for one render; the seat binds far more than this component reads. */

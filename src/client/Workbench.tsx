@@ -43,9 +43,7 @@ import {
 } from './timeline-math.ts'
 import type { OutputFile } from '../workbench/outputs.ts'
 import { EPISODE_REF_CATEGORIES } from '../workbench/episodes.ts'
-import type {
-  EpisodeRecord, EpisodeRefCategory,
-} from '../workbench/episodes.ts'
+import type { EpisodeRecord, EpisodeRefCategory } from '../workbench/episodes.ts'
 import type { SkillRecord } from '../workbench/skills.ts'
 import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
@@ -53,7 +51,7 @@ import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
 import { useModernTheme } from './modern-theme.ts'
-import { useWorkbenchField } from './workbench-store.ts'
+import { switchPipelineEpisode, useWorkbenchField } from './workbench-store.ts'
 import type { WorkbenchScriptTab } from './workbench-store.ts'
 import { isInteractiveTarget, toggleWindowFullscreen } from './window-fullscreen.ts'
 import { useUnifiedPolling } from './use-unified-poll.ts'
@@ -67,6 +65,8 @@ import { TimelineSegmentPreview } from './panels/TimelineSegmentPreview.tsx'
 import { TaskCard } from './panels/TaskCard.tsx'
 import { EpisodeWorkspace } from './panels/EpisodeWorkspace.tsx'
 import { ScriptExtractPanel } from './panels/ScriptExtractPanel.tsx'
+import { VoicePanel } from './panels/VoicePanel.tsx'
+import { MotionPanel } from './panels/MotionPanel.tsx'
 import { PromptStudioPanel } from './panels/PromptStudioPanel.tsx'
 import { SkillLibraryPanel } from './panels/SkillLibraryPanel.tsx'
 import { ExportHistoryPanel } from './panels/ExportHistoryPanel.tsx'
@@ -141,18 +141,13 @@ const MODE_ICONS: Record<WorkbenchMode, IconName> = {
   quick: 'bolt', script: 'script', workflow: 'flow', timeline: 'film',
 }
 
-/** 剧本生成页的四个分区标签页（顺序即界面顺序：剧本分段 + 三个提取分区）。 */
+/** 剧本生成页的四个分区标签页（顺序即界面顺序：分镜 / 素材提取 / 音色 / 轨迹）。 */
 const SCRIPT_TABS: ReadonlyArray<{ readonly key: WorkbenchScriptTab, readonly label: WorkbenchLocaleKey }> = [
   { key: 'split', label: 'scriptTabSplit' },
-  { key: 'roles', label: 'scriptTabRoles' },
-  { key: 'scenes', label: 'scriptTabScenes' },
-  { key: 'props', label: 'scriptTabProps' },
+  { key: 'extract', label: 'scriptTabExtract' },
+  { key: 'voice', label: 'scriptTabVoice' },
+  { key: 'motion', label: 'scriptTabMotion' },
 ]
-
-/** 分区 → 入库的资源类型（道具·服装都归到 `prop`）。 */
-const SCRIPT_TAB_KINDS: Record<WorkbenchScriptTab, ResourceKind> = {
-  roles: 'role', scenes: 'scene', props: 'prop', split: 'prop',
-}
 
 /** Resource kind → icon (resource library rows). */
 const RESOURCE_ICONS: Record<ResourceKind, IconName> = {
@@ -844,6 +839,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 资源面板的「本集已选 / 剧集全部」由 `episodeResourceView` 切换。
   const [episodes, setEpisodes] = useState<readonly EpisodeRecord[]>([])
   const [activeEpisodeId, setActiveEpisodeId] = useWorkbenchField(api, 'activeEpisodeId')
+  // 四个剧本分区共享的输入与角色卡按剧集保存/恢复（切集时先存旧的再读新的）
+  useEffect(() => { switchPipelineEpisode(apiRef.current, activeEpisodeId ?? '') }, [activeEpisodeId])
   const [episodeResourceView, setEpisodeResourceView] = useState<'selected' | 'all'>('selected')
   const [episodeRenaming, setEpisodeRenaming] = useState(false)
   const [episodeRenameValue, setEpisodeRenameValue] = useState('')
@@ -853,8 +850,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [quickTab, setQuickTab] = useWorkbenchField(api, 'quickTab')
   /** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
   const [createTab, setCreateTab] = useWorkbenchField(api, 'createTab')
-  /** 剧本生成页的分区：剧本分段 / 角色 / 场景 / 道具·服装（默认剧本分段）。 */
+  /** 剧本生成页的分区：分镜 / 素材提取 / 音色 / 轨迹（默认分镜）。 */
   const [scriptTab, setScriptTab] = useWorkbenchField(api, 'scriptTab')
+  /** 素材提取页当前要提取的类型，切到别的 tab 再回来仍保持。 */
+  const [extractCategory, setExtractCategory] = useState<'role' | 'scene' | 'costume' | 'prop'>('role')
   // 导演库里启用中的技能：分段的 Skill 选择器只列这些（技能管理页改动后一起刷新）。
   const [directorSkills, setDirectorSkills] = useState<readonly SkillRecord[]>([])
 
@@ -1833,6 +1832,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     ref,
     asset: assets.find(asset => asset.id === ref.assetId),
   }))
+  // 搜索框跟着当前 tab 走：本集已选只在本集已选里匹配，剧集全部仍走 visibleResources。
+  // 用单独的列表做展示过滤，原始 rows 继续给「加入本集」等判断用，避免误判成未引用。
+  const filteredEpisodeResourceRows = episodeResourceRows.filter(({ resource }) =>
+    resourceNeedle === ''
+    || resource?.name.includes(resourceNeedle) === true
+    || (resource?.note ?? '').includes(resourceNeedle))
+  const filteredEpisodeAssetRows = episodeAssetRows.filter(({ asset }) =>
+    resourceNeedle === '' || baseName(asset?.path ?? '').includes(resourceNeedle))
 
   // `B-9` 融合生图：选中资源的参考图预览——去重、按角色→场景→物品的顺序、封顶 6 张。
   // 这只是**本地预览**；真正用哪几张由宿主 `media/compose` 解析（缺图会降级为纯文生）。
@@ -2076,25 +2083,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const removeEpisodeAsset = (assetId: string): void => {
     if (activeEpisode === undefined) return
     runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeAssets(activeEpisode.id, 'remove', { assetId }))
-  }
-
-  /** 集内引用上移/下移一格：顺序号从 1 开始，越界即忽略。 */
-  const moveEpisodeResource = (resourceId: string, delta: number): void => {
-    if (activeEpisode === undefined) return
-    const target = activeEpisode.resourceRefs.find(ref => ref.resourceId === resourceId)
-    if (target === undefined) return
-    const order = target.order + delta
-    if (order < 1 || order > activeEpisode.resourceRefs.length) return
-    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeResources(activeEpisode.id, 'move', { resourceId, order }))
-  }
-
-  const moveEpisodeAsset = (assetId: string, delta: number): void => {
-    if (activeEpisode === undefined) return
-    const target = activeEpisode.assetRefs.find(ref => ref.assetId === assetId)
-    if (target === undefined) return
-    const order = target.order + delta
-    if (order < 1 || order > activeEpisode.assetRefs.length) return
-    runEpisodeAction(activeEpisode.id, () => apiRef.current.episodeAssets(activeEpisode.id, 'move', { assetId, order }))
   }
 
   /** 改变一条集内引用的分类（资源分类或素材分类）。 */
@@ -4087,22 +4075,68 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
                   </div>
                     )
-                    : (
-                      <ScriptExtractPanel
-                        api={apiRef.current}
-                        t={t}
-                        category={scriptTab === 'roles' ? 'role' : scriptTab === 'scenes' ? 'scene' : 'prop'}
-                        projectId={activeProject?.id}
-                        script={activeEpisode?.script.text ?? ''}
-                        model={scriptTextModelChoice}
-                        existing={resources.filter(item => item.kind === SCRIPT_TAB_KINDS[scriptTab]
-                          || (scriptTab === 'props' && item.kind === 'costume'))}
-                        onCreated={async () => {
-                          if (activeProject !== undefined) await loadResources(activeProject.id)
-                        }}
-                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                      />
-                    )}
+                    : scriptTab === 'extract'
+                      ? (
+                        <ScriptExtractPanel
+                          api={apiRef.current}
+                          t={t}
+                          category={extractCategory}
+                          onCategoryChange={setExtractCategory}
+                          projectId={activeProject?.id}
+                          episodeId={activeEpisode?.id}
+                          script={activeEpisode?.script.text ?? ''}
+                          model={scriptTextModelChoice}
+                          textModels={scriptModels}
+                          skills={directorSkills}
+                          options={options}
+                          existing={resources.filter(item => item.kind === extractCategory
+                            || (extractCategory === 'role' && item.kind === 'costume'))}
+                          onCreated={async () => {
+                            if (activeProject !== undefined) await loadResources(activeProject.id)
+                          }}
+                          onMediaGenerated={async () => {
+                            setAssets(await apiRef.current.listAssets())
+                            await loadTasks()
+                          }}
+                          onPreviewAsset={previewAsset}
+                          onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                        />
+                      )
+                      : scriptTab === 'voice'
+                        ? (
+                          <VoicePanel
+                            api={apiRef.current}
+                            t={t}
+                            projectId={activeProject?.id}
+                            episodeId={activeEpisode?.id}
+                            script={activeEpisode?.script.text ?? ''}
+                            model={scriptTextModelChoice}
+                            textModels={scriptModels}
+                            skills={directorSkills}
+                            existing={resources.filter(item => item.kind === 'voice')}
+                            onCreated={async () => {
+                              if (activeProject !== undefined) await loadResources(activeProject.id)
+                            }}
+                            onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                          />
+                        )
+                        : (
+                          <MotionPanel
+                            api={apiRef.current}
+                            t={t}
+                            projectId={activeProject?.id}
+                            episodeId={activeEpisode?.id}
+                            script={activeEpisode?.script.text ?? ''}
+                            model={scriptTextModelChoice}
+                            textModels={scriptModels}
+                            skills={directorSkills}
+                            existing={resources.filter(item => item.kind === 'motion-track')}
+                            onCreated={async () => {
+                              if (activeProject !== undefined) await loadResources(activeProject.id)
+                            }}
+                            onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                          />
+                        )}
                   </PaneBoundary>
                 </section>
               )
@@ -5983,159 +6017,185 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   : (
                     <div className="iv-episode-refs" data-episode-refs="true">
                       <div className="iv-hint">
-                        <span className="iv-micro">{episodeResourceView === 'selected' ? t('episodeResourcesSelected') : t('episodeResourcesAll')}</span>
+                        <span className="iv-micro">{t('episodeResourcesSelected')}</span>
                         <span className="iv-meta">{t('episodeRefsHint')}</span>
                       </div>
-                      {episodeResourceRows.length === 0 && episodeAssetRows.length === 0
+                      {filteredEpisodeResourceRows.length === 0 && filteredEpisodeAssetRows.length === 0
                         ? (
                           <div className="iv-empty" data-episode-refs-empty="true">
                             <span className="iv-empty-tile"><Icon name="layers" size={17} /></span>
-                            <strong>{t('episodeRefsEmpty')}</strong>
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              onClick={() => { setEpisodeResourceView('all') }}
-                            >
-                              {t('episodeRefsBrowse')}
-                            </button>
+                            <strong>{resourceNeedle === '' ? t('episodeRefsEmpty') : t('resourceFilterEmpty')}</strong>
+                            {resourceNeedle === ''
+                              ? (
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setEpisodeResourceView('all') }}
+                                >
+                                  {t('episodeRefsBrowse')}
+                                </button>
+                              )
+                              : null}
                           </div>
                         )
                         : (
                           <ul className="iv-list">
-                            {episodeResourceRows.map(({ ref, resource }) => (
-                              <li
-                                key={`res-${ref.resourceId}`}
-                                className="iv-row"
-                                data-episode-resource-ref={ref.resourceId}
-                                data-missing={resource === undefined ? 'true' : undefined}
-                              >
-                                <span className="iv-tile">
-                                  <Icon name={resource === undefined ? 'alert' : RESOURCE_ICONS[resource.kind]} size={13} />
-                                </span>
-                                <span className="iv-row-main iv-ellipsis">
-                                  {resource === undefined
-                                    ? `${t('episodeRefMissing')} · ${ref.resourceId}`
-                                    : `${t(kindKey(resource.kind))} · ${resource.name}`}
-                                </span>
-                                <select
-                                  className="iv-select"
-                                  aria-label={t('episodeRefCategory')}
-                                  value={ref.category}
-                                  onChange={event => {
-                                    setEpisodeRefCategory('resource', ref.resourceId, event.target.value as EpisodeRefCategory)
-                                  }}
-                                  style={{ maxWidth: '90px' }}
+                            {filteredEpisodeResourceRows.map(({ ref, resource }) => {
+                              const path = resource?.assetPath ?? resource?.assetPaths?.[0]
+                              const kind = path === undefined ? 'image'
+                                : assets.find(asset => asset.path === path)?.kind ?? 'image'
+                              const label = resource === undefined
+                                ? `${t('episodeRefMissing')} · ${ref.resourceId}`
+                                : resource.name
+                              return (
+                                <li
+                                  key={`res-${ref.resourceId}`}
+                                  className="iv-row"
+                                  data-episode-resource-ref={ref.resourceId}
+                                  data-missing={resource === undefined ? 'true' : undefined}
                                 >
-                                  {EPISODE_REF_CATEGORIES.map(category => (
-                                    <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
-                                  ))}
-                                </select>
-                                <span className="iv-row-actions">
+                                  {path === undefined
+                                    ? (
+                                      <span className="iv-tile">
+                                        <Icon name={resource === undefined ? 'alert' : RESOURCE_ICONS[resource.kind]} size={13} />
+                                      </span>
+                                    )
+                                    : (
+                                      <button
+                                        type="button"
+                                        className="iv-ref-thumb-button"
+                                        data-episode-preview-resource={ref.resourceId}
+                                        aria-label={`${t('refPreview')} · ${label}`}
+                                        title={label}
+                                        onClick={() => { previewAsset(path, kind) }}
+                                      >
+                                        {kind === 'video'
+                                          ? <video className="iv-ref-picker-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}#t=0.1`} muted preload="metadata" playsInline aria-hidden />
+                                          : <img className="iv-ref-picker-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}`} alt="" />}
+                                      </button>
+                                    )}
                                   <button
                                     type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    aria-label={t('moveUp')}
-                                    disabled={busy || ref.order <= 1}
-                                    onClick={() => { moveEpisodeResource(ref.resourceId, -1) }}
-                                  >↑</button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    aria-label={t('moveDown')}
-                                    disabled={busy || ref.order >= episodeResourceRows.length}
-                                    onClick={() => { moveEpisodeResource(ref.resourceId, 1) }}
-                                  >↓</button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    data-episode-remove-resource={ref.resourceId}
-                                    aria-label={t('remove')}
-                                    disabled={busy}
-                                    onClick={() => { removeEpisodeResource(ref.resourceId) }}
+                                    className="iv-row-main iv-ellipsis iv-ref-name"
+                                    data-episode-preview-resource={ref.resourceId}
+                                    disabled={path === undefined}
+                                    title={label}
+                                    onClick={() => { if (path !== undefined) previewAsset(path, kind) }}
+                                  >{label}</button>
+                                  <select
+                                    className="iv-select"
+                                    aria-label={t('episodeRefCategory')}
+                                    value={ref.category}
+                                    disabled={resource === undefined}
+                                    onChange={event => {
+                                      setEpisodeRefCategory('resource', ref.resourceId, event.target.value as EpisodeRefCategory)
+                                    }}
                                   >
-                                    <Icon name="x" size={11} />
-                                  </button>
-                                </span>
-                              </li>
-                            ))}
-                            {episodeAssetRows.map(({ ref, asset }) => (
-                              <li
-                                key={`ast-${ref.assetId}`}
-                                className="iv-row"
-                                data-episode-asset-ref={ref.assetId}
-                                data-missing={asset === undefined ? 'true' : undefined}
-                              >
-                                <span className="iv-tile">
-                                  <Icon
-                                    name={asset === undefined ? 'alert' : asset.kind === 'video' ? 'video' : 'image'}
-                                    size={13}
-                                  />
-                                </span>
-                                <span className="iv-row-main iv-ellipsis">
+                                    {EPISODE_REF_CATEGORIES.map(category => (
+                                      <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
+                                    ))}
+                                  </select>
+                                  <span className="iv-row-actions">
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                      data-episode-remove-resource={ref.resourceId}
+                                      aria-label={t('remove')}
+                                      disabled={busy}
+                                      onClick={() => { removeEpisodeResource(ref.resourceId) }}
+                                    >
+                                      <Icon name="x" size={11} />
+                                    </button>
+                                  </span>
+                                </li>
+                              )
+                            })}
+                            {filteredEpisodeAssetRows.map(({ ref, asset }) => {
+                              const label = asset === undefined
+                                ? `${t('episodeRefMissing')} · ${ref.assetId}`
+                                : baseName(asset.path)
+                              return (
+                                <li
+                                  key={`ast-${ref.assetId}`}
+                                  className="iv-row"
+                                  data-episode-asset-ref={ref.assetId}
+                                  data-missing={asset === undefined ? 'true' : undefined}
+                                >
                                   {asset === undefined
-                                    ? `${t('episodeRefMissing')} · ${ref.assetId}`
-                                    : `${t('episodeAssetTag')} · ${baseName(asset.path)}`}
-                                </span>
-                                <select
-                                  className="iv-select"
-                                  aria-label={t('episodeRefCategory')}
-                                  value={ref.category}
-                                  onChange={event => {
-                                    setEpisodeRefCategory('asset', ref.assetId, event.target.value as EpisodeRefCategory)
-                                  }}
-                                  style={{ maxWidth: '90px' }}
-                                >
-                                  {EPISODE_REF_CATEGORIES.map(category => (
-                                    <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
-                                  ))}
-                                </select>
-                                <span className="iv-row-actions">
+                                    ? <span className="iv-tile"><Icon name="alert" size={13} /></span>
+                                    : (
+                                      <button
+                                        type="button"
+                                        className="iv-ref-thumb-button"
+                                        data-episode-preview-asset={ref.assetId}
+                                        aria-label={`${t('refPreview')} · ${label}`}
+                                        title={label}
+                                        onClick={() => { previewAsset(asset.path, asset.kind) }}
+                                      >
+                                        {asset.kind === 'video'
+                                          ? <video className="iv-ref-picker-thumb" src={`/outputs/${encodeURIComponent(baseName(asset.path))}#t=0.1`} muted preload="metadata" playsInline aria-hidden />
+                                          : <img className="iv-ref-picker-thumb" src={`/outputs/${encodeURIComponent(baseName(asset.path))}`} alt="" />}
+                                      </button>
+                                    )}
                                   <button
                                     type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    aria-label={t('moveUp')}
-                                    disabled={busy || ref.order <= 1}
-                                    onClick={() => { moveEpisodeAsset(ref.assetId, -1) }}
-                                  >↑</button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    aria-label={t('moveDown')}
-                                    disabled={busy || ref.order >= episodeAssetRows.length}
-                                    onClick={() => { moveEpisodeAsset(ref.assetId, 1) }}
-                                  >↓</button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-                                    data-episode-remove-asset={ref.assetId}
-                                    aria-label={t('remove')}
-                                    disabled={busy}
-                                    onClick={() => { removeEpisodeAsset(ref.assetId) }}
+                                    className="iv-row-main iv-ellipsis iv-ref-name"
+                                    data-episode-preview-asset={ref.assetId}
+                                    disabled={asset === undefined}
+                                    title={label}
+                                    onClick={() => { if (asset !== undefined) previewAsset(asset.path, asset.kind) }}
+                                  >{label}</button>
+                                  <select
+                                    className="iv-select"
+                                    aria-label={t('episodeRefCategory')}
+                                    value={ref.category}
+                                    disabled={asset === undefined}
+                                    onChange={event => {
+                                      setEpisodeRefCategory('asset', ref.assetId, event.target.value as EpisodeRefCategory)
+                                    }}
                                   >
-                                    <Icon name="x" size={11} />
-                                  </button>
-                                </span>
-                              </li>
-                            ))}
+                                    {EPISODE_REF_CATEGORIES.map(category => (
+                                      <option key={category} value={category}>{t(episodeCategoryKey(category))}</option>
+                                    ))}
+                                  </select>
+                                  <span className="iv-row-actions">
+                                    <button
+                                      type="button"
+                                      className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+                                      data-episode-remove-asset={ref.assetId}
+                                      aria-label={t('remove')}
+                                      disabled={busy}
+                                      onClick={() => { removeEpisodeAsset(ref.assetId) }}
+                                    >
+                                      <Icon name="x" size={11} />
+                                    </button>
+                                  </span>
+                                </li>
+                              )
+                            })}
                           </ul>
                         )}
                     </div>
                   )}
               </>
-              {/* `B-7` 资源分类 + 零花费重绘计划（伴侣视图，与 G2 三栏物料库互补）
-                  —— 属辅助动作，放在三栏物料库之后，不再抢在面板标题前面 */}
-              {/* 分类 + 重绘计划属高级功能：默认收起，先让"角色/场景/道具 + 定妆照"这条主路径清爽 */}
-              <button
-                type="button"
-                className="iv-btn iv-btn--ghost iv-btn--sm"
-                data-resource-folders-toggle="true"
-                aria-expanded={showFolders}
-                onClick={() => { setShowFolders(current => !current) }}
-              >
-                <Icon name="chevron" size={11} />{t('resourceFoldersAdvanced')}
-              </button>
-              {showFolders
-                ? <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
+              {/* 分类 + 重绘计划属高级功能，且只对「剧集全部」有意义；本集已选列表保持清爽 */}
+              {activeEpisode === undefined || episodeResourceView === 'all'
+                ? (
+                  <>
+                    <button
+                      type="button"
+                      className="iv-btn iv-btn--ghost iv-btn--sm"
+                      data-resource-folders-toggle="true"
+                      aria-expanded={showFolders}
+                      onClick={() => { setShowFolders(current => !current) }}
+                    >
+                      <Icon name="chevron" size={11} />{t('resourceFoldersAdvanced')}
+                    </button>
+                    {showFolders
+                      ? <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
+                      : null}
+                  </>
+                )
                 : null}
               </PaneBoundary>
             </section>

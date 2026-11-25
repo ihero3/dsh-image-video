@@ -388,6 +388,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
       return next
     })
   }
+  /** 镜头与分段共用一套折叠集合，加前缀避免 id 撞车。 */
+  const shotKey = (id: string): string => `shot:${id}`
   /** 总输入框右侧的分段跳转（选中后光标落到对应段落）。 */
   const [jumpTarget, setJumpTarget] = useState('')
   /** 宿主最后确认过的分段；脚本/分段被父级刷新时用来避免覆盖正在输入的内容。 */
@@ -1255,36 +1257,47 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           ? <div className="iv-empty" data-segment-storyboard-empty={segment.id}>{t('segmentStoryboardNone')}</div>
           : (
             <div className="iv-sb-list" data-segment-storyboard={segment.id}>
-              {storyboard.shots.map((shot, index) => (
+              {storyboard.shots.map((shot, index) => {
+                const shotCollapsed = collapsedIds.has(shotKey(shot.id))
+                return (
                 <div className="iv-sb-shot" key={shot.id} data-shot={shot.id}>
-                  <span className="iv-sb-shot-index">{shot.order}</span>
                   <div className="iv-sb-shot-body">
-                    <div className="iv-sb-row">
-                      <span className="iv-micro">{t('shotName').replace('{n}', String(shot.order))}</span>
-                      <label className="iv-sb-field" style={{ flex: '0 0 90px' }}>
-                        <span className="iv-meta">{t('segmentDurationLabel')}</span>
-                        <input
-                          className="iv-input"
-                          type="number"
-                          min={MIN_SEGMENT_DURATION_SEC}
-                          max={shotDurationCap(segment.id, shot.id)}
-                          value={shot.durationSec}
-                          data-shot-duration={shot.id}
-                          onChange={event => {
-                            const capped = Math.min(shotDurationCap(segment.id, shot.id), clampDuration(Number(event.target.value)))
-                            patchShotLocal(segment.id, shot.id, { durationSec: capped })
-                          }}
-                          onBlur={() => { syncSegmentToShots(segment.id) }}
-                          style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
-                        />
-                      </label>
+                    <div
+                    className="iv-sb-row iv-shot-head iv-sb-seg-head--clickable"
+                    data-shot-head={shot.id}
+                    title={shotCollapsed ? t('segmentExpand') : t('segmentCollapse')}
+                    onClick={() => { toggleCollapsed(shotKey(shot.id)) }}
+                  >
+                    <span className="iv-sb-shot-index">{shot.order}</span>
+                    <span className="iv-micro">{t('shotName').replace('{n}', String(shot.order))}</span>
+                    <span className="iv-shot-duration">
+                      <input
+                        className="iv-input"
+                        type="number"
+                        min={MIN_SEGMENT_DURATION_SEC}
+                        max={shotDurationCap(segment.id, shot.id)}
+                        value={shot.durationSec}
+                        data-shot-duration={shot.id}
+                        onClick={event => { event.stopPropagation() }}
+                        onChange={event => {
+                          const capped = Math.min(shotDurationCap(segment.id, shot.id), clampDuration(Number(event.target.value)))
+                          patchShotLocal(segment.id, shot.id, { durationSec: capped })
+                        }}
+                        onBlur={() => { syncSegmentToShots(segment.id) }}
+                        style={{ font: 'inherit', padding: '4px 6px', borderRadius: '6px' }}
+                      />
+                      <span className="iv-meta">{t('segmentDurationLabel')}</span>
+                    </span>
+                    {/* 编号、镜头名、秒数与操作按钮同处标题行 */}
+                    <span className="iv-sb-seg-actions iv-shot-actions" data-shot-actions={shot.id}>
                       <button
                         type="button"
                         className="iv-btn iv-btn--icon iv-btn--sm"
                         aria-label={t('storyboardMoveUp')}
                         data-shot-up={shot.id}
                         disabled={index === 0}
-                        onClick={() => {
+                        onClick={event => {
+                          event.stopPropagation()
                           updateStoryboard(segment.id, current => ({ ...current, shots: moveShot(current.shots, index, -1) }))
                         }}
                       >
@@ -1296,7 +1309,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                         aria-label={t('storyboardMoveDown')}
                         data-shot-down={shot.id}
                         disabled={index === storyboard.shots.length - 1}
-                        onClick={() => {
+                        onClick={event => {
+                          event.stopPropagation()
                           updateStoryboard(segment.id, current => ({ ...current, shots: moveShot(current.shots, index, 1) }))
                         }}
                       >
@@ -1305,9 +1319,21 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                       <button
                         type="button"
                         className="iv-btn iv-btn--icon iv-btn--sm"
+                        data-shot-toggle={shot.id}
+                        aria-expanded={!shotCollapsed}
+                        aria-label={shotCollapsed ? t('segmentExpand') : t('segmentCollapse')}
+                        title={shotCollapsed ? t('segmentExpand') : t('segmentCollapse')}
+                        onClick={event => { event.stopPropagation(); toggleCollapsed(shotKey(shot.id)) }}
+                      >
+                        <Icon name="chevron" size={11} className={shotCollapsed ? undefined : 'iv-ico--down'} />
+                      </button>
+                      <button
+                        type="button"
+                        className="iv-btn iv-btn--icon iv-btn--sm"
                         aria-label={t('storyboardRemoveShot')}
                         data-shot-remove={shot.id}
-                        onClick={() => {
+                        onClick={event => {
+                          event.stopPropagation()
                           const remaining = storyboard.shots
                             .filter(candidate => candidate.id !== shot.id)
                             .map((candidate, position) => ({ ...candidate, order: position + 1 }))
@@ -1316,9 +1342,13 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                       >
                         <Icon name="trash" size={11} />
                       </button>
-                    </div>
+                    </span>
+                  </div>
                     <div className={`iv-shot-prompt-row${shot.refs.length > 0 ? ' iv-shot-prompt-row--with-refs' : ''}`}>
                       <div className="iv-shot-prompt-main">
+                      {shotCollapsed
+                        ? <div className="iv-seg-peek" data-shot-preview={shot.id}>{shot.imagePrompt || shot.videoPrompt || t('segmentPromptPlaceholder')}</div>
+                        : <>
                         <label className="iv-sb-field">
                           <span className="iv-meta">{t('storyboardImagePromptLabel')}</span>
                           <textarea
@@ -1403,6 +1433,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                             <Icon name="video" size={11} />{generatingShotId === shot.id ? t('shotGenerating') : t('shotGenerateVideo')}
                           </button>
                         </div>
+                        </>}
                       </div>
                       <div className="iv-seg-ref-side iv-shot-ref-side">
                         <RefPicker
@@ -1451,7 +1482,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               <div className="iv-sb-actions">
                 <button
                   type="button"

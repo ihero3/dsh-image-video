@@ -9,9 +9,10 @@
  * - 剧本文本与导入文件仍写在共享 store，角色 / 场景 / 道具分区继续拿它们当输入。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import type { WorkbenchApi } from '../src/client/api.ts'
 import { PipelineCard } from '../src/client/PipelineCard.tsx'
+import { switchPipelineEpisode } from '../src/client/workbench-store.ts'
 import { en, type WorkbenchLocaleKey } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup() })
@@ -140,14 +141,17 @@ describe('PipelineCard · 只生成剧本', () => {
     expect(container.textContent).toContain(en.pipelineNeedsProject)
   })
 
-  it('切换剧集：上一部剧本不会留在下一部，导入文件也跟着切', () => {
+  it('切换剧集：上一集剧本不会留在下一集，切回来内容还在', () => {
     const api = makeApi()
-    const { container, rerender } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    act(() => { switchPipelineEpisode(api, 'ep-1') })
     fireEvent.change(scriptInput(container), { target: { value: '第一部的剧本' } })
-    rerender(<PipelineCard api={api} t={t} projectId="prj-2" onStarted={() => {}} />)
+    act(() => { switchPipelineEpisode(api, 'ep-2') })
     expect(scriptInput(container).value).toBe('')
     fireEvent.change(scriptInput(container), { target: { value: '第二部的剧本' } })
-    rerender(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    act(() => { switchPipelineEpisode(api, 'ep-1') })
     expect(scriptInput(container).value).toBe('第一部的剧本')
+    act(() => { switchPipelineEpisode(api, 'ep-2') })
+    expect(scriptInput(container).value).toBe('第二部的剧本')
   })
 })

@@ -27,6 +27,8 @@ interface ModelPickerProps {
   readonly value: string
   readonly onChange: (model: string) => void
   readonly disabled?: boolean
+  /** 各入口保留自己的定位属性，测试与样式选择器继续可用。 */
+  readonly selectAttrs?: Readonly<Record<string, string>>
 }
 
 /** 目录缓存：同一会话只拉一次（键是 api 实例，避免跨 API 串味）。 */
@@ -42,7 +44,7 @@ function loadCatalog(api: WorkbenchApi): Promise<readonly ModelCardView[]> {
   return pending
 }
 
-export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = false }: ModelPickerProps) {
+export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = false, selectAttrs }: ModelPickerProps) {
   const [cards, setCards] = useState<readonly ModelCardView[] | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
 
@@ -61,6 +63,7 @@ export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = fal
   return (
     <div className="iv-model-pick" data-model-picker={mediaMode}>
       <select
+        {...selectAttrs}
         className="iv-select iv-select--sm"
         aria-label={mediaMode === 'video' ? t('generateVideoModel') : t('generateImageModel')}
         data-generate-model={mediaMode}

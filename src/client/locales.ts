@@ -41,14 +41,79 @@ export type WorkbenchLocaleKey =
   | 'modeScript'
   | 'scriptTabRoles'
   | 'scriptTabScenes'
+  | 'scriptTabCostumes'
   | 'scriptTabProps'
   | 'scriptTabSplit'
+  | 'scriptTabExtract'
+  | 'scriptTabVoice'
+  | 'scriptTabMotion'
+  | 'extractKindLabel'
+  | 'extractCostumeTitle'
+  | 'extractCostumeDesc'
+  | 'extractCandidates'
   | 'extractRoleTitle'
   | 'extractRoleDesc'
   | 'extractSceneTitle'
   | 'extractSceneDesc'
   | 'extractPropTitle'
   | 'extractPropDesc'
+  | 'voicePanelTitle'
+  | 'voicePanelDesc'
+  | 'voiceExtractPromptLabel'
+  | 'voiceExtractPromptPlaceholder'
+  | 'voiceExtractRun'
+  | 'voiceCardsTitle'
+  | 'voiceCardsDesc'
+  | 'voiceCardsEmpty'
+  | 'voiceCardAdd'
+  | 'voiceCardUntitled'
+  | 'voiceCardName'
+  | 'voiceCardPrompt'
+  | 'voiceCardPromptPlaceholder'
+  | 'voiceCardVoice'
+  | 'voiceCardDefaultVoice'
+  | 'voiceCardSpeed'
+  | 'voiceCardPitch'
+  | 'voiceCardEmotion'
+  | 'voiceCardEmotionPlaceholder'
+  | 'voiceCardRefAudio'
+  | 'voiceCardRefAudioPlaceholder'
+  | 'voiceCardSave'
+  | 'voiceCardSaved'
+  | 'voiceCardSynthesize'
+  | 'voiceCardSynthesizing'
+  | 'voiceCardSynthesized'
+  | 'motionPanelTitle'
+  | 'motionPanelDesc'
+  | 'motionExtractPromptLabel'
+  | 'motionExtractPromptPlaceholder'
+  | 'motionExtractRun'
+  | 'motionCardsTitle'
+  | 'motionCardsDesc'
+  | 'motionCardsEmpty'
+  | 'motionCardAdd'
+  | 'motionCardUntitled'
+  | 'motionCardName'
+  | 'motionCardPreset'
+  | 'motionCardNote'
+  | 'motionCardNotePlaceholder'
+  | 'motionCardSave'
+  | 'motionCardSaved'
+  | 'motionPresetPush'
+  | 'motionPresetPull'
+  | 'motionPresetPanLeft'
+  | 'motionPresetPanRight'
+  | 'motionPresetTiltUp'
+  | 'motionPresetTiltDown'
+  | 'motionPresetOrbit'
+  | 'motionPresetHold'
+  | 'motionPresetCustom'
+  | 'motionFramesTitle'
+  | 'motionFrameAdd'
+  | 'motionFramesEmpty'
+  | 'motionFrameTime'
+  | 'motionFrameScale'
+  | 'motionCompiledPrompt'
   | 'extractRun'
   | 'extractRunning'
   | 'extractSource'
@@ -926,6 +991,21 @@ export type WorkbenchLocaleKey =
   | 'pipelineManualPickCount'
   | 'pipelineMatchedTitle'
   | 'pipelineMatchedItem'
+  // ---- 剧本生成：四个分区共享输入 + 角色提取 / 角色卡片 ----
+  | 'scriptSharedInputTitle'
+  | 'scriptSharedInputDesc'
+  | 'extractModelLabel'
+  | 'extractPromptLabel'
+  | 'extractPromptPlaceholder'
+  | 'roleCardsTitle'
+  | 'roleCardsEmpty'
+  | 'roleCardDefault'
+  | 'roleCardApplyDefault'
+  | 'roleCardGenerate'
+  | 'roleCardGenerating'
+  | 'roleCardPreview'
+  | 'roleCardGenerated'
+  | 'roleCardNeedsProject'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export { NS } from './locale-ns.ts'
@@ -980,8 +1060,73 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modeScript: 'Script',
   scriptTabRoles: 'Characters',
   scriptTabScenes: 'Scenes',
-  scriptTabProps: 'Props & costumes',
-  scriptTabSplit: 'Segments',
+  scriptTabCostumes: 'Costumes',
+  scriptTabProps: 'Props',
+  scriptTabSplit: 'Storyboard',
+  scriptTabExtract: 'Assets',
+  scriptTabVoice: 'Voice',
+  scriptTabMotion: 'Motion',
+  extractKindLabel: 'What to extract',
+  extractCostumeTitle: 'Costume extraction',
+  extractCostumeDesc: 'Pull costumes and outfits out of the script; each records its style, wearer and pieces for a costume sheet.',
+  extractCandidates: 'Candidates',
+  voicePanelTitle: 'Voice extraction',
+  voicePanelDesc: 'Turn speaking roles into reusable voice profiles: reference audio, preset voice, speed, pitch and emotion.',
+  voiceExtractPromptLabel: 'Voice extraction prompt',
+  voiceExtractPromptPlaceholder: 'Extra requirements, e.g. only roles with dialogue. Output must stay a JSON array.',
+  voiceExtractRun: 'Extract voices',
+  voiceCardsTitle: 'Voice profiles',
+  voiceCardsDesc: 'One card per speaker. Save to the library; synthesis stays disabled until TTS is connected.',
+  voiceCardsEmpty: 'Extract voices or add a card manually to configure a speaker.',
+  voiceCardAdd: 'Add voice',
+  voiceCardUntitled: 'Untitled voice',
+  voiceCardName: 'Speaker / voice name',
+  voiceCardPrompt: 'Voice description',
+  voiceCardPromptPlaceholder: 'Tone, age, timbre, pace and emotional baseline for this speaker.',
+  voiceCardVoice: 'Preset voice',
+  voiceCardDefaultVoice: 'Default / not set',
+  voiceCardSpeed: 'Speed',
+  voiceCardPitch: 'Pitch',
+  voiceCardEmotion: 'Emotion',
+  voiceCardEmotionPlaceholder: 'e.g. calm / excited / narration',
+  voiceCardRefAudio: 'Reference audio',
+  voiceCardRefAudioPlaceholder: 'Optional path under outputs, e.g. outputs/voice-ref.wav',
+  voiceCardSave: 'Save to library',
+  voiceCardSaved: 'Voice saved: {name}',
+  voiceCardSynthesize: 'Try synthesis',
+  voiceCardSynthesizing: 'Synthesizing…',
+  voiceCardSynthesized: 'Synthesis ready',
+  motionPanelTitle: 'Motion extraction',
+  motionPanelDesc: 'Plan camera moves from the script. Pick a preset or edit keyframes; compile into a readable motion prompt.',
+  motionExtractPromptLabel: 'Motion extraction prompt',
+  motionExtractPromptPlaceholder: 'Extra requirements, e.g. one track per shot with movement. Output must stay a JSON array.',
+  motionExtractRun: 'Extract motion',
+  motionCardsTitle: 'Motion tracks',
+  motionCardsDesc: 'One card per camera move, saved as a motion-track resource with keyframes.',
+  motionCardsEmpty: 'Extract motion or add a track manually, then apply a preset.',
+  motionCardAdd: 'Add track',
+  motionCardUntitled: 'Untitled track',
+  motionCardName: 'Track name',
+  motionCardPreset: 'Preset',
+  motionCardNote: 'Motion note',
+  motionCardNotePlaceholder: 'Camera move, subject position and duration for this track.',
+  motionCardSave: 'Save to library',
+  motionCardSaved: 'Motion track saved: {name}',
+  motionPresetPush: 'Push in',
+  motionPresetPull: 'Pull out',
+  motionPresetPanLeft: 'Pan left',
+  motionPresetPanRight: 'Pan right',
+  motionPresetTiltUp: 'Tilt up',
+  motionPresetTiltDown: 'Tilt down',
+  motionPresetOrbit: 'Orbit',
+  motionPresetHold: 'Static',
+  motionPresetCustom: 'Custom',
+  motionFramesTitle: 'Keyframes',
+  motionFrameAdd: 'Add keyframe',
+  motionFramesEmpty: 'No keyframes yet — add one or apply a preset.',
+  motionFrameTime: 'Time (ms)',
+  motionFrameScale: 'Scale',
+  motionCompiledPrompt: 'Compiled motion prompt',
   extractRoleTitle: 'Character extraction',
   extractRoleDesc: 'Pull every character out of the current episode script; each candidate can be added to the resource library as a role.',
   extractSceneTitle: 'Scene extraction',
@@ -992,15 +1137,29 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   extractRunning: 'Extracting…',
   extractSource: 'Source: current episode script',
   extractSourceWithFiles: 'Source: current episode script + imported files',
-  extractNeedsScript: 'This episode has no script yet — write one under Segments first.',
-  extractNeedsModel: 'Pick a text model under Segments before extracting.',
+  extractNeedsScript: 'This episode has no script yet — write one under Storyboard first.',
+  extractNeedsModel: 'Pick a text model before extracting.',
   extractNeedsProject: 'Create a series first.',
   extractEmpty: 'No candidates yet — run the extraction, then add the ones you want.',
   extractAdd: 'Add to library',
   extractAdded: 'Added to library: {name}',
   extractExisting: 'In library',
-  modulePipeline: 'Script → film',
-  modulePipelineDesc: 'Script → episode → segments → shots → images and clips. Every level can be added to, edited or reordered below.',
+  scriptSharedInputTitle: 'Shared script input',
+  scriptSharedInputDesc: 'One script and one import list across all four tabs; saved per episode.',
+  extractModelLabel: 'Extraction text model',
+  extractPromptLabel: 'Character extraction prompt',
+  extractPromptPlaceholder: 'Extra requirements, e.g. only characters with lines. Output must stay a JSON array.',
+  roleCardsTitle: 'Characters',
+  roleCardsEmpty: 'Extract characters first, then generate a portrait for each character.',
+  roleCardDefault: 'Default value',
+  roleCardApplyDefault: 'Apply default',
+  roleCardGenerate: 'Generate character image',
+  roleCardGenerating: 'Generating…',
+  roleCardPreview: 'View character image',
+  roleCardGenerated: 'Character "{name}" generated and saved.',
+  roleCardNeedsProject: 'Pick a series and an episode before generating a character image.',
+  modulePipeline: 'Script → storyboard',
+  modulePipelineDesc: 'Script → episode → segments → shots. Every level can be added to, edited or reordered below.',
   moduleEpisode: 'Episode workspace',
   moduleEpisodeDesc: 'Pick an episode to edit its script, segments, shots, generated images/clips and workflow.',
   scriptTextModel: 'Text model',
@@ -2034,8 +2193,73 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modeScript: '剧本生成',
   scriptTabRoles: '角色',
   scriptTabScenes: '场景',
-  scriptTabProps: '道具·服装',
-  scriptTabSplit: '剧本分段',
+  scriptTabCostumes: '服装',
+  scriptTabProps: '道具',
+  scriptTabSplit: '剧本分镜',
+  scriptTabExtract: '素材提取',
+  scriptTabVoice: '音色',
+  scriptTabMotion: '轨迹',
+  extractKindLabel: '提取什么',
+  extractCostumeTitle: '服装提取',
+  extractCostumeDesc: '从当前剧本提取所有服装服饰，每条记录款式、颜色、穿着者与配件，可直接用作服装设定图输入。',
+  extractCandidates: '提取候选',
+  voicePanelTitle: '音色提取',
+  voicePanelDesc: '把有台词的角色配成可复用的音色：参考音频、预设音色、语速、音调与情绪，参考 ComfyUI 的零样本克隆节点。',
+  voiceExtractPromptLabel: '音色提取提示词',
+  voiceExtractPromptPlaceholder: '补充要求，例如只要有台词的角色。输出必须保持为 JSON 数组。',
+  voiceExtractRun: '提取音色',
+  voiceCardsTitle: '音色卡',
+  voiceCardsDesc: '一个说话人一张卡；可存进资源库。TTS 接入前「合成试听」保持禁用。',
+  voiceCardsEmpty: '先提取音色或手动添加一张卡，再配置说话人。',
+  voiceCardAdd: '添加音色',
+  voiceCardUntitled: '未命名音色',
+  voiceCardName: '说话人 / 音色名称',
+  voiceCardPrompt: '音色描述',
+  voiceCardPromptPlaceholder: '这个说话人的性别、年龄、声线、语速与情绪基调。',
+  voiceCardVoice: '预设音色',
+  voiceCardDefaultVoice: '默认 / 未设置',
+  voiceCardSpeed: '语速',
+  voiceCardPitch: '音调',
+  voiceCardEmotion: '情绪',
+  voiceCardEmotionPlaceholder: '如 平静 / 兴奋 / 旁白',
+  voiceCardRefAudio: '参考音频',
+  voiceCardRefAudioPlaceholder: 'outputs 下的路径，如 outputs/voice-ref.wav',
+  voiceCardSave: '存入资源库',
+  voiceCardSaved: '音色已保存：{name}',
+  voiceCardSynthesize: '试听合成',
+  voiceCardSynthesizing: '合成中…',
+  voiceCardSynthesized: '合成完成',
+  motionPanelTitle: '轨迹提取',
+  motionPanelDesc: '从剧本规划运镜：选预设一键生成关键帧，也能逐帧改时间、位置与缩放，并编译成可读的运镜提示词。参考 ComfyUI 的 OmniCam / Camera H3。',
+  motionExtractPromptLabel: '轨迹提取提示词',
+  motionExtractPromptPlaceholder: '补充要求，例如每个有运动的镜头一条。输出必须保持为 JSON 数组。',
+  motionExtractRun: '提取轨迹',
+  motionCardsTitle: '轨迹卡',
+  motionCardsDesc: '一条运镜一张卡，存为带关键帧的轨迹资源。',
+  motionCardsEmpty: '先提取轨迹或手动添加一条，再套用运镜预设。',
+  motionCardAdd: '添加轨迹',
+  motionCardUntitled: '未命名轨迹',
+  motionCardName: '轨迹名称',
+  motionCardPreset: '运镜预设',
+  motionCardNote: '运镜说明',
+  motionCardNotePlaceholder: '这条轨迹的镜头运动、主体位置变化与时长。',
+  motionCardSave: '存入资源库',
+  motionCardSaved: '轨迹已保存：{name}',
+  motionPresetPush: '推进',
+  motionPresetPull: '拉远',
+  motionPresetPanLeft: '左移',
+  motionPresetPanRight: '右移',
+  motionPresetTiltUp: '上摇',
+  motionPresetTiltDown: '下摇',
+  motionPresetOrbit: '环绕',
+  motionPresetHold: '固定',
+  motionPresetCustom: '自定义',
+  motionFramesTitle: '关键帧',
+  motionFrameAdd: '加一帧',
+  motionFramesEmpty: '还没有关键帧——加一帧或套用预设。',
+  motionFrameTime: '时间（毫秒）',
+  motionFrameScale: '缩放',
+  motionCompiledPrompt: '编译后的运镜提示词',
   extractRoleTitle: '角色提取',
   extractRoleDesc: '从当前集剧本里挑出所有角色；每条都可以加入资源库，作为定妆照与出图引用。',
   extractSceneTitle: '场景提取',
@@ -2046,15 +2270,29 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   extractRunning: '提取中…',
   extractSource: '来源：当前集剧本',
   extractSourceWithFiles: '来源：当前集剧本 + 导入文件原文',
-  extractNeedsScript: '当前集还没有剧本——先到「剧本分段」写好剧本。',
-  extractNeedsModel: '先在「剧本分段」选一个文本模型，再回来提取。',
+  extractNeedsScript: '当前集还没有剧本——先到「剧本分镜」写好剧本。',
+  extractNeedsModel: '先选一个文本模型，再提取。',
   extractNeedsProject: '先建一个剧集再提取。',
   extractEmpty: '还没有候选——先点「从剧本提取」，再挑要入库的条目。',
   extractAdd: '加入资源库',
   extractAdded: '已加入资源库：{name}',
   extractExisting: '已在资源库',
-  modulePipeline: '剧本 → 成片',
-  modulePipelineDesc: '剧本 → 集 → 分段 → 分镜 → 出图出片；每一级都能在下面继续增删、修改。',
+  scriptSharedInputTitle: '共享剧本输入',
+  scriptSharedInputDesc: '四个分区共用这一份剧本与导入文件，按剧集分别保存。',
+  extractModelLabel: '提取文本模型',
+  extractPromptLabel: '角色提取提示词',
+  extractPromptPlaceholder: '补充提取要求，例如：只提取有台词的人物；输出仍按 JSON 数组。',
+  roleCardsTitle: '角色列表',
+  roleCardsEmpty: '先提取角色，再为每个角色生成定妆照。',
+  roleCardDefault: '默认值',
+  roleCardApplyDefault: '应用默认值',
+  roleCardGenerate: '生成角色图',
+  roleCardGenerating: '生成中…',
+  roleCardPreview: '查看角色图',
+  roleCardGenerated: '角色「{name}」已生成并入库。',
+  roleCardNeedsProject: '先选择剧集与本集，再生成角色图。',
+  modulePipeline: '剧本 → 分镜',
+  modulePipelineDesc: '剧本 → 集 → 分段 → 分镜；每一级都能在下面继续增删、修改。',
   moduleEpisode: '本集工作区',
   moduleEpisodeDesc: '选一集编辑剧本、分段、分镜、生图生视频与工作流；每一集的内容独立归属。',
   scriptTextModel: '文本模型',

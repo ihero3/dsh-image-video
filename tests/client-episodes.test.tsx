@@ -90,6 +90,42 @@ describe('集选择器与集内引用', () => {
     await waitFor(() => { expect(host.episodes?.[0]?.no).toBe(7) })
   })
 
+  it('本集已选列表精简、按当前 tab 搜索，图片点击进预览', async () => {
+    const ep = {
+      ...episode('ep-1', 1),
+      resourceRefs: [{ resourceId: 'res-1', category: 'ungrouped' as const, order: 1 }],
+    }
+    const host = fakeApi({ episodes: [ep] })
+    host.projects.push(project() as never)
+    host.resources.push({ ...resource('res-1', '主角定妆照'), assetPath: '/tmp/outputs/hero.png' } as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-resource-ref="res-1"]')).toBeTruthy() })
+
+    const row = view.container.querySelector('[data-episode-resource-ref="res-1"]') as HTMLElement
+    // 只显示名称 + 可改的分类下拉；不要「Role · 」这类类型前缀、上下箭头与高级整块
+    expect(row.textContent).toContain('主角定妆照')
+    expect(row.textContent).not.toContain('Role ·')
+    const categorySelect = row.querySelector('select') as HTMLSelectElement
+    expect(categorySelect).toBeTruthy()
+    expect(row.querySelectorAll('button').length).toBe(3)
+    expect(view.container.querySelector('[data-resource-folders-toggle]')).toBeNull()
+
+    fireEvent.change(categorySelect, { target: { value: 'scene' } })
+    await waitFor(() => {
+      expect(host.episodes[0]?.resourceRefs[0]?.category).toBe('scene')
+    })
+
+    // 右上角搜索在本集已选里匹配
+    const filter = view.container.querySelector('[data-resource-filter]') as HTMLInputElement
+    fireEvent.change(filter, { target: { value: '不存在' } })
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-resource-ref="res-1"]')).toBeNull() })
+    fireEvent.change(filter, { target: { value: '定妆' } })
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-resource-ref="res-1"]')).toBeTruthy() })
+
+    fireEvent.click(view.container.querySelector('[data-episode-preview-resource="res-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-preview-actions="image"]')).toBeTruthy() })
+  })
+
   it('adds a series resource to the episode and removes it again', async () => {
     const host = fakeApi({ episodes: [episode('ep-1', 1)] })
     host.projects.push(project() as never)

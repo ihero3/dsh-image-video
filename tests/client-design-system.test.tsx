@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { BrandMark, ICON_NAMES, Icon } from '../src/client/icons.tsx'
 import { WORKBENCH_STYLE } from '../src/client/workbench-style.ts'
+import { MODERN_THEME_STYLE } from '../src/client/modern-theme.ts'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import { cleanup, clientProps, fakeApi, openCreateTab, render } from './client-fake-api.ts'
@@ -343,5 +344,20 @@ describe('视觉层级契约（R7）', () => {
     // 起因：.iv-module-body{display:flex} 没配 [hidden] 例外，作者样式盖掉了 UA 的
     // [hidden]{display:none} —— 模块点"收起"只是状态变了、内容照旧铺着，看着像没反应。
     expect(WORKBENCH_STYLE).toContain('.iv-module-body[hidden]{display:none}')
+  })
+
+  it('分段与分镜列表都是一块一行（不要把两项并排成两列）', () => {
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-list{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}')
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-list>.iv-sb-shot{width:100%}')
+    expect(WORKBENCH_STYLE).not.toContain('.iv-sb-list{display:flex;flex-direction:row;flex-wrap:wrap')
+  })
+
+  it('本集已选每行不折行，删除按钮 × 始终和缩略图/名称/分类框同一行', () => {
+    // 起因（2026-11-25）：基础 .iv-row{flex-wrap:wrap} 在窄面板里把 × 挤到第二行。
+    // 主题层后注入且选择器更具体，必须显式把本集已选行改回 nowrap、固定分类框与操作区宽度。
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row{flex-wrap:nowrap;padding-block:11px}')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-main{flex:1 1 auto;min-width:0}')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-select{flex:none;width:76px;min-width:76px}')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-actions{flex:none}')
   })
 })

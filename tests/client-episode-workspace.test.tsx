@@ -727,3 +727,44 @@ describe('本集工作区头部排版', () => {
     expect(segmentHead.querySelector('[data-segment-add]')).toBeNull()
   })
 })
+
+describe('镜头卡片折叠与操作按钮排布', () => {
+  it('点整条镜头标题行或折叠按钮都能收起/展开，收起后只留摘要', async () => {
+    const { view } = await renderWorkspace({
+      storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
+    })
+    const head = view.container.querySelector('[data-shot-head="shot-1"]') as HTMLElement
+    expect(head).toBeTruthy()
+    fireEvent.click(head)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-shot-preview="shot-1"]')).toBeTruthy()
+      expect(view.container.querySelector('[data-shot-image-prompt="shot-1"]')).toBeNull()
+    })
+    fireEvent.click(head)
+    await waitFor(() => { expect(view.container.querySelector('[data-shot-image-prompt="shot-1"]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-shot-toggle="shot-1"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-shot-preview="shot-1"]')).toBeTruthy() })
+  })
+
+  it('镜头编号、镜头名、秒数与操作小按钮同处标题行，秒数标签在输入框后面', async () => {
+    const { view } = await renderWorkspace({
+      storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
+    })
+    const head = view.container.querySelector('[data-shot-head="shot-1"]') as HTMLElement
+    const order = Array.from(head.children).map(child => (
+      child.matches('.iv-sb-shot-index') ? 'index'
+        : child.matches('.iv-micro') ? 'name'
+          : child.matches('.iv-shot-duration') ? 'duration'
+            : child.matches('.iv-shot-actions') ? 'actions' : 'other'
+    ))
+    expect(order).toEqual(['index', 'name', 'duration', 'actions'])
+    const actions = head.querySelector('[data-shot-actions="shot-1"]') as HTMLElement
+    for (const selector of ['[data-shot-up]', '[data-shot-down]', '[data-shot-toggle]', '[data-shot-remove]']) {
+      expect(actions.querySelector(selector), selector).toBeTruthy()
+    }
+
+    const duration = head.querySelector('.iv-shot-duration') as HTMLElement
+    expect((duration.children[0] as HTMLElement).matches('[data-shot-duration]')).toBe(true)
+    expect((duration.children[1] as HTMLElement).textContent).toBe(en.segmentDurationLabel)
+  })
+})

@@ -73,6 +73,7 @@ import type { GenerationTool, WorkflowRunner } from '../workbench/runner.ts'
 import type { RenderRegistry } from '../media/render-registry.ts'
 import {
   normalizeMediaKind, normalizeProjectName, normalizeResourceKind, normalizeResourceName,
+  type MotionKeyframe,
 } from '../workbench/records.ts'
 import type { EpisodeRecord, EpisodeRefAction, EpisodeRefInput, SegmentInput, SegmentRecord } from '../workbench/episodes.ts'
 import { buildSplitInput, parseSplitProposals, SCRIPT_SPLIT_SYSTEM } from '../workbench/script-split.ts'
@@ -729,14 +730,14 @@ const ENTITY_EXTRACT_MAX_TOKENS = 4_096
  */
 function readExtractCategory(payload: unknown): ExtractCategory {
   const value = optionalText(payload, 'category')
-  if (value === 'role' || value === 'scene' || value === 'prop') return value
+  if (value === 'role' || value === 'scene' || value === 'costume' || value === 'prop' || value === 'voice' || value === 'motion') return value
   throw new Error('未知的提取分区')
 }
 
 /**
  * 从剧本提取实体：把剧本与分区要求交给文本模型，返回可入库的候选列表。
  * @param deps - RPC 依赖（含文本模型服务）。
- * @param payload - 载荷：script / category / provider / model。
+ * @param payload - 载荷：script / category / provider / model / instructions（可选提取提示词）。
  * @param signal - 取消信号，透传给模型调用。
  * @returns 候选条目（名称 + 说明）。
  * @throws {Error} 剧本为空、没有可用文本模型、模型输出不可用时。
@@ -752,6 +753,11 @@ async function extractEntities(
   const choice = optionalModelChoice(payload)
   const llm = deps.llm
   if (choice === undefined || llm === undefined) throw new Error('请选择文本模型后再提取')
+  // 角色提取选的 Skill 真正参与提示词：技能不可用时不阻断，按内置口径提取
+  const skill = await resolveSkillPrompt(deps, payload)
+  const extra = [optionalText(payload, 'instructions'), skill.prompt]
+    .filter((part): part is string => part !== undefined && part.trim() !== '')
+    .join('\n')
   const prepared = await llm.prepareCall(
     { provider: choice.provider, model: choice.model, maxTokens: ENTITY_EXTRACT_MAX_TOKENS },
     signal,
@@ -759,7 +765,7 @@ async function extractEntities(
   const options: GenerateOptions = {
     ...prepared.config,
     messages: [createUserMessage({
-      content: [{ type: 'text', text: buildExtractPrompt(script, category) }],
+      content: [{ type: 'text', text: buildExtractPrompt(script, category, extra) }],
       source: { kind: 'user' },
     })],
     ...signal === undefined ? {} : { signal },
@@ -1209,6 +1215,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         ...field(payload, 'assetPaths') === undefined
           ? {}
           : { assetPaths: field(payload, 'assetPaths') === null ? null : (field(payload, 'assetPaths') as unknown[]).filter((entry): entry is string => typeof entry === 'string') },
+        ...field(payload, 'keyframes') === undefined
+          ? {}
+          : {
+            keyframes: field(payload, 'keyframes') === null
+              ? null
+              : field(payload, 'keyframes') as readonly MotionKeyframe[],
+          },
       })
       if (resource === undefined) throw new Error(`unknown resource: ${id}`)
       return { resource }

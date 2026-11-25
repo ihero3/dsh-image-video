@@ -8,7 +8,7 @@
  */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { WORKBENCH_RPC_CHANNEL, type WorkbenchHealth, type WorkbenchOptions } from '../workbench-contract.ts'
-import type { AssetRecord, MediaKind, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
+import type { AssetRecord, MediaKind, MotionKeyframe, ProjectRecord, ResourceKind, ResourceRecord, TaskRecord } from '../workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../workbench/workflow.ts'
 import type {
   EpisodeAssetRef, EpisodeInput, EpisodePatch, EpisodeRecord, EpisodeRefAction, EpisodeRefInput,
@@ -548,6 +548,10 @@ export interface ExtractEntitiesInput {
   /** 文本模型：提取必须走模型，没有模型不使用这条。 */
   readonly provider: string
   readonly model: string
+  /** 用户针对本分区写的提取提示词（Skill token 已由客户端清理）。 */
+  readonly instructions?: string
+  /** 选中的 Skill：宿主把它的提示词并入提取要求。 */
+  readonly skillId?: string
 }
 
 /** 提取结果：同名已去重、条数已截断。 */
@@ -626,6 +630,8 @@ export interface WorkbenchApi {
     assetPath?: string
     /** 多张参考图（`A-3`）：首图视为底图；与 `assetPath` 同时给时以本字段为准。 */
     assetPaths?: readonly string[]
+    /** 轨迹资源（`motion-track`）的关键帧；宿主会校验时间递增与坐标范围。 */
+    keyframes?: readonly MotionKeyframe[]
   }) => Promise<ResourceRecord>
   /** Remove one resource record. */
   removeResource: (id: string, force?: boolean) => Promise<boolean>
@@ -642,6 +648,8 @@ export interface WorkbenchApi {
     folder?: string | null
     assetPath?: string | null
     assetPaths?: readonly string[] | null
+    /** 轨迹关键帧：传数组整组替换，`null` 清除；不传保留。 */
+    keyframes?: readonly MotionKeyframe[] | null
   }) => Promise<ResourceRecord>
   /** 批量登记素材（`A152`）：一次登记多条，避免 N 次往返。 */
   attachAssets: (input: {

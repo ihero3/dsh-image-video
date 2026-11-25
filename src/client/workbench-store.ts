@@ -15,7 +15,7 @@
  * @module dsh-image-video/client/workbench-store
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { TaskRecord } from '../workbench/records.ts'
+import type { MotionKeyframe, TaskRecord } from '../workbench/records.ts'
 
 /** 工作台的四种模式。 */
 export type WorkbenchModeName = 'quick' | 'script' | 'workflow' | 'timeline'
@@ -26,8 +26,8 @@ export type WorkbenchQuickTab = 'produce' | 'prompt'
 /** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
 export type WorkbenchCreateTab = 'image' | 'fusion' | 'video'
 
-/** 剧本生成页的分区标签页：剧本分段 / 角色 / 场景 / 道具·服装。 */
-export type WorkbenchScriptTab = 'roles' | 'scenes' | 'props' | 'split'
+/** 剧本生成页的分区标签页：剧本分镜 / 素材提取 / 音色 / 轨迹。 */
+export type WorkbenchScriptTab = 'split' | 'extract' | 'voice' | 'motion'
 
 /**
  * 一份导入的剧本文件：文件名与解析出的原文都长期保留。
@@ -40,6 +40,73 @@ export interface PipelineImportedFile {
   readonly text: string
   readonly status: 'importing' | 'done' | 'failed'
   readonly error?: string
+}
+
+/** 角色提取列表里的一张角色卡（按剧集保存在共享 store）。 */
+export interface RoleCard {
+  readonly id: string
+  readonly name: string
+  /** 生成角色图用的提示词（用户可改，Skill token 也放在这里）。 */
+  readonly prompt: string
+  /** 角色的默认值：提取时的定妆说明，可一键回填到提示词。 */
+  readonly defaultPrompt: string
+  readonly imageModel: string
+  readonly skillId: string
+  readonly size: string
+  readonly style: string
+  /** 融合生图参数：姿态 / 镜头预设 id（空 = 自由）。 */
+  readonly pose: string
+  readonly lens: string
+  /** 风格备注（融合生图的补充约束）。 */
+  readonly styleNote: string
+  /** 场景裁剪：勾选后把归一化坐标交给宿主的裁剪流程。 */
+  readonly cropEnabled: boolean
+  readonly crop?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+  readonly assetPath?: string
+}
+
+/**
+ * 音色卡：一个说话人的配音设定（参考 ComfyUI 的 Zero-Shot Clone / CosyVoice 节点）。
+ * `refAudioPath` 是可选参考音频（outputs 内路径）；`voiceId` 是服务商预设音色 id。
+ * 合成入口在 TTS 未接入时禁用，卡本身与参数照常保存、可入资源库。
+ */
+export interface VoiceCard {
+  readonly id: string
+  /** 说话人 / 音色名称。 */
+  readonly name: string
+  /** 音色设定说明（提取时给出，可编辑）。 */
+  readonly prompt: string
+  /** 预设音色 id（来自 `voice/status` 的音色清单，可为空）。 */
+  readonly voiceId: string
+  /** 参考音频路径（可选，克隆音色用）。 */
+  readonly refAudioPath?: string
+  /** 语速倍率 0.5–2.0（1 = 原速）。 */
+  readonly speed: number
+  /** 音调倍率 0.7–1.4（1 = 原调）。 */
+  readonly pitch: number
+  /** 情感标签（如「平静 / 兴奋 / 悲伤」）。 */
+  readonly emotion: string
+  /** 已入库的资源 id（同一张卡重复入库时走更新）。 */
+  readonly resourceId?: string
+}
+
+/** 运镜预设 id：一键生成一条轨迹的关键帧。 */
+export type MotionPreset = 'push' | 'pull' | 'panLeft' | 'panRight' | 'tiltUp' | 'tiltDown' | 'orbit' | 'hold'
+
+/**
+ * 轨迹卡：一条运镜的关键帧（参考 ComfyUI 的 OmniCam / Camera H3 节点）。
+ * 关键帧用归一化坐标，和宿主 `ResourceRecord.keyframes` 完全同构，可直接入库。
+ */
+export interface MotionCard {
+  readonly id: string
+  readonly name: string
+  /** 运镜说明（提取时给出或被预设覆盖，可编辑）。 */
+  readonly note: string
+  /** 运镜预设；`custom` 表示手改过关键帧。 */
+  readonly preset: MotionPreset | 'custom'
+  readonly keyframes: readonly MotionKeyframe[]
+  /** 已入库的资源 id。 */
+  readonly resourceId?: string
 }
 
 /** 预览目标（图片或视频的绝对路径）。 */
@@ -94,6 +161,28 @@ export interface WorkbenchUiState {
   readonly generateVideoModel: string
   /** 一键成片表单当前归属的项目（切换项目时按它保存/恢复）。 */
   readonly pipelineProjectId: string
+  /** 共享剧本输入当前归属的剧集（切换剧集时按它保存/恢复）。 */
+  readonly pipelineEpisodeId: string
+  /** 角色提取：本集的角色卡列表。 */
+  readonly roleCards: readonly RoleCard[]
+  /** 角色提取：针对角色提取的提示词。 */
+  readonly roleExtractPrompt: string
+  /** 角色提取：本集使用的文本模型（`provider::model`）。 */
+  readonly roleExtractModel: string
+  /** 角色提取：本集使用的 Skill。 */
+  readonly roleExtractSkillId: string
+  /** 音色提取：本集的音色卡。 */
+  readonly voiceCards: readonly VoiceCard[]
+  /** 音色提取：专用的文本模型（`provider::model`）；空串回退分段模型。 */
+  readonly voiceExtractModel: string
+  /** 音色提取：专用提示词。 */
+  readonly voiceExtractPrompt: string
+  /** 轨迹提取：本集的轨迹卡。 */
+  readonly motionCards: readonly MotionCard[]
+  /** 轨迹提取：专用的文本模型（`provider::model`）；空串回退分段模型。 */
+  readonly motionExtractModel: string
+  /** 轨迹提取：专用提示词。 */
+  readonly motionExtractPrompt: string
   /** 一键成片：剧本。 */
   readonly pipelineScript: string
   /** 导入的剧本文件（文件名 + 原文），剧本分段与角色/场景/道具分区共享。 */
@@ -134,6 +223,17 @@ const INITIAL: WorkbenchUiState = {
   generateImageModel: '',
   generateVideoModel: '',
   pipelineProjectId: '',
+  pipelineEpisodeId: '',
+  roleCards: [],
+  roleExtractPrompt: '',
+  roleExtractModel: '',
+  roleExtractSkillId: '',
+  voiceCards: [],
+  voiceExtractModel: '',
+  voiceExtractPrompt: '',
+  motionCards: [],
+  motionExtractModel: '',
+  motionExtractPrompt: '',
   pipelineScript: '',
   pipelineImportedFiles: [],
   pipelineShots: 4,
@@ -141,6 +241,55 @@ const INITIAL: WorkbenchUiState = {
   pipelineManualPick: [],
   pipelineTextModel: '',
   pipelineSkillId: '',
+}
+
+/**
+ * 共享剧本文本与导入文件是用户真正的创作内容，不能只留在内存里。
+ * 按剧集 id 落到 localStorage：刷新/重启后仍能恢复；无痕模式或超额时静默忽略，
+ * 不影响编辑本身（宿主项目文件才是正式存档，这里只是输入草稿）。
+ */
+type ScriptDraftField = 'pipelineScript' | 'pipelineImportedFiles'
+type ScriptDraft = Pick<WorkbenchUiState, ScriptDraftField>
+
+const SCRIPT_DRAFT_FIELDS: readonly ScriptDraftField[] = ['pipelineScript', 'pipelineImportedFiles']
+
+function scriptDraftKey(episodeId: string): string {
+  return `image-video:script-draft:${episodeId}`
+}
+
+function readScriptDraft(episodeId: string): Partial<ScriptDraft> | undefined {
+  try {
+    const raw = localStorage.getItem(scriptDraftKey(episodeId))
+    if (raw === null) return undefined
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const draft: Record<string, unknown> = {}
+    if (typeof parsed['pipelineScript'] === 'string') draft['pipelineScript'] = parsed['pipelineScript']
+    if (Array.isArray(parsed['pipelineImportedFiles'])) {
+      // 上次导入没做完就关掉页面：标成失败，让用户重新导入，不假装已经成功。
+      draft['pipelineImportedFiles'] = (parsed['pipelineImportedFiles'] as PipelineImportedFile[]).map(file => ({
+        name: file.name,
+        text: file.text,
+        status: file.status === 'importing' ? 'failed' : file.status,
+        ...file.status === 'importing' ? { error: '导入中断，请重新导入' } : {},
+        ...file.error === undefined ? {} : { error: file.error },
+      }))
+    }
+    return Object.keys(draft).length === 0 ? undefined : draft as Partial<ScriptDraft>
+  } catch {
+    return undefined
+  }
+}
+
+function writeScriptDraft(episodeId: string, state: WorkbenchUiState): void {
+  const draft: ScriptDraft = {
+    pipelineScript: state.pipelineScript,
+    pipelineImportedFiles: state.pipelineImportedFiles,
+  }
+  try {
+    localStorage.setItem(scriptDraftKey(episodeId), JSON.stringify(draft))
+  } catch {
+    // 无痕模式 / 配额不足：草稿存不下，但不该让正在输入的用户看到报错
+  }
 }
 
 /** 单个字段的 setter：值或更新函数。 */
@@ -159,7 +308,12 @@ const stores = new WeakMap<object, Store>()
 function storeOf(owner: object): Store {
   let store = stores.get(owner)
   if (store === undefined) {
-    store = { state: INITIAL, listeners: new Set() }
+    // 新建状态桶时先恢复空 id 档（首集加载前的草稿）；切到具体集会再按 id 恢复。
+    const restored = readScriptDraft('')
+    store = {
+      state: restored === undefined ? INITIAL : { ...INITIAL, ...restored },
+      listeners: new Set(),
+    }
     stores.set(owner, store)
   }
   return store
@@ -193,19 +347,20 @@ export function setWorkbenchField<K extends keyof WorkbenchUiState>(
     : value
   if (Object.is(previous, next)) return
   store.state = { ...store.state, [key]: next }
+  if (SCRIPT_DRAFT_FIELDS.includes(key as ScriptDraftField)) {
+    writeScriptDraft(store.state.pipelineEpisodeId, store.state)
+  }
   for (const listener of store.listeners) listener()
 }
 
 /** 一键成片表单里**跟随项目**的字段（切换项目时整体保存/恢复）。 */
 export type PipelineFieldSnapshot = Pick<
   WorkbenchUiState,
-  'pipelineScript' | 'pipelineImportedFiles' | 'pipelineShots' | 'pipelineDuration' | 'pipelineManualPick' | 'pipelineTextModel' | 'pipelineSkillId'
+  'pipelineShots' | 'pipelineDuration' | 'pipelineManualPick' | 'pipelineTextModel' | 'pipelineSkillId'
 >
 
-/** 新项目的成片表单初值。 */
+/** 新项目的成片表单初值（剧本文本与导入文件按剧集存，不在这里）。 */
 const PIPELINE_FIELDS_INITIAL: PipelineFieldSnapshot = {
-  pipelineScript: '',
-  pipelineImportedFiles: [],
   pipelineShots: 4,
   pipelineDuration: 6,
   pipelineManualPick: [],
@@ -229,8 +384,6 @@ function pipelineSnapshotsOf(owner: object): Map<string, PipelineFieldSnapshot> 
 /** 只取跟项目走的那几个字段。 */
 function snapshotPipelineFields(state: WorkbenchUiState): PipelineFieldSnapshot {
   return {
-    pipelineScript: state.pipelineScript,
-    pipelineImportedFiles: state.pipelineImportedFiles,
     pipelineShots: state.pipelineShots,
     pipelineDuration: state.pipelineDuration,
     pipelineManualPick: state.pipelineManualPick,
@@ -242,7 +395,8 @@ function snapshotPipelineFields(state: WorkbenchUiState): PipelineFieldSnapshot 
 /**
  * 切换到另一个项目的成片表单：先保存当前项目的填写内容，再恢复目标项目的（没有则回到默认值）。
  *
- * 不分项目的话，切换剧集后剧本、分镜数与模型选择都还是上一部的内容——用户会以为"没刷新"。
+ * 不分项目的话，切换项目后分镜数与模型选择都还是上一部的内容——用户会以为"没刷新"。
+ * 剧本文本、导入文件与角色卡按**剧集**存（见 {@link switchPipelineEpisode}），四个分区共享。
  * @param owner - 宿主 API 实例（状态桶的键）。
  * @param projectId - 目标项目 id；空串表示没有选中项目。
  */
@@ -255,6 +409,73 @@ export function switchPipelineProject(owner: object, projectId: string): void {
   }
   const restored = snapshots.get(projectId) ?? PIPELINE_FIELDS_INITIAL
   store.state = { ...store.state, pipelineProjectId: projectId, ...restored }
+  for (const listener of store.listeners) listener()
+}
+
+/** 跟随剧集的共享输入与角色卡。 */
+export type EpisodeScriptSnapshot = Pick<
+  WorkbenchUiState,
+  'pipelineScript' | 'pipelineImportedFiles'
+  | 'roleCards' | 'roleExtractPrompt' | 'roleExtractModel' | 'roleExtractSkillId'
+  | 'voiceCards' | 'voiceExtractModel' | 'voiceExtractPrompt'
+  | 'motionCards' | 'motionExtractModel' | 'motionExtractPrompt'
+>
+
+const EPISODE_SCRIPT_INITIAL: EpisodeScriptSnapshot = {
+  pipelineScript: '',
+  pipelineImportedFiles: [],
+  roleCards: [],
+  roleExtractPrompt: '',
+  roleExtractModel: '',
+  roleExtractSkillId: '',
+  voiceCards: [],
+  voiceExtractModel: '',
+  voiceExtractPrompt: '',
+  motionCards: [],
+  motionExtractModel: '',
+  motionExtractPrompt: '',
+}
+
+/** 每个 API 实例一份「剧集 id → 共享剧本输入 / 角色卡」快照。 */
+const episodeScriptSnapshots = new WeakMap<object, Map<string, EpisodeScriptSnapshot>>()
+
+function episodeScriptSnapshotsOf(owner: object): Map<string, EpisodeScriptSnapshot> {
+  let snapshots = episodeScriptSnapshots.get(owner)
+  if (snapshots === undefined) {
+    snapshots = new Map()
+    episodeScriptSnapshots.set(owner, snapshots)
+  }
+  return snapshots
+}
+
+/**
+ * 切换剧集：先保存当前剧集的共享剧本输入与角色卡，再恢复目标剧集的内容。
+ * 剧本分段 / 角色 / 场景 / 道具四个分区读写同一份 store，因此切回来看到的是原内容。
+ */
+export function switchPipelineEpisode(owner: object, episodeId: string): void {
+  const store = storeOf(owner)
+  if (store.state.pipelineEpisodeId === episodeId) return
+  const snapshots = episodeScriptSnapshotsOf(owner)
+  // 空 id 也是一档（首集加载前的草稿）：无条件先存，否则首次切集时写的内容会丢
+  snapshots.set(store.state.pipelineEpisodeId, {
+    pipelineScript: store.state.pipelineScript,
+    pipelineImportedFiles: store.state.pipelineImportedFiles,
+    roleCards: store.state.roleCards,
+    roleExtractPrompt: store.state.roleExtractPrompt,
+    roleExtractModel: store.state.roleExtractModel,
+    roleExtractSkillId: store.state.roleExtractSkillId,
+    voiceCards: store.state.voiceCards,
+    voiceExtractModel: store.state.voiceExtractModel,
+    voiceExtractPrompt: store.state.voiceExtractPrompt,
+    motionCards: store.state.motionCards,
+    motionExtractModel: store.state.motionExtractModel,
+    motionExtractPrompt: store.state.motionExtractPrompt,
+  })
+  // 剧本文本与导入文件额外落 localStorage：重启后 WeakMap 快照随之销毁，靠这里恢复。
+  writeScriptDraft(store.state.pipelineEpisodeId, store.state)
+  const persisted = readScriptDraft(episodeId)
+  const restored = { ...(snapshots.get(episodeId) ?? EPISODE_SCRIPT_INITIAL), ...persisted }
+  store.state = { ...store.state, pipelineEpisodeId: episodeId, ...restored }
   for (const listener of store.listeners) listener()
 }
 

@@ -131,6 +131,11 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-sub-title{font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--iv-tx3)}
 .iv .iv-card-head strong{font-size:13px;font-weight:600}
 .iv .iv-row{gap:10px;padding:8px 10px;border-radius:10px;font-size:13px}
+/* 本集已选：整行不折行（否则删除按钮掉到第二行）；名称吃掉剩余宽度，分类框固定宽 */
+.iv .iv-episode-refs .iv-row{flex-wrap:nowrap;padding-block:11px}
+.iv .iv-episode-refs .iv-row .iv-row-main{flex:1 1 auto;min-width:0}
+.iv .iv-episode-refs .iv-row .iv-select{flex:none;width:76px;min-width:76px}
+.iv .iv-episode-refs .iv-row .iv-row-actions{flex:none}
 .iv .iv-create-title{font-size:17px;font-weight:650;letter-spacing:0}
 .iv .iv-empty{gap:10px;padding:24px 12px}
 .iv .iv-empty strong{font-size:16px;font-weight:600;color:var(--iv-tx)}

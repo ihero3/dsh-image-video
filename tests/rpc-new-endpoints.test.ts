@@ -488,13 +488,15 @@ describe('entities/extract (B-23)', () => {
       script: '雨夜街头，林夏撑伞走来。老周在屋檐下等她。',
       provider: 'deepseek',
       model: 'deepseek-chat',
+      instructions: '只提取有台词的人物',
     })
     expect(result.items).toEqual([
       { name: '林夏', note: '二十岁，红伞' },
       { name: '老周', note: '' },
     ])
-    // 提示词带上了分区要求与剧本原文
+    // 提示词带上了分区要求、用户补充的角色提取要求与剧本原文
     expect(prompts[0]).toContain('所有角色')
+    expect(prompts[0]).toContain('只提取有台词的人物')
     expect(prompts[0]).toContain('老周在屋檐下等她')
   })
 })

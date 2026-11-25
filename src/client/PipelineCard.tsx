@@ -10,7 +10,7 @@
  * 导入文件后只展示**全文多少字**：不再按章节切段，也不展示「第几段」下拉与提示，
  * 整篇正文都作为生成剧本的输入。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { TextModelOption, WorkbenchApi } from './api.ts'
 import type { EpisodeRecord } from '../workbench/episodes.ts'
 import {
@@ -19,7 +19,7 @@ import {
 import type { SkillRecord } from '../workbench/skills.ts'
 import { Icon } from './icons.tsx'
 import { switchPipelineProject, useWorkbenchField } from './workbench-store.ts'
-import { importScriptFilesShared } from './script-import-shared.ts'
+import { SharedScriptInput } from './panels/SharedScriptInput.tsx'
 import { SkillTokenSelect, activeSkillId, stripSkillTokens } from './skill-tokens.tsx'
 import type { WorkbenchLocaleKey } from './locales.ts'
 
@@ -41,8 +41,6 @@ export interface PipelineCardProps {
   readonly onEpisodesGenerated?: (episodes: readonly EpisodeRecord[]) => void | Promise<void>
 }
 
-/** 剧本输入框行数：一整段剧本不用先滚才看得全。 */
-const SCRIPT_ROWS = 6
 /** 三级数量输入值：'auto' = 生成时让文本模型按剧本决定，数字 = 用户手填。 */
 type PlanCount = number | 'auto'
 
@@ -63,12 +61,6 @@ export function PipelineCard(props: PipelineCardProps) {
   /** 导演技能：从剧本里的 Skill token 反推，和所有技能入口同一套用法。 */
   const [skillId, setSkillId] = useWorkbenchField(api, 'pipelineSkillId')
   const [skills, setSkills] = useState<readonly SkillRecord[]>([])
-  /** 已选/已导入的剧本文件：与角色/场景/道具分区共享，文件名与原文都长期保留。 */
-  const [importedFiles, setImportedFiles] = useWorkbenchField(api, 'pipelineImportedFiles')
-  /** 浏览器文件选择器：点按钮再打开系统窗口，不要求用户手填路径。 */
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  /** 剧本输入框：导入成功后把它滚到末尾，明确"内容追加到了这里"。 */
-  const scriptRef = useRef<HTMLTextAreaElement | null>(null)
   // 切换剧集：表单按项目保存/恢复；导入文件与剧本一起走，文件名和原文都不丢
   useEffect(() => {
     switchPipelineProject(api, projectId ?? '')
@@ -106,10 +98,8 @@ export function PipelineCard(props: PipelineCardProps) {
     })()
     return () => { stale = true }
   }, [api])
-  /** 一次性操作反馈（导入 / 生成）。 */
+  /** 一次性操作反馈（生成）。 */
   const [notice, setNotice] = useState<string | undefined>(undefined)
-  /** 剧本文件导入的进行态。 */
-  const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
 
   /**
@@ -117,8 +107,6 @@ export function PipelineCard(props: PipelineCardProps) {
    * Skill token 只属于界面；发给模型的正文必须先清掉。
    */
   const cleanScript = useMemo(() => stripSkillTokens(script, skills), [script, skills])
-  /** 导入后展示的全文总字数（不分段统计）。 */
-  const scriptChars = script.trim().length
 
   /** Skill 下拉与文本区 token 双向一致：删掉 token 就等于取消选择。 */
   useEffect(() => {
@@ -211,124 +199,10 @@ export function PipelineCard(props: PipelineCardProps) {
     }
   }
 
-  /**
-   * 导入剧本文件：委托共享 helper 写入文件名与原文，再把原文追加进剧本框。
-   * 原文独立保存在共享列表里（角色 / 场景 / 道具也能拿它当输入），即使剧本框被改写也不丢。
-   */
-  const importScriptFiles = async (files: readonly File[]): Promise<void> => {
-    if (files.length === 0) return
-    setImporting(true); setError(undefined); setNotice(undefined)
-    const { done, failures } = await importScriptFilesShared(api, files, setImportedFiles)
-    for (const imported of done) {
-      setScript(current => current.trim() === '' ? imported.text : `${current}\n\n${imported.text}`)
-    }
-    if (failures.length === 0) {
-      const names = done.map(item => item.fileName).join('；')
-      setNotice(t('pipelineImportDone').replace('{name}', names))
-      // 正文是追加在剧本末尾的：把剧本框滚到底，用户一眼能看到内容去了哪里
-      const textarea = scriptRef.current
-      if (textarea !== null) {
-        // jsdom 没有 scrollIntoView，测试环境跳过即可（真实浏览器一定有时才有意义）
-        if (typeof textarea.scrollIntoView === 'function') textarea.scrollIntoView({ block: 'nearest' })
-        textarea.scrollTop = textarea.scrollHeight
-      }
-    } else {
-      setError(`${t('pipelineImportFailed')}：${failures.join('；')}`)
-    }
-    setImporting(false)
-  }
-
-  /** 从已引用列表里移除一个文件名（只影响展示，正文里已并入的内容不动）。 */
-  const removeImportedFile = (name: string): void => {
-    setImportedFiles(current => current.filter(item => item.name !== name))
-  }
-
   return (
     <div className="iv-card" data-pipeline-card="true">
       <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
-        <span className="iv-meta">{t('pipelineScriptLabel')}</span>
-        <textarea
-          ref={scriptRef}
-          className="iv-input"
-          rows={SCRIPT_ROWS}
-          value={script}
-          placeholder={t('pipelineScriptPlaceholder')}
-          data-pipeline-script="true"
-          disabled={generatingScript}
-          onChange={event => setScript(event.target.value)}
-          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-        />
-        {/* 导入整本小说后只看全文字数：不切段、不展示"第几段"选择 */}
-        {scriptChars === 0
-          ? null
-          : (
-            <span className="iv-meta" data-pipeline-script-chars="true">
-              {t('pipelineScriptChars').replace('{chars}', String(scriptChars))}
-            </span>
-          )}
-        {/* 剧本文件导入：点一下开系统文件窗口，选中的文件交给宿主解析；与角色/道具分区共享 */}
-        <div style={{ display: 'flex', gap: 'var(--iv-sp-5)', flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.md,.markdown,.docx,.pdf"
-            multiple
-            data-pipeline-import-file="true"
-            style={{ display: 'none' }}
-            onChange={event => {
-              // 先快照成数组再清空 value：清空后 FileList 可能被就地置空
-              const files = Array.from(event.target.files ?? [])
-              event.target.value = ''
-              void importScriptFiles(files)
-            }}
-          />
-          <button
-            type="button"
-            className="iv-btn iv-btn--ghost iv-btn--sm"
-            data-pipeline-import="true"
-            disabled={generatingScript || importing}
-            title={t('pipelineImportScriptHint')}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Icon name="script" size={12} />
-            {importing ? t('pipelineImporting') : t('pipelineImportScript')}
-          </button>
-          {importedFiles.length === 0
-            ? null
-            : (
-              <div
-                data-pipeline-imported="true"
-                style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}
-              >
-                <span className="iv-meta">{t('pipelineImportedLabel')}</span>
-                {importedFiles.map(file => (
-                  <span
-                    className="iv-chip"
-                    key={file.name}
-                    data-pipeline-imported-item={file.name}
-                    data-pipeline-imported-status={file.status}
-                    title={file.error ?? file.name}
-                  >
-                    <span style={{ marginRight: '2px' }}>
-                      {file.name}
-                      {file.status === 'importing' ? ` · ${t('pipelineImporting')}` : ''}
-                      {file.status === 'failed' ? ` · ${t('pipelineImportFailedShort')}` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      className="iv-btn iv-btn--ghost iv-btn--sm"
-                      data-pipeline-imported-remove={file.name}
-                      aria-label={t('pipelineImportRemove')}
-                      title={t('pipelineImportRemove')}
-                      onClick={() => removeImportedFile(file.name)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-        </div>
+        <SharedScriptInput api={api} t={t} disabled={generatingScript} />
         {/* 输入属性：三级数量 / 文本模型 / 技能并列摆放；技能走统一 token，可多次选择 */}
         <div className="iv-plan-row">
           <label className="iv-plan-field" title={t('pipelineAutoCountsHint')}>

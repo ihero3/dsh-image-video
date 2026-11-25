@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import {
   newWorkbenchId, normalizeMediaKind, normalizeProjectName, normalizeTaskStatus, WORKBENCH_SCHEMA_VERSION,
   normalizeKeyframes, normalizeResourceFolder, normalizeResourceKind, normalizeResourceName, normalizeResourceScope,
-  type AssetRecord, type MediaKind, type ProjectRecord, type ResourceKind, type ResourceRecord,
+  type AssetRecord, type MediaKind, type MotionKeyframe, type ProjectRecord, type ResourceKind, type ResourceRecord,
   type TaskRecord, type TaskStatus,
 } from './records.ts'
 import { normalizeGraph, type WorkflowRecord, type WorkflowRunNodeRecord, type WorkflowRunRecord } from './workflow.ts'
@@ -367,6 +367,8 @@ export class WorkbenchStore {
     folder?: string | null
     assetPath?: string | null
     assetPaths?: readonly string[] | null
+    /** 轨迹关键帧：传数组整组替换、`null` 清除、`undefined` 不改。 */
+    keyframes?: readonly MotionKeyframe[] | null
   }): Promise<ResourceRecord | undefined> {
     const document = await this.load()
     const index = document.resources.findIndex(resource => resource.id === id)
@@ -384,6 +386,10 @@ export class WorkbenchStore {
           : { folder: normalizeResourceFolder(patch.folder) as string },
       ...patch.assetPath === undefined ? {} : patch.assetPath === null ? { assetPath: undefined as never } : { assetPath: patch.assetPath },
       ...patch.assetPaths === undefined ? {} : patch.assetPaths === null ? { assetPaths: undefined as never } : { assetPaths: [...patch.assetPaths] },
+      // 轨迹关键帧：换组走宿主统一校验，`null` 清空（仅轨迹资源可无帧）
+      ...patch.keyframes === undefined ? {}
+        : patch.keyframes === null ? { keyframes: undefined as never }
+          : { keyframes: normalizeKeyframes(patch.keyframes) },
     }
     // 显式清除时把键删掉（而不是留 `undefined`，避免落库出现 `"note": null` 这类脏值）
     const cleaned: ResourceRecord = { ...next }
@@ -392,6 +398,7 @@ export class WorkbenchStore {
     if (mutable.folder === undefined) delete mutable.folder
     if (mutable.assetPath === undefined) delete mutable.assetPath
     if (mutable.assetPaths === undefined) delete mutable.assetPaths
+    if (mutable.keyframes === undefined) delete mutable.keyframes
     document.resources[index] = cleaned
     await this.save(document)
     return cleaned

@@ -8,8 +8,8 @@
  * @module dsh-image-video/workbench/entity-extract
  */
 
-/** 提取分区：对应剧本生成页的三个提取标签页。 */
-export type ExtractCategory = 'role' | 'scene' | 'prop'
+/** 提取分区：素材提取页四种类型 + 音色 / 轨迹两个特殊分区。 */
+export type ExtractCategory = 'role' | 'scene' | 'costume' | 'prop' | 'voice' | 'motion'
 
 /** 一次最多保留多少条：超出截断，避免模型复读把列表撑爆。 */
 export const MAX_EXTRACT_ITEMS = 20
@@ -26,18 +26,28 @@ export interface ExtractItem {
 const CATEGORY_BRIEF: Record<ExtractCategory, string> = {
   role: '提取剧本里出现的所有角色（人物）。同一角色的别名合并成一条；说明写外形、年龄、气质、服装等能直接用于定妆照的要点。',
   scene: '提取剧本里出现的所有场景与地点。同一地点的不同时间算同一条；说明写时间、光线、氛围、陈设与可用的镜头角度。',
-  prop: '提取剧本里出现的所有道具与服装。说明写外观、材质、颜色与谁在用；服装要写清穿着者。',
+  costume: '提取剧本里出现的所有服装与服饰装扮。同一套服装在不同场合出现算一条；说明写款式、颜色、材质、配件与穿着者，能直接用于服装设定图。',
+  prop: '提取剧本里出现的所有道具与器物（不含服装）。说明写外观、材质、颜色、尺寸与谁在用。',
+  voice: '提取剧本里有台词的角色与旁白，规划配音音色。每条是一个「说话人」；说明写性别、年龄、声线气质、语速与情绪基调，能直接用于选音色与配音参数。',
+  motion: '提取剧本里需要镜头运动的段落，规划运镜轨迹。每条是一条运镜；说明写运镜方式（推拉/摇移/环绕/升降）、起止位置、主体在画面中的位置变化与时长。',
 }
 
 /**
  * 拼一次提取请求的提示词。
  * @param script - 剧本原文（调用方保证非空）。
  * @param category - 提取分区。
+ * @param instructions - 用户补充的提取要求（角色提取输入框）；空 = 只用默认口径。
  * @returns 交给文本模型的完整提示词。
  */
-export function buildExtractPrompt(script: string, category: ExtractCategory): string {
+export function buildExtractPrompt(
+  script: string,
+  category: ExtractCategory,
+  instructions?: string,
+): string {
+  const custom = instructions?.trim() ?? ''
   return [
     CATEGORY_BRIEF[category],
+    ...custom === '' ? [] : [`用户补充的提取要求（与上面的默认口径冲突时以这里为准）：\n${custom}`],
     '只输出 JSON 数组，不要解释、不要 Markdown 代码块；每条形如 {"name":"名称","note":"一句话说明"}。',
     `最多 ${MAX_EXTRACT_ITEMS} 条；剧本里没有的不要编。`,
     '',

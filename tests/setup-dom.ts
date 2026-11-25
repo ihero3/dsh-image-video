@@ -6,6 +6,20 @@
  * 只在有 window 的环境里补：宿主侧（node 环境）的测试不需要也不受影响。
  */
 import { configure } from '@testing-library/react'
+import { afterEach } from 'vitest'
+
+/**
+ * 剧本文本草稿会落 localStorage，测试之间必须隔离：否则上一例输入的内容
+ * 会被下一例的新组件当作恢复值读回来。只清草稿前缀，不动引导标记 / 上次打开的集。
+ */
+afterEach(() => {
+  if (typeof localStorage === 'undefined') return
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('image-video:script-draft:')) localStorage.removeItem(key)
+    }
+  } catch { /* 无 localStorage 的环境忽略 */ }
+})
 
 if (typeof globalThis.window !== 'undefined') {
   if (typeof globalThis.ResizeObserver === 'undefined') {

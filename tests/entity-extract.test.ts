@@ -14,7 +14,20 @@ describe('buildExtractPrompt', () => {
     expect(role).toContain('林夏撑伞走来')
     expect(role).toContain('JSON')
     expect(buildExtractPrompt('x', 'scene')).toContain('场景与地点')
-    expect(buildExtractPrompt('x', 'prop')).toContain('道具与服装')
+    expect(buildExtractPrompt('x', 'prop')).toContain('道具与器物')
+    // 服装从道具里独立出来，音色/轨迹走各自的剧本提取口径
+    expect(buildExtractPrompt('x', 'costume')).toContain('服装与服饰')
+    expect(buildExtractPrompt('x', 'voice')).toContain('配音音色')
+    expect(buildExtractPrompt('x', 'motion')).toContain('镜头运动')
+  })
+
+  it('带上用户补充的角色提取提示词；空提示词不改变默认口径', () => {
+    const base = buildExtractPrompt('剧本', 'role')
+    expect(buildExtractPrompt('剧本', 'role', '   ')).toBe(base)
+    const custom = buildExtractPrompt('剧本', 'role', '只提取有台词的人物')
+    expect(custom).toContain('只提取有台词的人物')
+    expect(custom).toContain('用户补充的提取要求')
+    expect(custom).toContain('JSON')
   })
 })
 

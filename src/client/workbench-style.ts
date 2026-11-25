@@ -435,7 +435,17 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
    而图标是 display:block —— 结果是 head 里的图标独占一行、标题与徽章掉到第二行。 */
 .iv-card{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0}
 .iv-card-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+.iv-card-head--button{width:100%;padding:6px 8px;border:1px solid var(--iv-line-2);border-radius:var(--iv-r-sm);
+  background:var(--iv-panel);cursor:pointer;text-align:left}
+.iv-card-head--button:hover{border-color:var(--iv-accent);background:color-mix(in srgb,var(--iv-accent) 6%,var(--iv-panel))}
+.iv-card-head--button .iv-module-toggle{margin-left:auto}
 .iv-card-head strong{font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium)}
+/* 素材提取：四种类型并排切换；窄面板允许折行，但每个按钮保持可点尺寸 */
+.iv-extract-kind-picker{gap:var(--iv-sp-2);flex-wrap:wrap}
+/* 轨迹关键帧：一行帧号 + 四个数值输入 + 删除，窄屏可折行 */
+.iv-motion-frames{display:flex;flex-direction:column;gap:var(--iv-sp-2)}
+.iv-motion-frame{gap:var(--iv-sp-2);flex-wrap:wrap;align-items:flex-end}
+.iv-motion-frame .iv-sb-field{flex:1 1 84px;min-width:72px}
 .iv-card-body,.iv-card-note{min-width:0}
 .iv-pane img,.iv-pane video{width:100%;border-radius:var(--iv-r-sm);display:block;background:var(--iv-monitor)}
 /* 素材列表缩略图：图片与视频首帧统一成 72×48 的小图，压过上面 .iv-pane img 的满宽规则 */
@@ -898,10 +908,10 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-selector-row{flex-wrap:nowrap;align-items:flex-end}
 .iv-sb-selector-row>.iv-sb-field{flex:1 1 0;min-width:0}
 .iv-sb-selector-actions{flex:none;justify-content:flex-end;align-self:flex-end}
-/* 分段卡按可用宽度自动折行，窄档一张、宽档多张 */
-.iv-sb-list{display:flex;flex-direction:row;flex-wrap:wrap;align-items:stretch;gap:var(--iv-sp-3);min-height:0}
-.iv-sb-list>.iv-sb-shot{flex:1 1 420px;min-width:min(100%,320px)}
-.iv-sb-shot{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--iv-sp-4);padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
+/* 分段与分镜都按「一块一行」纵向铺开，不并排挤占宽度 */
+.iv-sb-list{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}
+.iv-sb-list>.iv-sb-shot{width:100%}
+.iv-sb-shot{display:block;padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
 .iv-sb-shot-index{display:grid;place-items:center;min-width:26px;height:26px;border-radius:50%;background:var(--iv-acc-soft);color:var(--iv-acc);font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium)}
 .iv-sb-shot-body{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
 /* 镜头提示词与引用列：有引用时右列展开，提示词区自动收缩 */
@@ -934,6 +944,10 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-seg-head--clickable:hover .iv-micro{color:var(--iv-tx)}
 .iv-sb-seg-head--clickable:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px;border-radius:var(--iv-r-xs)}
 .iv-sb-seg-actions{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2)}
+/* 镜头标题：秒数标签放到输入框后面，省掉一整行；操作簇贴引用按钮上方 */
+.iv-shot-duration{display:inline-flex;align-items:center;gap:var(--iv-sp-2)}
+.iv-shot-duration .iv-input{width:64px;flex:0 0 64px}
+.iv-shot-actions{flex-wrap:nowrap}
 .iv-seg-peek{font-size:var(--iv-fs-meta);color:var(--iv-tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 100%}
 .iv-dur-row{display:flex;align-items:center;gap:var(--iv-sp-2)}
 .iv-dur-row .iv-input{width:56px;flex:0 0 56px}
