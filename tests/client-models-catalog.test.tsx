@@ -24,6 +24,38 @@ describe('ModelCardsPanel (B-6)', () => {
     expect(screen.getAllByText(en.modelCardReferenceVideo)).toHaveLength(2)
   })
 
+  it('lists upstream text models by provider alongside generation capability cards', async () => {
+    const host = fakeApi()
+    host.api.listTextModels = async () => ({
+      models: [
+        { provider: 'threevideo', providerName: 'Threevideo', id: 'deepseek-flash', name: 'DeepSeek Flash' },
+        { provider: 'threevideo', providerName: 'Threevideo', id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+        { provider: 'deepseek-account', providerName: 'DeepSeek Account', id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      ],
+      failures: [],
+    })
+    const view = render(<ModelCardsPanel api={host.api} t={t} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-text-models]')).toBeTruthy() })
+    expect(screen.getByText(en.modelCardsTextModels)).toBeTruthy()
+    expect(screen.getByText('DeepSeek Flash')).toBeTruthy()
+    expect(screen.getByText('DeepSeek V4 Pro')).toBeTruthy()
+    expect(screen.getByText('DeepSeek Chat')).toBeTruthy()
+    expect(view.container.querySelector('[data-model-text-group="Threevideo"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-model-text-failures]')).toBeNull()
+  })
+
+  it('shows text-model directory failures without hiding the capability cards', async () => {
+    const host = fakeApi()
+    host.api.listTextModels = async () => ({
+      models: [],
+      failures: [{ provider: 'down-provider', message: 'connection refused' }],
+    })
+    const view = render(<ModelCardsPanel api={host.api} t={t} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-text-failures]')).toBeTruthy() })
+    expect(screen.getByText(/connection refused/)).toBeTruthy()
+    expect(screen.getByText('Model One')).toBeTruthy()
+  })
+
   it('surfaces a drift warning when consistencyIssues is non-empty', async () => {
     const host = fakeApi()
     host.api.modelsCatalog = async () => ({

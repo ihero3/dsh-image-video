@@ -526,6 +526,11 @@ describe('workbench project and asset flow', () => {
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
       fireEvent.click(view.container.querySelector('[data-workbench-defaults-edit]') as HTMLElement)
       await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults-editor]')).toBeTruthy() })
+      // 文本模型也能在这里配置，但它走界面状态即时生效，不混进 saveDefaults 的补丁
+      const textModelSelect = view.container.querySelector('[data-workbench-defaults-editor] [data-workbench-defaults-text-model]') as HTMLSelectElement
+      expect(textModelSelect).toBeInstanceOf(HTMLSelectElement)
+      expect([...textModelSelect.options].some(option => option.value === 'fake::fake-text')).toBe(true)
+      fireEvent.change(textModelSelect, { target: { value: 'fake::fake-text' } })
       // 默认值编辑器全部为下拉选择（白名单内），不再提供自由输入
       // 作用域限定在弹层里：模块② 也有一个 aria-label 相同的"本次尺寸"下拉
       const sizeSelect = view.container.querySelector('[data-workbench-defaults-editor] select[aria-label="Image size"]') as HTMLSelectElement

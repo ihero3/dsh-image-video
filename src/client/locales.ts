@@ -127,6 +127,8 @@ export type WorkbenchLocaleKey =
   | 'defaultsGroupMode'
   | 'defaultsGroupImage'
   | 'defaultsGroupVideo'
+  | 'defaultsGroupText'
+  | 'defaultsTextModelHint'
   | 'defaultTextModel'
   | 'optModeText'
   | 'optModeImage'
@@ -869,6 +871,9 @@ export type WorkbenchLocaleKey =
   | 'modelCardsEmpty'
   | 'modelCardsLoadFailed'
   | 'modelCardsDrift'
+  | 'modelCardsTextModels'
+  | 'modelCardsTextModelsEmpty'
+  | 'modelCardsTextFailures'
   | 'modelCardKindsImage'
   | 'modelCardKindsVideo'
   | 'modelCardDuration'
@@ -1002,7 +1007,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   scriptTextModelEmpty: 'Not selected',
   scriptImageModel: 'Image model',
   scriptVideoModel: 'Video model',
-  scriptDirectorSkill: 'Director skill',
+  scriptDirectorSkill: 'Select segment skill',
   scriptFollowDefault: 'Use default',
   scriptSplit: 'Start splitting',
   scriptSplitting: 'Splitting…',
@@ -1101,6 +1106,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsGroupMode: 'Media type',
   defaultsGroupImage: 'Image',
   defaultsGroupVideo: 'Video',
+  defaultsGroupText: 'Text',
+  defaultsTextModelHint: 'Applies immediately; not part of saved defaults.',
   defaultTextModel: 'Text model',
   optModeText: 'Text',
   optModeImage: 'Image',
@@ -1298,7 +1305,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   segmentPromptLabel: 'Segment prompt',
   segmentPromptPlaceholder: 'Within these seconds: who, where, what happens…',
   segmentDurationLabel: 'Seconds',
-  segmentSkillLabel: 'Director skill',
+  segmentSkillLabel: 'Select segment skill',
   segmentTextModel: 'Text model for storyboard',
   segmentVideoTooLong: 'One-click video supports up to 30s per segment. Split it into shots first to generate a longer video.',
   segmentSkillDefault: 'Default skill',
@@ -1769,6 +1776,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modelCardsEmpty: 'No model cards available.',
   modelCardsLoadFailed: 'Failed to load model cards.',
   modelCardsDrift: 'Card drifted from runtime capabilities — verify before relying on it.',
+  modelCardsTextModels: 'Available text models',
+  modelCardsTextModelsEmpty: 'No text models available.',
+  modelCardsTextFailures: 'Some providers could not be listed:',
   modelCardKindsImage: 'Image',
   modelCardKindsVideo: 'Video',
   modelCardDuration: 'Duration',
@@ -1917,6 +1927,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modelCardsEmpty: '暂无可用的模型卡。',
   modelCardsLoadFailed: '模型卡加载失败。',
   modelCardsDrift: '卡片与运行时能力漂移——依赖前请先核对。',
+  modelCardsTextModels: '可用文本模型',
+  modelCardsTextModelsEmpty: '暂无可用的文本模型。',
+  modelCardsTextFailures: '部分服务商目录不可用：',
   modelCardKindsImage: '图',
   modelCardKindsVideo: '视频',
   modelCardDuration: '时长',
@@ -2048,7 +2061,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   scriptTextModelEmpty: '未选择',
   scriptImageModel: '图像模型',
   scriptVideoModel: '视频模型',
-  scriptDirectorSkill: '导演 Skill',
+  scriptDirectorSkill: '选择分段技能',
   scriptFollowDefault: '跟随默认',
   scriptSplit: '开始分段',
   scriptSplitting: '分段中…',
@@ -2147,6 +2160,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsGroupMode: '媒体类型',
   defaultsGroupImage: '图像',
   defaultsGroupVideo: '视频',
+  defaultsGroupText: '文本',
+  defaultsTextModelHint: '选择后立即生效，保存默认值无需包含此项。',
   defaultTextModel: '文本模型',
   optModeText: '文本',
   optModeImage: '图片',
@@ -2344,7 +2359,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   segmentPromptLabel: '分段提示词',
   segmentPromptPlaceholder: '这几秒里：谁、在哪、发生什么…',
   segmentDurationLabel: '秒数',
-  segmentSkillLabel: '导演 Skill',
+  segmentSkillLabel: '选择分段技能',
   segmentTextModel: '分镜文本模型',
   segmentVideoTooLong: '一键生成视频只支持 30 秒以内的分段；超过 30 秒请先生成分镜，再逐镜生成视频。',
   segmentSkillDefault: '默认 Skill',

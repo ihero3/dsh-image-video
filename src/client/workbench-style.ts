@@ -887,11 +887,20 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-seg-cell.on{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
 .iv-seg-cell:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
 /* B-15 分镜工坊：剧本输入 + 可编辑镜头表 */
-.iv-sb-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:space-between}
-/* 分段操作行与上方「文本模型 / 导演 Skill」拉开距离，避免按钮贴着选择器 */
-.iv-sb-segment-head{margin-top:var(--iv-sp-5)}
+.iv-sb-head{display:flex;align-items:center;gap:var(--iv-sp-4);flex-wrap:wrap;justify-content:flex-start}
+/* 头部工具块沿用 iv-row 的块样式；已保存状态继续贴最右 */
+.iv-sb-head-actions{flex:0 1 auto;min-width:0}
+.iv-sb-head-save{margin-left:auto}
+/* 分段标题独占一行；开始分段/新建分段已移到上方技能选择框的右下 */
+.iv-sb-segment-head{flex-basis:100%;margin-top:var(--iv-sp-5)}
 .iv-sb-count{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:center}
-.iv-sb-list{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0}
+/* 文本模型 / 分段技能 / 分段按钮一行，按钮贴最右 */
+.iv-sb-selector-row{flex-wrap:nowrap;align-items:flex-end}
+.iv-sb-selector-row>.iv-sb-field{flex:1 1 0;min-width:0}
+.iv-sb-selector-actions{flex:none;justify-content:flex-end;align-self:flex-end}
+/* 分段卡按可用宽度自动折行，窄档一张、宽档多张 */
+.iv-sb-list{display:flex;flex-direction:row;flex-wrap:wrap;align-items:stretch;gap:var(--iv-sp-3);min-height:0}
+.iv-sb-list>.iv-sb-shot{flex:1 1 420px;min-width:min(100%,320px)}
 .iv-sb-shot{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--iv-sp-4);padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel)}
 .iv-sb-shot-index{display:grid;place-items:center;min-width:26px;height:26px;border-radius:50%;background:var(--iv-acc-soft);color:var(--iv-acc);font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium)}
 .iv-sb-shot-body{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
@@ -1017,6 +1026,13 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-ratio-result{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:center}
 
 /* ============ B-6 模型能力卡 ============ */
+/* 可用文本模型：与生成能力卡同屏，按服务商分组列芯片 */
+.iv-text-models{display:flex;flex-direction:column;gap:var(--iv-sp-2);padding:var(--iv-sp-3);
+  border:1px solid var(--iv-line);border-radius:var(--iv-r-sm);background:var(--iv-panel-2)}
+.iv-text-model-groups{display:flex;flex-direction:column;gap:var(--iv-sp-2)}
+.iv-text-model-group{display:flex;align-items:baseline;gap:var(--iv-sp-3);flex-wrap:wrap}
+.iv-text-model-chips{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+.iv-text-model-chip{cursor:default}
 .iv-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--iv-sp-4)}
 .iv-model-card{display:grid;gap:var(--iv-sp-2);padding:9px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2)}
 .iv-model-card-head{display:flex;justify-content:space-between;align-items:center;gap:var(--iv-sp-3)}

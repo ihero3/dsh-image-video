@@ -1293,7 +1293,8 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
           const listed = await llm.listModels(provider.id)
           for (const entry of listed) {
             // 生图 / 生视频模型也能从 llm 目录里列出来，但文本模型选择器不该看到它们。
-            // 带上 provider 一起判定：生成服务商网关下的整组模型（含名字像文本的别名）都排除。
+            // 只按模型 id / 模态过滤：threevideo 等网关下的 deepseek-flash / deepseek-v4-pro
+            // 是真正可用的文本模型，必须保留。
             if (!isTextModelEntry({ ...entry, provider: provider.id })) continue
             models.push({ provider: provider.id, providerName: provider.name, id: entry.id, name: entry.name })
           }

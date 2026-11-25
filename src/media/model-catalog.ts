@@ -16,7 +16,7 @@
  * @module dsh-image-video/media/model-catalog
  */
 import {
-  MULTI_FRAME_CAPABLE_MODELS, PROVIDERS, REFERENCE_VIDEO_CAPABLE_MODELS, VIDEO_DURATION_UNSUPPORTED,
+  MULTI_FRAME_CAPABLE_MODELS, REFERENCE_VIDEO_CAPABLE_MODELS, VIDEO_DURATION_UNSUPPORTED,
 } from '../runtime-defaults.ts'
 
 /** 卡片描述的一个能力项：支持/不支持 + 人话说明。 */
@@ -227,7 +227,7 @@ export function modelCards(kind?: 'image' | 'video'): readonly ModelCapabilityCa
  */
 export interface TextModelCatalogEntry {
   readonly id: string
-  /** 所属服务商路由键；生成服务商名下的模型一律不是文本模型。 */
+  /** 所属服务商路由键（只用于展示分组，不再按服务商整组排除）。 */
   readonly provider?: string
   readonly inputModalities?: readonly ('text' | 'image')[]
 }
@@ -239,34 +239,23 @@ const MEDIA_MODEL_IDS = new Set([
 ])
 const MEDIA_MODEL_ID_PATTERN = /(?:^|[-_])(?:image|img|t2i|i2i|t2v|i2v|v2v|video)(?:[-_]|$)/i
 const MEDIA_ONLY_FAMILY_PATTERN = /(?:^|[-_])(?:seedream|seedance|hailuo)(?:[-_]|$)/i
-/** 图片 / 视频生成服务商：它们网关下的模型（哪怕名字像 deepseek-chat）都用于生图 / 生视频。 */
-const MEDIA_PROVIDER_KEYS = new Set(PROVIDERS.map(provider => provider.toLowerCase()))
-
 /**
- * 服务商是不是图片 / 视频生成服务商（threevideo / wanx / minimax / seedance）。
- * @param provider - 服务商路由键。
- * @returns 是生成服务商时返回 true。
- */
-export function isMediaProvider(provider: string): boolean {
-  return MEDIA_PROVIDER_KEYS.has(provider.trim().toLowerCase())
-}
-
-/**
- * 文本模型目录过滤：生图 / 生视频模型不能混进「剧本模型 / 文本模型」下拉。
+ * 文本模型目录过滤：按**模型本身**区分，不按服务商整组排除。
+ *
+ * 用户要求把上游绑定账号下的所有文本模型都列出来——生成服务商网关里也会挂
+ * `deepseek-flash` / `deepseek-v4-pro` 这类可用的文本模型，不能因为服务商名字
+ * 叫 threevideo 就把它们一起藏掉。
  *
  * 判定顺序（任一命中即排除）：
- * 1. **服务商维度**：生成服务商网关下的模型整组排除——同一个模型 id（如 `deepseek-v4-pro`）
- *    在文本服务商和生成服务商下含义不同，只能靠 provider 区分；
- * 2. 能力卡登记过的生成模型、MiniMax 原生图片名；
- * 3. id 上的生成任务标记（t2i / i2v / video…）与纯生成家族（seedream / seedance / hailuo）；
- * 4. 显式模态声明里不含 text 的条目。
+ * 1. 能力卡登记过的生成模型、MiniMax 原生图片名；
+ * 2. id 上的生成任务标记（t2i / i2v / video…）与纯生成家族（seedream / seedance / hailuo）；
+ * 3. 显式模态声明里不含 text 的条目。
  *
  * 没有明确生成标记的模型一律保留，避免误伤新接入的文本模型。
  */
 export function isTextModelEntry(entry: TextModelCatalogEntry): boolean {
   const id = entry.id.trim().toLowerCase()
   if (id === '') return false
-  if (entry.provider !== undefined && isMediaProvider(entry.provider)) return false
   if (MEDIA_MODEL_IDS.has(id)) return false
   if (MEDIA_MODEL_ID_PATTERN.test(id) || MEDIA_ONLY_FAMILY_PATTERN.test(id)) return false
   // 模态是显式声明时，至少要接受文本输入才配叫文本模型；缺省目录不据此猜测。

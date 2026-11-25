@@ -692,3 +692,38 @@ describe('引用列表 → 右侧预览面板', () => {
     expect(host.episodes[0]?.storyboards[0]?.shots[0]?.refs).toHaveLength(0)
   })
 })
+
+describe('本集工作区头部排版', () => {
+  it('头部依次是集选择器、总时长、同步/导出/导入块、已保存，技能行三块同排', async () => {
+    const { view } = await renderWorkspace()
+    const head = view.container.querySelector('[data-episode-status="true"]') as HTMLElement
+    const order = Array.from(head.children).map(child => (
+      child.matches('[data-module-episode-picker]') ? 'picker'
+        : child.matches('[data-episode-duration]') ? 'duration'
+          : child.matches('[data-episode-actions]') ? 'actions'
+            : child.matches('[data-episode-script-state]') ? 'save' : 'other'
+    ))
+    expect(order).toEqual(['picker', 'duration', 'actions', 'save'])
+
+    const actions = head.querySelector('[data-episode-actions]') as HTMLElement
+    expect(actions.classList.contains('iv-row')).toBe(true)
+    for (const selector of ['[data-episode-sync-workflow]', '[data-episode-export]', '[data-episode-import]']) {
+      expect(actions.querySelector(selector), selector).toBeTruthy()
+    }
+    const selectorRow = view.container.querySelector('.iv-sb-selector-row') as HTMLElement
+    const rowOrder = Array.from(selectorRow.children).map(child => (
+      child.matches('[data-script-text-model="true"]') ? 'model'
+        : child.querySelector('[data-script-text-model="true"]') !== null ? 'model'
+          : child.querySelector('[data-script-skill="true"]') !== null ? 'skill'
+            : child.matches('.iv-sb-selector-actions') ? 'actions' : 'other'
+    ))
+    expect(rowOrder).toEqual(['model', 'skill', 'actions'])
+    expect(selectorRow.textContent).toContain(en.scriptDirectorSkill)
+    expect(selectorRow.querySelector('[data-segment-auto]')).toBeTruthy()
+    expect(selectorRow.querySelector('[data-segment-add]')).toBeTruthy()
+    const segmentHead = view.container.querySelector('.iv-sb-segment-head') as HTMLElement
+    expect(segmentHead.children).toHaveLength(1)
+    expect(segmentHead.querySelector('[data-segment-auto]')).toBeNull()
+    expect(segmentHead.querySelector('[data-segment-add]')).toBeNull()
+  })
+})

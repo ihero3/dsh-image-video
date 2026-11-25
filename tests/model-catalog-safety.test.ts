@@ -52,7 +52,7 @@ describe('模型能力卡', () => {
     expect(catalogConsistencyIssues()).toEqual([])
   })
 
-  it('文本模型目录只保留文本服务商的文本模型，不把生图/生视频服务商的模型发给任何选择器', async () => {
+  it('文本模型目录保留所有服务商的文本模型（含 threevideo 网关），只排除生图/生视频模型', async () => {
     const textIds = ['deepseek-chat', 'deepseek-v4-pro', 'DeepSeek-V4-Flash', 'qwen3.5']
     const mediaIds = [
       'image-01', 'minimax-image-01', 'qwen-image-3.0', 'minimax-h3',
@@ -61,18 +61,16 @@ describe('模型能力卡', () => {
     for (const id of textIds) expect(isTextModelEntry({ id }), id).toBe(true)
     for (const id of mediaIds) expect(isTextModelEntry({ id }), id).toBe(false)
     expect(isTextModelEntry({ id: 'vision-only', inputModalities: ['image'] })).toBe(false)
-    // 服务商维度：生成服务商整组排除，哪怕模型 id 看起来像文本模型
+    // 服务商不再整组排除：threevideo 等网关下的 deepseek 文本模型也要出现
     for (const provider of ['threevideo', 'wanx', 'minimax', 'seedance']) {
-      expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider }), provider).toBe(false)
-      expect(isTextModelEntry({ id: 'deepseek-flash', provider }), provider).toBe(false)
+      expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider }), provider).toBe(true)
+      expect(isTextModelEntry({ id: 'deepseek-flash', provider }), provider).toBe(true)
     }
     expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'deepseek-account' })).toBe(true)
-    // 大小写与相似子串不误伤文本服务商
-    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'ThreeVideo' })).toBe(false)
-    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'threevideo-text-gateway' })).toBe(true)
+    expect(isTextModelEntry({ id: 'deepseek-v4-pro', provider: 'ThreeVideo' })).toBe(true)
 
-    // 真实目录形状：文本服务商 + 生成服务商并存；生成服务商下混入名字像文本的模型，
-    // 这些都必须被排除，只留真正文本服务商的模型。
+    // 真实目录形状：文本服务商 + 生成服务商并存；生成模型按 id 排除，
+    // 生成服务商下的 deepseek 文本模型保留。
     const llm = {
       listProviders: () => [
         { id: 'deepseek-account', name: 'DeepSeek Account' },
@@ -86,7 +84,7 @@ describe('模型能力卡', () => {
     const result = await call('llm/models', {}, new AbortController().signal, {} as never)
     expect(result.ok).toBe(true)
     expect((result.value as { models: readonly { id: string }[] }).models.map(model => model.id))
-      .toEqual(textIds)
+      .toEqual([...textIds, 'deepseek-flash', 'deepseek-v4-pro'])
   })
 
   it('文本模型目录只给可用模型：拉取失败的服务商不入列表，但如实报告失败原因', async () => {

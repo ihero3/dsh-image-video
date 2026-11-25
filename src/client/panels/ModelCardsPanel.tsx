@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Icon } from '../icons.tsx'
-import type { ModelCardView, ModelLiveStatusView, ModelRegistryProbeView, WorkbenchApi } from '../api.ts'
+import type { ModelCardView, ModelLiveStatusView, ModelRegistryProbeView, TextModelOption, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 import { PanelState } from './PanelState.tsx'
 
@@ -42,20 +42,32 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
   const [cards, setCards] = useState<readonly ModelCardView[] | undefined>(undefined)
   const [drift, setDrift] = useState<readonly string[]>([])
   const [live, setLive] = useState<{ probe: ModelRegistryProbeView; targets: Readonly<Record<string, ModelLiveStatusView>> } | undefined>(undefined)
+  const [textModels, setTextModels] = useState<readonly TextModelOption[] | undefined>(undefined)
+  const [textFailures, setTextFailures] = useState<readonly string[]>([])
 
   // `refresh` = 用户点了刷新：要求宿主**现场重探**服务商模型目录，而不是再读一遍静态清单
   const load = async (refresh = false) => {
     setLoading(true); setError(undefined)
-    try {
-      const result = await api.modelsCatalog(refresh ? { refresh: true } : undefined)
-      setCards(result.cards)
-      setDrift(result.consistencyIssues)
-      setLive(result.live)
-    } catch (thrown) {
-      setError(thrown instanceof Error ? thrown.message : String(thrown))
-    } finally {
-      setLoading(false)
-    }
+    await Promise.all([
+      api.modelsCatalog(refresh ? { refresh: true } : undefined)
+        .then(result => {
+          setCards(result.cards)
+          setDrift(result.consistencyIssues)
+          setLive(result.live)
+        })
+        .catch(thrown => { setError(thrown instanceof Error ? thrown.message : String(thrown)) }),
+      // 文本模型目录与生成能力卡一起展示：某一路失败不影响另一路
+      api.listTextModels()
+        .then(catalog => {
+          setTextModels(catalog.models)
+          setTextFailures(catalog.failures.map(failure => `${failure.provider}：${failure.message}`))
+        })
+        .catch(thrown => {
+          setTextModels([])
+          setTextFailures([thrown instanceof Error ? thrown.message : String(thrown)])
+        }),
+    ])
+    setLoading(false)
   }
 
   useEffect(() => { void load() }, [])
@@ -72,6 +84,15 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
       }}
     />
   )
+
+  // 文本模型按服务商分组展示，服务商名与模型名全部来自宿主目录，客户端不内置部署事实
+  const textGroups = new Map<string, TextModelOption[]>()
+  for (const model of textModels ?? []) {
+    const name = model.providerName === '' ? model.provider : model.providerName
+    const group = textGroups.get(name) ?? []
+    group.push(model)
+    textGroups.set(name, group)
+  }
 
   return (
     <div className="iv-sub" data-model-cards="true">
@@ -98,6 +119,38 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
             {live.probe.ok ? `${t('modelLiveProbeOk')} · ${new Date(live.probe.attemptedAt).toLocaleTimeString()}` : `${t('modelLiveProbeFailed')}：${live.probe.reason ?? ''}`}
           </span>
         )}
+
+      {/* 可用文本模型：与生成能力卡同屏，避免"只有图/视频模型"的错觉 */}
+      <div className="iv-text-models" data-model-text-models="true">
+        <span className="iv-micro">{t('modelCardsTextModels')}</span>
+        {textModels === undefined
+          ? <span className="iv-meta">{t('defaultsOptionsLoading')}</span>
+          : textModels.length === 0
+            ? <span className="iv-meta" data-model-text-models-empty="true">{t('modelCardsTextModelsEmpty')}</span>
+            : (
+              <div className="iv-text-model-groups">
+                {Array.from(textGroups, ([providerName, models]) => (
+                  <div className="iv-text-model-group" key={providerName} data-model-text-group={providerName}>
+                    <span className="iv-meta">{providerName}</span>
+                    <div className="iv-text-model-chips">
+                      {models.map(model => (
+                        <span
+                          className="iv-chip iv-text-model-chip"
+                          key={`${model.provider}::${model.id}`}
+                          title={`${model.provider} · ${model.id}`}
+                        >
+                          {model.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+        {textFailures.length === 0
+          ? null
+          : <span className="iv-meta iv-meta--warn" data-model-text-failures="true">{t('modelCardsTextFailures')} {textFailures.join('；')}</span>}
+      </div>
 
       {/* 刷新中：保留旧卡片，只在顶部给一条细进度 */}
       {loading && cards !== undefined ? <PanelState view={{ kind: 'refreshing' }} /> : null}

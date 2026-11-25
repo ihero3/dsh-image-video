@@ -36,6 +36,8 @@ export interface EpisodeWorkspaceProps {
   readonly resources: readonly ResourceRecord[]
   /** 全局素材库（引用选择器的来源）。 */
   readonly assets: readonly AssetRecord[]
+  /** 顶部集选择器：节点由父级渲染，切换逻辑仍留在父级。 */
+  readonly episodePicker?: ReactNode
   readonly options: WorkbenchOptions | undefined
   /** 导演库里启用中的技能（分段的 Skill 选择器）。 */
   readonly skills: readonly SkillRecord[]
@@ -355,7 +357,7 @@ function RefPicker(props: RefPickerProps) {
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, episodePicker, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
 
   // 目录由宿主过滤成纯文本模型；旧持久化值不在目录里时一律按「默认规则」处理
   const activeTextModelKey = textModels.some(model => `${model.provider}::${model.id}` === textModelKey) ? textModelKey : 'rules'
@@ -1503,10 +1505,97 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   return (
     <section className="iv-sb" data-episode-workspace={episode.id}>
       <div className="iv-sb-head" data-episode-status="true">
+        {episodePicker}
         <span className="iv-meta" data-episode-duration="true" data-episode-total-seconds={episodeDurationSec(segments)}>
           {t('episodeTotalDuration').replace('{n}', String(episodeDurationSec(segments)))}
         </span>
-        <span className={saveChipClass(scriptState)} data-episode-script-state={scriptState}>
+        {/* 同步 / 导出 / 导入：从底栏搬到头部，按钮与块的样式保持原样 */}
+        <div className="iv-row iv-sb-head-actions" data-episode-actions="true">
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-episode-sync-workflow="true"
+            disabled={busy || storyboards.length === 0}
+            onClick={() => {
+              void (async () => {
+                setBusy(true)
+                try {
+                  const workflow = await api.syncEpisodeWorkflow(episode.id)
+                  onNotice(t('episodeSyncWorkflowDone').replace('{name}', workflow.name), 'info')
+                } catch (error) {
+                  onNotice(`${t('episodeSyncWorkflowFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+                } finally {
+                  setBusy(false)
+                }
+              })()
+            }}
+          >
+            <Icon name="flow" size={11} />{t('episodeSyncWorkflow')}
+          </button>
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-episode-export="true"
+            disabled={busy}
+            onClick={() => {
+              void (async () => {
+                setBusy(true)
+                try {
+                  const result = await api.exportEpisode(episode.id)
+                  onNotice(t('episodeExportDone').replace('{path}', result.manifestPath), 'info')
+                } catch (error) {
+                  onNotice(`${t('episodeExportFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+                } finally {
+                  setBusy(false)
+                }
+              })()
+            }}
+          >
+            <Icon name="download" size={11} />{t('episodeExport')}
+          </button>
+          <input
+            ref={episodeImportRef}
+            type="file"
+            accept=".json,application/json"
+            data-episode-import-file="true"
+            style={{ display: 'none' }}
+            onChange={event => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file === undefined) return
+              void (async () => {
+                setBusy(true)
+                try {
+                  const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
+                  const result = await api.importEpisode({ projectId, base64 })
+                  const notice = t('episodeImportDone')
+                    .replace('{no}', String(result.episode.no))
+                    .replace('{title}', result.episode.title)
+                  onNotice(result.warnings.length === 0
+                    ? notice
+                    : `${notice} · ${result.warnings.join('；')}`, 'info')
+                  await onEpisodeImported?.(result.episode)
+                  await onEpisodeChanged()
+                } catch (error) {
+                  onNotice(`${t('episodeImportFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+                } finally {
+                  setBusy(false)
+                }
+              })()
+            }}
+          />
+          <button
+            type="button"
+            className="iv-btn iv-btn--ghost iv-btn--sm"
+            data-episode-import="true"
+            title={t('episodeImportHint')}
+            disabled={busy}
+            onClick={() => episodeImportRef.current?.click()}
+          >
+            <Icon name="upload" size={11} />{t('episodeImport')}
+          </button>
+        </div>
+        <span className={`${saveChipClass(scriptState)} iv-sb-head-save`} data-episode-script-state={scriptState}>
           {t(scriptState === 'saved'
             ? 'episodeScriptSaved'
             : scriptState === 'saving'
@@ -1547,7 +1636,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         />
       </div>
       {/* 分段模型与 Skill 都是分段设置：默认规则不调 AI，其余值走对应文本模型。 */}
-      <div className="iv-sb-row" data-script-selectors="true">
+      <div className="iv-sb-row iv-sb-selector-row" data-script-selectors="true">
         <label className="iv-sb-field">
           <span className="iv-meta">{t('scriptTextModel')}</span>
           <select
@@ -1579,10 +1668,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
             onTextChange={updateScriptDraft}
           />
         </label>
-      </div>
-      <div className="iv-sb-head iv-sb-segment-head">
-        <span className="iv-micro">{t('segmentTitle')}</span>
-        <span className="iv-sb-count">
+        {/* 文本模型 / 选择分段技能 / 分段按钮同处一行，按钮贴最右 */}
+        <span className="iv-sb-count iv-sb-selector-actions">
           <button
             type="button"
             className="iv-btn iv-btn--action iv-btn--action--primary"
@@ -1604,90 +1691,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           </button>
         </span>
       </div>
-      <div className="iv-row" data-episode-actions="true">
-        <button
-          type="button"
-          className="iv-btn iv-btn--ghost iv-btn--sm"
-          data-episode-sync-workflow="true"
-          disabled={busy || storyboards.length === 0}
-          onClick={() => {
-            void (async () => {
-              setBusy(true)
-              try {
-                const workflow = await api.syncEpisodeWorkflow(episode.id)
-                onNotice(t('episodeSyncWorkflowDone').replace('{name}', workflow.name), 'info')
-              } catch (error) {
-                onNotice(`${t('episodeSyncWorkflowFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
-              } finally {
-                setBusy(false)
-              }
-            })()
-          }}
-        >
-          <Icon name="flow" size={11} />{t('episodeSyncWorkflow')}
-        </button>
-        <button
-          type="button"
-          className="iv-btn iv-btn--ghost iv-btn--sm"
-          data-episode-export="true"
-          disabled={busy}
-          onClick={() => {
-            void (async () => {
-              setBusy(true)
-              try {
-                const result = await api.exportEpisode(episode.id)
-                onNotice(t('episodeExportDone').replace('{path}', result.manifestPath), 'info')
-              } catch (error) {
-                onNotice(`${t('episodeExportFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
-              } finally {
-                setBusy(false)
-              }
-            })()
-          }}
-        >
-          <Icon name="download" size={11} />{t('episodeExport')}
-        </button>
-        <input
-          ref={episodeImportRef}
-          type="file"
-          accept=".json,application/json"
-          data-episode-import-file="true"
-          style={{ display: 'none' }}
-          onChange={event => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            if (file === undefined) return
-            void (async () => {
-              setBusy(true)
-              try {
-                const base64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()))
-                const result = await api.importEpisode({ projectId, base64 })
-                const notice = t('episodeImportDone')
-                  .replace('{no}', String(result.episode.no))
-                  .replace('{title}', result.episode.title)
-                onNotice(result.warnings.length === 0
-                  ? notice
-                  : `${notice} · ${result.warnings.join('；')}`, 'info')
-                await onEpisodeImported?.(result.episode)
-                await onEpisodeChanged()
-              } catch (error) {
-                onNotice(`${t('episodeImportFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
-              } finally {
-                setBusy(false)
-              }
-            })()
-          }}
-        />
-        <button
-          type="button"
-          className="iv-btn iv-btn--ghost iv-btn--sm"
-          data-episode-import="true"
-          title={t('episodeImportHint')}
-          disabled={busy}
-          onClick={() => episodeImportRef.current?.click()}
-        >
-          <Icon name="upload" size={11} />{t('episodeImport')}
-        </button>
+      <div className="iv-sb-head iv-sb-segment-head">
+        <span className="iv-micro">{t('segmentTitle')}</span>
       </div>
       {segments.length === 0
         ? <div className="iv-empty" data-segment-empty="true">{t('segmentEmpty')}</div>

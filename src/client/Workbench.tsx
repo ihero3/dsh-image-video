@@ -3001,6 +3001,33 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                     )
                   })}
+                  {scriptModels.length === 0
+                    ? null
+                    : (
+                      <div className="iv-pop-group">
+                        <span className="iv-micro iv-pop-group-title">{t('defaultsGroupText')}</span>
+                        <div className="iv-pop-grid">
+                          <label>
+                            <span>{t('defaultTextModel')}</span>
+                            <select
+                              className="iv-select"
+                              aria-label={t('defaultTextModel')}
+                              data-workbench-defaults-text-model="true"
+                              value={scriptTextModel}
+                              onChange={event => { setScriptTextModel(event.target.value) }}
+                            >
+                              <option value="rules">{t('scriptSplitModeRule')}</option>
+                              {scriptModels.map(model => (
+                                <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                                  {model.providerName} · {model.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <span className="iv-meta">{t('defaultsTextModelHint')}</span>
+                      </div>
+                    )}
                   <div className="iv-pop-foot">
                     <span className="iv-meta">{t('defaultsEditHint')}</span>
                     <button
@@ -4006,22 +4033,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </span>
                     </button>
                     <div className="iv-module-body" data-module-body="episode" hidden={!openModules.episode}>
-                      <div className="iv-plan-row" data-module-episode-picker="true">
-                        <span className="iv-meta">{t('sectionEpisode')}</span>
-                        <select
-                          className="iv-select iv-select--sm"
-                          aria-label={t('sectionEpisode')}
-                          data-module-episode-select="true"
-                          value={activeEpisodeId ?? ''}
-                          onChange={event => { setActiveEpisodeId(event.target.value) }}
-                        >
-                          {episodes.length === 0
-                            ? <option value="">{t('episodeNone')}</option>
-                            : episodes.map(episode => (
-                              <option key={episode.id} value={episode.id}>{episode.title}</option>
-                            ))}
-                        </select>
-                      </div>
                       {activeProject === undefined || activeEpisode === undefined
                         ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
                         : (
@@ -4034,6 +4045,24 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             assets={assets}
                             options={options}
                             skills={directorSkills}
+                            episodePicker={(
+                              <div className="iv-plan-row" data-module-episode-picker="true">
+                                <span className="iv-meta">{t('sectionEpisode')}</span>
+                                <select
+                                  className="iv-select iv-select--sm"
+                                  aria-label={t('sectionEpisode')}
+                                  data-module-episode-select="true"
+                                  value={activeEpisodeId ?? ''}
+                                  onChange={event => { setActiveEpisodeId(event.target.value) }}
+                                >
+                                  {episodes.length === 0
+                                    ? <option value="">{t('episodeNone')}</option>
+                                    : episodes.map(item => (
+                                      <option key={item.id} value={item.id}>{item.title}</option>
+                                    ))}
+                                </select>
+                              </div>
+                            )}
                             textModels={scriptModels}
                             textModelKey={scriptTextModel}
                             textModel={scriptTextModelChoice}
