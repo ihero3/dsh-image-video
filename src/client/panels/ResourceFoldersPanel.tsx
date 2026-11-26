@@ -21,7 +21,7 @@ interface ResourceFoldersPanelProps {
   readonly api: WorkbenchApi
   readonly t: (key: WorkbenchLocaleKey) => string
   readonly projectId?: string
-  /** 把重绘建议提示词带回融合表单（可选）。 */
+  /** 把重绘建议提示词带回生成表单（可选）。 */
   readonly onSendToCompose?: (prompt: string) => void
 }
 

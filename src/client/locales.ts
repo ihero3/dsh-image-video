@@ -618,9 +618,8 @@ export type WorkbenchLocaleKey =
   // ---- F2 多参考图选择器 ----
   | 'generateRefsLabel'
   | 'generateRefsPreviewHint'
-  // ---- 生成方式标签页（生图 / 融合生图 / 生视频）与参考图选择 ----
+  // ---- 生成方式标签页（生图 / 生视频）与参考图选择 ----
   | 'createTabImage'
-  | 'createTabFusion'
   | 'createTabVideo'
   | 'generateRefsModeHint'
   | 'generateRefsPick'
@@ -632,7 +631,6 @@ export type WorkbenchLocaleKey =
   | 'refPickerAdded'
   | 'videoFirstFrame'
   | 'videoFirstFramePick'
-  | 'fusionEmptyAll'
   | 'pipelineToCanvas'
   | 'pipelineToCanvasHint'
   | 'pipelineInlineRun'
@@ -644,7 +642,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotDuration'
   | 'pipelineShotEditable'
   | 'modelDetails'
-  | 'fusionEntryHint'
   | 'defaultsBuiltinSource'
   | 'defaultsFollow'
   | 'defaultSeriesName'
@@ -711,22 +708,6 @@ export type WorkbenchLocaleKey =
   | 'resourceRefPreview'
   | 'resourceFirstRefHint'
   | 'resourceRefsNone'
-  // ---- B-9 融合生图（G3，依赖 A-4 media/compose） ----
-  | 'fusionTitle'
-  | 'fusionHint'
-  | 'fusionPromptPlaceholder'
-  | 'fusionRoles'
-  | 'fusionScenes'
-  | 'fusionProps'
-  | 'fusionNoResources'
-  | 'fusionPreview'
-  | 'fusionPreviewNone'
-  | 'fusionRun'
-  | 'fusionRunning'
-  | 'fusionDone'
-  | 'fusionFailed'
-  | 'fusionNeedsPrompt'
-  | 'fusionClear'
   // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   | 'promptApplyDone'
   | 'healthSize'
@@ -1709,7 +1690,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateRefsLabel: 'Reference images (ordered)',
   generateRefsPreviewHint: 'Click the thumbnail or the filename to preview it',
   createTabImage: 'Image',
-  createTabFusion: 'Fusion image',
   createTabVideo: 'Video',
   generateRefsModeHint: 'No reference = text-to-image; one or more = image-to-image, first is the base',
   generateRefsPick: 'Choose reference',
@@ -1721,7 +1701,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   refPickerAdded: 'Added',
   videoFirstFrame: 'First frame',
   videoFirstFramePick: 'Choose first frame',
-  fusionEmptyAll: 'No roles, scenes or props yet — create them in the series resources first.',
   pipelineToCanvas: 'Build canvas',
   pipelineToCanvasHint: 'Only lays the shots out on the canvas — nothing starts until you run it there',
   pipelineInlineRun: 'Generate video',
@@ -1738,7 +1717,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: 'Shot seconds',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
   modelDetails: 'Model details',
-  fusionEntryHint: 'Pick roles, scenes and props — they are turned into one prompt',
   defaultsBuiltinSource: 'Built-in',
   defaultsFollow: 'Follow default',
   defaultSeriesName: 'First series',
@@ -1796,21 +1774,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   resourceRefsNone: 'No reference image yet',
 
   // ---- B-9 fusion generation (G3, needs A-4 media/compose) ----
-  fusionTitle: 'Fusion generation',
-  fusionHint: 'Pick roles, scenes and props, then compose them into one shot with a single prompt. Needs the host endpoint media/compose (A-4).',
-  fusionPromptPlaceholder: 'Describe how the selected roles, scenes and props come together…',
-  fusionRoles: 'Roles',
-  fusionScenes: 'Scenes',
-  fusionProps: 'Props',
-  fusionNoResources: 'Nothing to pick yet — add resources first.',
-  fusionPreview: '{n} reference images will be used',
-  fusionPreviewNone: 'No reference images — falls back to plain text-to-image',
-  fusionRun: 'Compose & generate',
-  fusionRunning: 'Composing…',
-  fusionDone: 'Composed and filed as an asset',
-  fusionFailed: 'Fusion failed',
-  fusionNeedsPrompt: 'Write a prompt first',
-  fusionClear: 'Clear selection',
 
   // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   promptApplyDone: 'Loaded into the prompt box',
@@ -2869,14 +2832,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: '本镜时长(秒)',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
   modelDetails: '模型详情',
-  fusionEntryHint: '多选角色 / 场景 / 道具，自动拼成一段提示词',
   defaultsBuiltinSource: '内置默认',
   defaultsFollow: '跟随默认',
   defaultSeriesName: '三视剧集',
   generateRefsHint: '首图为底图，其余作风格参考；拖拽缩略图可调整顺序',
   generateRefsAdd: '加入选中素材',
   createTabImage: '生图',
-  createTabFusion: '融合生图',
   createTabVideo: '生视频',
   generateRefsModeHint: '不带参考图 = 文生图；带 1 张以上 = 图生图，首图为底图',
   generateRefsPick: '选择参考图',
@@ -2888,7 +2849,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   refPickerAdded: '已加入',
   videoFirstFrame: '首帧',
   videoFirstFramePick: '选择首帧',
-  fusionEmptyAll: '还没有角色 / 场景 / 物品——先去剧集资源里创建，再回来融合。',
   generateRefsFull: '最多 8 张参考图',
   generateRefsMoveUp: '前移',
   generateRefsMoveDown: '后移',
@@ -2941,21 +2901,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   resourceRefsNone: '还没有参考图',
 
   // ---- B-9 融合生图（G3，依赖 A-4 media/compose） ----
-  fusionTitle: '融合生图',
-  fusionHint: '选角色、场景和物品，用一段提示词拼装成一张画面。依赖宿主端点 media/compose（A-4）。',
-  fusionPromptPlaceholder: '描述选中的角色、场景、物品如何组合…',
-  fusionRoles: '角色',
-  fusionScenes: '场景',
-  fusionProps: '物品',
-  fusionNoResources: '还没有可选的资源，先去创建。',
-  fusionPreview: '将使用 {n} 张参考图',
-  fusionPreviewNone: '没有参考图，将降级为纯文生',
-  fusionRun: '融合生成',
-  fusionRunning: '融合生成中…',
-  fusionDone: '已融合生成并登记素材',
-  fusionFailed: '融合生成失败',
-  fusionNeedsPrompt: '先写一段提示词',
-  fusionClear: '清空选择',
 
   // ---- 提示词带入（提取提示词页与分镜镜头共用） ----
   promptApplyDone: '已带入提示词框',

@@ -23,8 +23,8 @@ export type WorkbenchModeName = 'quick' | 'script' | 'workflow' | 'timeline'
 /** 主区标签页：内容生产 / 提取提示词。 */
 export type WorkbenchQuickTab = 'produce' | 'prompt'
 
-/** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
-export type WorkbenchCreateTab = 'image' | 'fusion' | 'video'
+/** 内容生产页的生成方式：生图（参考图可选）/ 生视频。 */
+export type WorkbenchCreateTab = 'image' | 'video'
 
 /** 剧本生成页的分区标签页：剧本分镜 / 素材提取 / 音色 / 轨迹。 */
 export type WorkbenchScriptTab = 'split' | 'extract' | 'voice' | 'motion'

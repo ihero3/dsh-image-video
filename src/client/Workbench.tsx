@@ -27,7 +27,6 @@ import {
 import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
 import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
-import { LENS_PRESETS, normalizeComposeCrop, POSE_PRESETS } from '../workbench/compose.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
 import type { RenderJob } from '../media/render-registry.ts'
 import { WorkflowCanvas } from './WorkflowCanvas.tsx'
@@ -45,7 +44,7 @@ import type { OutputFile } from '../workbench/outputs.ts'
 import { EPISODE_REF_CATEGORIES } from '../workbench/episodes.ts'
 import type { EpisodeRecord, EpisodeRefCategory } from '../workbench/episodes.ts'
 import type { SkillRecord } from '../workbench/skills.ts'
-import type { ExportRecord, MediaReference, PromptRiskView, RunningGeneration, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
+import type { ExportRecord, MediaReference, RunningGeneration, TextModelOption, WorkbenchApi, WorkbenchDiagnostics } from './api.ts'
 import { en, zh, type WorkbenchLocaleKey } from './locales.ts'
 import { NS } from './locale-ns.ts'
 import { BrandMark, Icon, type IconName } from './icons.tsx'
@@ -337,41 +336,6 @@ function clockTime(iso: string): string {
 /** File name of an absolute path (POSIX or Windows — 宿主在 Windows 上给的是反斜杠路径). */
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
-}
-
-/** `B-9`：在选中的资源 id 列表里切换一个 id（保持追加顺序）。 */
-function toggleSelection(current: readonly string[], id: string): readonly string[] {
-  return current.includes(id) ? current.filter(candidate => candidate !== id) : [...current, id]
-}
-
-/** `B-9`：融合生图里一组可多选的资源 chip（角色 / 场景 / 物品各一组）。 */
-function FusionGroup(props: {
-  readonly kind: string
-  readonly label: string
-  readonly resources: readonly ResourceRecord[]
-  readonly selected: readonly string[]
-  readonly emptyHint: string
-  readonly onToggle: (id: string) => void
-}): ReactNode {
-  return (
-    <div className="iv-fusion-group" data-fusion-group={props.kind}>
-      <span className="iv-meta">{props.label}</span>
-      {props.resources.length === 0
-        ? <span className="iv-meta">{props.emptyHint}</span>
-        : props.resources.map(resource => (
-            <button
-              type="button"
-              key={resource.id}
-              className={`iv-chip${props.selected.includes(resource.id) ? ' iv-chip--ok' : ''}`}
-              aria-pressed={props.selected.includes(resource.id)}
-              data-fusion-pick={resource.id}
-              onClick={() => props.onToggle(resource.id)}
-            >
-              {resource.name}
-            </button>
-          ))}
-    </div>
-  )
 }
 
 /** 资源类型在参考图选择列表里的短标签（没有翻译的少见类型直接显示原值）。 */
@@ -815,23 +779,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
-  // `B-9` 融合生图（`A-4` `media/compose`）：按资源 id 选角色/场景/物品 + 独立提示词。
-  const [composePrompt, setComposePrompt] = useState('')
-  const [composeRoles, setComposeRoles] = useState<readonly string[]>([])
-  const [composeScenes, setComposeScenes] = useState<readonly string[]>([])
-  const [composeProps, setComposeProps] = useState<readonly string[]>([])
-  // `B-3`：融合生图参数化——姿态 / 镜头 / 风格备注 / 场景裁剪（归一化坐标）。
-  const [composePose, setComposePose] = useState('')
-  const [composeLens, setComposeLens] = useState('')
-  const [composeStyleNote, setComposeStyleNote] = useState('')
-  const [composeCropEnabled, setComposeCropEnabled] = useState(false)
-  const [composeCrop, setComposeCrop] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0.1, y: 0.1, width: 0.8, height: 0.8 })
-  const [composeCropError, setComposeCropError] = useState<string | undefined>(undefined)
-  // `B-6`：提示词风控——提交前先查，block 直接拒绝（零调用），warn 随结果提醒。
-  const [composeRisk, setComposeRisk] = useState<PromptRiskView | undefined>(undefined)
-  const [composeRiskBusy, setComposeRiskBusy] = useState(false)
-  const [composing, setComposing] = useState(false)
-
   // `B-16` 导出历史（`A-11`）：发起导出时记一笔，终态回写；面板据此刷新。
   const [exportRecordId, setExportRecordId] = useState<string | undefined>(undefined)
   const [exportsTick, setExportsTick] = useState(0)
@@ -852,7 +799,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   /** 主区标签页：内容生产（生成） / 提取提示词（引用提取与本集提示词库）。 */
   const [quickTab, setQuickTab] = useWorkbenchField(api, 'quickTab')
   /** 内容生产页的生成方式：生图（参考图可选）/ 融合生图 / 生视频。 */
-  const [createTab, setCreateTab] = useWorkbenchField(api, 'createTab')
+  const [storedCreateTab, setCreateTab] = useWorkbenchField(api, 'createTab')
+  // 融合生图已下线：老会话里持久化的 'fusion' 统一落回生图页。
+  const createTab = storedCreateTab === 'video' ? 'video' : 'image'
   /** 剧本生成页的分区：分镜 / 素材提取 / 音色 / 轨迹（默认分镜）。 */
   const [scriptTab, setScriptTab] = useWorkbenchField(api, 'scriptTab')
   /** 素材提取页当前要提取的类型，切到别的 tab 再回来仍保持。 */
@@ -1880,87 +1829,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const filteredEpisodeAssetRows = episodeAssetRows.filter(({ asset }) =>
     resourceNeedle === '' || baseName(asset?.path ?? '').includes(resourceNeedle))
 
-  // `B-9` 融合生图：选中资源的参考图预览——去重、按角色→场景→物品的顺序、封顶 6 张。
-  // 这只是**本地预览**；真正用哪几张由宿主 `media/compose` 解析（缺图会降级为纯文生）。
-  const composeSelection = [...composeRoles, ...composeScenes, ...composeProps]
-  const composePreviewRefs = ((): readonly string[] => {
-    const seen = new Set<string>()
-    const paths: string[] = []
-    for (const id of composeSelection) {
-      const resource = resources.find(candidate => candidate.id === id)
-      if (resource === undefined) continue
-      for (const path of resourceRefs(resource)) {
-        if (seen.has(path)) continue
-        seen.add(path)
-        paths.push(path)
-        if (paths.length >= MAX_REFERENCE_IMAGES) return paths
-      }
-    }
-    return paths
-  })()
-  const composeResourcesOf = (kind: ResourceKind): readonly ResourceRecord[] =>
-    resources.filter(resource => resource.kind === kind)
-  /** 融合页是否还有可选项：三类都空时只显示一条空态，不再每组重复一句。 */
-  const composeHasResources = composeResourcesOf('role').length + composeResourcesOf('scene').length
-    + composeResourcesOf('prop').length > 0
   /** 参考图 / 首末帧选择列表的数据源（素材库按媒体类型拆开，资源库在组件内取首图）。 */
   const imageAssets = assets.filter(asset => asset.kind === 'image')
   const videoAssets = assets.filter(asset => asset.kind === 'video')
-
-  /** `B-6`：提示词风控——手动触发一次 `prompts/check`，结果用于提交前拦截与提醒。 */
-  const checkComposePrompt = async (): Promise<void> => {
-    const prompt = composePrompt.trim()
-    if (prompt === '') { setNotice({ text: t('fusionNeedsPrompt'), tone: 'error' }); return }
-    setComposeRiskBusy(true); setComposeRisk(undefined)
-    try {
-      setComposeRisk(await apiRef.current.checkPrompt(prompt))
-    } catch (error) {
-      setNotice({ text: `${t('promptRiskFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'info' })
-    } finally {
-      setComposeRiskBusy(false)
-    }
-  }
-
-  /** `B-9`：融合生图——资源 id 交宿主解析参考图并生成（A-4 未落地时如实报错）。 */
-  const runCompose = async (): Promise<void> => {
-    const prompt = composePrompt.trim()
-    if (prompt === '') { setNotice({ text: t('fusionNeedsPrompt'), tone: 'error' }); return }
-    if (activeId === undefined) { setNotice({ text: t('generateNeedsProject'), tone: 'error' }); return }
-    // `B-6`：上次风控结果是 block 就直接拒绝，零调用。
-    if (composeRisk?.level === 'block') { setNotice({ text: t('promptRiskBlocked'), tone: 'error' }); return }
-    setComposing(true)
-    // `B-3`：场景裁剪——开启后用宿主规范校验（越界/过小都响亮报错，不静默丢参数）。
-    let cropScene: { x: number; y: number; width: number; height: number } | undefined
-    if (composeCropEnabled) {
-      try {
-        cropScene = normalizeComposeCrop(composeCrop)
-      } catch (error) {
-        setComposing(false)
-        setComposeCropError(error instanceof Error ? error.message : String(error))
-        setNotice({ text: `${t('fusionCropInvalid')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-        return
-      }
-    }
-    try {
-      const result = await apiRef.current.composeMedia({
-        projectId: activeId,
-        prompt,
-        resourceIds: composeSelection,
-        ...composePose === '' ? {} : { pose: composePose },
-        ...composeLens === '' ? {} : { lens: composeLens },
-        ...composeStyleNote.trim() === '' ? {} : { styleNote: composeStyleNote.trim() },
-        ...cropScene === undefined ? {} : { cropScene },
-      })
-      await refreshAssetsAfterGenerate()
-      setComposePrompt('')
-      const suffix = result.path === undefined ? '' : `：${baseName(result.path)}`
-      setNotice({ text: `${t('fusionDone')}${suffix}`, tone: 'info' })
-    } catch (error) {
-      setNotice({ text: `${t('fusionFailed')}：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
-    } finally {
-      setComposing(false)
-    }
-  }
 
   /** 把提示词一键带入生成表单（提取提示词页与分镜镜头共用）。 */
   const applyPrompt = (text: string): void => {
@@ -3180,7 +3051,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
                         不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
                     {busy ? <span className="iv-meta">{t('busy')}</span> : null}
-                    {/* 生成方式：上提为表单第一行；图标统一走 Icon，不用 emoji */}
+                    {/* 生成方式：上提为表单第一行 */}
                     <div className="iv-create-tabs" role="tablist" aria-label={t('generateHeading')} data-create-tabs="true">
                       <button
                         type="button"
@@ -3195,16 +3066,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <button
                         type="button"
                         role="tab"
-                        aria-selected={createTab === 'fusion'}
-                        className={`iv-btn${createTab === 'fusion' ? ' iv-btn--acc' : ''}`}
-                        data-create-tab="fusion"
-                        onClick={() => { setCreateTab('fusion') }}
-                      >
-                        <Icon name="layers" size={14} /> {t('createTabFusion')}
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
+
                         aria-selected={createTab === 'video'}
                         className={`iv-btn${createTab === 'video' ? ' iv-btn--acc' : ''}`}
                         data-create-tab="video"
@@ -3757,212 +3619,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </span>
                           </div>
                         )}
-                    {createTab !== 'fusion'
-                      ? null
-                      : (
-                    <div className="iv-create-panel" role="tabpanel" data-create-panel="fusion">
-                      {/* 融合生图：用剧集设定拼一段提示词，和生图/生视频并列成第三种输入方式 */}
-                      <div className="iv-fusion" data-fusion="true">
-                          <div className="iv-fusion-head">
-                            <span className="iv-chip iv-chip--run"><Icon name="layers" size={11} />{t('fusionTitle')}</span>
-                            {composeSelection.length === 0
-                              ? null
-                              : (
-                                <button
-                                  type="button"
-                                  className="iv-btn iv-btn--ghost iv-btn--sm"
-                                  onClick={() => { setComposeRoles([]); setComposeScenes([]); setComposeProps([]) }}
-                                >
-                                  {t('fusionClear')}
-                                </button>
-                              )}
-                          </div>
-                          {composeHasResources
-                            ? (
-                              <>
-                          <FusionGroup
-                            kind="role"
-                            label={t('fusionRoles')}
-                            resources={composeResourcesOf('role')}
-                            selected={composeRoles}
-                            emptyHint={t('fusionNoResources')}
-                            onToggle={id => setComposeRoles(current => toggleSelection(current, id))}
-                          />
-                          <FusionGroup
-                            kind="scene"
-                            label={t('fusionScenes')}
-                            resources={composeResourcesOf('scene')}
-                            selected={composeScenes}
-                            emptyHint={t('fusionNoResources')}
-                            onToggle={id => setComposeScenes(current => toggleSelection(current, id))}
-                          />
-                          <FusionGroup
-                            kind="prop"
-                            label={t('fusionProps')}
-                            resources={composeResourcesOf('prop')}
-                            selected={composeProps}
-                            emptyHint={t('fusionNoResources')}
-                            onToggle={id => setComposeProps(current => toggleSelection(current, id))}
-                          />
-                              </>
-                            )
-                            : <span className="iv-meta" data-fusion-empty="true">{t('fusionEmptyAll')}</span>}
-                          {/* `B-3` 融合参数：姿态 × 镜头 × 风格 × 裁剪。默认展开——这些是核心创作参数，用户必须看得见 */}
-                          <details className="iv-advanced" data-fusion-advanced="true" open>
-                            <summary className="iv-advanced-head">
-                              <Icon name="sliders" size={14} />
-                              <span className="iv-advanced-title">{t('quickAdvanced')}</span>
-                              <Icon className="iv-advanced-caret" name="chevron" size={10} />
-                            </summary>
-                            <div className="iv-advanced-body">
-                              <div className="iv-compose-params" data-compose-params="true">
-                            <div className="iv-param-row" data-param="pose">
-                              <span className="iv-meta">{t('fusionPoseLabel')}：</span>
-                              <button
-                                type="button"
-                                className={`iv-chip iv-chip--toggle${composePose === '' ? ' on' : ''}`}
-                                data-pose="none"
-                                onClick={() => { setComposePose('') }}
-                              >{t('fusionPoseNone')}</button>
-                              {POSE_PRESETS.map(preset => (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  className={`iv-chip iv-chip--toggle${composePose === preset.id ? ' on' : ''}`}
-                                  data-pose={preset.id}
-                                  onClick={() => { setComposePose(current => (current === preset.id ? '' : preset.id)) }}
-                                >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
-                              ))}
-                            </div>
-                            <div className="iv-param-row" data-param="lens">
-                              <span className="iv-meta">{t('fusionLensLabel')}：</span>
-                              <button
-                                type="button"
-                                className={`iv-chip iv-chip--toggle${composeLens === '' ? ' on' : ''}`}
-                                data-lens="none"
-                                onClick={() => { setComposeLens('') }}
-                              >{t('fusionLensNone')}</button>
-                              {LENS_PRESETS.map(preset => (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  className={`iv-chip iv-chip--toggle${composeLens === preset.id ? ' on' : ''}`}
-                                  data-lens={preset.id}
-                                  onClick={() => { setComposeLens(current => (current === preset.id ? '' : preset.id)) }}
-                                >{t(preset.labelKey as WorkbenchLocaleKey)}</button>
-                              ))}
-                            </div>
-                            <textarea
-                              className="iv-input"
-                              rows={1}
-                              value={composeStyleNote}
-                              placeholder={t('fusionStyleNotePlaceholder')}
-                              data-compose-style="true"
-                              disabled={composing}
-                              onChange={event => { setComposeStyleNote(event.target.value) }}
-                              style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                            />
-                            <div className="iv-crop" data-crop="true">
-                              <label className="iv-check">
-                                <input
-                                  type="checkbox"
-                                  checked={composeCropEnabled}
-                                  data-crop-enable="true"
-                                  onChange={event => { setComposeCropEnabled(event.target.checked); setComposeCropError(undefined) }}
-                                />
-                                <span>{t('fusionCropLabel')}</span>
-                              </label>
-                              {composeCropEnabled
-                                ? (
-                                  <div className="iv-crop-fields" data-crop-fields="true">
-                                    {(['x', 'y', 'width', 'height'] as const).map(field => (
-                                      <label key={field} className="iv-crop-field">
-                                        <span>{t(`fusionCrop${field.charAt(0).toUpperCase()}${field.slice(1)}` as WorkbenchLocaleKey)}</span>
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          max={1}
-                                          step={0.01}
-                                          className="iv-input"
-                                          style={{ width: '64px' }}
-                                          value={composeCrop[field]}
-                                          data-crop-field={field}
-                                          disabled={composing}
-                                          onChange={event => {
-                                            const next = Number(event.target.value)
-                                            setComposeCrop(current => ({ ...current, [field]: Number.isFinite(next) ? next : 0 }))
-                                            setComposeCropError(undefined)
-                                          }}
-                                        />
-                                      </label>
-                                    ))}
-                                    <span className="iv-meta">{t('fusionCropHint')}</span>
-                                    {composeCropError === undefined ? null : (
-                                      <span className="iv-meta iv-meta--warn" data-crop-error="true">{t('fusionCropInvalid')}：{composeCropError}</span>
-                                    )}
-                                  </div>
-                                )
-                                : <span className="iv-meta">{t('fusionCropHint')}</span>}
-                            </div>
-                              </div>
-                            </div>
-                          </details>
-                          <span className="iv-meta" data-fusion-preview="true">
-                            {composePreviewRefs.length === 0
-                              ? t('fusionPreviewNone')
-                              : t('fusionPreview').replace('{n}', String(composePreviewRefs.length))}
-                          </span>
-                          <textarea
-                            className="iv-input"
-                            rows={2}
-                            value={composePrompt}
-                            placeholder={t('fusionPromptPlaceholder')}
-                            data-fusion-prompt="true"
-                            disabled={composing}
-                            onChange={event => setComposePrompt(event.target.value)}
-                            style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                          />
-                          {/* `B-6` 提示词风控条：block 提交前拦截，warn 随结果提醒 */}
-                          <div className="iv-risk" data-risk="true">
-                            <button
-                              type="button"
-                              className="iv-btn iv-btn--ghost iv-btn--sm"
-                              data-risk-check="true"
-                              disabled={composeRiskBusy || composePrompt.trim() === ''}
-                              onClick={() => { void checkComposePrompt() }}
-                            >
-                              {composeRiskBusy ? t('promptRiskChecking') : t('promptRiskTitle')}
-                            </button>
-                            {composeRisk === undefined
-                              ? null
-                              : (
-                                <span
-                                  className={`iv-chip iv-chip--${composeRisk.level === 'ok' ? 'ok' : composeRisk.level === 'block' ? 'err' : 'warn'}`}
-                                  data-risk-level={composeRisk.level}
-                                >
-                                  {composeRisk.level === 'block' ? t('promptRiskBlock') : composeRisk.level === 'warn' ? t('promptRiskWarn') : t('promptRiskOk')}
-                                </span>
-                              )}
-                            {composeRisk === undefined || composeRisk.hits.length === 0
-                              ? null
-                              : <span className={composeRisk.level === 'block' ? 'iv-meta iv-meta--err' : 'iv-meta iv-meta--warn'} data-risk-hits="true">{composeRisk.hits.map(hit => hit.advice).join('；')}</span>}
-                          </div>
-                          <div style={{ display: 'flex', gap: 'var(--iv-sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <button
-                              type="button"
-                              className={`iv-btn iv-btn--acc iv-btn--lg${composing ? ' iv-btn--busy' : ''}`}
-                              aria-busy={composing ? true : undefined}
-                              data-fusion-run="true"
-                              disabled={composing || activeId === undefined || composePrompt.trim() === '' || composeRisk?.level === 'block'}
-                              onClick={() => { void runCompose() }}
-                            >
-                              {composing ? t('fusionRunning') : t('fusionRun')}
-                            </button>
-                            <span className="iv-meta">{t('fusionHint')}</span>
-                          </div>
-                        </div>
-                    </div>
-                      )}
+
                   </div>
                     </div>
                   </section>
@@ -3981,7 +3638,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         onApplyPrompt={(text) => {
                           applyPrompt(text)
                           // 带入后切回内容生产页的生图页签：提示词落在生图表单里，
-                          // 而不是停在融合/生视频页签上让用户以为没生效。
+                          // 而不是停在生视频页签上让用户以为没生效。
                           setQuickTab('produce')
                           setCreateTab('image')
                         }}
@@ -6245,7 +5902,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <Icon name="chevron" size={11} />{t('resourceFoldersAdvanced')}
                     </button>
                     {showFolders
-                      ? <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setComposePrompt} />
+                      ? <ResourceFoldersPanel api={apiRef.current} t={t} projectId={activeId} onSendToCompose={setGeneratePrompt} />
                       : null}
                   </>
                 )

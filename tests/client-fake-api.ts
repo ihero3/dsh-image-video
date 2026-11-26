@@ -1165,7 +1165,7 @@ export async function createProject(host: ReturnType<typeof fakeApi>, name: stri
  * @param view - `render` 返回的视图。
  * @param tab - 目标生成方式。
  */
-export async function openCreateTab(view: { container: HTMLElement }, tab: 'image' | 'fusion' | 'video'): Promise<void> {
+export async function openCreateTab(view: { container: HTMLElement }, tab: 'image' | 'video'): Promise<void> {
   const tabButton = await waitFor(() => {
     const element = view.container.querySelector(`[data-create-tab="${tab}"]`)
     if (element === null) throw new Error(`missing create tab: ${tab}`)
