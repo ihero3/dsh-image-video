@@ -96,16 +96,11 @@ describe('页面 · 模块化分区', () => {
     expect(quick.querySelector('[data-generate-prompt]')).toBeTruthy()
     expect(quick.querySelector('[data-pipeline-script]')).toBeNull()
     expect(quick.querySelector('[data-create-tab="image"]')).toBeTruthy()
-    expect(quick.querySelector('[data-create-tab="fusion"]')).toBeTruthy()
     expect(quick.querySelector('[data-create-tab="video"]')).toBeTruthy()
-    // 融合生图是并列的第三种输入方式：切过去才渲染它的面板
-    expect(quick.querySelector('[data-fusion]')).toBeNull()
-    await openCreateTab(view, 'fusion')
-    expect(quick.querySelector('[data-create-panel="fusion"] [data-fusion]')).toBeTruthy()
     expect(view.container.querySelector('[data-module="advanced"]')).toBeNull()
   })
 
-  it('默认停在生图页，切到融合 / 生视频后提示词仍保留', async () => {
+  it('默认停在生图页，切到生视频后提示词仍保留', async () => {
     const { view } = await renderQuick()
     expect(view.container.querySelector('[data-create-tab="image"]')?.getAttribute('aria-selected')).toBe('true')
     const box = await screen.findByPlaceholderText(en.generatePromptPlaceholder)
