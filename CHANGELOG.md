@@ -14,6 +14,12 @@
 - 体积：总产物 1.552 MB → 1.560 MB（+7.9 KB raw / +1.7 KB gzip，111%）；设计稿预估 +≤6 KB，略超。
 - 说明：设计稿按旧版画布（节点 chip 条 + 内联工具条）书写，其中「节点条两行分组」一项已由上一轮的**左侧分组节点库**实现（可用 12 / 规划 3 分组仍在、15 项全部常在 DOM），未回退成横条。
 
+真机复核后的补修（同批）：
+
+- **模板浮层改挂画布舞台**：原先按 pane 顶部定位，打开时会正好盖住工具条右侧的「问题胶囊 + 运行组」；现在浮层由 `WorkflowCanvas` 渲染在 `.iv-flow` 内（`top:8px/right:8px`），只覆盖画布，工具条与运行按钮始终可点。实测浮层打开前后 `.iv-flow` 的 `1003×726` 一像素未变。
+- **planned 问题用 warn 色调**：状态条的校验标记在「只有 planned 节点导致的问题」时改用 `--warn`（新增 `data-workflow-status-tone="warn"`），必填缺失/环/端口这类真错误仍是 danger；日志按钮上的问题数也从 danger 改成 warn。
+- **节点卡左侧 3px 分类色条**（`::before`）：输入=动作色、分镜=warn、生成=ok、交付=tx3、planned=danger，密集图里可以按颜色扫读分类。
+
 ### 时间轴精剪按 `TIMELINE-PANE-REDESIGN` v1.2 重构（2026-11-26）
 
 参考剪映/CapCut 与开源时间轴（OpenCut、react-timeline-editor、dnd-timeline 等，见 `docs/research/timeline-editor-references.md`），把时间轴从「表单堆叠」改成精剪工作区：

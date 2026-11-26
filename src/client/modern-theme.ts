@@ -24,7 +24,7 @@ import { useEffect } from 'react'
 export const MODERN_THEME_STYLE_ID = 'dsh-image-video-modern-theme'
 
 /** 样式表版本戳：同 id 但内容不同时整表覆盖，避免热替换后残留旧规则。 */
-export const MODERN_THEME_VERSION = '2026-11-26.8'
+export const MODERN_THEME_VERSION = '2026-11-26.10'
 
 /** 主题层样式表：令牌 + 控件 + 容器 + 引导层，布局规则（grid / flex / 定位）一律不动。 */
 export const MODERN_THEME_STYLE = `
@@ -310,15 +310,22 @@ font-size:13px;line-height:1.55;
 .iv .iv-wf-runbar[data-workflow-run-status=failed] .iv-wf-runstate{color:var(--iv-danger)}
 .iv .iv-wf-runbar[data-workflow-run-status=failed] .iv-wf-runstate .iv-dot{background:var(--iv-danger)}
 .iv .iv-wf-runbar[data-workflow-run-status=cancelled] .iv-wf-runstate .iv-dot{background:var(--iv-tx3)}
+.iv .iv-wf-status-flag--warn{color:var(--iv-warn)}
+.iv .iv-node::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:var(--iv-r) 0 0 var(--iv-r);background:var(--iv-line-2)}
+.iv .iv-node[data-workflow-node-group=input]::before{background:var(--iv-acc)}
+.iv .iv-node[data-workflow-node-group=story]::before{background:var(--iv-warn)}
+.iv .iv-node[data-workflow-node-group=generate]::before{background:var(--iv-ok)}
+.iv .iv-node[data-workflow-node-group=finish]::before{background:var(--iv-tx3)}
+.iv .iv-node[data-workflow-node-group=planned]::before{background:var(--iv-danger);opacity:.55}
 .iv .iv-wf-issues{display:inline-flex;align-items:center;gap:var(--iv-sp-1);height:22px;padding:0 8px;border-radius:var(--iv-r-pill);cursor:pointer;font:inherit;font-size:var(--iv-fs-micro);color:var(--iv-warn);border:1px solid color-mix(in srgb,var(--iv-warn) 42%,transparent);background:color-mix(in srgb,var(--iv-warn) 12%,transparent)}
 .iv .iv-wf-issues:hover{background:color-mix(in srgb,var(--iv-warn) 20%,transparent)}
+.iv .iv-wf-logcount{color:var(--iv-warn);border-color:color-mix(in srgb,var(--iv-warn) 40%,transparent);background:color-mix(in srgb,var(--iv-warn) 12%,transparent)}
 .iv .iv-wf-inspector{width:min(300px,86%);animation:iv-wf-slide-in var(--iv-dur-3) ease-out}
 .iv .iv-wf-inspector:focus-visible{outline:2px solid var(--iv-acc);outline-offset:-2px}
 .iv .iv-wf-planned-hint{display:inline-flex;align-items:center;gap:var(--iv-sp-2);padding:2px 8px;border-radius:var(--iv-r-pill);font-size:var(--iv-fs-micro);color:var(--iv-warn);background:color-mix(in srgb,var(--iv-warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--iv-warn) 32%,transparent)}
 .iv .iv-wf-planned-hint button{display:grid;place-items:center;width:16px;height:16px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
 .iv .iv-wf-planned-hint button:hover{background:color-mix(in srgb,var(--iv-warn) 24%,transparent)}
-.iv .iv-pane--canvas{position:relative}
-.iv .iv-wf-drawer{position:absolute;top:44px;right:var(--iv-sp-4);z-index:var(--iv-z-tip);width:min(560px,92%);max-height:60vh;overflow:auto;padding:var(--iv-sp-4);border:1px solid var(--iv-line);border-radius:var(--iv-r-lg);background:var(--iv-surface);box-shadow:var(--iv-shadow-3)}
+.iv .iv-wf-drawer{position:absolute;top:8px;right:8px;z-index:var(--iv-z-tip);width:min(560px,92%);max-height:calc(100% - 16px);overflow:auto;padding:var(--iv-sp-4);border:1px solid var(--iv-line);border-radius:var(--iv-r-lg);background:var(--iv-surface);box-shadow:var(--iv-shadow-3)}
 @media (prefers-reduced-motion:reduce){.iv .iv-wf-inspector{animation:none}}
 
 `

@@ -607,3 +607,28 @@ describe('工作流画布：运行组 / 问题胶囊 / 检视器抽屉（WORKFLO
     expect(canvas(view).getAttribute('data-workflow-selected-count')).toBe('0')
   })
 })
+
+describe('工作流画布：校验问题色调（planned 是预期状态）', () => {
+  it('只有 planned 节点导致的问题用 warn 色调', async () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} voice-synthesize` }))
+    const flag = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-status-validation="issues"]')
+      if (element === null) throw new Error('状态条问题标记没出现')
+      return element as HTMLElement
+    })
+    expect(flag.getAttribute('data-workflow-status-tone')).toBe('warn')
+    expect(flag.className).toContain('iv-wf-status-flag--warn')
+  })
+
+  it('必填缺失这类真错误仍是 err 色调', async () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    const flag = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-status-validation="issues"]')
+      if (element === null) throw new Error('状态条问题标记没出现')
+      return element as HTMLElement
+    })
+    expect(flag.getAttribute('data-workflow-status-tone')).toBe('err')
+  })
+})

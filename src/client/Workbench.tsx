@@ -3947,60 +3947,61 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </span>
                     </div>
                   </div>
-                  {templateOpen
-                    ? (
-                      <div className="iv-tpl iv-wf-drawer" id="iv-workflow-template-market"
-                        role="dialog" aria-label={t('templateMarket')}
-                        data-workflow-template-market="true" data-workflow-template-drawer="true">
-                        {([
-                          { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
-                          { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
-                        ] as readonly {
-                          group: WorkbenchLocaleKey
-                          templates: readonly {
-                            id: string; labelKey: string; describe?: string
-                            nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]
-                            edges: readonly (readonly [number, number])[]
-                          }[]
-                        }[]).map(section => (
-                          <div key={section.group} className="iv-tpl-group">
-                            <span className="iv-micro iv-tpl-group-title">{t(section.group)}</span>
-                            <div className="iv-tpl-grid">
-                              {section.templates.map(template => (
-                                <button
-                                  key={template.id}
-                                  type="button"
-                                  className="iv-tpl-card"
-                                  data-workflow-template={template.id}
-                                  onClick={() => {
-                                    if (activeProject === undefined) return
-                                    setWorkflow(instantiateAnyTemplate(template))
-                                    setWorkflowState('dirty')
-                                    setTemplateOpen(false)
-                                  }}>
-                                  <Icon name="sparkles" size={12} />
-                                  <span className="iv-tpl-name">
-                                    {template.id === 'drama-series' ? t('templateDramaSeries') : t(template.labelKey as WorkbenchLocaleKey)}
-                                  </span>
-                                  <span className="iv-tpl-desc">
-                                    {template.describe ?? (TEMPLATE_HINTS[template.id] === undefined ? '' : t(TEMPLATE_HINTS[template.id] as WorkbenchLocaleKey))}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                        {WORKFLOW_TEMPLATES.length + DRAMA_TEMPLATES.length === 0
-                          ? <p className="iv-meta">{t('templateMarketEmpty')}</p>
-                          : null}
-                      </div>
-                    )
-                    : null}
                   <WorkflowCanvas
                     record={workflow}
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
                     t={t}
                     api={apiRef.current}
+                    templateMarket={  templateOpen
+                        ? (
+                          <div className="iv-tpl iv-wf-drawer" id="iv-workflow-template-market"
+                            role="dialog" aria-label={t('templateMarket')}
+                            data-workflow-template-market="true" data-workflow-template-drawer="true">
+                            {([
+                              { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
+                              { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
+                            ] as readonly {
+                              group: WorkbenchLocaleKey
+                              templates: readonly {
+                                id: string; labelKey: string; describe?: string
+                                nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]
+                                edges: readonly (readonly [number, number])[]
+                              }[]
+                            }[]).map(section => (
+                              <div key={section.group} className="iv-tpl-group">
+                                <span className="iv-micro iv-tpl-group-title">{t(section.group)}</span>
+                                <div className="iv-tpl-grid">
+                                  {section.templates.map(template => (
+                                    <button
+                                      key={template.id}
+                                      type="button"
+                                      className="iv-tpl-card"
+                                      data-workflow-template={template.id}
+                                      onClick={() => {
+                                        if (activeProject === undefined) return
+                                        setWorkflow(instantiateAnyTemplate(template))
+                                        setWorkflowState('dirty')
+                                        setTemplateOpen(false)
+                                      }}>
+                                      <Icon name="sparkles" size={12} />
+                                      <span className="iv-tpl-name">
+                                        {template.id === 'drama-series' ? t('templateDramaSeries') : t(template.labelKey as WorkbenchLocaleKey)}
+                                      </span>
+                                      <span className="iv-tpl-desc">
+                                        {template.describe ?? (TEMPLATE_HINTS[template.id] === undefined ? '' : t(TEMPLATE_HINTS[template.id] as WorkbenchLocaleKey))}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                            {WORKFLOW_TEMPLATES.length + DRAMA_TEMPLATES.length === 0
+                              ? <p className="iv-meta">{t('templateMarketEmpty')}</p>
+                              : null}
+                          </div>
+                        )
+                        : null
+                    }
                     onNotice={(text, tone) => { setNotice({ text, tone }) }}
                     run={{
                       ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined

@@ -557,3 +557,11 @@ pane 头、分段/标签、`<details>` 折叠、状态胶囊按 `SCRIPT-PANE-RED
 - `pnpm run lint` 通过；全量 1367 例 1356 通过（6 例既有失败：版本号漂移 / Node 25 localStorage）。
 - 新增 6 例：运行态文案与 `data-workflow-run-status`、问题胶囊 warn + 展开日志、planned 一次性提示、抽屉 `role/aria/tabIndex` 与 Esc、模板浮层 `dialog/Esc/aria-controls`。
 - 未做真机几何复核：验证时 App 被关闭，CDP 目标消失；`getBoundingClientRect` 的「打开浮层前后画布高度不变」建议在真机补一次。
+
+
+### 真机复核补修（同批，2026-11-26）
+
+- **D2 浮层重定位**：按「pane 顶部 + 44px」定位时，浮层打开会盖住工具条右侧的运行组与问题胶囊（真机截图确认）。改为由 `WorkflowCanvas` 把 `templateMarket` 渲染进 `.iv-flow`（`top:8px; right:8px; max-height:calc(100% - 16px)`），浮层只覆盖画布。实测 `data-workflow-flow` 在浮层开关前后保持 `1003×726`。
+- **M5 扩展到状态条与日志按钮**：planned-only 的校验问题用 `--warn`（`data-workflow-status-tone="warn"`），真错误仍 danger；日志按钮上的计数同步改 warn。
+- **节点卡分类色条**：补上 §2.2 的「左侧 3px 分类色条」（纯 CSS `::before`，不改 DOM）。
+- 真机几何：pane 头 28px + 工具条 28px = **56px chrome**（目标 ≤110 / 窄窗 ≤130）；抽屉 300×262 覆盖画布右缘，`.iv-flow` 宽度不变；Esc 收起浮层与抽屉均生效。

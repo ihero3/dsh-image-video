@@ -18,7 +18,7 @@
  * CSS 打包链，所以 `@xyflow/react` 的官方样式表由 `scripts/sync-canvas-style.mjs`
  * 内嵌成字符串，在挂载时注入一次。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import {
   Background, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState,
   useReactFlow, useViewport,
@@ -86,6 +86,13 @@ export interface WorkflowCanvasProps {
    * 不传时该字段退回纯文本输入——画布不该因为拿不到目录就整块不可用。
    */
   readonly api?: WorkbenchApi
+  /**
+   * 模板市场浮层（由 Workbench 渲染内容、画布负责定位）。
+   *
+   * 挂进画布舞台而不是 pane：浮层只该盖住画布，不能压住工具条右侧的运行组与问题胶囊
+   * （真机复核发现按 pane 顶部定位时正好盖住运行按钮）。
+   */
+  readonly templateMarket?: ReactNode
   /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
@@ -423,7 +430,7 @@ function CanvasOnboarding({
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, templateMarket }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -530,6 +537,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     () => validateWorkflow(merge(record, nodes, edges).nodes, merge(record, nodes, edges).edges),
     [record, nodes, edges],
   )
+  /** 只有 planned 节点导致的问题 = 预期状态（warn）；必填/环/端口等才是真错误（danger）。 */
+  const plannedOnlyIssues = validation.issues.length > 0
+    && validation.issues.every(issue => issue.code === 'not-runnable')
   const invalidFingerprint = validation.issues
     .filter(issue => issue.nodeId !== undefined)
     .map(issue => issue.nodeId)
@@ -1079,7 +1089,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             onClick={() => { setLogOpen(open => !open) }}>
             <Icon name="script" size={13} />
             {validation.issues.length > 0
-              ? <span className="iv-chip iv-chip--err" data-workflow-log-issue-count="true">{validation.issues.length}</span>
+              ? <span className="iv-chip iv-wf-logcount" data-workflow-log-issue-count="true">{validation.issues.length}</span>
               : null}
           </button>
           <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="maximize"
@@ -1194,6 +1204,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
               />
             ) : null}
           </ReactFlow>
+          {templateMarket}
           <div className="iv-flow-zoombadge" data-workflow-zoom={String(Math.round(zoom * 100))}>
             {Math.round(zoom * 100)}%
           </div>
@@ -1433,8 +1444,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
           ? <span className="iv-wf-status-flag" data-workflow-status-validation="empty">{t('canvasStatusEmpty')}</span>
           : (
             <span
-              className={`iv-wf-status-flag${validation.ok ? ' iv-wf-status-flag--ok' : ' iv-wf-status-flag--err'}`}
+              className={`iv-wf-status-flag${validation.ok ? ' iv-wf-status-flag--ok' : plannedOnlyIssues ? ' iv-wf-status-flag--warn' : ' iv-wf-status-flag--err'}`}
               data-workflow-status-validation={validation.ok ? 'ok' : 'issues'}
+              data-workflow-status-tone={validation.ok ? 'ok' : plannedOnlyIssues ? 'warn' : 'err'}
             >
               <Icon name={validation.ok ? 'check' : 'alert'} size={11} />
               {validation.ok ? t('validationOk') : `${validation.issues.length}`}
