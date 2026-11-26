@@ -24,7 +24,7 @@ import { useEffect } from 'react'
 export const MODERN_THEME_STYLE_ID = 'dsh-image-video-modern-theme'
 
 /** 样式表版本戳：同 id 但内容不同时整表覆盖，避免热替换后残留旧规则。 */
-export const MODERN_THEME_VERSION = '2026-11-24.1'
+export const MODERN_THEME_VERSION = '2026-11-26.5'
 
 /** 主题层样式表：令牌 + 控件 + 容器 + 引导层，布局规则（grid / flex / 定位）一律不动。 */
 export const MODERN_THEME_STYLE = `
@@ -150,6 +150,76 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-dock-col{border-radius:18px}
 .iv .iv-pane img,.iv .iv-pane video,.iv .iv-pane .iv-asset-thumb{border-radius:10px}
 .iv .iv-progress{height:4px;border-radius:999px}
+.iv .iv-pane--compact{gap:var(--iv-sp-5);padding:var(--iv-sp-6)}
+.iv .iv-quick-tabs--minor{display:flex;align-items:center;gap:var(--iv-sp-1);margin-left:auto;padding:var(--iv-sp-1);border-radius:999px;background:color-mix(in srgb,var(--iv-tx) 5%,transparent)}
+.iv .iv-quick-tabs--minor .iv-btn{height:24px;padding:0 var(--iv-sp-3);border:0;border-radius:999px;background:transparent;box-shadow:none;font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-regular);color:var(--iv-tx3)}
+.iv .iv-quick-tabs--minor .iv-btn .iv-ico{flex:none;margin-right:var(--iv-sp-1);opacity:.85}
+.iv .iv-quick-tabs--minor .iv-btn:hover:not(:disabled){background:transparent;border-color:transparent;color:var(--iv-tx)}
+.iv .iv-quick-tabs--minor .iv-btn.is-active,.iv .iv-quick-tabs--minor .iv-btn[aria-selected="true"]{color:var(--iv-tx);background:var(--iv-panel);border-color:transparent;font-weight:var(--iv-fw-medium);box-shadow:0 1px 2px color-mix(in srgb,#0b0d12 5%,transparent)}
+.iv .iv-quick-tabs--minor .iv-btn.is-active .iv-ico,.iv .iv-quick-tabs--minor .iv-btn[aria-selected="true"] .iv-ico{color:var(--iv-acc);opacity:1}
+.iv .iv-modules--quick,.iv .iv-module--quick{padding-top:0;border-top:0;gap:0}
+.iv .iv-module--quick .iv-module-body{gap:0}
+.iv .iv-quick-create{display:flex;flex-direction:column;gap:var(--iv-sp-5);min-width:0}
+.iv .iv-create-tabs{display:flex;gap:var(--iv-sp-2);padding:var(--iv-sp-2);border-radius:var(--iv-r);background:color-mix(in srgb,var(--iv-tx) 5%,transparent)}
+.iv .iv-create-tabs .iv-btn{flex:1 1 0;min-width:0;height:32px;padding:0 var(--iv-sp-4);border:0;border-radius:var(--iv-r-sm);background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:var(--iv-fw-medium);box-shadow:none}
+.iv .iv-create-tabs .iv-btn.iv-btn--acc{height:32px;border:0;background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:var(--iv-fw-medium);box-shadow:none}
+.iv .iv-create-tabs .iv-btn:hover:not(:disabled),.iv .iv-create-tabs .iv-btn--acc:hover:not(:disabled){border-color:transparent;background:transparent;color:var(--iv-tx)}
+.iv .iv-create-tabs .iv-btn[aria-selected="true"],.iv .iv-create-tabs .iv-btn--acc[aria-selected="true"]:hover:not(:disabled){background:var(--iv-panel);border:0;color:var(--iv-tx);font-weight:var(--iv-fw-bold);box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 12%,transparent)}
+.iv .iv-create-tabs .iv-btn .iv-ico{margin-right:var(--iv-sp-2)}
+.iv .iv-qc-field{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
+.iv .iv-qc-field-head{display:flex;align-items:center;justify-content:space-between;gap:var(--iv-sp-2);min-width:0}
+.iv .iv-qc-field-actions{display:flex;align-items:center;gap:var(--iv-sp-2);flex:none}
+.iv .iv-qc-field-label{font-size:12px;font-weight:var(--iv-fw-medium);color:var(--iv-tx2);letter-spacing:0}
+.iv .iv-qc-field-hint{font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);color:var(--iv-tx3)}
+/* 字段说明不跟着栏宽铺满整行：横向贯穿会读成一整条横幅，按内容宽度收口 */
+.iv .iv-qc-field>.iv-qc-field-hint{align-self:flex-start;max-width:56ch;line-height:1.5}
+.iv .iv-ref-zone{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding:var(--iv-sp-3);border:1px solid var(--iv-line);border-radius:var(--iv-r);background:color-mix(in srgb,var(--iv-tx) 2%,transparent)}
+.iv .iv-ref-zone[data-ref-dropzone="true"]{border:1px dashed var(--iv-acc);background:var(--iv-acc-soft)}
+.iv .iv-ref-empty-hint{font-size:var(--iv-fs-micro);color:var(--iv-tx3)}
+.iv .iv-ref-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,120px));justify-content:start;gap:var(--iv-sp-2)}
+.iv .iv-ref-cell{position:relative;aspect-ratio:4/3;min-width:0;border:1px solid var(--iv-line-2);border-radius:var(--iv-r-sm);background:var(--iv-panel-3);overflow:hidden;cursor:grab;transition:border-color var(--iv-dur-2) ease,box-shadow var(--iv-dur-2) ease}
+.iv .iv-ref-cell:hover{border-color:color-mix(in srgb,var(--iv-tx) 32%,transparent)}
+.iv .iv-ref-cell:active{cursor:grabbing}
+.iv .iv-ref-cell[data-ref-drop="true"]{border-color:var(--iv-acc);background:var(--iv-acc-soft)}
+.iv .iv-ref-cell--base{border-color:var(--iv-acc);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-acc) 20%,transparent)}
+.iv .iv-ref-thumb-wrap{display:block;width:100%;height:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.iv .iv-ref-cell .iv-ref-thumb{width:100%;height:100%;border-radius:0;object-fit:cover}
+.iv .iv-ref-base-badge{position:absolute;left:var(--iv-sp-2);bottom:var(--iv-sp-2);padding:1px var(--iv-sp-2);border-radius:var(--iv-r-xs);background:var(--iv-acc);color:var(--iv-on-acc);font-size:var(--iv-fs-tick);font-weight:var(--iv-fw-medium);line-height:1.4;pointer-events:none}
+.iv .iv-ref-remove{position:absolute;top:var(--iv-sp-2);right:var(--iv-sp-2);width:20px;height:20px;padding:0;border:0;border-radius:var(--iv-r-xs);background:color-mix(in srgb,#0b0d12 55%,transparent);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;cursor:pointer;transition:opacity var(--iv-dur-2) ease}
+.iv .iv-ref-cell:hover .iv-ref-remove,.iv .iv-ref-remove:focus-visible{opacity:1}
+.iv .iv-ref-add-cell{aspect-ratio:4/3;min-width:0}
+.iv .iv-ref-add-cell .iv-pick{height:100%}
+.iv .iv-ref-add-cell .iv-pick>.iv-btn{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--iv-sp-2);padding:0;border:1px dashed var(--iv-line-2);border-radius:var(--iv-r-sm);background:transparent;color:var(--iv-tx3);font-size:var(--iv-fs-micro)}
+.iv .iv-ref-add-cell .iv-pick>.iv-btn:hover:not(:disabled){border-color:var(--iv-acc);color:var(--iv-acc);background:var(--iv-acc-soft)}
+.iv .iv-ref-add-cell .iv-pick>.iv-btn .iv-ico{margin-right:0}
+.iv .iv-advanced{border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);overflow:hidden}
+.iv .iv-advanced-head{display:flex;align-items:center;gap:var(--iv-sp-2);padding:var(--iv-sp-3) var(--iv-sp-4);cursor:pointer;list-style:none;font-size:12.5px;font-weight:var(--iv-fw-medium);color:var(--iv-tx2)}
+.iv .iv-advanced-head::-webkit-details-marker{display:none}
+.iv .iv-advanced-head:hover{color:var(--iv-tx);background:color-mix(in srgb,var(--iv-tx) 4%,transparent)}
+.iv .iv-advanced-title{flex:none;color:var(--iv-tx)}
+.iv .iv-advanced-defaults{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);color:var(--iv-tx3)}
+.iv .iv-advanced-caret{flex:none;margin-left:auto;transition:transform var(--iv-dur-2) ease}
+.iv details.iv-advanced[open] .iv-advanced-caret{transform:rotate(180deg)}
+.iv .iv-advanced-body{padding:var(--iv-sp-3) var(--iv-sp-4) var(--iv-sp-4);border-top:1px solid var(--iv-line)}
+.iv .iv-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--iv-sp-3)}
+.iv .iv-qc-field--wide{grid-column:1/-1}
+.iv .iv-advanced .iv-compose-params{padding:0;border:0;border-radius:0;background:transparent;gap:var(--iv-sp-3)}
+.iv .iv-gen-actions{position:relative;display:flex;align-items:center;padding-top:var(--iv-sp-5)}
+.iv .iv-gen-separator{position:absolute;top:0;left:0;right:0;height:1px;background:var(--iv-line)}
+.iv .iv-gen-actions .iv-gen-btn{width:100%;flex:1 1 auto;padding-right:calc(var(--iv-sp-6) * 4)}
+.iv .iv-gen-shortcut{position:absolute;right:var(--iv-sp-5);top:calc(50% + var(--iv-sp-3));transform:translateY(-50%);font-size:var(--iv-fs-tick);font-weight:var(--iv-fw-regular);letter-spacing:.02em;color:var(--iv-tx3);pointer-events:none}
+.iv .iv-gen-actions .iv-gen-btn.iv-btn--acc+.iv-gen-shortcut{color:color-mix(in srgb,var(--iv-on-acc) 72%,transparent)}
+/* 结果展示按素材自身比例走：固定方形 + cover 会把横图/竖图裁掉一截 */
+.iv .iv-last-result-media{width:auto;height:auto;max-width:min(200px,100%);max-height:160px;object-fit:contain;background:var(--iv-monitor)}
+/* 预览舞台不再钉死 320px：小图按自身尺寸，大图在 420px 内完整收进来 */
+.iv .iv-dock-preview{height:auto;min-height:160px;max-height:min(52vh,420px)}
+.iv .iv-dock .iv-dock-preview img,.iv .iv-dock .iv-dock-preview video{width:auto;height:auto;max-width:100%;max-height:min(52vh,420px);object-fit:contain}
+.iv .iv-dock .iv-dock-preview--expanded img,.iv .iv-dock .iv-dock-preview--expanded video{width:100%;height:100%;max-width:100%;max-height:100%}
+.iv .iv-dock-preview--expanded{min-height:0;max-height:none}
+.iv .iv-preview-video-thumb{height:auto;min-height:160px;aspect-ratio:16/9}
+.iv .iv-preview-video-thumb video{width:100%;height:100%;object-fit:cover}
+@media (max-width:768px){.iv .iv-advanced-grid{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){.iv .iv-ref-cell,.iv .iv-ref-remove,.iv .iv-advanced-caret{transition:none}}
 .ivg-mask{
 --ivg-acc:var(--iv-solid,var(--dsw-alias-label-primary,currentColor));
 --ivg-on-acc:var(--iv-on-solid,var(--dsw-alias-label-primary-foreground,#fff));

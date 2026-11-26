@@ -123,6 +123,45 @@ describe('modern theme coverage', () => {
     expect(MODERN_THEME_STYLE).toContain('prefers-reduced-motion:reduce')
   })
 
+  it('快速创作 v1.2：新结构必须有样式，旧 module 分隔线不能漏到 quick 容器', () => {
+    for (const rule of [
+      '.iv .iv-pane--compact{',
+      '.iv .iv-create-tabs .iv-btn.iv-btn--acc{',
+      '.iv .iv-qc-field{',
+      '.iv .iv-ref-grid{',
+      '.iv .iv-ref-cell--base{',
+      '.iv .iv-advanced-head::-webkit-details-marker{',
+      '.iv .iv-gen-separator{',
+      '.iv .iv-modules--quick,.iv .iv-module--quick{padding-top:0;border-top:0;gap:0}',
+    ]) {
+      expect(MODERN_THEME_STYLE, `缺少快速创作规则 ${rule}`).toContain(rule)
+    }
+    // 添加入口是 RefPickField：必须把触发按钮撑成网格单元，否则仍是 26px 小胶囊
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-ref-add-cell .iv-pick>.iv-btn{')
+    // 网格列宽必须有上限，否则宽面板里每个缩略图被拉成 280px 的大黑块
+    expect(MODERN_THEME_STYLE).toContain('grid-template-columns:repeat(auto-fill,minmax(88px,120px))')
+    // 折叠箭头与网格过渡都要尊重减少动效偏好
+    expect(MODERN_THEME_STYLE).toContain('prefers-reduced-motion:reduce){.iv .iv-ref-cell')
+  })
+
+  it('次级入口是带图标的胶囊切换，字段说明不横向铺满（2026-11-26）', () => {
+    // 内容生产 / 提取提示词：整组一个胶囊底，激活项浮起，图标继承文字色（激活变强调色）
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-quick-tabs--minor{display:flex;align-items:center')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-quick-tabs--minor .iv-btn .iv-ico{flex:none;margin-right:var(--iv-sp-1)')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-quick-tabs--minor .iv-btn.is-active .iv-ico')
+    // 字段说明按内容宽度收口：1000px 宽面板里不该拉成一条横幅
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-qc-field>.iv-qc-field-hint{align-self:flex-start;max-width:56ch')
+  })
+
+  it('结果展示按素材自身比例，预览舞台随内容高度自适应（2026-11-26）', () => {
+    // 固定 96×96 + cover 会把横图两侧、竖图上下各裁掉一截，只剩中间一块
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-last-result-media{width:auto;height:auto;max-width:min(200px,100%);max-height:160px;object-fit:contain')
+    // 舞台高度由内容决定（小图不被拉成 320px 高），超大时才封顶
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-dock-preview{height:auto;min-height:160px;max-height:min(52vh,420px)}')
+    // 双击放大态必须解除上面那套上限，否则放大后反而更小
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-dock-preview--expanded{min-height:0;max-height:none}')
+  })
+
   it('keeps every selector scoped to the plugin (no bare global overrides)', () => {
     // 每条规则独占一行；只取含选择器的行，跳过根块的属性行与 @media 包裹行。
     const rules = MODERN_THEME_STYLE

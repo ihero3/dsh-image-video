@@ -26,6 +26,9 @@ export type WorkbenchLocaleKey =
   | 'generateVideo'
   | 'generating'
   | 'generateCancel'
+  | 'generateCancelling'
+  | 'generateCancelled'
+  | 'generateCannotCancel'
   | 'generateDone'
   | 'generateFailed'
   | 'generateNeedsProject'
@@ -429,6 +432,15 @@ export type WorkbenchLocaleKey =
   | 'skillInsertHint'
   | 'quickTabProduce'
   | 'quickTabPrompt'
+  // ---- 快速创作简化版（QUICK-CREATE-REDESIGN v1.2 §4）----
+  | 'quickRefsLabel'
+  | 'quickRefsBase'
+  | 'quickRefsAdd'
+  | 'quickRefsEmptyHint'
+  | 'quickAdvanced'
+  | 'quickAdvancedDefaults'
+  | 'quickAdvancedHint'
+  | 'quickGenShortcut'
   | 'studioTitle'
   | 'studioDesc'
   | 'studioSkillLabel'
@@ -1222,6 +1234,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   generateVideo: 'Generate video',
   generating: 'Generating…',
   generateCancel: 'Cancel',
+  generateCancelling: 'Cancelling…',
+  generateCancelled: 'Generation cancelled',
+  generateCannotCancel: 'The host has no cancellable task for this generation',
   generateDone: 'Generated and filed as an asset',
   generateFailed: 'Generation failed',
   generateNeedsProject: 'Pick a series at the top first, otherwise the result cannot be filed.',
@@ -1507,6 +1522,15 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   skillInsertHint: 'Selected skills appear in the text area; delete the token to show it here again',
   quickTabProduce: 'Content production',
   quickTabPrompt: 'Extract prompts',
+  // ---- 快速创作简化版（QUICK-CREATE-REDESIGN v1.2 §4）----
+  quickRefsLabel: 'References',
+  quickRefsBase: 'Base',
+  quickRefsAdd: 'Add',
+  quickRefsEmptyHint: 'Drag or click to add · first image becomes the base',
+  quickAdvanced: 'Advanced settings',
+  quickAdvancedDefaults: 'Current: {model} · {size}',
+  quickAdvancedHint: 'Follows host defaults',
+  quickGenShortcut: 'Ctrl/⌘ + Enter',
   studioTitle: 'Extract prompts',
   studioDesc: 'Reference images or videos, extract editable prompts with your key points, then save them to this episode.',
   studioSkillLabel: 'Reverse skill',
@@ -1718,9 +1742,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsBuiltinSource: 'Built-in',
   defaultsFollow: 'Follow default',
   defaultSeriesName: 'First series',
-  generateRefsHint: 'First = base image, the rest = style / face references. Up to 6 — drag a chip or use the arrows to reorder.',
+  generateRefsHint: 'First image is the base, the rest are style references. Drag a thumbnail to reorder.',
   generateRefsAdd: 'Add selected asset',
-  generateRefsFull: 'At most 6 reference images',
+  generateRefsFull: 'At most 8 reference images',
   generateRefsMoveUp: 'Move earlier',
   generateRefsMoveDown: 'Move later',
   generateRefsBase: 'base',
@@ -2355,6 +2379,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   generateVideo: '生成视频',
   generating: '生成中…',
   generateCancel: '取消生成',
+  generateCancelling: '取消中…',
+  generateCancelled: '已取消生成',
+  generateCannotCancel: '宿主没有可取消的任务（这条生成已不可中断）',
   generateDone: '已生成，并登记为剧集素材',
   generateFailed: '生成失败',
   generateNeedsProject: '先在顶部选一个剧集，生成结果才好归档。',
@@ -2640,6 +2667,15 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   skillInsertHint: '选中后插入文本区；在文本区删掉标记后会重新出现在这里',
   quickTabProduce: '内容生产',
   quickTabPrompt: '提取提示词',
+  // ---- 快速创作简化版（QUICK-CREATE-REDESIGN v1.2 §4）----
+  quickRefsLabel: '参考图',
+  quickRefsBase: '底图',
+  quickRefsAdd: '添加',
+  quickRefsEmptyHint: '拖拽或点击添加参考图 · 首张图作为底图',
+  quickAdvanced: '高级参数',
+  quickAdvancedDefaults: '当前：{model} · {size}',
+  quickAdvancedHint: '跟随宿主默认',
+  quickGenShortcut: 'Ctrl/⌘ + Enter',
   studioTitle: '提取提示词',
   studioDesc: '引用图片或视频，按提取要点生成可编辑提示词，再存入本集。',
   studioSkillLabel: '逆向 Skill',
@@ -2837,7 +2873,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsBuiltinSource: '内置默认',
   defaultsFollow: '跟随默认',
   defaultSeriesName: '三视剧集',
-  generateRefsHint: '首图=底图，其余为风格/脸部参考；最多 6 张，可拖拽 chip 或用箭头排序。',
+  generateRefsHint: '首图为底图，其余作风格参考；拖拽缩略图可调整顺序',
   generateRefsAdd: '加入选中素材',
   createTabImage: '生图',
   createTabFusion: '融合生图',
@@ -2853,7 +2889,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   videoFirstFrame: '首帧',
   videoFirstFramePick: '选择首帧',
   fusionEmptyAll: '还没有角色 / 场景 / 物品——先去剧集资源里创建，再回来融合。',
-  generateRefsFull: '最多 6 张参考图',
+  generateRefsFull: '最多 8 张参考图',
   generateRefsMoveUp: '前移',
   generateRefsMoveDown: '后移',
   generateRefsBase: '底图',

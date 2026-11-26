@@ -61,6 +61,27 @@ describe('quick create generate (A149)', () => {
     fireEvent.click(cancel)
     await waitFor(() => { expect(cancelSpy).toHaveBeenCalledWith('tsk-gen-1') })
   })
+
+  it('生图同样非阻塞：生成中能真的取消（2026-11-26 真机反馈）', async () => {
+    const { host } = renderQuick()
+    // 老实现里图片是同步等待（wait 缺省 true），没有 taskId，取消按钮点了只能空转
+    const generateSpy = vi.fn(async () => ({ mediaMode: 'image' as const, pending: true, taskId: 'tsk-img-1' }))
+    const cancelSpy = vi.fn(async () => true)
+    ;(host.api as unknown as { generateMedia: typeof generateSpy }).generateMedia = generateSpy
+    ;(host.api as unknown as { cancelTask: typeof cancelSpy }).cancelTask = cancelSpy
+
+    fireEvent.change(await screen.findByPlaceholderText(en.generatePromptPlaceholder), { target: { value: '雨夜霓虹' } })
+    fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
+
+    await waitFor(() => { expect(generateSpy).toHaveBeenCalledTimes(1) })
+    expect(generateSpy.mock.calls[0]![0]).toMatchObject({ mediaMode: 'image', wait: false, projectId: 'prj-1' })
+
+    const cancel = await screen.findByRole('button', { name: en.generateCancel })
+    fireEvent.click(cancel)
+    await waitFor(() => { expect(cancelSpy).toHaveBeenCalledWith('tsk-img-1') })
+    // 取消在飞期间按钮要让位给「取消中…」，避免连点
+    await waitFor(() => { expect(screen.getByRole('button', { name: en.generateCancelling })).toBeTruthy() })
+  })
 })
 
 describe('reference image plumbing (A151)', () => {

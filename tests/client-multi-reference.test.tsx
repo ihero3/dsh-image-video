@@ -99,20 +99,13 @@ describe('F2 multi-reference selector (B-1)', () => {
     expect(spy.mock.calls[0]![0]).not.toHaveProperty('images')
   })
 
-  it('reorders with the move buttons and with drag-and-drop', async () => {
+  it('reorders with drag-and-drop (v1.2: move buttons removed)', async () => {
     const { view, spy } = renderWithImages(3)
     await addReference(view, 0)
     await addReference(view, 1)
     await addReference(view, 2)
 
-    // 键盘/按钮排序：第二枚前移 → 变成首位（底图）
-    fireEvent.click(screen.getByRole('button', { name: `${en.generateRefsMoveUp} ref-1.png` }))
-    await waitFor(() => {
-      const chips = view.container.querySelectorAll('[data-generate-ref]')
-      expect(chips[0]!.getAttribute('data-generate-ref')).toBe('/tmp/outputs/ref-1.png')
-    })
-
-    // 拖拽排序：把第三枚拖到第一枚的位置
+    // 拖拽排序：把第三枚拖到第一枚的位置。上移/下移按钮已移除，拖拽是唯一排序入口
     const transfer = fakeDataTransfer()
     const chips = view.container.querySelectorAll('[data-generate-ref]')
     fireEvent.dragStart(chips[2]!, { dataTransfer: transfer })
@@ -127,7 +120,7 @@ describe('F2 multi-reference selector (B-1)', () => {
     fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
     await waitFor(() => { expect(spy).toHaveBeenCalledTimes(1) })
     expect(spy.mock.calls[0]![0]).toMatchObject({
-      images: ['/tmp/outputs/ref-2.png', '/tmp/outputs/ref-1.png', '/tmp/outputs/ref-0.png'],
+      images: ['/tmp/outputs/ref-2.png', '/tmp/outputs/ref-0.png', '/tmp/outputs/ref-1.png'],
     })
   })
 
@@ -243,5 +236,30 @@ describe('F2 multi-reference selector (B-1)', () => {
     fireEvent.dragOver(zone, { dataTransfer: transfer })
     fireEvent.drop(zone, { dataTransfer: transfer })
     await waitFor(() => { expect(view.container.querySelector('[data-generate-ref="/tmp/outputs/face.png"]')).toBeTruthy() })
+  })
+
+  it('keeps the add cell inside the grid and builds thumb URLs from Windows paths', async () => {
+    const path = 'D:\\apps\\desktop\\home\\profiles\\desktop\\outputs\\shot-2026.png'
+    const host = fakeApi({})
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: 'Windows 路径',
+      createdAt: '2026-11-26T00:00:00.000Z', updatedAt: '2026-11-26T00:00:00.000Z',
+    })
+    host.assets.push({
+      schemaVersion: 4, id: 'ast-win', projectId: 'prj-1', kind: 'image',
+      path, bytes: 2048, createdAt: '2026-11-26T00:00:00.000Z',
+    } as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+
+    // 添加入口必须留在网格里：放到网格外会被 aspect-ratio 撑成整行高的空白框
+    expect(view.container.querySelector('.iv-ref-grid .iv-ref-add-cell')).toBeTruthy()
+
+    fireEvent.click(await screen.findByRole('button', { name: `${en.referenceAsset} shot-2026.png` }))
+    const thumb = await waitFor(() => {
+      const node = view.container.querySelector('[data-generate-ref] .iv-ref-thumb')
+      if (node === null) throw new Error('missing reference thumb')
+      return node as HTMLImageElement
+    })
+    expect(thumb.getAttribute('src')).toBe('/outputs/shot-2026.png')
   })
 })
