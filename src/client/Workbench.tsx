@@ -618,6 +618,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [subtitleBatchDraft, setSubtitleBatchDraft] = useState('')
   const [templateOpen, setTemplateOpen] = useState(false)
+  /** 模板市场卡片点击：图非空时先确认再替换（同一张确认口径表）。 */
+  const [pendingTemplate, setPendingTemplate] = useState<{ label: string; run: () => void } | undefined>(undefined)
+  const pendingTemplateRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(pendingTemplate !== undefined, pendingTemplateRef, () => { setPendingTemplate(undefined) })
   const [diagnostics, setDiagnostics] = useState<WorkbenchDiagnostics | undefined>(undefined)
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -1326,18 +1330,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   /** 末尾追加一个 clip（起点接在该轨当前末尾）。 */
   const appendClip = (trackId: string, clip: { assetPath?: string; text?: string }): void => {
     const stamp = new Date().toISOString()
+    const newId = `clip-${Date.now().toString(36)}-${(timeline?.tracks.find(track => track.id === trackId)?.clips.length ?? 0)}`
     patchTrack(trackId, track => {
       const end = track.clips.reduce((longest, existing) => Math.max(longest, existing.startMs + existing.durationMs), 0)
-      const id = `clip-${Date.now().toString(36)}-${track.clips.length}`
       return {
         ...track,
         clips: [...track.clips, {
-          id, startMs: end, durationMs: 3000,
+          id: newId, startMs: end, durationMs: 3000,
           ...clip.assetPath === undefined ? {} : { assetPath: clip.assetPath },
           ...clip.text === undefined ? {} : { text: clip.text },
         }],
       }
     })
+    // 新加的片段直接进入选中态：检查器立刻指向它，而不是停在 fallback 的首段
+    setSelectedClipId(newId)
     void stamp
   }
 
@@ -1395,6 +1401,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       return
     }
     patchTrack(trackId, track => ({ ...track, clips: [...track.clips, ...clips] }))
+    // 批量落地的第一批直接进检查器（选第一个），否则检查器会停在上一段的 fallback
+    const first = clips[0]
+    if (first !== undefined) setSelectedClipId(first.id)
   }
 
   /**
@@ -1433,6 +1442,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [dropTrackId, setDropTrackId] = useState<string | undefined>(undefined)
   /** 选中的片段（键盘 Delete 与复制按钮用；UI 瞬时状态，不入库）。 */
   const [selectedClipId, setSelectedClipId] = useState<string | undefined>(undefined)
+  /**
+   * 片段检查器要展示的片段：真正选中的优先；没选中时**展示**首个片段但不写入选中态
+   * （`fallback`）。这样「进页面就能改参数」与「没有片段被高亮」两件事同时成立，
+   * 也不会因为进页面就有选中态让 Delete 有误删风险。
+   */
+  const inspectedEntry = timeline === undefined
+    ? undefined
+    : (() => {
+      const flat = timeline.tracks.flatMap(track => track.clips.map(clip => ({ track, clip })))
+      const selected = selectedClipId === undefined ? undefined : flat.find(entry => entry.clip.id === selectedClipId)
+      return selected ?? flat[0]
+    })()
+  const isInspectorFallback = selectedClipId === undefined
   /** 正在拖的手柄（窗口级 mousemove/mouseup 期间活着）。 */
   const [resizing, setResizing] = useState<{ trackId: string; clipId: string; side: 'left' | 'right'; startX: number } | undefined>(undefined)
   /** 轨道 lane 的 DOM 引用（量 rect 用：像素 ↔ 毫秒的换算基准）。 */
@@ -1614,6 +1636,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       const result = duplicateClipInTracks(timeline.tracks, clipId, nextClipId)
       setTimeline({ ...timeline, tracks: result.tracks })
       setTimelineState('dirty')
+      // 副本进入选中态：检查器直接跟到副本上，用户能立刻调它的参数
+      setSelectedClipId(result.newClipId)
+      return
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
     }
@@ -2999,7 +3024,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
       {/* ============ 提示条 ============ */}
       {notice === undefined ? null : (
-        <p className={`iv-notice${notice.tone === 'error' ? ' iv-notice--error' : ''}`}>
+        <p
+          className={`iv-notice${notice.tone === 'error' ? ' iv-notice--error' : ''}`}
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+          aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
+        >
           <Icon name={notice.tone === 'error' ? 'alert' : 'check'} />
           <span>{notice.tone === 'error' ? `${t('failed')}: ` : ''}{notice.text}</span>
         </p>
@@ -3626,24 +3655,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
                   </div>
                     </>)
-                    : (
-                      <PromptStudioPanel
-                        api={apiRef.current}
-                        t={t}
-                        projectId={activeProject?.id ?? ''}
-                        episode={activeEpisode}
-                        assets={assets}
-                        onPreviewAsset={previewAsset}
-                        onNotice={(text, tone) => { setNotice({ text, tone }) }}
-                        onApplyPrompt={(text) => {
-                          applyPrompt(text)
-                          // 带入后切回内容生产页的生图页签：提示词落在生图表单里，
-                          // 而不是停在生视频页签上让用户以为没生效。
-                          setQuickTab('produce')
-                          setCreateTab('image')
-                        }}
-                      />
-                    )}
+                    : null}
+                  {/* 提取提示词页常驻挂载：切换页签只隐藏，引用与草稿不会因卸载而丢失 */}
+                  <div className="iv-studio-slot" hidden={quickTab !== 'prompt'}>
+                    <PromptStudioPanel
+                      api={apiRef.current}
+                      t={t}
+                      projectId={activeProject?.id ?? ''}
+                      episode={activeEpisode}
+                      assets={assets}
+                      onPreviewAsset={previewAsset}
+                      onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                      onApplyPrompt={(text) => {
+                        applyPrompt(text)
+                        // 带入后切回内容生产页的生图页签：提示词落在生图表单里，
+                        // 而不是停在生视频页签上让用户以为没生效。
+                        setQuickTab('produce')
+                        setCreateTab('image')
+                      }}
+                    />
+                  </div>
                   </PaneBoundary>
                 </section>
                 </>
@@ -3871,10 +3902,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         {t(workflowState === 'dirty' ? 'saveDirty' : workflowState === 'saving' ? 'saveSaving' : workflowState === 'failed' ? 'saveFailed' : 'saveSaved')}
                       </span>
                     </div>
-                  </div>
+                  {/* 模板市场：浮层抽屉挂在 pane 头下方，覆盖画布右上，不再把画布高度顶走 */}
                   {templateOpen
                     ? (
-                      <div className="iv-tpl" data-workflow-template-market="true">
+                      <div className="iv-tpl iv-wf-drawer" data-workflow-template-market="true">
                         {([
                           { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
                           { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
@@ -3897,9 +3928,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   data-workflow-template={template.id}
                                   onClick={() => {
                                     if (activeProject === undefined) return
-                                    setWorkflow(instantiateAnyTemplate(template))
-                                    setWorkflowState('dirty')
-                                    setTemplateOpen(false)
+                                    const apply = () => {
+                                      setWorkflow(instantiateAnyTemplate(template))
+                                      setWorkflowState('dirty')
+                                      setTemplateOpen(false)
+                                    }
+                                    // 图里有节点时先确认：模板会整图替换
+                                    if ((workflow?.nodes.length ?? 0) > 0) {
+                                      setPendingTemplate({ label: t('canvasReplaceTemplate'), run: apply })
+                                    } else {
+                                      apply()
+                                    }
                                   }}>
                                   <Icon name="sparkles" size={12} />
                                   <span className="iv-tpl-name">
@@ -3919,6 +3958,35 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       </div>
                     )
                     : null}
+                  </div>
+                  {pendingTemplate === undefined
+                    ? null
+                    : (
+                      <div className="iv-help-mask" data-workflow-replace-confirm="true">
+                        <div className="iv-help" ref={pendingTemplateRef} tabIndex={-1} role="dialog" aria-modal="true"
+                          aria-label={t('canvasReplaceTitle')}>
+                          <h3 className="iv-help-title">{t('canvasReplaceTitle')}</h3>
+                          <p className="iv-help-body">{pendingTemplate.label}</p>
+                          <p className="iv-meta">{t('canvasReplaceBody')}</p>
+                          <div className="iv-row" style={{ justifyContent: 'flex-end' }}>
+                            <button type="button" className="iv-btn iv-btn--ghost"
+                              data-workflow-replace-cancel="true"
+                              onClick={() => { setPendingTemplate(undefined) }}>
+                              {t('canvasReplaceCancel')}
+                            </button>
+                            <button type="button" className="iv-btn iv-btn--acc"
+                              data-workflow-replace-ok="true"
+                              onClick={() => {
+                                const pending = pendingTemplate
+                                setPendingTemplate(undefined)
+                                pending?.run()
+                              }}>
+                              {t('canvasReplaceConfirm')}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   <WorkflowCanvas
                     record={workflow}
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
@@ -4012,49 +4080,30 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       {t('timelineTotal')} {Math.round(timelineDurationMs(timeline.tracks) / 1000)}s
                     </span>
                     <div className="iv-pane-actions">
-                      <label className="iv-check">
-                        <input type="checkbox" data-timeline-burn="true" checked={timeline.burnSubtitles}
-                          aria-label={t('burnSubtitles')}
-                          onChange={event => {
-                            const burnSubtitles = event.target.checked
-                            setTimeline(current => current === undefined ? current : { ...current, burnSubtitles })
-                            setTimelineState('dirty')
-                          }} />
-                        {t('burnSubtitles')}
-                      </label>
-                      <label className="iv-check">
-                        <input type="checkbox" data-timeline-loudness="true" checked={timeline.normalizeLoudness === true}
-                          aria-label={t('normalizeLoudness')}
-                          onChange={event => {
-                            const normalizeLoudness = event.target.checked
-                            setTimeline(current => current === undefined ? current : { ...current, normalizeLoudness })
-                            setTimelineState('dirty')
-                          }} />
-                        {t('normalizeLoudness')}
-                      </label>
+                      {/* ffmpeg 降为一枚色点：正常只显示点，异常才把完整路径 / 修复指引摊开 */}
+                      <details className="iv-tl-ffmpeg" data-timeline-ffmpeg={ffmpeg === undefined ? 'unknown' : ffmpeg.available ? 'ok' : ffmpeg.code ?? 'unavailable'}>
+                        <summary className={`iv-chip${ffmpeg !== undefined && ffmpeg.available ? ' iv-chip--ok' : ffmpeg === undefined ? '' : ' iv-chip--err'}`}>
+                          <i className="iv-dot" aria-hidden="true" />
+                          {ffmpeg === undefined
+                            ? '…'
+                            : ffmpeg.available
+                              ? `${t('ffmpegOk')} ${ffmpeg.version ?? ''}`
+                              : t('healthFailed')}
+                        </summary>
+                        <div className="iv-tl-ffmpeg-body">
+                          <p className="iv-meta iv-ellipsis" title={ffmpeg?.path ?? ffmpeg?.message ?? ''}>
+                            {ffmpeg === undefined ? '' : ffmpeg.available ? ffmpeg.path ?? '' : ffmpeg.message ?? ''}
+                          </p>
+                          <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => { void recheckFfmpeg() }}>
+                            <Icon name="refresh" />{t('ffmpegRecheck')}
+                          </button>
+                        </div>
+                      </details>
                       <span className={saveChipClass(timelineState)} data-timeline-save={timelineState} role="status">
                         <i className="iv-dot" aria-hidden="true" />
                         {t(timelineState === 'dirty' ? 'saveDirty' : timelineState === 'saving' ? 'saveSaving' : timelineState === 'failed' ? 'saveFailed' : 'saveSaved')}
                       </span>
                     </div>
-                  </div>
-
-                  {/* ffmpeg 状态行 */}
-                  <div className="iv-toolbar" data-timeline-ffmpeg={ffmpeg === undefined ? 'unknown' : ffmpeg.available ? 'ok' : ffmpeg.code ?? 'unavailable'}>
-                    <span className={`iv-chip${ffmpeg !== undefined && ffmpeg.available ? ' iv-chip--ok' : ffmpeg === undefined ? '' : ' iv-chip--err'}`}>
-                      <i className="iv-dot" aria-hidden="true" />
-                      {ffmpeg === undefined
-                        ? '…'
-                        : ffmpeg.available
-                          ? `${t('ffmpegOk')} ${ffmpeg.version ?? ''}`
-                          : t('healthFailed')}
-                    </span>
-                    <span className="iv-meta iv-ellipsis" style={{ flex: 1 }} title={ffmpeg?.path ?? ffmpeg?.message ?? ''}>
-                      {ffmpeg === undefined ? '' : ffmpeg.available ? ffmpeg.path ?? '' : ffmpeg.message ?? ''}
-                    </span>
-                    <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => { void recheckFfmpeg() }}>
-                      <Icon name="refresh" />{t('ffmpegRecheck')}
-                    </button>
                   </div>
 
                   {/* B-13 逐段预览 */}
@@ -4063,112 +4112,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)} />
                   </div>
 
-
-                  {/* 导出操作行 */}
-                  <div className="iv-toolbar iv-toolbar--export">
-                    {/* B6 分辨率 / 帧率 / 宽高比选择 */}
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('paramResolution')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-resolution="true" aria-label={t('paramResolution')}
-                        value={exportResolution} onChange={event => { setExportResolution(event.target.value); setAssetRegistered(false) }}>
-                        <option value="default">{t('resolutionDefault')}</option>
-                        <option value="480">{t('resolution480')}</option>
-                        <option value="768">{t('resolution768')}</option>
-                        <option value="2k">{t('resolution2k')}</option>
-                      </select>
-                    </label>
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('fps')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-fps="true" aria-label={t('fps')}
-                        value={exportFps} onChange={event => { setExportFps(Number(event.target.value)); setAssetRegistered(false) }}>
-                        <option value={24}>24</option>
-                        <option value={25}>25</option>
-                        <option value={30}>30</option>
-                        <option value={60}>60</option>
-                      </select>
-                    </label>
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('paramRatio')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-aspect="true" aria-label={t('paramRatio')}
-                        value={exportAspect} onChange={event => { setExportAspect(event.target.value); setAssetRegistered(false) }}>
-                        <option value="landscape">{t('ratioLandscape')}</option>
-                        <option value="portrait">{t('ratioPortrait')}</option>
-                        <option value="square">{t('ratioSquare')}</option>
-                        <option value="vertical">{t('ratioVertical')}</option>
-                      </select>
-                    </label>
-
-                    <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
-                      aria-busy={renderRunning ? 'true' : undefined}
-                      disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
-                      onClick={() => {
-                        setAssetRegistered(false)
-                        void run(async () => {
-                          // `B-16`：先记一笔导出账（遥测性质，记账失败不挡导出本身）
-                          try {
-                            const attempt = await apiRef.current.recordExport({
-                              projectId: timeline.projectId, timelineId: timeline.id,
-                            })
-                            setExportRecordId(attempt.id)
-                          } catch {
-                            // 历史记账失败静默：导出照常，历史里少一条
-                          }
-                          setRenderJob(await apiRef.current.renderTimeline(
-                            timeline.id, timeline.projectId,
-                            { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
-                          ))
-                        })
-                      }}>
-                      <Icon name="download" />{t('exportStart')}
-                    </button>
-                    <button type="button" className="iv-btn iv-btn--sm" disabled={!renderRunning} data-timeline-export-cancel="true"
-                      onClick={() => {
-                        void run(async () => {
-                          const id = renderJob?.id
-                          if (id === undefined) return
-                          await apiRef.current.cancelRender(id)
-                        })
-                      }}>
-                      {t('exportCancel')}
-                    </button>
-                    {renderJob === undefined
-                      ? null
-                      : (
-                        <>
-                          <span
-                            className={`iv-chip${renderJob.status === 'succeeded' ? ' iv-chip--ok' : renderJob.status === 'running' ? ' iv-chip--run' : renderJob.status === 'failed' ? ' iv-chip--err' : ''}`}
-                            data-timeline-render={renderJob.status}
-                            data-timeline-render-percent={String(renderJob.percent)}
-                          >
-                            <i className="iv-dot" aria-hidden="true" />
-                            {t(renderJob.status === 'running' ? 'exportRunning' : renderJob.status === 'succeeded' ? 'exportDone' : 'exportFailed')}
-                            {renderJob.status === 'running' ? ` ${renderJob.percent}%` : ''}
-                            {renderJob.outputPath === undefined ? '' : ` · ${t('exportResult')} ${baseName(renderJob.outputPath)}`}
-                            {renderJob.error === undefined ? '' : ` · ${renderJob.error.slice(0, 90)}`}
-                          </span>
-                          {renderJob.status === 'running'
-                            ? <span className="iv-progress"><i style={{ width: `${Math.max(2, renderJob.percent)}%` }} /></span>
-                            : null}
-                          {renderJob.status === 'succeeded' && renderJob.outputPath !== undefined
-                            ? (
-                              <button type="button" className="iv-btn iv-btn--sm" data-timeline-register="true"
-                                disabled={assetRegistered}
-                                onClick={() => {
-                                  void run(async () => {
-                                    await apiRef.current.attachAsset({
-                                      projectId: timeline.projectId, path: renderJob.outputPath!, kind: 'video',
-                                    })
-                                    setAssetRegistered(true)
-                                  })
-                                }}>
-                                <Icon name="layers" />
-                                {assetRegistered ? t('alreadyRegistered') : t('registerAsAsset')}
-                              </button>
-                            )
-                            : null}
-                        </>
-                      )}
-                  </div>
 
                   {/* 节目监视器（恒深，媒体惯例） */}
                   <div className="iv-monitor" data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
@@ -4327,145 +4270,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           </span>
                                           <span className="iv-clip-dur">{(clip.durationMs / 1000).toFixed(1)}s</span>
                                         </div>
-                                      <div className="iv-clip-row">
-                                        <input type="number" className="iv-input" value={clip.startMs} aria-label={`${t('clipStart')} ${clip.id}`}
-                                          onChange={event => {
-                                            const startMs = Number(event.target.value)
-                                            patchTrack(track.id, current => ({
-                                              ...current,
-                                              clips: current.clips.map(item => (item.id === clip.id ? { ...item, startMs } : item)),
-                                            }))
-                                          }} />
-                                        <input type="number" className="iv-input" value={clip.durationMs} aria-label={`${t('clipDuration')} ${clip.id}`}
-                                          onChange={event => {
-                                            const durationMs = Number(event.target.value)
-                                            patchClip(track.id, clip.id, item => ({ ...item, durationMs }))
-                                          }} />
                                         {track.kind === 'subtitle'
                                           ? null
-                                          : (
-                                            <>
-                                              <input type="number" className="iv-input" min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
-                                                value={clip.speed ?? 1} aria-label={`${t('clipSpeed')} ${clip.id}`} title={t('clipSpeed')}
-                                                onChange={event => {
-                                                  const speed = Number(event.target.value)
-                                                  patchClip(track.id, clip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
-                                                }} />
-                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
-                                                value={clip.fade ?? 0} aria-label={`${t('clipFade')} ${clip.id}`} title={t('clipFade')}
-                                                onChange={event => {
-                                                  const fade = Number(event.target.value)
-                                                  patchClip(track.id, clip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
-                                                }} />
-                                              {track.kind === 'video'
-                                                ? (
-                                                  <>
-                                                    <select className="iv-select"
-                                                      value={clip.transition ?? ''} aria-label={`${t('clipTransition')} ${clip.id}`} title={t('clipTransition')}
-                                                      onChange={event => {
-                                                        const transition = event.target.value === '' ? undefined : event.target.value as ClipTransition
-                                                        patchClip(track.id, clip.id, item => ({ ...item, ...transition === undefined ? { transition: undefined } : { transition } }))
-                                                      }}>
-                                                      <option value="">{t('none')}</option>
-                                                      <option value="fade">{t('transitionFade')}</option>
-                                                      <option value="wipeleft">{t('transitionWipeleft')}</option>
-                                                      <option value="circleopen">{t('transitionCircleopen')}</option>
-                                                    </select>
-                                                    {clip.transition === undefined
-                                                      ? null
-                                                      : (
-                                                        <input type="number" className="iv-input" min={0} max={MAX_CLIP_TRANSITION_MS} step={50}
-                                                          value={clip.transitionDurationMs ?? 400}
-                                                          aria-label={`${t('clipTransitionDuration')} ${clip.id}`} title={t('clipTransitionDuration')}
-                                                          onChange={event => {
-                                                            const transitionDurationMs = Number(event.target.value)
-                                                            patchClip(track.id, clip.id, item => ({ ...item, transitionDurationMs: Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, transitionDurationMs)) }))
-                                                          }} />
-                                                      )}
-                                                    {clip.crop === undefined
-                                                      ? (
-                                                        <button type="button" className="iv-btn iv-btn--sm"
-                                                          aria-label={`${t('clipCrop')} ${clip.id}`} title={t('clipCrop')}
-                                                          onClick={event => {
-                                                            event.stopPropagation()
-                                                            patchClip(track.id, clip.id, item => ({ ...item, crop: { x: 0, y: 0, width: 1920, height: 1080 } }))
-                                                          }}>
-                                                          <Icon name="sliders" size={11} />
-                                                        </button>
-                                                      )
-                                                      : (
-                                                        <>
-                                                          <input type="number" className="iv-input" min={0} value={clip.crop.x}
-                                                            aria-label={`${t('clipCropX')} ${clip.id}`} title={t('clipCropX')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={0} value={clip.crop.y}
-                                                            aria-label={`${t('clipCropY')} ${clip.id}`} title={t('clipCropY')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.width}
-                                                            aria-label={`${t('clipCropW')} ${clip.id}`} title={t('clipCropW')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.height}
-                                                            aria-label={`${t('clipCropH')} ${clip.id}`} title={t('clipCropH')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
-                                                          <button type="button" className="iv-btn iv-btn--sm"
-                                                            aria-label={`${t('clipCropRemove')} ${clip.id}`} title={t('clipCropRemove')}
-                                                            onClick={event => {
-                                                              event.stopPropagation()
-                                                              patchClip(track.id, clip.id, item => ({ ...item, crop: undefined }))
-                                                            }}>
-                                                            <Icon name="x" size={11} />
-                                                          </button>
-                                                        </>
-                                                      )}
-                                                  </>
-                                                )
-                                                : null}
-                                            </>
-                                          )}
-                                        {track.kind === 'subtitle'
-                                          ? (
-                                            <>
-                                              <input type="number" className="iv-input" min={8} max={200} value={clip.style?.fontSize ?? 32}
-                                                aria-label={`${t('styleFontSize')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const fontSize = Number(event.target.value)
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, fontSize } }
-                                                      : item)),
-                                                  }))
-                                                }} />
-                                              <input type="color" className="iv-color" value={clip.style?.color ?? '#ffffff'}
-                                                aria-label={`${t('styleColor')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const color = event.target.value
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, color } }
-                                                      : item)),
-                                                  }))
-                                                }} />
-                                              <select className="iv-select" value={clip.style?.position ?? 'bottom'}
-                                                aria-label={`${t('stylePosition')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const position = event.target.value as 'top' | 'middle' | 'bottom'
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, position } }
-                                                      : item)),
-                                                  }))
-                                                }}>
-                                                <option value="top">top</option>
-                                                <option value="middle">middle</option>
-                                                <option value="bottom">bottom</option>
-                                              </select>
-                                            </>
-                                          )
-                                          : null}
-                                        <button type="button" className="iv-btn"
+                                          /* 图片片段给缩略底；视频/音频需要抽帧或解码，本批不做 */
+                                          : clip.assetPath !== undefined && /\.(png|jpe?g|webp|gif)$/i.test(clip.assetPath)
+                                            ? <img className="iv-clip-thumb" alt="" src={`/outputs/${encodeURIComponent(baseName(clip.assetPath))}`} />
+                                            : null}
+                                        <button type="button" className="iv-clip-split"
                                           data-timeline-clip-split={clip.id}
                                           aria-label={`${t('clipSplit')} ${clip.id}`}
                                           title={splitInside ? t('clipSplit') : t('clipSplitOutsideHint')}
@@ -4473,21 +4284,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           onClick={event => { event.stopPropagation(); splitClip(clip.id) }}>
                                           <Icon name="storyboard" size={11} />
                                         </button>
-                                        <button type="button" className="iv-btn" aria-label={`${t('clipDuplicate')} ${clip.id}`}
-                                          title={t('clipDuplicate')}
-                                          onClick={event => { event.stopPropagation(); duplicateClip(clip.id) }}>
-                                          <Icon name="copy" size={11} />
-                                        </button>
-                                        <button type="button" className="iv-btn" aria-label={`${t('remove')} ${clip.id}`}
-                                          onClick={() => {
-                                            patchTrack(track.id, current => ({
-                                              ...current, clips: current.clips.filter(item => item.id !== clip.id),
-                                            }))
-                                          }}>
-                                          <Icon name="trash" size={11} />
-                                        </button>
                                       </div>
-                                    </div>
                                     )
                                   })}
                                 </div>
@@ -4542,6 +4339,370 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* 片段检查器（D3）：片段条只留「在哪 / 多长 / 是什么」，参数都在这里改。
+                      未选中时展示首个片段（fallback），保证键盘用户与测试都能直接摸到参数。 */}
+                  {(() => {
+                    if (inspectedEntry === undefined) {
+                      return <p className="iv-meta iv-clip-ins-empty" data-timeline-clip-inspector="true">{t('clipInspectorEmpty')}</p>
+                    }
+                    const { track: inspTrack, clip: inspClip } = inspectedEntry
+                    const inspSplitInside = playheadMs > inspClip.startMs
+                      && playheadMs < inspClip.startMs + effectiveDurationMs(inspClip)
+                    /* 首次改参数即把该片段写入选中态：避免「改了参数但不知道改的是哪一段」 */
+                    const claim = (): void => { if (isInspectorFallback) setSelectedClipId(inspClip.id) }
+                    return (
+                      <div className={`iv-clip-ins${isInspectorFallback ? ' iv-clip-ins--fallback' : ''}`}
+                        data-timeline-clip-inspector={inspClip.id}
+                        data-timeline-clip-inspector-fallback={isInspectorFallback ? 'true' : 'false'}>
+                        <div className="iv-clip-ins-head">
+                          <Icon name={TRACK_ICONS[inspTrack.kind]} size={12} />
+                          <span className="iv-clip-ins-title iv-ellipsis">
+                            {inspTrack.kind === 'subtitle' ? (inspClip.text ?? '') : baseName(inspClip.assetPath ?? '')}
+                          </span>
+                          {isInspectorFallback ? <span className="iv-clip-ins-hint">{t('clipInspectorFallback')}</span> : null}
+                          <div className="iv-clip-ins-actions">
+                            <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-split={inspClip.id}
+                              aria-label={`${t('clipSplit')} ${inspClip.id}`}
+                              title={inspSplitInside ? t('clipSplit') : t('clipSplitOutsideHint')}
+                              disabled={!inspSplitInside}
+                              onClick={() => { claim(); splitClip(inspClip.id) }}>
+                              <Icon name="storyboard" size={11} />
+                            </button>
+                            <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-duplicate={inspClip.id}
+                              aria-label={`${t('clipDuplicate')} ${inspClip.id}`} title={t('clipDuplicate')}
+                              onClick={() => { claim(); duplicateClip(inspClip.id) }}>
+                              <Icon name="copy" size={11} />
+                            </button>
+                            <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-remove={inspClip.id}
+                              aria-label={`${t('remove')} ${inspClip.id}`} title={t('remove')}
+                              onClick={() => {
+                                patchTrack(inspTrack.id, current => ({ ...current, clips: current.clips.filter(item => item.id !== inspClip.id) }))
+                                if (!isInspectorFallback) setSelectedClipId(undefined)
+                              }}>
+                              <Icon name="trash" size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="iv-clip-ins-grid">
+                          <label className="iv-clip-ins-field">
+                            <span>{t('clipStart')}</span>
+                            <input type="number" className="iv-input" data-timeline-insp-field="start"
+                              value={inspClip.startMs} aria-label={`${t('clipStart')} ${inspClip.id}`}
+                              onChange={event => {
+                                claim()
+                                const startMs = Number(event.target.value)
+                                patchTrack(inspTrack.id, current => ({
+                                  ...current,
+                                  clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, startMs } : item)),
+                                }))
+                              }} />
+                          </label>
+                          <label className="iv-clip-ins-field">
+                            <span>{t('clipDuration')}</span>
+                            <input type="number" className="iv-input" data-timeline-insp-field="duration"
+                              value={inspClip.durationMs} aria-label={`${t('clipDuration')} ${inspClip.id}`}
+                              onChange={event => {
+                                claim()
+                                const durationMs = Number(event.target.value)
+                                patchClip(inspTrack.id, inspClip.id, item => ({ ...item, durationMs }))
+                              }} />
+                          </label>
+                          {inspTrack.kind === 'subtitle'
+                            ? null
+                            : (
+                              <>
+                                <label className="iv-clip-ins-field">
+                                  <span>{t('clipSpeed')}</span>
+                                  <input type="number" className="iv-input" data-timeline-insp-field="speed"
+                                    min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
+                                    value={inspClip.speed ?? 1} aria-label={`${t('clipSpeed')} ${inspClip.id}`}
+                                    onChange={event => {
+                                      claim()
+                                      const speed = Number(event.target.value)
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
+                                    }} />
+                                </label>
+                                <label className="iv-clip-ins-field">
+                                  <span>{t('clipFade')}</span>
+                                  <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
+                                    value={inspClip.fade ?? 0} aria-label={`${t('clipFade')} ${inspClip.id}`}
+                                    onChange={event => {
+                                      claim()
+                                      const fade = Number(event.target.value)
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
+                                    }} />
+                                </label>
+                                {inspTrack.kind === 'video'
+                                  ? (
+                                    <>
+                                      <label className="iv-clip-ins-field">
+                                        <span>{t('clipTransition')}</span>
+                                        <select className="iv-select" value={inspClip.transition ?? ''}
+                                          aria-label={`${t('clipTransition')} ${inspClip.id}`}
+                                          onChange={event => {
+                                            claim()
+                                            const transition = event.target.value === '' ? undefined : event.target.value as ClipTransition
+                                            patchClip(inspTrack.id, inspClip.id, item => ({ ...item, ...transition === undefined ? { transition: undefined } : { transition } }))
+                                          }}>
+                                          <option value="">{t('none')}</option>
+                                          <option value="fade">{t('transitionFade')}</option>
+                                          <option value="wipeleft">{t('transitionWipeleft')}</option>
+                                          <option value="circleopen">{t('transitionCircleopen')}</option>
+                                        </select>
+                                      </label>
+                                      {inspClip.transition === undefined
+                                        ? null
+                                        : (
+                                          <label className="iv-clip-ins-field">
+                                            <span>{t('clipTransitionDuration')}</span>
+                                            <input type="number" className="iv-input" min={0} max={MAX_CLIP_TRANSITION_MS} step={50}
+                                              value={inspClip.transitionDurationMs ?? 400}
+                                              aria-label={`${t('clipTransitionDuration')} ${inspClip.id}`}
+                                              onChange={event => {
+                                                claim()
+                                                const transitionDurationMs = Number(event.target.value)
+                                                patchClip(inspTrack.id, inspClip.id, item => ({ ...item, transitionDurationMs: Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, transitionDurationMs)) }))
+                                              }} />
+                                          </label>
+                                        )}
+                                      {inspClip.crop === undefined
+                                        ? (
+                                          <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-crop={inspClip.id}
+                                            aria-label={`${t('clipCrop')} ${inspClip.id}`} title={t('clipCrop')}
+                                            onClick={() => {
+                                              claim()
+                                              patchClip(inspTrack.id, inspClip.id, item => ({ ...item, crop: { x: 0, y: 0, width: 1920, height: 1080 } }))
+                                            }}>
+                                            <Icon name="sliders" size={11} />{t('clipCrop')}
+                                          </button>
+                                        )
+                                        : (
+                                          <>
+                                            <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                              <span>{t('clipCropX')}</span>
+                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.x}
+                                                aria-label={`${t('clipCropX')} ${inspClip.id}`}
+                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
+                                            </label>
+                                            <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                              <span>{t('clipCropY')}</span>
+                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.y}
+                                                aria-label={`${t('clipCropY')} ${inspClip.id}`}
+                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
+                                            </label>
+                                            <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                              <span>{t('clipCropW')}</span>
+                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.width}
+                                                aria-label={`${t('clipCropW')} ${inspClip.id}`}
+                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
+                                            </label>
+                                            <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                              <span>{t('clipCropH')}</span>
+                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.height}
+                                                aria-label={`${t('clipCropH')} ${inspClip.id}`}
+                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
+                                            </label>
+                                            <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-crop-remove={inspClip.id}
+                                              aria-label={`${t('clipCropRemove')} ${inspClip.id}`} title={t('clipCropRemove')}
+                                              onClick={() => { claim(); patchClip(inspTrack.id, inspClip.id, item => ({ ...item, crop: undefined })) }}>
+                                              <Icon name="x" size={11} />
+                                            </button>
+                                          </>
+                                        )}
+                                    </>
+                                  )
+                                  : null}
+                              </>
+                            )}
+                          {inspTrack.kind === 'subtitle'
+                            ? (
+                              <>
+                                <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                  <span>{t('styleFontSize')}</span>
+                                  <input type="number" className="iv-input" min={8} max={200} value={inspClip.style?.fontSize ?? 32}
+                                    aria-label={`${t('styleFontSize')} ${inspClip.id}`}
+                                    onChange={event => {
+                                      claim()
+                                      const fontSize = Number(event.target.value)
+                                      patchTrack(inspTrack.id, current => ({
+                                        ...current,
+                                        clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, style: { ...item.style, fontSize } } : item)),
+                                      }))
+                                    }} />
+                                </label>
+                                <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                  <span>{t('styleColor')}</span>
+                                  <input type="color" className="iv-color" value={inspClip.style?.color ?? '#ffffff'}
+                                    aria-label={`${t('styleColor')} ${inspClip.id}`}
+                                    onChange={event => {
+                                      claim()
+                                      const color = event.target.value
+                                      patchTrack(inspTrack.id, current => ({
+                                        ...current,
+                                        clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, style: { ...item.style, color } } : item)),
+                                      }))
+                                    }} />
+                                </label>
+                                <label className="iv-clip-ins-field iv-clip-ins-field--tight">
+                                  <span>{t('stylePosition')}</span>
+                                  <select className="iv-select" value={inspClip.style?.position ?? 'bottom'}
+                                    aria-label={`${t('stylePosition')} ${inspClip.id}`}
+                                    onChange={event => {
+                                      claim()
+                                      const position = event.target.value as 'top' | 'middle' | 'bottom'
+                                      patchTrack(inspTrack.id, current => ({
+                                        ...current,
+                                        clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, style: { ...item.style, position } } : item)),
+                                      }))
+                                    }}>
+                                    <option value="top">top</option>
+                                    <option value="middle">middle</option>
+                                    <option value="bottom">bottom</option>
+                                  </select>
+                                </label>
+                              </>
+                            )
+                            : null}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* 导出条：常驻轨道下方（D1）——先看内容、再导出；导出中参数语义禁用而非仅视觉置灰 */}
+                  <div className="iv-toolbar iv-toolbar--export iv-tl-export" data-timeline-export-busy={renderRunning ? 'true' : 'false'}>
+                    <div className="iv-tl-params">
+                    {/* B6 分辨率 / 帧率 / 宽高比选择 */}
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('paramResolution')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-resolution="true" aria-label={t('paramResolution')}
+                        disabled={renderRunning}
+                        value={exportResolution} onChange={event => { setExportResolution(event.target.value); setAssetRegistered(false) }}>
+                        <option value="default">{t('resolutionDefault')}</option>
+                        <option value="480">{t('resolution480')}</option>
+                        <option value="768">{t('resolution768')}</option>
+                        <option value="2k">{t('resolution2k')}</option>
+                      </select>
+                    </label>
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('fps')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-fps="true" aria-label={t('fps')}
+                        disabled={renderRunning}
+                        value={exportFps} onChange={event => { setExportFps(Number(event.target.value)); setAssetRegistered(false) }}>
+                        <option value={24}>24</option>
+                        <option value={25}>25</option>
+                        <option value={30}>30</option>
+                        <option value={60}>60</option>
+                      </select>
+                    </label>
+                    <label className="iv-field">
+                      <span className="iv-field-label">{t('paramRatio')}</span>
+                      <select className="iv-select iv-select--sm" data-timeline-export-aspect="true" aria-label={t('paramRatio')}
+                        disabled={renderRunning}
+                        value={exportAspect} onChange={event => { setExportAspect(event.target.value); setAssetRegistered(false) }}>
+                        <option value="landscape">{t('ratioLandscape')}</option>
+                        <option value="portrait">{t('ratioPortrait')}</option>
+                        <option value="square">{t('ratioSquare')}</option>
+                        <option value="vertical">{t('ratioVertical')}</option>
+                      </select>
+                    </label>
+                    {/* 两个开关属于时间轴数据而非导出临时参数，放导出条语义更准 */}
+                    <label className="iv-check">
+                      <input type="checkbox" data-timeline-burn="true" checked={timeline.burnSubtitles}
+                        disabled={renderRunning}
+                        aria-label={t('burnSubtitles')}
+                        onChange={event => {
+                          const burnSubtitles = event.target.checked
+                          setTimeline(current => current === undefined ? current : { ...current, burnSubtitles })
+                          setTimelineState('dirty')
+                        }} />
+                      {t('burnSubtitles')}
+                    </label>
+                    <label className="iv-check">
+                      <input type="checkbox" data-timeline-loudness="true" checked={timeline.normalizeLoudness === true}
+                        disabled={renderRunning}
+                        aria-label={t('normalizeLoudness')}
+                        onChange={event => {
+                          const normalizeLoudness = event.target.checked
+                          setTimeline(current => current === undefined ? current : { ...current, normalizeLoudness })
+                          setTimelineState('dirty')
+                        }} />
+                      {t('normalizeLoudness')}
+                    </label>
+                    </div>
+
+                    <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
+                      aria-busy={renderRunning ? 'true' : undefined}
+                      disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
+                      onClick={() => {
+                        setAssetRegistered(false)
+                        void run(async () => {
+                          // `B-16`：先记一笔导出账（遥测性质，记账失败不挡导出本身）
+                          try {
+                            const attempt = await apiRef.current.recordExport({
+                              projectId: timeline.projectId, timelineId: timeline.id,
+                            })
+                            setExportRecordId(attempt.id)
+                          } catch {
+                            // 历史记账失败静默：导出照常，历史里少一条
+                          }
+                          setRenderJob(await apiRef.current.renderTimeline(
+                            timeline.id, timeline.projectId,
+                            { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
+                          ))
+                        })
+                      }}>
+                      <Icon name="download" />{t('exportStart')}
+                    </button>
+                    <button type="button" className="iv-btn iv-btn--sm" disabled={!renderRunning} data-timeline-export-cancel="true"
+                      onClick={() => {
+                        void run(async () => {
+                          const id = renderJob?.id
+                          if (id === undefined) return
+                          await apiRef.current.cancelRender(id)
+                        })
+                      }}>
+                      {t('exportCancel')}
+                    </button>
+                    {renderJob === undefined
+                      ? null
+                      : (
+                        <>
+                          <span
+                            className={`iv-chip${renderJob.status === 'succeeded' ? ' iv-chip--ok' : renderJob.status === 'running' ? ' iv-chip--run' : renderJob.status === 'failed' ? ' iv-chip--err' : ''}`}
+                            data-timeline-render={renderJob.status}
+                            data-timeline-render-percent={String(renderJob.percent)}
+                          >
+                            <i className="iv-dot" aria-hidden="true" />
+                            {t(renderJob.status === 'running' ? 'exportRunning' : renderJob.status === 'succeeded' ? 'exportDone' : 'exportFailed')}
+                            {renderJob.status === 'running' ? ` ${renderJob.percent}%` : ''}
+                            {renderJob.outputPath === undefined ? '' : ` · ${t('exportResult')} ${baseName(renderJob.outputPath)}`}
+                            {renderJob.error === undefined ? '' : ` · ${renderJob.error.slice(0, 90)}`}
+                          </span>
+                          {renderJob.status === 'running'
+                            ? <span className="iv-progress"><i style={{ width: `${Math.max(2, renderJob.percent)}%` }} /></span>
+                            : null}
+                          {renderJob.status === 'succeeded' && renderJob.outputPath !== undefined
+                            ? (
+                              <button type="button" className="iv-btn iv-btn--sm" data-timeline-register="true"
+                                disabled={assetRegistered}
+                                onClick={() => {
+                                  void run(async () => {
+                                    await apiRef.current.attachAsset({
+                                      projectId: timeline.projectId, path: renderJob.outputPath!, kind: 'video',
+                                    })
+                                    setAssetRegistered(true)
+                                  })
+                                }}>
+                                <Icon name="layers" />
+                                {assetRegistered ? t('alreadyRegistered') : t('registerAsAsset')}
+                              </button>
+                            )
+                            : null}
+                        </>
+                      )}
                   </div>
                   <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
                   {/* `B-5：配音卡与多比例导出属辅助动作，放在主内容之后` 成片多比例切片：一条成片按多种画幅各导出一次 */}

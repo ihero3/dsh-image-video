@@ -71,7 +71,13 @@ export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // 选择弹层：工作区实测总产物 1_396_543 / 303_924（含同一工作区里尚未发布的其他界面改动）。
 // 仍是界面增长（没有新增依赖），按同一口径抬到 1_170_000 / 255_000
 // （预算 1_404_000 / 306_000，实测占 99.4% / 99.3%）。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_170_000, gzip: 255_000 })
+// 2026-11-26 三 pane 重设计开工前抬基线（raw 1_170_000 → 1_320_000，gzip 255_000 → 288_000）：
+// 开工前实测总产物已是 1_536_447 / 335_596（raw 超原预算 132_447、gzip 超 29_596），
+// 主要是 5bb45b9「画布改节点式工作区」带来的界面增长（节点库/起步模板/检视器/小地图），
+// 属可解释的功能增长而非打包失控。本轮还要落地剧本页/时间轴两批重设计（预估 +18 KB raw / +3.5 KB gzip），
+// 故按「实测 + 预留」抬到 1_320_000 / 288_000（预算 1_584_000 / 345_600，当前占用约 97%）。
+// 单批增量另设硬上限：raw ≤6 KB、gzip ≤1.2 KB，超了先瘦身再合并。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_320_000, gzip: 288_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

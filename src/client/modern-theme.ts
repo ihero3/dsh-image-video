@@ -246,6 +246,63 @@ font-size:13px;line-height:1.55;
 .ivg-mask .ivg-n{width:28px;height:28px;font-size:12px}
 .ivg-mask .ivg-step-t{font-size:13.5px;font-weight:600}
 .ivg-mask .ivg-step-d,.ivg-mask .ivg-note{font-size:12px;line-height:1.6}
+/* 模板市场浮层（D2）：挂在 pane 头下方、覆盖画布右上，打开时画布高度不变 */
+.iv .iv-pane--canvas>.iv-pane-head{position:relative}
+.iv .iv-tpl.iv-wf-drawer{position:absolute;top:calc(100% + 6px);right:0;z-index:var(--iv-z-tip);width:min(560px,92%);max-height:60vh;overflow:auto;padding:var(--iv-sp-4);border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);box-shadow:var(--iv-shadow-3)}
+
+/* 片段条瘦身：只留「在哪 / 多长 / 是什么 / 手柄」，参数全部移到检查器 */
+.iv .iv-pane[data-workbench-pane="paneTimeline"] .iv-clip{padding:2px 20px 2px 8px;justify-content:center;overflow:hidden}
+.iv .iv-clip-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.5;pointer-events:none}
+.iv .iv-clip-top{position:relative;z-index:1}
+.iv .iv-clip:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
+/* 分割按钮：默认半透明可见（触屏无 hover，不能靠碰运气发现） */
+.iv .iv-clip-split{position:absolute;right:2px;bottom:2px;z-index:2;display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;padding:0;border:0;border-radius:var(--iv-r-xs);
+  background:color-mix(in srgb,var(--iv-panel) 70%,transparent);color:var(--iv-tx2);cursor:pointer;opacity:.55;
+  transition:opacity var(--iv-dur-1)}
+.iv .iv-clip:hover .iv-clip-split,.iv .iv-clip:focus-within .iv-clip-split{opacity:1}
+.iv .iv-clip-split:hover{color:var(--iv-tx)}
+.iv .iv-clip-split:disabled{opacity:.25;cursor:not-allowed}
+@media (pointer:coarse){.iv .iv-clip-split{opacity:1;width:32px;height:32px}}
+
+/* 片段检查器：常驻轨道下方，参数按「标签 + 控件」成组折行 */
+.iv .iv-clip-ins{display:flex;flex-direction:column;gap:var(--iv-sp-2);padding:var(--iv-sp-3);
+  border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2)}
+.iv .iv-clip-ins-head{display:flex;align-items:center;gap:var(--iv-sp-2);min-width:0}
+.iv .iv-clip-ins-title{flex:0 1 auto;min-width:0;font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-medium);color:var(--iv-tx2)}
+.iv .iv-clip-ins-hint{flex:none;padding:0 6px;border-radius:999px;font-size:var(--iv-fs-micro);color:var(--iv-tx3);
+  border:1px dashed var(--iv-line-2)}
+.iv .iv-clip-ins-actions{display:flex;gap:var(--iv-sp-2);margin-left:auto}
+.iv .iv-clip-ins-actions .iv-btn{width:26px;height:26px;padding:0;justify-content:center}
+.iv .iv-clip-ins-grid{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--iv-sp-2) var(--iv-sp-3)}
+.iv .iv-clip-ins-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.iv .iv-clip-ins-field>span{font-size:var(--iv-fs-micro);color:var(--iv-tx3)}
+.iv .iv-clip-ins-field .iv-input,
+.iv .iv-clip-ins-field .iv-select{height:26px;width:78px;font-size:var(--iv-fs-meta);padding:0 6px}
+.iv .iv-clip-ins-field .iv-select{width:104px}
+.iv .iv-clip-ins-field--tight .iv-input{width:64px}
+.iv .iv-clip-ins-field .iv-color{width:44px;height:26px;padding:1px 2px}
+.iv .iv-clip-ins-empty{margin:0;padding:var(--iv-sp-3);border:1px dashed var(--iv-line-2);border-radius:var(--iv-r)}
+
+/* === 时间轴精剪 === */
+/* 根为弹性列，监视器是唯一可伸缩项：「监视器 + 轨道同屏」由布局保证，不靠 magic number */
+.iv .iv-pane[data-workbench-pane="paneTimeline"]{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-height:0;flex:1 1 auto}
+/* ffmpeg 降为 pane 头色点：正常只看点，异常才展开路径与修复指引 */
+.iv .iv-tl-ffmpeg{position:relative;display:inline-flex}
+.iv .iv-tl-ffmpeg>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:var(--iv-sp-2)}
+.iv .iv-tl-ffmpeg>summary::-webkit-details-marker{display:none}
+.iv .iv-tl-ffmpeg-body{position:absolute;right:0;top:calc(100% + 6px);z-index:var(--iv-z-tip);display:flex;flex-direction:column;
+  gap:var(--iv-sp-2);width:min(420px,86vw);padding:var(--iv-sp-3);border:1px solid var(--iv-line);border-radius:var(--iv-r);
+  background:var(--iv-panel);box-shadow:var(--iv-shadow-2)}
+.iv .iv-tl-ffmpeg-body .iv-meta{white-space:normal;word-break:break-all}
+/* 监视器吃余量；媒体跟随容器，不再被 200px 上限卡出大片留白 */
+.iv .iv-pane[data-workbench-pane="paneTimeline"] .iv-monitor{flex:1 1 auto;min-height:140px;max-height:clamp(160px,calc(100dvh - 520px),420px)}
+.iv .iv-monitor img,.iv .iv-monitor video{max-height:100%;width:auto;object-fit:contain}
+/* 导出条：常驻轨道下方；参数与开关同一行，导出中参数语义禁用（不只透明） */
+.iv .iv-tl-export{border-top:1px solid var(--iv-line);padding-top:var(--iv-sp-3);align-items:center}
+.iv .iv-tl-export .iv-tl-params{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;min-width:0}
+.iv .iv-tl-export[data-timeline-export-busy="true"] .iv-tl-params{opacity:.6}
+
 @media (max-width:520px){
 .iv .iv-pane{padding:14px;border-radius:14px}
 .iv .iv-btn{height:30px}

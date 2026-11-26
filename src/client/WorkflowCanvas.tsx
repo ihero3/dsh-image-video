@@ -35,6 +35,7 @@ import { downloadWorkflowFile, parseWorkflowFile, serializeWorkflow } from './wo
 import { readWorkflowFromImage } from './image-workflow.ts'
 import { autoLayout, filterItems } from './workflow-layout.ts'
 import { ModelPicker } from './panels/ModelPicker.tsx'
+import { useDialogFocus } from './use-dialog-focus.ts'
 import type { WorkbenchApi } from './api.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 import { Icon, type IconName } from './icons.tsx'
@@ -435,6 +436,13 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     readonly position: { readonly x: number; readonly y: number }
   } | undefined>(undefined)
   const [quickQuery, setQuickQuery] = useState('')
+  /**
+   * 整图替换前的确认（应用模板 / 导入 / 粘贴 JSON 都会覆盖当前图）。
+   * 只有图里已有节点时才拦；空画布直接应用，不打扰首次使用。
+   */
+  const [pendingReplace, setPendingReplace] = useState<{ label: string; run: () => void } | undefined>(undefined)
+  const replacePanelRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(pendingReplace !== undefined, replacePanelRef, () => { setPendingReplace(undefined) })
   const { fitView, screenToFlowPosition } = useReactFlow<CanvasNode, Edge>()
   const { zoom } = useViewport()
   const flowRef = useRef<HTMLDivElement | null>(null)
@@ -622,7 +630,13 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     return portsCompatible(source.data.kind, target.data.kind)
   }, [nodes])
 
-  const applyTemplate = useCallback((id: string) => {
+  /** 整图替换的统一守卫：图非空时先确认，空画布直接执行。 */
+  const requestReplace = useCallback((label: string, run: () => void) => {
+    if (nodes.length === 0) { run(); return }
+    setPendingReplace({ label, run })
+  }, [nodes.length])
+
+  const applyTemplateNow = useCallback((id: string) => {
     const template = WORKFLOW_TEMPLATES.find(candidate => candidate.id === id)
     if (template === undefined) return
     const stamp = Date.now().toString(36)
@@ -648,6 +662,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     applyGraph({ nodes: laidOut, edges: builtEdges }, `template:${id}`)
     window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
   }, [applyGraph, fitView])
+
+  const applyTemplate = useCallback((id: string) => {
+    requestReplace(t('canvasReplaceTemplate'), () => { applyTemplateNow(id) })
+  }, [requestReplace, applyTemplateNow, t])
 
   /** 自动排列：按深度分列重排（导入的外部工作流尤其需要）。 */
   const relayout = useCallback(() => {
@@ -714,8 +732,8 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     applyGraph({ nodes: nextNodes, edges: nextEdges }, `paste:${Date.now().toString(36)}`)
   }, [nodes, edges, applyGraph])
 
-  /** 导入工作流 JSON：先做结构校验，通过才替换整张图（可撤销）。 */
-  const importWorkflowText = useCallback(async (text: string): Promise<void> => {
+  /** 导入工作流 JSON：先做结构校验，通过才替换整张图（可撤销；图非空时先确认）。 */
+  const importWorkflowTextNow = useCallback(async (text: string): Promise<void> => {
     try {
       const parsed = parseWorkflowFile(text)
       const graph: WorkflowRecord = { ...record, nodes: [...parsed.nodes], edges: [...parsed.edges] }
@@ -741,6 +759,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
       onNotice?.(`${t('canvasImportWorkflowFailed')}：${message}`, 'error')
     }
   }, [record, applyGraph, onNotice, t, fitView])
+
+  const importWorkflowText = useCallback(async (text: string): Promise<void> => {
+    requestReplace(t('canvasReplaceImport'), () => { void importWorkflowTextNow(text) })
+  }, [requestReplace, importWorkflowTextNow, t])
 
   const importWorkflowFile = useCallback(async (file: File): Promise<void> => {
     const bytes = new Uint8Array(await file.arrayBuffer())
@@ -802,7 +824,14 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
         || target.isContentEditable === true
       )
       if (event.key === 'Escape') {
+        // 由内到外：快速添加 → 参数检视器（=清空选中）→ 退出最大化
         if (quickAdd !== undefined) { event.preventDefault(); setQuickAdd(undefined); setQuickQuery(''); return }
+        if (selectedIds.length > 0) {
+          event.preventDefault()
+          setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
+          setSelectedIds([])
+          return
+        }
         if (maximized) { event.preventDefault(); setMaximized(false); return }
         return
       }
@@ -1022,7 +1051,8 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             onClick={() => { setLogOpen(open => !open) }}>
             <Icon name="script" size={13} />
             {validation.issues.length > 0
-              ? <span className="iv-chip iv-chip--err" data-workflow-log-issue-count="true">{validation.issues.length}</span>
+              /* planned 节点是「预期状态」而非错误，用 warn 不用 danger */
+              ? <span className="iv-chip iv-chip--warn" data-workflow-log-issue-count="true">{validation.issues.length}</span>
               : null}
           </button>
           <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="maximize"
@@ -1389,6 +1419,36 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
           )}
         <span className="iv-wf-status-note" title={t('canvasTransient')}>{t('canvasTransient')}</span>
       </div>
+
+      {/* 整图替换确认：图非空时先问一次，避免「点一下画了半小时的图就没了」 */}
+      {pendingReplace === undefined
+        ? null
+        : (
+          <div className="iv-help-mask" data-workflow-replace-confirm="true">
+            <div className="iv-help" ref={replacePanelRef} tabIndex={-1} role="dialog" aria-modal="true"
+              aria-label={t('canvasReplaceTitle')}>
+              <h3 className="iv-help-title">{t('canvasReplaceTitle')}</h3>
+              <p className="iv-help-body">{pendingReplace.label}</p>
+              <p className="iv-meta">{t('canvasReplaceBody')}</p>
+              <div className="iv-row" style={{ justifyContent: 'flex-end' }}>
+                <button type="button" className="iv-btn iv-btn--ghost"
+                  data-workflow-replace-cancel="true"
+                  onClick={() => { setPendingReplace(undefined) }}>
+                  {t('canvasReplaceCancel')}
+                </button>
+                <button type="button" className="iv-btn iv-btn--acc"
+                  data-workflow-replace-ok="true"
+                  onClick={() => {
+                    const pending = pendingReplace
+                    setPendingReplace(undefined)
+                    pending?.run()
+                  }}>
+                  {t('canvasReplaceConfirm')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       <div className="iv-worklog" id="iv-workflow-log" data-workflow-log="true"
         data-workflow-log-open={logOpen ? 'true' : 'false'}>

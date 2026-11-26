@@ -80,6 +80,14 @@ async function addClipViaPicker(view: ReturnType<typeof render>): Promise<void> 
   await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
 }
 
+/**
+ * 片段参数现在住在「片段检查器」里（片段条只留位置/内容/手柄）。
+ * 检查器默认展示选中片段，未选中时展示首个片段（fallback），所以不选也能取到。
+ */
+function inspField(view: ReturnType<typeof render>, field: 'start' | 'duration' | 'speed'): HTMLInputElement {
+  return view.container.querySelector(`[data-timeline-insp-field="${field}"]`) as HTMLInputElement
+}
+
 /** 片段当前的 left%（时间比例 → CSS 百分比）。 */
 function clipLeftPercent(view: ReturnType<typeof render>): string {
   const style = view.container.querySelector('[data-timeline-clip]')?.getAttribute('style') ?? ''
@@ -149,7 +157,7 @@ describe('B5 timeline interaction', () => {
 
     // 片段落在鼠标位置附近：lane 宽 400 → 比例 0.5 → 约 1500ms
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
-    const startInput = view.container.querySelector('[data-timeline-track="video"] input') as HTMLInputElement
+    const startInput = inspField(view, 'start')
     expect(Number(startInput.value)).toBeGreaterThanOrEqual(1400)
     expect(Number(startInput.value)).toBeLessThanOrEqual(1600)
     expect(clipLeftPercent(view)).not.toBe('0')
@@ -168,7 +176,7 @@ describe('B5 timeline interaction', () => {
 
     // 300px → (300-8)/384 = 0.76 → 约 2280ms（落点换算口径与线上一致）
     await waitFor(() => { expect(clipLeftPercent(view)).not.toBe('0') })
-    const startInput = view.container.querySelector('[data-timeline-track="video"] input') as HTMLInputElement
+    const startInput = inspField(view, 'start')
     expect(Number(startInput.value)).toBeGreaterThanOrEqual(2200)
     expect(Number(startInput.value)).toBeLessThanOrEqual(2360)
   })
@@ -176,8 +184,8 @@ describe('B5 timeline interaction', () => {
   it('changes duration with the right handle and start with the left handle', async () => {
     const { view } = await renderTimeline()
     await addClipViaPicker(view)
-    const startInput = () => view.container.querySelector('[data-timeline-track="video"] input') as HTMLInputElement
-    const durationInput = () => view.container.querySelectorAll('[data-timeline-track="video"] input')[1] as HTMLInputElement
+    const startInput = () => inspField(view, 'start')
+    const durationInput = () => inspField(view, 'duration')
     expect(Number(durationInput().value)).toBe(3000)
 
     // 右手柄右移 100px：+100/384*3000 ≈ 781ms
@@ -226,12 +234,13 @@ describe('B5 timeline interaction', () => {
     const { view } = await renderTimeline()
     await addClipViaPicker(view)
 
-    // 复制：紧随原片段之后
-    fireEvent.click(view.container.querySelector(`[aria-label^="${en.clipDuplicate}"]`) as HTMLElement)
+    // 复制：紧随原片段之后（按钮在检查器里；片段条只留分割）
+    fireEvent.click(view.container.querySelector(`[data-timeline-insp-duplicate]`) as HTMLElement)
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
     // 域层 duplicateClip：副本落在原片段结尾之后（0 + 3000）
-    const inputs = view.container.querySelectorAll('[data-timeline-track="video"] input')
-    expect(Number(inputs[4]!.value)).toBe(3000)
+    const copied = view.container.querySelectorAll('[data-timeline-clip]')
+    expect(copied[1]?.getAttribute('data-timeline-clip-selected')).toBe('true')
+    expect(view.container.querySelector('[data-timeline-insp-field="start"]')).toBeTruthy()
 
     // 选中一个片段，按 Delete 删掉
     fireEvent.click(view.container.querySelector('[data-timeline-clip]') as HTMLElement)
@@ -254,18 +263,15 @@ describe('B5 timeline interaction', () => {
     fireEvent.click(view.container.querySelector('[data-timeline-clip-split]') as HTMLElement)
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
 
-    const inputs = view.container.querySelectorAll('[data-timeline-track="video"] input')
-    // 每片四个输入：起点 / 时长 / 变速 / 淡入淡出
-    expect(Number(inputs[0]!.value)).toBe(0)        // 左半起点
-    expect(Number(inputs[1]!.value)).toBe(1500)     // 左半时长
-    expect(Number(inputs[4]!.value)).toBe(1500)     // 右半起点
-    expect(Number(inputs[5]!.value)).toBe(1500)     // 右半时长
-
     // 分割后选中右半：还能再切一刀
     await waitFor(() => {
       const selected = view.container.querySelectorAll('[data-timeline-clip]')
       expect(selected[1]?.getAttribute('data-timeline-clip-selected')).toBe('true')
     })
+    // 右半时长守恒（1500 = 3000 - 1500），检查器跟着指向右半
+    expect(Number(inspField(view, 'duration').value)).toBe(1500)
+    expect(view.container.querySelector('[data-timeline-clip-inspector]')?.getAttribute('data-timeline-clip-inspector'))
+      .toBe(view.container.querySelectorAll('[data-timeline-clip]')[1]?.getAttribute('data-timeline-clip'))
   })
 
   it('disables split when the playhead is outside the clip (B17)', async () => {

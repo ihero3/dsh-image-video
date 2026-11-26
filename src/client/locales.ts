@@ -327,6 +327,12 @@ export type WorkbenchLocaleKey =
   | 'canvasDragHint'
   | 'canvasOutputPreview'
   | 'canvasCloseInspector'
+  | 'canvasReplaceTemplate'
+  | 'canvasReplaceImport'
+  | 'canvasReplaceTitle'
+  | 'canvasReplaceBody'
+  | 'canvasReplaceConfirm'
+  | 'canvasReplaceCancel'
   | 'modelDefaultTag'
   | 'modelDefaultHint'
   | 'canvasStatusEmpty'
@@ -501,6 +507,25 @@ export type WorkbenchLocaleKey =
   | 'studioShotApply'
   | 'studioNoEpisode'
   | 'studioLoadFailed'
+  | 'studioExtractCancelled'
+  | 'studioExtractEmpty'
+  | 'studioExtractPartial'
+  | 'studioExtractCancel'
+  | 'studioExtractingProgress'
+  | 'studioRestoreDraft'
+  | 'studioDraftCount'
+  | 'studioCopyDraft'
+  | 'studioCopied'
+  | 'studioCopyFailed'
+  | 'studioClearDraft'
+  | 'studioClearConfirm'
+  | 'studioSegments'
+  | 'studioSegmentDrop'
+  | 'studioRestored'
+  | 'studioRemoved'
+  | 'studioUndoRemove'
+  | 'studioPromptLoad'
+  | 'studioPromptCount'
   | 'shotRefAdd'
   | 'segmentRefsLabel'
   | 'episodeSyncWorkflow'
@@ -697,6 +722,8 @@ export type WorkbenchLocaleKey =
   // ---- B17 片段分割 ----
   | 'clipSplit'
   | 'clipSplitOutsideHint'
+  | 'clipInspectorEmpty'
+  | 'clipInspectorFallback'
   // ---- B-6 模板市场（F4 快速模板分组 + 描述） ----
   | 'templateQuickGroup'
   | 'templateFullGroup'
@@ -1423,6 +1450,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasDragHint: 'Drag onto the canvas to place it where you drop it',
   canvasOutputPreview: 'Output preview',
   canvasCloseInspector: 'Close parameters',
+  canvasReplaceTemplate: 'Replace the canvas with this template?',
+  canvasReplaceImport: 'Replace the canvas with the imported workflow?',
+  canvasReplaceTitle: 'Replace canvas',
+  canvasReplaceBody: 'The current graph will be replaced. You can undo with Ctrl/Cmd+Z.',
+  canvasReplaceConfirm: 'Replace',
+  canvasReplaceCancel: 'Cancel',
   modelDefaultTag: 'default',
   modelDefaultHint: 'Default model: ',
   canvasStatusEmpty: 'Empty canvas',
@@ -1563,7 +1596,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   quickAdvancedHint: 'Follows host defaults',
   quickGenShortcut: 'Ctrl/⌘ + Enter',
   studioTitle: 'Extract prompts',
-  studioDesc: 'Reference images or videos, extract editable prompts with your key points, then save them to this episode.',
+  studioDesc: 'Turn each reference into a prompt with your key points, then save it to this episode.',
   studioSkillLabel: 'Reverse skill',
   studioSkillDefault: 'Default Skill',
   studioSources: 'References',
@@ -1577,8 +1610,27 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   studioModelEmpty: 'Default (host vision model)',
   studioExtractAction: 'Extract prompts',
   studioExtracting: 'Extracting…',
-  studioExtracted: 'Extracted {n} prompt(s)',
+  studioExtracted: 'Merged {n} prompt segment(s)',
   studioExtractFailed: 'Extraction failed',
+  studioExtractCancelled: 'Extraction cancelled — the previous prompt is kept.',
+  studioExtractEmpty: 'Nothing usable was extracted. Try another text model or adjust the key points.',
+  studioExtractPartial: 'Merged {ok} result(s); {failed} reference(s) failed',
+  studioExtractCancel: 'Cancel',
+  studioExtractingProgress: 'Extracting {done}/{total}…',
+  studioRestoreDraft: 'Restore previous',
+  studioDraftCount: '{n} characters',
+  studioCopyDraft: 'Copy',
+  studioCopied: 'Copied to clipboard',
+  studioCopyFailed: 'Could not copy',
+  studioClearDraft: 'Clear draft',
+  studioClearConfirm: 'Remove all references? The draft is kept.',
+  studioSegments: 'Per-reference results ({n})',
+  studioSegmentDrop: 'Remove this segment',
+  studioRestored: 'Restored {name}',
+  studioRemoved: 'Deleted {name}',
+  studioUndoRemove: 'Undo',
+  studioPromptLoad: 'Load into draft',
+  studioPromptCount: '{n} saved',
   studioClearSources: 'Clear',
   studioNameLabel: 'Prompt name',
   studioNamePlaceholder: 'Prompt name shown in the episode library',
@@ -1793,6 +1845,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
 
   clipSplit: 'Split at playhead',
   clipSplitOutsideHint: 'The playhead is outside this clip',
+  clipInspectorEmpty: 'Add a clip to edit its parameters',
+  clipInspectorFallback: 'Not selected · showing the first clip',
 
   templateQuickGroup: 'Quick start',
   templateFullGroup: 'Full pipeline',
@@ -2575,6 +2629,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasDragHint: '拖到画布上，松手即落在落点',
   canvasOutputPreview: '产出预览',
   canvasCloseInspector: '关闭参数面板',
+  canvasReplaceTemplate: '用这张模板替换当前画布？',
+  canvasReplaceImport: '用导入的工作流替换当前画布？',
+  canvasReplaceTitle: '替换画布',
+  canvasReplaceBody: '当前节点图会被替换。可用 Ctrl/Cmd+Z 撤销。',
+  canvasReplaceConfirm: '替换',
+  canvasReplaceCancel: '取消',
   modelDefaultTag: '默认',
   modelDefaultHint: '默认模型：',
   canvasStatusEmpty: '空画布',
@@ -2715,7 +2775,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   quickAdvancedHint: '跟随宿主默认',
   quickGenShortcut: 'Ctrl/⌘ + Enter',
   studioTitle: '提取提示词',
-  studioDesc: '引用图片或视频，按提取要点生成可编辑提示词，再存入本集。',
+  studioDesc: '按提取要点把每一份引用转成提示词，再存入本集提示词库。',
   studioSkillLabel: '逆向 Skill',
   studioSkillDefault: '默认 Skill',
   studioSources: '引用素材',
@@ -2729,8 +2789,27 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   studioModelEmpty: '默认（宿主视觉模型）',
   studioExtractAction: '提取提示词',
   studioExtracting: '提取中…',
-  studioExtracted: '已提取 {n} 条提示词',
+  studioExtracted: '已合并 {n} 段结果',
   studioExtractFailed: '提取失败',
+  studioExtractCancelled: '已取消提取，草稿保持原样。',
+  studioExtractEmpty: '没有提取到可用内容：换一个文本模型或调整提取要点再试。',
+  studioExtractPartial: '已合并 {ok} 段；{failed} 个素材失败',
+  studioExtractCancel: '取消',
+  studioExtractingProgress: '提取中 {done}/{total}…',
+  studioRestoreDraft: '恢复上一版',
+  studioDraftCount: '{n} 字',
+  studioCopyDraft: '复制',
+  studioCopied: '已复制到剪贴板',
+  studioCopyFailed: '复制失败',
+  studioClearDraft: '清空草稿',
+  studioClearConfirm: '确定清空全部引用？草稿会保留。',
+  studioSegments: '分段结果（{n}）',
+  studioSegmentDrop: '移除这一段',
+  studioRestored: '已恢复 {name}',
+  studioRemoved: '已删除 {name}',
+  studioUndoRemove: '撤销',
+  studioPromptLoad: '载入草稿',
+  studioPromptCount: '共 {n} 条',
   studioClearSources: '清空',
   studioNameLabel: '提示词名称',
   studioNamePlaceholder: '显示在本集提示词库里的名称',
@@ -2945,6 +3024,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
 
   clipSplit: '在播放头分割',
   clipSplitOutsideHint: '播放头不在这个片段内',
+  clipInspectorEmpty: '添加片段后即可编辑参数',
+  clipInspectorFallback: '未选中 · 当前展示第 1 段',
 
   templateQuickGroup: '快速上手',
   templateFullGroup: '完整链路',

@@ -75,6 +75,9 @@ describe('B-6 template market cards (F4)', () => {
     fireEvent.click(view.container.querySelector('[data-workflow-template-toggle="true"]') as HTMLElement)
     await waitFor(() => { expect(view.container.querySelector('[data-workflow-template-market="true"]')).toBeTruthy() })
     fireEvent.click(view.container.querySelector('[data-workflow-template="quick-video"]') as HTMLElement)
+    // 画布已有节点：整图替换先确认（防误触），再落库
+    const confirm = await screen.findByRole('button', { name: en.canvasReplaceConfirm })
+    fireEvent.click(confirm)
     await waitFor(() => {
       expect(host.calls.filter(call => call === 'workflows/save').length).toBeGreaterThan(saved)
     })

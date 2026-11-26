@@ -79,6 +79,8 @@ export const WORKBENCH_STYLE = `
   /* ---- 层级：只在插件自己的层叠上下文内有效（portal 出去要另算） ---- */
   --iv-z-sticky:2;--iv-z-playhead:5;--iv-z-tip:40;--iv-z-overlay:60;
   --iv-z-canvas-hud:6;--iv-z-canvas-pop:8;
+  /* 层级语义表（三 pane 共用）：6=抽屉/画布 HUD · 8=画布内浮层 · 40=非模态 popover · 60=仅模态/全屏/遮罩 */
+  --iv-z-drawer:6;
   /* ---- 动效：100/120/300ms 三档；prefers-reduced-motion 下统一关掉 ---- */
   --iv-dur-1:100ms;--iv-dur-2:120ms;--iv-dur-3:300ms;--iv-ease:cubic-bezier(.2,.8,.3,1);
   /* ---- 阴影：acc 两档给主按钮，2/3 给气泡与浮层；
@@ -1114,6 +1116,32 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-studio-ref-row .iv-ellipsis{flex:1 1 auto}
 .iv-ref-picker-meta{margin-left:auto;flex:none;color:var(--iv-tx3);font-size:var(--iv-fs-micro)}
 .iv-ref-picker-empty{display:block;padding:var(--iv-sp-3) 0;color:var(--iv-tx3);font-size:var(--iv-fs-meta)}
+/* 提取提示词：整页纵向铺开；直挂的孩子不能被 iv-sb-field 的 flex-basis 撑高 */
+.iv-studio-slot{display:flex;flex-direction:column;min-width:0}
+.iv-studio-slot[hidden]{display:none}
+.iv-prompt-studio{display:flex;flex-direction:column;gap:var(--iv-sp-5);min-width:0}
+.iv-prompt-studio>*{flex:0 0 auto}
+.iv-studio-sources{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0}
+/* 引用区头部：标题 / 计数 / 提示 / 添加按钮同一行，添加按钮贴右（引用列表在下方自然长高） */
+.iv-studio-sources-head{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;min-width:0}
+.iv-studio-sources-head .iv-ref-pop{margin-left:auto}
+.iv-studio-actions{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap}
+/* 草稿标题行：label / 字数 / 恢复 / 复制 / 清空，工具簇贴右 */
+.iv-studio-field-head{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;min-width:0}
+.iv-studio-field-tools{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;margin-left:auto}
+/* 库里提示词名本身是「载入草稿」按钮；「带入生成」仍单列，避免误跳页 */
+.iv-studio-prompt-name{display:flex;flex:1 1 auto;min-width:0;padding:0;border:0;background:none;color:inherit;
+  font:inherit;font-size:var(--iv-fs-body);text-align:left;cursor:pointer}
+.iv-studio-prompt-name:hover .iv-ellipsis{color:var(--iv-acc);text-decoration:underline}
+.iv-studio-prompt-name:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px}
+.iv-studio-seg-row{display:flex;align-items:center;gap:var(--iv-sp-3);padding:2px 0;border-top:1px solid var(--iv-line);
+  font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
+.iv-studio-seg-row:first-child{border-top:0}
+.iv-studio-seg-row .iv-ellipsis{flex:1;min-width:0}
+/* 删除提示词后的撤销行：轻提示，不打断继续整理 */
+.iv-studio-undo{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;margin-top:var(--iv-sp-3);
+  padding:var(--iv-sp-3) var(--iv-sp-4);border:1px dashed var(--iv-line-2);border-radius:var(--iv-r-sm)}
+.iv-studio-undo .iv-btn{margin-left:auto}
 .iv-plan-row{display:flex;gap:var(--iv-sp-3);flex-wrap:wrap;align-items:flex-end}
 .iv-plan-field{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-width:0;font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
 .iv-plan-field .iv-input{width:88px}
