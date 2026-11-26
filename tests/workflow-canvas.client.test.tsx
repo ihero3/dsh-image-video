@@ -344,3 +344,188 @@ describe('B4 canvas interaction', () => {
     expect(document.body.style.overflow).toBe('')
   })
 })
+
+describe('工作流画布：节点式编辑器的上手路径', () => {
+  const flow = (view: ReturnType<typeof render>): HTMLElement => {
+    const element = view.container.querySelector('[data-workflow-flow]')
+    if (element === null) throw new Error('画布没挂载')
+    return element as HTMLElement
+  }
+
+  it('空画布给模板起步，点一下就得到一条可跑的链路', async () => {
+    const { view, current } = renderCanvas()
+    const onboarding = view.container.querySelector('[data-workflow-onboarding]')
+    expect(onboarding).toBeTruthy()
+    // 四张首推模板卡（快速出图 / 快速出片 / 生产线 / 参考复刻）
+    expect(view.container.querySelectorAll('[data-workflow-onboarding-template]')).toHaveLength(4)
+
+    fireEvent.click(view.container.querySelector('[data-workflow-onboarding-template="quick-image"]') as HTMLElement)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('2') })
+    // 有图之后起步卡自动让位，画布拿回全部空间
+    expect(view.container.querySelector('[data-workflow-onboarding]')).toBeNull()
+    // 模板自带示例提示词：不需要用户先填一版才能跑
+    expect(current().nodes.some(node => node.kind === 'image-generate' && node.params.prompt !== '')).toBe(true)
+  })
+
+  it('按名字过滤节点库，只留下匹配的节点', async () => {
+    const { view } = renderCanvas()
+    const input = view.container.querySelector('[data-workflow-library-search]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'video' } })
+    await waitFor(() => {
+      expect(view.container.querySelectorAll('[data-workflow-palette-item]')).toHaveLength(1)
+    })
+    expect(view.container.querySelector('[data-workflow-palette-item="video-generate"]')).toBeTruthy()
+
+    fireEvent.change(input, { target: { value: 'no-such-node' } })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-library-empty]')).toBeTruthy()
+    })
+  })
+
+  it('把节点库的节点拖到画布上会真的落一个节点', async () => {
+    const { view } = renderCanvas()
+    fireEvent.drop(flow(view), {
+      dataTransfer: {
+        getData: (type: string) => (type === 'application/x-dsh-workflow-node' ? 'video-generate' : ''),
+        files: [],
+      },
+    })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    expect(view.container.querySelector('[data-workflow-node="video-generate"]')).toBeTruthy()
+  })
+
+  it('把命中缓存的节点标成缓存（与 ComfyUI 的 cached 同义）', async () => {
+    const record: WorkflowRecord = {
+      ...makeRecord(),
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '一只猫' } }],
+    }
+    const run: WorkflowCanvasProps['run'] = {
+      latest: {
+        schemaVersion: 1, id: 'run-c', workflowId: 'wfl-1', projectId: 'prj-1', status: 'succeeded',
+        graph: { nodes: [], edges: [] },
+        nodeRuns: [{
+          nodeId: 'n1', kind: 'image-generate', status: 'succeeded', cached: true,
+          startedAt: '2026-10-15T00:00:00.000Z', outputPath: '/tmp/outputs/cat.png',
+        }],
+        startedAt: '2026-10-15T00:00:00.000Z',
+      },
+      history: [], busy: false, onStart: () => {}, onCancel: () => {}, onRetry: () => {}, onSelectRun: () => {},
+    }
+    const view = render(<WorkflowCanvas record={record} onChange={() => {}} t={t} run={run} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-node-cached]')).toBeTruthy() })
+  })
+
+  it('节点卡片显示产出缩略图，点它就送到右侧预览', async () => {
+    const record: WorkflowRecord = {
+      ...makeRecord(),
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '一只猫' } }],
+    }
+    const onPreview = vi.fn()
+    const run: WorkflowCanvasProps['run'] = {
+      latest: {
+        schemaVersion: 1, id: 'run-p', workflowId: 'wfl-1', projectId: 'prj-1', status: 'succeeded',
+        graph: { nodes: [], edges: [] },
+        nodeRuns: [{
+          nodeId: 'n1', kind: 'image-generate', status: 'succeeded',
+          startedAt: '2026-10-15T00:00:00.000Z', outputPath: '/tmp/outputs/cat.png',
+        }],
+        startedAt: '2026-10-15T00:00:00.000Z',
+      },
+      history: [], busy: false, onStart: () => {}, onCancel: () => {}, onRetry: () => {}, onSelectRun: () => {},
+    }
+    const view = render(
+      <WorkflowCanvas record={record} onChange={() => {}} t={t} run={run} onPreview={onPreview} />,
+    )
+    const media = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-node-media="image"]')
+      if (element === null) throw new Error('缩略图没出来')
+      return element as HTMLElement
+    })
+    expect(media.querySelector('img')?.getAttribute('src')).toBe('/outputs/cat.png')
+    fireEvent.click(media)
+    expect(onPreview).toHaveBeenCalledWith('/tmp/outputs/cat.png', 'image')
+  })
+})
+
+describe('工作流画布：模型字段是选择器而不是空白输入框', () => {
+  const cards = [
+    {
+      id: 'img-a', name: 'Image A', family: 'fam', kinds: ['image'], strength: '出图',
+      costTier: 'low', aspectRatios: ['1:1'],
+      features: {
+        imageToVideo: false, firstLastFrame: { supported: false }, multiFrame: { supported: false },
+        referenceVideo: { supported: false }, audio: { supported: false },
+      },
+      promptTips: [], verified: true,
+    },
+    {
+      id: 'vid-b', name: 'Video B', family: 'fam', kinds: ['video'], strength: '出片',
+      costTier: 'low', duration: { minSec: 1, maxSec: 10, customizable: true }, aspectRatios: ['16:9'],
+      features: {
+        imageToVideo: true, firstLastFrame: { supported: false }, multiFrame: { supported: false },
+        referenceVideo: { supported: false }, audio: { supported: false },
+      },
+      promptTips: [], verified: true,
+    },
+  ]
+
+  function fakeApi(defaults?: { image?: string, video?: string }) {
+    return {
+      modelsCatalog: async () => ({ cards, consistencyIssues: [], ...defaults === undefined ? {} : { defaults } }),
+    } as unknown as import('../src/client/api.ts').WorkbenchApi
+  }
+
+  it('生图节点列出图片模型，并把宿主默认标出来；选择写进事实源', async () => {
+    const { view, current } = renderCanvas()
+    // renderCanvas 不传 api：模型字段退回文本输入（画布不该因为拿不到目录就不可用）
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+    expect((view.container.querySelector('[data-workflow-param="model"]') as HTMLInputElement).tagName).toBe('INPUT')
+  })
+
+  it('传入宿主 API 后模型字段变成下拉，默认模型可见，切换写入记录', async () => {
+    let latest = makeRecord()
+    const view = render(
+      <WorkflowCanvas
+        record={latest}
+        onChange={next => { latest = next }}
+        t={t}
+        api={fakeApi({ image: 'img-a' })}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    const select = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-param="model"]')
+      if (element === null) throw new Error('模型下拉没出现')
+      return element as HTMLSelectElement
+    })
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['', 'img-a'])
+    // 宿主默认标在对应项上，并在下方写出来
+    expect(Array.from(select.options).find(option => option.value === 'img-a')?.textContent)
+      .toContain(en.modelDefaultTag)
+    expect(view.container.querySelector('[data-model-picker-default]')?.getAttribute('data-model-picker-default'))
+      .toBe('img-a')
+
+    fireEvent.change(select, { target: { value: 'img-a' } })
+    await waitFor(() => { expect(latest.nodes[0]?.params.model).toBe('img-a') })
+  })
+
+  it('视频节点的模型候选只含视频模型', async () => {
+    let latest = makeRecord()
+    const view = render(
+      <WorkflowCanvas
+        record={latest}
+        onChange={next => { latest = next }}
+        t={t}
+        api={fakeApi()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} video-generate` }))
+    const select = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-param="model"]')
+      if (element === null) throw new Error('模型下拉没出现')
+      return element as HTMLSelectElement
+    })
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['', 'vid-b'])
+  })
+})

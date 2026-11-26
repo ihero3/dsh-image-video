@@ -15,7 +15,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Icon } from '../icons.tsx'
-import type { ModelCardView, WorkbenchApi } from '../api.ts'
+import type { ModelCatalogView, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 
 interface ModelPickerProps {
@@ -32,12 +32,12 @@ interface ModelPickerProps {
 }
 
 /** 目录缓存：同一会话只拉一次（键是 api 实例，避免跨 API 串味）。 */
-const catalogCache = new WeakMap<WorkbenchApi, Promise<readonly ModelCardView[]>>()
+const catalogCache = new WeakMap<WorkbenchApi, Promise<ModelCatalogView>>()
 
-function loadCatalog(api: WorkbenchApi): Promise<readonly ModelCardView[]> {
+function loadCatalog(api: WorkbenchApi): Promise<ModelCatalogView> {
   const cached = catalogCache.get(api)
   if (cached !== undefined) return cached
-  const pending = api.modelsCatalog().then(result => result.cards)
+  const pending = api.modelsCatalog()
   catalogCache.set(api, pending)
   // 失败不缓存：下次挂载还能重试
   pending.catch(() => { catalogCache.delete(api) })
@@ -45,20 +45,22 @@ function loadCatalog(api: WorkbenchApi): Promise<readonly ModelCardView[]> {
 }
 
 export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = false, selectAttrs }: ModelPickerProps) {
-  const [cards, setCards] = useState<readonly ModelCardView[] | undefined>(undefined)
+  const [catalog, setCatalog] = useState<ModelCatalogView | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let alive = true
     loadCatalog(api)
-      .then(list => { if (alive) setCards(list) })
+      .then(view => { if (alive) setCatalog(view) })
       .catch((thrown: unknown) => {
         if (alive) setError(thrown instanceof Error ? thrown.message : String(thrown))
       })
     return () => { alive = false }
   }, [api])
 
-  const candidates = (cards ?? []).filter(card => card.kinds.includes(mediaMode))
+  const candidates = (catalog?.cards ?? []).filter(card => card.kinds.includes(mediaMode))
+  // 宿主解析出的"不选模型会用哪个"：下拉里把对应项标上「默认」，并在下方直接写出来
+  const defaultModel = catalog?.defaults?.[mediaMode]
 
   return (
     <div className="iv-model-pick" data-model-picker={mediaMode}>
@@ -74,10 +76,17 @@ export function ModelPicker({ api, t, mediaMode, value, onChange, disabled = fal
         <option value="">{t('generateParamAuto')}</option>
         {candidates.map(card => (
           <option key={card.id} value={card.id}>
-            {card.name}{card.verified ? '' : ' ?'}
+            {card.name}{card.verified ? '' : ' ?'}{card.id === defaultModel ? `（${t('modelDefaultTag')}）` : ''}
           </option>
         ))}
       </select>
+      {defaultModel === undefined
+        ? null
+        : (
+          <span className="iv-model-pick-note iv-model-pick-default" data-model-picker-default={defaultModel}>
+            {t('modelDefaultHint')}{defaultModel}
+          </span>
+        )}
       {error === undefined
         ? null
         : (

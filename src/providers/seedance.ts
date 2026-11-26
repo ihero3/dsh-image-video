@@ -12,11 +12,11 @@ import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, Tas
 import { toRequestOpts, normalizeImageSize } from './types.ts'
 
 /** Seedance 默认文生图模型（即梦/Seedream）。 */
-const DEFAULT_IMAGE_MODEL = 'doubao-seedream-3-0-t2i-250415'
+export const DEFAULT_IMAGE_MODEL = 'doubao-seedream-3-0-t2i-250415'
 /** Seedance 图生图默认模型（Seedream 3.0 不支持 image 入参，4.0 起支持单图生图）。 */
 const DEFAULT_IMAGE_EDIT_MODEL = 'doubao-seedream-4-0-250828'
 /** Seedance 默认文生视频模型。 */
-const DEFAULT_VIDEO_MODEL = 'doubao-seedance-1-0-pro-250428'
+export const DEFAULT_VIDEO_MODEL = 'doubao-seedance-1-0-pro-250428'
 
 /** Ark API 请求头。 */
 function arkHeaders(apiKey: string): Record<string, string> {

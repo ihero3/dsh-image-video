@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { createWorkbenchHandler } from '../src/host/rpc.ts'
+import { createWorkbenchHandler, type WorkbenchRpcDeps } from '../src/host/rpc.ts'
 import { catalogConsistencyIssues, isTextModelEntry, modelCards } from '../src/media/model-catalog.ts'
 import { assertPromptAllowed, scanPrompt } from '../src/media/prompt-safety.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
@@ -26,7 +26,7 @@ async function temp(prefix: string): Promise<string> {
   return directory
 }
 
-async function harness(llm?: unknown) {
+async function harness(llm?: unknown, extra: Partial<WorkbenchRpcDeps> = {}) {
   const store = new WorkbenchStore({ directory: await temp('dsh-catalog-store-') })
   const outputsDir = await temp('dsh-catalog-out-')
   const calls: Array<Record<string, unknown>> = []
@@ -43,6 +43,7 @@ async function harness(llm?: unknown) {
     registry: new GenerationRegistry(), runner: {} as never, renders: {} as never,
     generate: { image, video: { async execute() { throw new Error('no video') } } },
     ...llm === undefined ? {} : { llm: llm as never },
+    ...extra,
   })
   return { call, store, project: await store.createProject('能力卡'), calls }
 }
@@ -156,6 +157,25 @@ describe('端点装配', () => {
     const value = result.value as { cards: unknown[]; consistencyIssues: string[] }
     expect(value.cards.length).toBeGreaterThan(0)
     expect(value.consistencyIssues).toEqual([])
+  })
+
+  it('models/catalog 带上生效默认模型：界面能显示「默认：xxx」而不是一片空白', async () => {
+    const { call } = await harness(undefined, {
+      defaultModels: () => ({ image: 'img-default', video: 'vid-default' }),
+    })
+    const result = await call('models/catalog', {}, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect((result.value as { defaults?: { image?: string; video?: string } }).defaults)
+        .toEqual({ image: 'img-default', video: 'vid-default' })
+    }
+  })
+
+  it('宿主没注入默认模型时不编造 defaults', async () => {
+    const { call } = await harness()
+    const result = await call('models/catalog', {}, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect('defaults' in (result.value as object)).toBe(false)
   })
 
   it('prompts/check 返回风险报告（空文本 = ok）', async () => {

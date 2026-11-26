@@ -180,6 +180,12 @@ export interface WorkbenchRpcDeps {
   readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
+  /**
+   * 生效默认模型（图片 / 视频各一个）：配置显式值优先，否则服务商内置默认。
+   * 界面用它回答"不选模型时到底会用哪个"，而不是只写一个「自动」（`T2-11`：
+   * 模型名由宿主下发，客户端不内置）。
+   */
+  defaultModels?: () => { readonly image?: string; readonly video?: string }
   /** 在系统文件管理器里打开本地产物目录（人工清理用；缺省时界面只显示路径）。 */
   revealOutputs?: () => Promise<RevealResult>
   /** 在系统文件管理器里打开技能目录（缺省时界面只显示路径）。 */
@@ -2007,6 +2013,8 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
         cards,
         consistencyIssues: catalogConsistencyIssues(),
         generatedAt: new Date().toISOString(),
+        // 「不选模型会用哪个」：宿主解析好再下发，界面直接显示默认模型名
+        ...deps.defaultModels === undefined ? {} : { defaults: deps.defaultModels() },
         live: await liveCatalog(deps, refresh),
       }
     }

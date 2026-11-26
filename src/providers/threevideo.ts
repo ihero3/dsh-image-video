@@ -21,11 +21,11 @@ import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, Tas
 import { toRequestOpts, normalizeImageSize, aliImageSize } from './types.ts'
 
 /** Threevideo 默认文生图模型（千问图像 3.0，服务端模态注册表收录；旧默认 wan2.1-image 未收录会按文本派发）。 */
-const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0'
+export const DEFAULT_IMAGE_MODEL = 'qwen-image-3.0'
 /** Threevideo 图生图默认模型（千问图像 3.0 Pro，支持 image 参考图入参，文档快速上手示例同款）。 */
 const DEFAULT_IMAGE_EDIT_MODEL = 'qwen-image-3.0-pro'
 /** Threevideo 默认文生视频模型（MiniMax 系，支持 4-15 秒自定义时长）。账号可用模型见 threevideo.com 控制台。 */
-const DEFAULT_VIDEO_MODEL = 'minimax-h3'
+export const DEFAULT_VIDEO_MODEL = 'minimax-h3'
 
 /** Threevideo /images/generations 响应：OpenAI 标准结构（data[0]），兼容统一入口顶层 url / urls 形态。 */
 interface ThreevideoImagesResponse {

@@ -47,6 +47,7 @@ import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defau
 import { createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
+import { resolveEffectiveModel } from './media/builtin-models.ts'
 import { revealDirectory } from './host/reveal.ts'
 import { probeModelRegistry } from './media/model-health.ts'
 import { DiagnosticsCollector } from './host/diagnostics.ts'
@@ -404,6 +405,22 @@ export function apply(ctx: Context, rawConfig: Config): void {
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
       // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
+      // 生效默认模型：配置显式值 → 服务商内置默认（界面显示"默认：xxx"而不是空白）
+      defaultModels: () => {
+        const view = resolveDefaultsView(runtimeDefaults, persistedDefaults)
+        return {
+          image: resolveEffectiveModel(
+            (view.imageProvider ?? config.provider) as string,
+            config.defaultImageModel,
+            'image',
+          ),
+          video: resolveEffectiveModel(
+            (view.videoProvider ?? config.provider) as string,
+            config.defaultVideoModel,
+            'video',
+          ),
+        }
+      },
       // 打开本地产物目录：只在文件管理器里定位，不删任何东西（人工清理）
       revealOutputs: () => revealDirectory(outputsDir),
       // 打开技能目录：技能库与 workbench.json 同目录，只唤起文件管理器

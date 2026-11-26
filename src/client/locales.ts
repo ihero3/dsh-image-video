@@ -302,6 +302,31 @@ export type WorkbenchLocaleKey =
   | 'externalNotRunnable'
   | 'canvasExternalTag'
   | 'canvasPalette'
+  | 'canvasLibraryHint'
+  | 'canvasLibraryEmpty'
+  | 'canvasGroupInput'
+  | 'canvasGroupStory'
+  | 'canvasGroupGenerate'
+  | 'canvasGroupFinish'
+  | 'canvasGroupPlanned'
+  | 'canvasOnboardingTitle'
+  | 'canvasOnboardingHint'
+  | 'canvasOnboardingBlank'
+  | 'canvasOnboardingImport'
+  | 'canvasOnboardingNodes'
+  | 'canvasAutoLayout'
+  | 'canvasQuickAdd'
+  | 'canvasQuickAddHint'
+  | 'canvasRunNodeShort'
+  | 'canvasCached'
+  | 'canvasProgress'
+  | 'canvasLibraryToggle'
+  | 'canvasDragHint'
+  | 'canvasOutputPreview'
+  | 'canvasCloseInspector'
+  | 'modelDefaultTag'
+  | 'modelDefaultHint'
+  | 'canvasStatusEmpty'
   | 'canvasAdd'
   | 'canvasParams'
   | 'canvasFit'
@@ -1361,6 +1386,31 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   externalNotRunnable: 'Imported from a ComfyUI / LiblibAI workflow; kept for reference but not runnable here',
   canvasExternalTag: 'External',
   canvasPalette: 'Node library',
+  canvasLibraryHint: 'Search nodes',
+  canvasLibraryEmpty: 'No node matches that search',
+  canvasGroupInput: 'Input & copy',
+  canvasGroupStory: 'Storyboard & assets',
+  canvasGroupGenerate: 'Generate',
+  canvasGroupFinish: 'Finish & deliver',
+  canvasGroupPlanned: 'Reserved',
+  canvasOnboardingTitle: 'Start from a template, run a whole chain',
+  canvasOnboardingHint: 'Templates carry example copy and parameters — tweak a few words, then run.',
+  canvasOnboardingBlank: 'Start from a blank canvas',
+  canvasOnboardingImport: 'Import a ComfyUI / LiblibAI workflow',
+  canvasOnboardingNodes: '{n} nodes',
+  canvasAutoLayout: 'Auto layout',
+  canvasQuickAdd: 'Add a node here',
+  canvasQuickAddHint: 'Type a name, Enter to place',
+  canvasRunNodeShort: 'Run only this node',
+  canvasCached: 'cached',
+  canvasProgress: 'Running {done}/{total}',
+  canvasLibraryToggle: 'Collapse or expand the node library',
+  canvasDragHint: 'Drag onto the canvas to place it where you drop it',
+  canvasOutputPreview: 'Output preview',
+  canvasCloseInspector: 'Close parameters',
+  modelDefaultTag: 'default',
+  modelDefaultHint: 'Default model: ',
+  canvasStatusEmpty: 'Empty canvas',
   canvasAdd: 'Add to canvas',
   canvasParams: 'Node parameters',
   canvasFit: 'Fit view',
@@ -1376,7 +1426,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   paramNote: 'Note',
   paramAsset: 'Asset',
   paramResource: 'Resource',
-  paramModel: 'Model (blank = host default)',
+  paramModel: 'Model',
   paramPrompt: 'Prompt',
   paramRatio: 'Aspect ratio',
   paramDuration: 'Duration (s)',
@@ -2476,6 +2526,31 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   externalNotRunnable: '来自 ComfyUI / LiblibAI 工作流，保留供查看，本项目不运行它',
   canvasExternalTag: '外部',
   canvasPalette: '节点库',
+  canvasLibraryHint: '搜索节点',
+  canvasLibraryEmpty: '没有匹配的节点',
+  canvasGroupInput: '输入与文案',
+  canvasGroupStory: '分镜与素材',
+  canvasGroupGenerate: '生成',
+  canvasGroupFinish: '后期与交付',
+  canvasGroupPlanned: '预留能力',
+  canvasOnboardingTitle: '选一个模板，立刻跑通整条链路',
+  canvasOnboardingHint: '模板自带示例文案与参数，改几个字就能跑。',
+  canvasOnboardingBlank: '从空白画布开始',
+  canvasOnboardingImport: '导入 ComfyUI / LiblibAI 工作流',
+  canvasOnboardingNodes: '{n} 个节点',
+  canvasAutoLayout: '自动排列',
+  canvasQuickAdd: '在这里加节点',
+  canvasQuickAddHint: '输入名字，回车放置',
+  canvasRunNodeShort: '只跑这个节点',
+  canvasCached: '缓存',
+  canvasProgress: '运行中 {done}/{total}',
+  canvasLibraryToggle: '收起 / 展开节点库',
+  canvasDragHint: '拖到画布上，松手即落在落点',
+  canvasOutputPreview: '产出预览',
+  canvasCloseInspector: '关闭参数面板',
+  modelDefaultTag: '默认',
+  modelDefaultHint: '默认模型：',
+  canvasStatusEmpty: '空画布',
   canvasAdd: '加入画布',
   canvasParams: '节点参数',
   canvasFit: '适配窗口',
@@ -2491,7 +2566,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   paramNote: '备注',
   paramAsset: '素材',
   paramResource: '资源',
-  paramModel: '模型（留空用宿主默认）',
+  paramModel: '模型',
   paramPrompt: '提示词',
   paramRatio: '比例',
   paramDuration: '时长（秒）',

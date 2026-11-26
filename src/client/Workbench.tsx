@@ -3876,6 +3876,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     record={workflow}
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
                     t={t}
+                    api={apiRef.current}
                     onNotice={(text, tone) => { setNotice({ text, tone }) }}
                     run={{
                       ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined

@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-20.1'
+export const WORKBENCH_STYLE_VERSION = '2026-11-26.5'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -78,6 +78,7 @@ export const WORKBENCH_STYLE = `
   --iv-r-xs:4px;--iv-r-sm:6px;--iv-r-lg:10px;--iv-r-xl:14px;--iv-r-pill:999px;
   /* ---- 层级：只在插件自己的层叠上下文内有效（portal 出去要另算） ---- */
   --iv-z-sticky:2;--iv-z-playhead:5;--iv-z-tip:40;--iv-z-overlay:60;
+  --iv-z-canvas-hud:6;--iv-z-canvas-pop:8;
   /* ---- 动效：100/120/300ms 三档；prefers-reduced-motion 下统一关掉 ---- */
   --iv-dur-1:100ms;--iv-dur-2:120ms;--iv-dur-3:300ms;--iv-ease:cubic-bezier(.2,.8,.3,1);
   /* ---- 阴影：acc 两档给主按钮，2/3 给气泡与浮层；
@@ -733,18 +734,134 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-playhead::before{content:"";position:absolute;top:0;left:-4px;border:5px solid transparent;border-top:6px solid var(--iv-warn)}
 
 /* ============ 工作流画布 ============ */
-.iv-pal{display:flex;flex-wrap:wrap;gap:var(--iv-sp-2)}
-.iv-pal-chip{display:inline-flex;align-items:center;gap:var(--iv-sp-2);height:20px;padding:0 8px;border-radius:var(--iv-r);
-  border:1px solid var(--iv-line-2);background:var(--iv-panel-2);color:var(--iv-tx2);font:inherit;font-size:var(--iv-fs-meta);
-  cursor:pointer;white-space:nowrap;transition:background var(--iv-dur-1) ease,color var(--iv-dur-1) ease}
-.iv-pal-chip:hover{border-color:color-mix(in srgb,currentColor 35%,transparent);color:var(--iv-tx)}
-.iv-pal-chip .iv-ico{color:var(--iv-acc)}
-.iv-pal-chip[data-availability=planned]{border-style:dashed;opacity:.68}
-.iv-pal-chip[data-availability=planned] .iv-ico{color:var(--iv-tx3)}
-.iv-pal-sep{width:100%;border-top:1px dashed var(--iv-line-2);margin:2px 0}
-.iv-workflow{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0;min-height:0;flex:1 1 auto}
-.iv-workflow-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);min-width:0;min-height:0;flex:1 1 auto}
-.iv-flow{flex:1 1 auto;min-height:280px;border:1px solid var(--iv-line);border-radius:var(--iv-r);overflow:hidden;background:var(--iv-panel-2)}
+/* 工作流画布：顶栏（模板/编辑/运行）+ 左侧节点库 + 画布 + 底部状态条。
+   布局口径对齐 ComfyUI / LiblibAI 的节点式工作区：库在左、画布吃满剩余、参数与日志都不常驻挤占高度。 */
+.iv-workflow{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:0;min-height:0;flex:1 1 auto;
+  container-type:inline-size;container-name:iv-canvas}
+.iv-wf-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+.iv-wf-head-main{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+.iv-wf-tpl{display:inline-flex;align-items:center;gap:var(--iv-sp-2);min-width:0}
+.iv-wf-tpl .iv-select{max-width:196px;height:20px}
+.iv-wf-head-run{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
+.iv-btn-badge{font-family:var(--iv-mono);font-size:var(--iv-fs-micro);line-height:1;color:var(--iv-tx3);font-variant-numeric:tabular-nums}
+.iv-wf-body{display:flex;gap:var(--iv-sp-2);min-width:0;min-height:0;flex:1 1 auto;align-items:stretch}
+/* 节点库：分组 + 检索；窄容器收成图标条（44px），不牺牲画布 */
+.iv-wf-lib{width:184px;flex:none;display:flex;flex-direction:column;gap:var(--iv-sp-2);min-height:0;padding:6px;
+  border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);transition:width var(--iv-dur-1) ease}
+.iv-wf-lib-head{display:flex;align-items:center;gap:var(--iv-sp-2);min-width:0}
+.iv-wf-lib-title{display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-bold);
+  letter-spacing:.08em;text-transform:uppercase;color:var(--iv-tx3);white-space:nowrap}
+.iv-wf-lib-title .iv-ico{color:var(--iv-acc)}
+.iv-wf-lib-toggle{margin-left:auto;width:18px;height:18px;display:grid;place-items:center;flex:none;padding:0;
+  border:0;border-radius:var(--iv-r-xs);background:transparent;color:var(--iv-tx3);cursor:pointer}
+.iv-wf-lib-toggle:hover{color:var(--iv-tx);background:var(--iv-panel-3)}
+.iv-wf-lib-toggle .iv-ico{transform:rotate(90deg);transition:transform .12s ease}
+[data-workflow-library-collapsed=true] .iv-wf-lib-toggle .iv-ico{transform:rotate(-90deg)}
+.iv-wf-lib-search{display:flex;align-items:center;gap:var(--iv-sp-2);height:23px;padding:0 6px;flex:none;
+  border:1px solid var(--iv-line-2);border-radius:var(--iv-r-xs);background:var(--iv-panel);color:var(--iv-tx3)}
+.iv-wf-lib-search:focus-within{border-color:var(--iv-acc)}
+.iv-input--bare{flex:1 1 auto;min-width:0;height:100%;padding:0;border:0;background:transparent;color:var(--iv-tx);
+  font:inherit;font-size:var(--iv-fs-meta);outline:none}
+.iv-wf-lib-body{display:flex;flex-direction:column;gap:var(--iv-sp-1);min-height:0;overflow:auto;scrollbar-gutter:stable}
+.iv-wf-lib-group{display:flex;flex-direction:column;gap:var(--iv-sp-1)}
+.iv-wf-lib-group+.iv-wf-lib-group{margin-top:5px}
+.iv-wf-lib-group-title{padding:2px 4px;font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-bold);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--iv-tx3);white-space:nowrap}
+.iv-wf-lib-item{display:flex;align-items:center;gap:var(--iv-sp-3);height:23px;padding:0 5px;min-width:0;text-align:left;
+  border:1px solid transparent;border-radius:var(--iv-r-xs);background:transparent;color:var(--iv-tx2);
+  font:inherit;font-size:var(--iv-fs-meta);cursor:grab;transition:background var(--iv-dur-1) ease,color var(--iv-dur-1) ease}
+.iv-wf-lib-item:hover{background:var(--iv-panel);border-color:var(--iv-line-2);color:var(--iv-tx)}
+.iv-wf-lib-item:active{cursor:grabbing}
+.iv-wf-lib-item .iv-ico{flex:none;color:var(--iv-acc)}
+.iv-wf-lib-item[data-workflow-availability=planned]{color:var(--iv-tx3)}
+.iv-wf-lib-item[data-workflow-availability=planned] .iv-ico{color:var(--iv-tx3)}
+.iv-wf-lib-item-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iv-wf-lib-item-tag{flex:none;font-size:var(--iv-fs-micro);color:var(--iv-tx3);border:1px dashed var(--iv-line-2);
+  border-radius:var(--iv-r-pill);padding:0 4px;line-height:13px}
+[data-workflow-library-collapsed=true] .iv-wf-lib{width:40px;padding:6px 4px}
+[data-workflow-library-collapsed=true] .iv-wf-lib-search,
+[data-workflow-library-collapsed=true] .iv-wf-lib-title,
+[data-workflow-library-collapsed=true] .iv-wf-lib-group-title,
+[data-workflow-library-collapsed=true] .iv-wf-lib-item-name,
+[data-workflow-library-collapsed=true] .iv-wf-lib-item-tag{display:none}
+[data-workflow-library-collapsed=true] .iv-wf-lib-item{justify-content:center;padding:0}
+@container iv-canvas (max-width:880px){
+  .iv-wf-lib{width:40px;padding:6px 4px}
+  .iv-wf-lib-search,.iv-wf-lib-title,.iv-wf-lib-group-title,.iv-wf-lib-item-name,.iv-wf-lib-item-tag{display:none}
+  .iv-wf-lib-item{justify-content:center;padding:0}
+}
+.iv-flow{position:relative;flex:1 1 auto;min-width:0;min-height:280px;border:1px solid var(--iv-line);
+  border-radius:var(--iv-r);overflow:hidden;background:var(--iv-panel-2)}
+.iv-flow-zoombadge{position:absolute;top:8px;left:8px;z-index:var(--iv-z-canvas-hud);pointer-events:none;padding:0 6px;
+  border:1px solid var(--iv-line);border-radius:var(--iv-r-pill);background:var(--iv-panel);
+  color:var(--iv-tx3);font-family:var(--iv-mono);font-size:var(--iv-fs-meta);font-variant-numeric:tabular-nums}
+.iv-flow-minimap{background:var(--iv-panel-2)!important;border:1px solid var(--iv-line)!important;
+  border-radius:var(--iv-r-xs)!important;margin:8px!important}
+.iv-flow-hint{position:absolute;inset:0;display:grid;place-items:center;margin:0;pointer-events:none;
+  color:var(--iv-tx3);font-size:var(--iv-fs-meta)}
+/* 空画布起步卡：模板 / 空白 / 导入（第一次进来不该是一大片无声的空白） */
+.iv-wf-onboard{position:absolute;inset:0;z-index:var(--iv-z-canvas-pop);display:grid;place-items:center;padding:20px;pointer-events:none}
+.iv-wf-onboard-card{pointer-events:auto;width:min(540px,100%);display:flex;flex-direction:column;gap:var(--iv-sp-4);padding:16px;
+  border:1px solid var(--iv-line);border-radius:var(--iv-r-lg);background:var(--iv-surface);box-shadow:var(--iv-shadow-2)}
+.iv-wf-onboard-eyebrow{display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);
+  font-weight:var(--iv-fw-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--iv-tx3)}
+.iv-wf-onboard-eyebrow .iv-ico{color:var(--iv-acc)}
+.iv-wf-onboard-hint{margin:0;font-size:var(--iv-fs-meta);line-height:1.5;color:var(--iv-tx3)}
+.iv-wf-onboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--iv-sp-3)}
+.iv-wf-onboard-tpl{display:flex;flex-direction:column;gap:var(--iv-sp-1);padding:8px 9px;text-align:left;cursor:pointer;
+  border:1px solid var(--iv-line-2);border-radius:var(--iv-r);background:var(--iv-panel-2);color:var(--iv-tx2);
+  font:inherit;transition:border-color var(--iv-dur-1) ease,background var(--iv-dur-1) ease}
+.iv-wf-onboard-tpl:hover{border-color:var(--iv-acc);background:var(--iv-acc-soft);color:var(--iv-tx)}
+.iv-wf-onboard-tpl-name{font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium);color:var(--iv-tx)}
+.iv-wf-onboard-tpl-meta{font-family:var(--iv-mono);font-size:var(--iv-fs-meta);color:var(--iv-tx3)}
+.iv-wf-onboard-foot{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;margin-top:2px}
+/* 选中态动作条：浮在画布顶上，空选时淡出但不移出 DOM（快捷键与读屏仍可达） */
+.iv-wf-selectbar{position:absolute;top:7px;left:50%;transform:translateX(-50%);z-index:var(--iv-z-canvas-pop);display:flex;align-items:center;
+  gap:var(--iv-sp-1);max-width:calc(100% - 16px);padding:3px 5px;border:1px solid var(--iv-line);border-radius:var(--iv-r-pill);
+  background:var(--iv-surface);box-shadow:var(--iv-shadow-2);transition:opacity .12s ease}
+.iv-wf-selectbar[data-empty=true]{opacity:0;pointer-events:none}
+.iv-wf-selectbar-count{padding:0 4px;font-size:var(--iv-fs-micro);color:var(--iv-tx3);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.iv-wf-progress{position:absolute;top:0;left:0;right:0;z-index:var(--iv-z-canvas-pop);height:2px;
+  background:color-mix(in srgb,var(--iv-acc) 16%,transparent);pointer-events:none}
+.iv-wf-progress>i{display:block;height:100%;background:var(--iv-acc);transition:width .3s ease}
+/* 参数检视器：浮在右上，不占画布高度（选中才出现） */
+.iv-wf-inspector{position:absolute;top:7px;right:7px;z-index:var(--iv-z-canvas-pop);width:266px;max-height:calc(100% - 14px);
+  overflow:auto;background:var(--iv-surface);box-shadow:var(--iv-shadow-2)}
+.iv-wf-inspector-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium);letter-spacing:0;text-transform:none;color:var(--iv-tx)}
+/* 模型选择器在检视器里竖排：下拉占满一行，默认值说明单独一行（不挤成两列） */
+.iv-wf-inspector .iv-model-pick{flex-direction:column;align-items:stretch;gap:var(--iv-sp-1);min-width:0}
+.iv-wf-inspector .iv-model-pick .iv-select{width:100%}
+.iv-wf-inspector .iv-model-pick-default{font-size:var(--iv-fs-micro);color:var(--iv-tx3);white-space:normal;line-height:1.4}
+.iv-wf-inspector-close{width:18px;height:18px;display:grid;place-items:center;flex:none;padding:0;border:0;
+  border-radius:var(--iv-r-xs);background:transparent;color:var(--iv-tx3);cursor:pointer}
+.iv-wf-inspector-close:hover{color:var(--iv-tx);background:var(--iv-panel-3)}
+.iv-wf-inspector-output{display:inline-flex;align-items:center;gap:var(--iv-sp-2);height:20px;padding:0 6px;align-self:start;
+  border:1px solid var(--iv-line-2);border-radius:var(--iv-r-xs);background:var(--iv-panel-2);
+  color:var(--iv-tx2);font:inherit;font-size:var(--iv-fs-meta);cursor:pointer}
+.iv-wf-inspector-output:hover{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
+/* 双击空白处的快速添加 */
+.iv-wf-quick{position:absolute;z-index:var(--iv-z-tip);width:216px;display:flex;flex-direction:column;gap:var(--iv-sp-2);
+  padding:6px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);
+  box-shadow:var(--iv-shadow-2);transform:translate(6px,6px)}
+.iv-wf-quick .iv-input{height:23px}
+.iv-wf-quick-list{display:flex;flex-direction:column;gap:var(--iv-sp-1);max-height:210px;overflow:auto}
+.iv-wf-quick-item{display:flex;align-items:center;gap:var(--iv-sp-3);height:23px;padding:0 6px;text-align:left;
+  border:0;border-radius:var(--iv-r-xs);background:transparent;color:var(--iv-tx2);
+  font:inherit;font-size:var(--iv-fs-meta);cursor:pointer}
+.iv-wf-quick-item:hover{background:var(--iv-acc-soft);color:var(--iv-tx)}
+.iv-wf-quick-item .iv-ico{color:var(--iv-acc)}
+/* 状态条：节点/连线 + 校验 + 运行，替代原来散在画布下方的几行说明 */
+.iv-wf-status{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;padding:0 1px;
+  font-size:var(--iv-fs-meta);color:var(--iv-tx3)}
+.iv-wf-status-count{font-family:var(--iv-mono);font-variant-numeric:tabular-nums}
+.iv-wf-status-flag{display:inline-flex;align-items:center;gap:var(--iv-sp-1)}
+.iv-wf-status-flag--ok{color:var(--iv-ok)}
+.iv-wf-status-flag--err{color:var(--iv-danger)}
+.iv-wf-status-run{display:inline-flex;align-items:center;gap:var(--iv-sp-2)}
+.iv-wf-status-note{margin-left:auto;font-size:var(--iv-fs-micro);color:var(--iv-tx3);opacity:.85;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}
 .iv-issues{display:grid;gap:var(--iv-sp-2);font-size:var(--iv-fs-meta);border-radius:var(--iv-r);padding:6px 9px;border:1px solid var(--iv-line)}
 .iv-issues strong{font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-bold);letter-spacing:.06em;opacity:.9;display:inline-flex;align-items:center;gap:var(--iv-sp-2);text-transform:uppercase}
 .iv-issues[data-ok=true]{color:var(--iv-ok);background:var(--iv-ok-soft);border-color:color-mix(in srgb,var(--iv-ok) 28%,transparent)}
@@ -802,14 +919,24 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-field textarea.iv-input{height:auto}
 
 /* ---- xyflow 节点卡片（画布内） ---- */
-.iv-node{position:relative;min-width:148px;border-radius:var(--iv-r);border:1px solid var(--iv-line-2);background:var(--iv-panel);
-  color:var(--iv-tx);font-size:var(--iv-fs-body)}
+.iv-node{position:relative;width:188px;border-radius:var(--iv-r);border:1px solid var(--iv-line-2);background:var(--iv-panel);
+  color:var(--iv-tx);font-size:var(--iv-fs-body);box-shadow:0 1px 2px color-mix(in srgb,#000 8%,transparent)}
 .iv-node[data-workflow-node-selected=true]{border-color:var(--iv-acc);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--iv-acc) 20%,transparent)}
-.iv-node[data-availability=planned]{border-style:dashed}
-.iv-node[data-invalid=true]{border-color:var(--iv-danger)}
+.iv-node[data-workflow-node-availability=planned]{border-style:dashed}
+.iv-node[data-workflow-node-invalid=true]{border-color:var(--iv-danger)}
+.iv-node[data-workflow-node-run-status=running]{border-color:color-mix(in srgb,var(--iv-acc) 55%,var(--iv-line-2))}
+.iv-node[data-workflow-node-run-status=failed]{border-color:color-mix(in srgb,var(--iv-danger) 60%,var(--iv-line-2))}
 .iv-node-head{display:flex;align-items:center;gap:var(--iv-sp-3);padding:5px 8px;background:var(--iv-panel-3);
-  border-bottom:1px solid var(--iv-line);font-weight:var(--iv-fw-medium);min-width:0}
+  border-bottom:1px solid var(--iv-line);border-radius:calc(var(--iv-r) - 1px) calc(var(--iv-r) - 1px) 0 0;
+  font-weight:var(--iv-fw-medium);min-width:0}
+.iv-node[data-workflow-node-group=generate] .iv-node-head{background:color-mix(in srgb,var(--iv-ok) 12%,var(--iv-panel-3))}
+.iv-node[data-workflow-node-group=generate] .iv-node-head .iv-ico{color:var(--iv-ok)}
+.iv-node[data-workflow-node-group=story] .iv-node-head{background:color-mix(in srgb,var(--iv-warn) 13%,var(--iv-panel-3))}
+.iv-node[data-workflow-node-group=story] .iv-node-head .iv-ico{color:var(--iv-warn)}
+.iv-node[data-workflow-node-group=input] .iv-node-head{background:color-mix(in srgb,var(--iv-acc) 11%,var(--iv-panel-3))}
+.iv-node[data-workflow-node-group=finish] .iv-node-head{background:color-mix(in srgb,var(--iv-tx) 6%,var(--iv-panel-3))}
+.iv-node[data-workflow-node-group=finish] .iv-node-head .iv-ico{color:var(--iv-tx2)}
 .iv-node-head .iv-ico{color:var(--iv-acc)}
 .iv-node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .iv-node-planned{margin-left:auto;display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);
@@ -833,12 +960,32 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   background:var(--iv-surface);border:1px solid color-mix(in srgb,var(--iv-danger) 45%,transparent);
   border-radius:var(--iv-r);padding:5px 8px;font-size:var(--iv-fs-meta);line-height:1.45;color:var(--iv-danger);
   box-shadow:var(--iv-shadow-2);white-space:pre-wrap;word-break:break-all}
+/* 卡片上的产出与缓存（对齐 ComfyUI 节点内的预览缩略图与 cached 标记） */
+.iv-node-cached{margin-left:auto;flex:none;font-size:var(--iv-fs-micro);line-height:13px;padding:0 4px;border-radius:var(--iv-r-pill);
+  color:var(--iv-tx3);border:1px solid var(--iv-line-2);white-space:nowrap}
+.iv-node-cached+.iv-node-planned{margin-left:2px}
+.iv-node-media{display:block;width:100%;padding:0;border:0;border-top:1px solid var(--iv-line);
+  background:var(--iv-panel-2);cursor:pointer;position:relative;overflow:hidden}
+.iv-node-media img{display:block;width:100%;height:82px;object-fit:cover}
+.iv-node-media[data-workflow-node-media=video]{display:flex;align-items:center;gap:var(--iv-sp-3);height:34px;padding:0 8px;
+  color:var(--iv-tx2);font:inherit;font-size:var(--iv-fs-micro);text-align:left}
+.iv-node-media:hover{filter:brightness(1.04)}
+.iv-node-media-play{display:grid;place-items:center;width:18px;height:18px;flex:none;border-radius:50%;
+  background:var(--iv-acc-soft);color:var(--iv-acc)}
+.iv-node-media-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 端口按数据类型着色：拖线时一眼看出能不能接 */
+.iv-node .iv-handle{width:9px;height:9px;border:2px solid var(--iv-panel);background:var(--iv-tx3)}
+.iv-node .iv-handle--text{background:var(--iv-acc)}
+.iv-node .iv-handle--media{background:var(--iv-ok)}
+.iv-node .iv-handle--asset{background:var(--iv-warn)}
+.iv-node .iv-handle--resource{background:color-mix(in srgb,var(--iv-acc) 55%,var(--iv-warn))}
+.iv-node .iv-handle:hover{background:var(--iv-acc)}
 /* B4：画布工具栏分组分隔 */
 .iv-toolbar-sep{width:1px;height:15px;background:var(--iv-line-2);flex:none;margin:0 3px}
 
 /* ---- xyflow 主题覆盖（特异性高于官方样式表） ---- */
-.iv-flow .react-flow{--xy-edge-stroke-default:var(--iv-line-2,#555);--xy-connectionline-stroke-default:var(--iv-acc,#4d6bfe);
-  --xy-edge-stroke-selected-default:var(--iv-acc,#4d6bfe);--xy-background-pattern-dots-color-default:var(--iv-line-2,#555);
+.iv-flow .react-flow{--xy-edge-stroke-default:color-mix(in srgb,var(--iv-tx) 45%,transparent);--xy-connectionline-stroke-default:var(--iv-acc,#4d6bfe);
+  --xy-edge-stroke-selected-default:var(--iv-acc,#4d6bfe);--xy-edge-stroke-width-default:1.5;--xy-background-pattern-dots-color-default:var(--iv-line-2,#555);
   --xy-controls-button-background-color-default:var(--iv-panel,#fefefe);
   --xy-controls-button-background-color-hover-default:var(--iv-panel-3,#f4f4f4);
   --xy-controls-button-color-default:var(--iv-tx2,inherit);

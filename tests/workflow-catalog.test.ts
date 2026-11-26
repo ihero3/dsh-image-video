@@ -7,7 +7,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  NODE_CATALOG, WORKFLOW_TEMPLATES, catalogSummary, defaultParams, isRunnable, nodeSpec, validateWorkflow,
+  NODE_CATALOG, WORKFLOW_TEMPLATES, catalogSummary, defaultParams, isRunnable, nodeSpec, portsCompatible,
+  validateWorkflow,
   type NodeParamValue, type WorkflowEdge, type WorkflowNode, type WorkflowNodeKind,
 } from '../src/workbench/workflow.ts'
 
@@ -55,6 +56,27 @@ describe('node catalog', () => {
   it('keeps deployment values out of the catalog', () => {
     const masthead = JSON.stringify(NODE_CATALOG)
     for (const needle of ['threevideo', 'minimax', 'wanx', 'qwen']) expect(masthead).not.toContain(needle)
+  })
+
+  it('answers "can these two ports be connected" the same way validation does', () => {
+    // 文案 → 分镜 / 图片：文本端口能接
+    expect(portsCompatible('script', 'storyboard')).toBe(true)
+    expect(portsCompatible('script', 'image-generate')).toBe(true)
+    // 图片 → 视频 / 预览：媒体端口能接
+    expect(portsCompatible('image-generate', 'video-generate')).toBe(true)
+    expect(portsCompatible('image-generate', 'preview')).toBe(true)
+    // 图 → 文案：接不上（ComfyUI 也是拖线当刻就拒绝）
+    expect(portsCompatible('image-generate', 'script')).toBe(false)
+    // 素材能当媒体用（asset 可喂 video 的 media 输入）
+    expect(portsCompatible('asset-reference', 'video-generate')).toBe(true)
+    // any 端口全收
+    expect(portsCompatible('script', 'creative-input')).toBe(true)
+  })
+
+  it('every catalog entry declares a library group', () => {
+    for (const spec of NODE_CATALOG) {
+      expect(['input', 'story', 'generate', 'finish', 'planned']).toContain(spec.group)
+    }
   })
 
   it('rejects an unknown kind loudly', () => {

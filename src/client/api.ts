@@ -444,6 +444,12 @@ export interface ModelLiveStatusView {
 export interface ModelCatalogView {
   readonly cards: readonly ModelCardView[]
   readonly consistencyIssues: readonly string[]
+  /**
+   * 生效默认模型（宿主解析：配置显式值 → 服务商内置默认）。
+   * 界面用它回答"不选模型时会用哪个"，而不是只显示一个「自动」。
+   * 宿主未下发时缺省（界面就不显示默认名，也不编造）。
+   */
+  readonly defaults?: { readonly image?: string; readonly video?: string }
   /** 宿主未装配探测能力时缺省。 */
   readonly live?: {
     readonly probe: ModelRegistryProbeView

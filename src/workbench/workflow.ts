@@ -22,6 +22,14 @@ export type NodeAvailability = 'runnable' | 'planned' | 'external'
 /** 端口数据种类（用于后续宿主的类型匹配校验，画布只用来判断能否连线）。 */
 export type PortKind = 'any' | 'text' | 'media' | 'resource' | 'asset'
 
+/**
+ * 节点在「节点库」里的分组（画布侧栏的顺序与图标分区）。
+ *
+ * 这是**展示**维度，不参与执行与校验：宿主只认 {@link WorkflowNodeKind}，
+ * 分组改名不影响已存盘的工作流。
+ */
+export type NodeGroup = 'input' | 'story' | 'generate' | 'finish' | 'planned'
+
 /** 节点参数取值。 */
 export type NodeParamValue = string | number | boolean
 
@@ -40,6 +48,8 @@ export interface NodeParamField {
 export interface NodeKindSpec {
   readonly kind: WorkflowNodeKind
   readonly labelKey: string
+  /** 节点库分组（展示维度；planner 与宿主不读它）。 */
+  readonly group: NodeGroup
   readonly availability: NodeAvailability
   /** `planned` 的不可运行原因（locale key）。 */
   readonly reasonKey?: string
@@ -134,37 +144,37 @@ const VIDEO_RESOLUTION_OPTIONS = [
  */
 export const NODE_CATALOG: readonly NodeKindSpec[] = [
   {
-    kind: 'creative-input', labelKey: 'nodeCreativeInput', availability: 'runnable', input: 'any', output: 'text',
+    kind: 'creative-input', labelKey: 'nodeCreativeInput', availability: 'runnable', group: 'input', input: 'any', output: 'text',
     params: [{ id: 'brief', labelKey: 'paramBrief', type: 'textarea', default: '', required: true }],
   },
   {
-    kind: 'script', labelKey: 'nodeScript', availability: 'runnable', input: 'text', output: 'text',
+    kind: 'script', labelKey: 'nodeScript', availability: 'runnable', group: 'input', input: 'text', output: 'text',
     params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '', required: true }],
   },
   {
-    kind: 'storyboard', labelKey: 'nodeStoryboard', availability: 'runnable', input: 'text', output: 'text',
+    kind: 'storyboard', labelKey: 'nodeStoryboard', availability: 'runnable', group: 'story', input: 'text', output: 'text',
     params: [
       { id: 'shots', labelKey: 'paramShots', type: 'number', default: 4, required: true },
       { id: 'note', labelKey: 'paramNote', type: 'text', default: '' },
     ],
   },
   {
-    kind: 'asset-reference', labelKey: 'nodeAssetReference', availability: 'runnable', input: 'media', output: 'asset',
+    kind: 'asset-reference', labelKey: 'nodeAssetReference', availability: 'runnable', group: 'story', input: 'media', output: 'asset',
     params: [{ id: 'assetId', labelKey: 'paramAsset', type: 'text', default: '', required: true }],
   },
   {
-    kind: 'resource-reference', labelKey: 'nodeResourceReference', availability: 'runnable', input: 'any', output: 'resource',
+    kind: 'resource-reference', labelKey: 'nodeResourceReference', availability: 'runnable', group: 'story', input: 'any', output: 'resource',
     params: [{ id: 'resourceId', labelKey: 'paramResource', type: 'text', default: '', required: true }],
   },
   {
-    kind: 'motion-track', labelKey: 'nodeMotionTrack', availability: 'runnable', input: 'media', output: 'media',
+    kind: 'motion-track', labelKey: 'nodeMotionTrack', availability: 'runnable', group: 'story', input: 'media', output: 'media',
     params: [
       { id: 'trackId', labelKey: 'paramTrack', type: 'text', default: '' },
       { id: 'note', labelKey: 'paramNote', type: 'text', default: '' },
     ],
   },
   {
-    kind: 'image-generate', labelKey: 'nodeImageGenerate', availability: 'runnable', input: 'text', output: 'media',
+    kind: 'image-generate', labelKey: 'nodeImageGenerate', availability: 'runnable', group: 'generate', input: 'text', output: 'media',
     params: [
       { id: 'model', labelKey: 'paramModel', type: 'text', default: '' },
       { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
@@ -174,7 +184,7 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
     ],
   },
   {
-    kind: 'video-generate', labelKey: 'nodeVideoGenerate', availability: 'runnable', input: 'media', output: 'media',
+    kind: 'video-generate', labelKey: 'nodeVideoGenerate', availability: 'runnable', group: 'generate', input: 'media', output: 'media',
     params: [
       { id: 'model', labelKey: 'paramModel', type: 'text', default: '' },
       { id: 'prompt', labelKey: 'paramPrompt', type: 'textarea', default: '', required: true },
@@ -188,35 +198,35 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
     ],
   },
   {
-    kind: 'preview', labelKey: 'nodePreview', availability: 'runnable', input: 'media', output: 'media',
+    kind: 'preview', labelKey: 'nodePreview', availability: 'runnable', group: 'finish', input: 'media', output: 'media',
     params: [],
   },
   {
-    kind: 'publish-asset', labelKey: 'nodePublishAsset', availability: 'runnable', input: 'media', output: 'asset',
+    kind: 'publish-asset', labelKey: 'nodePublishAsset', availability: 'runnable', group: 'finish', input: 'media', output: 'asset',
     params: [{ id: 'name', labelKey: 'paramAssetName', type: 'text', default: '' }],
   },
   {
-    kind: 'subtitle', labelKey: 'nodeSubtitle', availability: 'runnable', input: 'media', output: 'media',
+    kind: 'subtitle', labelKey: 'nodeSubtitle', availability: 'runnable', group: 'finish', input: 'media', output: 'media',
     params: [{ id: 'text', labelKey: 'paramScript', type: 'textarea', default: '', required: true }],
   },
   {
-    kind: 'render', labelKey: 'nodeRender', availability: 'runnable', input: 'media', output: 'media',
+    kind: 'render', labelKey: 'nodeRender', availability: 'runnable', group: 'finish', input: 'media', output: 'media',
     params: [{ id: 'note', labelKey: 'paramNote', type: 'text', default: '' }],
   },
   {
-    kind: 'lip-sync', labelKey: 'nodeLipSync', availability: 'planned', reasonKey: 'plannedLipSync',
+    kind: 'lip-sync', labelKey: 'nodeLipSync', availability: 'planned', group: 'planned', reasonKey: 'plannedLipSync',
     input: 'media', output: 'media', params: [],
   },
   {
-    kind: 'face-swap', labelKey: 'nodeFaceSwap', availability: 'planned', reasonKey: 'plannedFaceSwap',
+    kind: 'face-swap', labelKey: 'nodeFaceSwap', availability: 'planned', group: 'planned', reasonKey: 'plannedFaceSwap',
     input: 'media', output: 'media', params: [],
   },
   {
-    kind: 'voice-synthesize', labelKey: 'nodeVoiceSynthesize', availability: 'planned', reasonKey: 'plannedVoice',
+    kind: 'voice-synthesize', labelKey: 'nodeVoiceSynthesize', availability: 'planned', group: 'planned', reasonKey: 'plannedVoice',
     input: 'text', output: 'media', params: [],
   },
   {
-    kind: 'external', labelKey: 'nodeExternal', availability: 'external', reasonKey: 'externalNotRunnable',
+    kind: 'external', labelKey: 'nodeExternal', availability: 'external', group: 'planned', reasonKey: 'externalNotRunnable',
     // 外部节点不知道自己的端口语义：一律 any，导回外部格式时按原始连线还原。
     input: 'any', output: 'any',
     params: [
@@ -460,6 +470,17 @@ const PORT_ACCEPTS: Record<PortKind, readonly PortKind[]> = {
   asset: ['any', 'asset', 'media'],
 }
 
+/**
+ * 两个节点之间能不能接线。画布在**拖线当刻**用它判断（ComfyUI 的口径：
+ * 不兼容的端口连不上，而不是等点运行才在日志里报错），校验器复用同一张表。
+ * @param sourceKind - 上游节点种类。
+ * @param targetKind - 下游节点种类。
+ * @returns 端口兼容为 `true`。
+ */
+export function portsCompatible(sourceKind: WorkflowNodeKind, targetKind: WorkflowNodeKind): boolean {
+  return PORT_ACCEPTS[nodeSpec(targetKind).input].includes(nodeSpec(sourceKind).output)
+}
+
 /** 一条图校验问题（`T4-3`）。 */
 export interface WorkflowIssue {
   readonly code: 'missing-required' | 'port-mismatch' | 'self-loop' | 'dangling-edge' | 'cycle' | 'not-runnable'
@@ -519,7 +540,7 @@ export function validateWorkflow(
     }
     const from = nodeSpec(source.kind).output
     const to = nodeSpec(target.kind).input
-    if (!PORT_ACCEPTS[to].includes(from)) {
+    if (!portsCompatible(source.kind, target.kind)) {
       issues.push({
         code: 'port-mismatch', edgeId: edge.id,
         message: `${source.kind}(${from}) cannot feed ${target.kind}(${to})`,

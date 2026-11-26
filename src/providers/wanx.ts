@@ -11,11 +11,11 @@ import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, Tas
 import { toRequestOpts, aliImageSize } from './types.ts'
 
 /** 万象默认文生图模型（通义万相）。 */
-const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
+export const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
 /** 万象图生图默认模型（image2image 图编辑：按 prompt 描述编辑参考图）。 */
 const DEFAULT_IMAGE_EDIT_MODEL = 'wanx2.1-imageedit'
 /** 万象默认文生视频模型。 */
-const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
+export const DEFAULT_VIDEO_MODEL = 'wan2.2-t2v-plus'
 /** 万象默认图生视频模型（首帧驱动）。 */
 const DEFAULT_IMAGE_TO_VIDEO_MODEL = 'wan2.2-i2v-plus'
 

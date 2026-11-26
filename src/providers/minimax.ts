@@ -17,9 +17,9 @@ import type { ProviderAdapter, ImageGenParams, VideoGenParams, SubmitResult, Tas
 import { toRequestOpts } from './types.ts'
 
 /** MiniMax 官方默认文生视频模型（Hailuo 系）。 */
-const DEFAULT_VIDEO_MODEL = 'MiniMax-Hailuo-02'
+export const DEFAULT_VIDEO_MODEL = 'MiniMax-Hailuo-02'
 /** MiniMax 官方默认图片模型（image_generation）。 */
-const DEFAULT_IMAGE_MODEL = 'image-01'
+export const DEFAULT_IMAGE_MODEL = 'image-01'
 /** 未显式指定分辨率时的默认档位（Hailuo-02 支持 768P/1080P，768P 档时长兼容性最好）。 */
 const DEFAULT_RESOLUTION = '768P'
 

@@ -6,27 +6,36 @@
  * 本组件把画布维度的事实收敛成一个 `WorkflowRecord` 交给上层（`T4-1` 单一事实源），
  * 且**选择状态只在本地**，不进 `WorkflowRecord`（UI 瞬时选择不入库）。
  *
- * `B4` 补齐的交互：撤销/重做（快照历史栈，`A3` 落地后可切换）、节点复制/粘贴、
- * 框选与批量删除、单节点运行（运行器 `only`，宿主端点见 API-SURFACE「B 申请」）、
- * 节点运行中/失败状态与错误气泡。
+ * 交互口径参考 ComfyUI / LiblibAI 这类节点式生成工具（见
+ * `docs/research/workflow-editor-references.md`）：
+ * - 节点库是**左侧可检索的分组栏**，支持拖拽落到画布任意位置（不是一排平铺的 chip）；
+ * - 空画布给**模板起步**（选一张模板即得一条可跑的链路），而不是一大片空白；
+ * - 运行是**唯一的主按钮**，运行中给出进度与逐节点状态；缓存/失败直接标在卡片上；
+ * - 参数收在**浮层检视器**里，选中才出现，避免把画布高度挤走；
+ * - 端口类型在**拖线当刻**校验（`portsCompatible`），不让用户先接一条错的线再去日志里找原因。
  *
  * 样式：客户端私有插件产物由 `window.__ModuleLoader__` 以 JS 载入，不经过 Harness 的
  * CSS 打包链，所以 `@xyflow/react` 的官方样式表由 `scripts/sync-canvas-style.mjs`
  * 内嵌成字符串，在挂载时注入一次。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import {
-  Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState,
-  useReactFlow,
-  type Connection, type Edge, type Node, type NodeProps,
+  Background, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, addEdge, useEdgesState, useNodesState,
+  useReactFlow, useViewport,
+  type Connection, type Edge, type IsValidConnection, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, nodeSpec, validateWorkflow,
-  type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord, type WorkflowRunRecord,
+  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, nodeSpec,
+  portsCompatible, validateWorkflow,
+  type NodeGroup, type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord,
+  type WorkflowRunRecord,
 } from '../workbench/workflow.ts'
 import { CANVAS_STYLE, CANVAS_STYLE_ID } from './canvas-style.ts'
 import { downloadWorkflowFile, parseWorkflowFile, serializeWorkflow } from './workflow-io.ts'
 import { readWorkflowFromImage } from './image-workflow.ts'
+import { autoLayout, filterItems } from './workflow-layout.ts'
+import { ModelPicker } from './panels/ModelPicker.tsx'
+import type { WorkbenchApi } from './api.ts'
 import type { WorkbenchLocaleKey } from './locales.ts'
 import { Icon, type IconName } from './icons.tsx'
 import { useWorkbenchStyle } from './workbench-style.ts'
@@ -43,6 +52,12 @@ export interface CanvasNodeData extends Record<string, unknown> {
   runStatus?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped'
   /** `B4`：该节点失败时的错误文案（错误气泡用）。 */
   runError?: string
+  /** 该节点的产出路径（运行记录里的 `outputPath`，卡片缩略图用）。 */
+  outputPath?: string
+  /** 产出是图还是视频（决定缩略图的呈现）。 */
+  outputKind?: 'image' | 'video'
+  /** 这条产出来自跨运行缓存（卡片上标「缓存」，与 ComfyUI 的 cached 节点同义）。 */
+  cached?: boolean
 }
 
 /** 画布节点类型（必须带自定义 type，否则 xyflow 会用默认节点渲染）。 */
@@ -64,6 +79,13 @@ export interface WorkflowCanvasProps {
   readonly t: (key: WorkbenchLocaleKey) => string
   /** 导入 / 导出的结果提示（上层接到全局通知条）。 */
   readonly onNotice?: (text: string, tone: 'info' | 'error') => void
+  /** 点节点上的产出缩略图：把产物送到右侧预览（与素材列表同一个落点）。 */
+  readonly onPreview?: (path: string, kind: 'image' | 'video') => void
+  /**
+   * 宿主 API：只用于「模型」字段的候选与默认值（`models/catalog`）。
+   * 不传时该字段退回纯文本输入——画布不该因为拿不到目录就整块不可用。
+   */
+  readonly api?: WorkbenchApi
   /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
@@ -121,6 +143,21 @@ const NODE_ICONS: Record<WorkflowNodeKind, IconName> = {
   'external': 'box',
 }
 
+/** 节点库分组（顺序即侧栏顺序；`planned` 永远在最后）。 */
+const LIBRARY_GROUPS: readonly { readonly id: NodeGroup; readonly labelKey: WorkbenchLocaleKey }[] = [
+  { id: 'input', labelKey: 'canvasGroupInput' },
+  { id: 'story', labelKey: 'canvasGroupStory' },
+  { id: 'generate', labelKey: 'canvasGroupGenerate' },
+  { id: 'finish', labelKey: 'canvasGroupFinish' },
+  { id: 'planned', labelKey: 'canvasGroupPlanned' },
+]
+
+/** 空画布首推的模板（ComfyUI「默认工作流」的同位物：点一下就有可跑的东西）。 */
+const ONBOARD_TEMPLATES = ['quick-image', 'quick-video', 'production-line', 'reference-remake'] as const
+
+/** 从画布拖到节点库/画布之间传递节点种类的 MIME（自定义类型，避免把文件拖拽认错）。 */
+const NODE_DND_TYPE = 'application/x-dsh-workflow-node'
+
 /** 运行状态 → 徽章色调。 */
 function runChipClass(status: 'running' | 'succeeded' | 'failed' | 'cancelled'): string {
   switch (status) {
@@ -129,6 +166,17 @@ function runChipClass(status: 'running' | 'succeeded' | 'failed' | 'cancelled'):
     case 'failed': return 'iv-chip iv-chip--err'
     case 'cancelled': return 'iv-chip'
   }
+}
+
+/** 产出路径 → 预览地址（宿主把产出目录挂在 `/outputs/` 下）。 */
+function outputUrl(path: string): string {
+  const name = path.split('/').pop() ?? path
+  return `/outputs/${encodeURIComponent(name)}`
+}
+
+/** 产出路径 → 图/视频（决定用 `<img>` 还是播放入口）。 */
+function mediaKindOf(path: string): 'image' | 'video' {
+  return /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(path) ? 'image' : 'video'
 }
 
 /** 注入官方样式表（只注入一次；模块加载器不处理 CSS 文件）。 */
@@ -149,14 +197,28 @@ function toCanvasNodes(record: WorkflowRecord): CanvasNode[] {
   }))
 }
 
+/**
+ * 给一条边补上稳定的端口 id。
+ *
+ * React Flow v12 对 `undefined` 与 `null` 的 handle 匹配是严格的：边若不带 handle id，
+ * 端点解析不到就会被**静默丢弃**（画布上"有节点没连线"就是这个 bug）。
+ * 所有进画布的边都要过这一道：加载、模板、粘贴、连线。
+ */
+function withHandles(edge: Edge): Edge {
+  return {
+    ...edge,
+    sourceHandle: edge.sourceHandle ?? WORKFLOW_SOURCE_HANDLE,
+    targetHandle: edge.targetHandle ?? WORKFLOW_TARGET_HANDLE,
+  }
+}
+
 function toCanvasEdges(record: WorkflowRecord): Edge[] {
-  // 端口 id 必须显式带上：缺省的边在 React Flow v12 里 `undefined !== null`，会被静默丢弃
-  return record.edges.map(edge => ({
+  return record.edges.map(edge => withHandles({
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle ?? WORKFLOW_SOURCE_HANDLE,
-    targetHandle: edge.targetHandle ?? WORKFLOW_TARGET_HANDLE,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
   }))
 }
 
@@ -188,12 +250,17 @@ function nextNodeId(kind: WorkflowNodeKind): string {
 }
 
 /**
- * 节点卡片：本地化种类名 + 参数摘要 + `B4` 的运行状态徽章与错误气泡。
+ * 节点卡片：本地化种类名 + 参数摘要 + 运行状态 + 产出缩略图。
  *
- * 运行状态来自运行记录（`nodeRuns` 按 nodeId 归拢），只进 `node.data` 的样式字段，
+ * 运行状态与产出都来自运行记录（`nodeRuns` 按 nodeId 归拢），只进 `node.data` 的样式字段，
  * 不被 `merge` 持久化——运行记录是宿主侧的事实，卡片只是它的镜子。
  */
-function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (key: WorkbenchLocaleKey) => string }): JSX.Element {
+function WorkflowNodeCard({
+  data, selected, t, onPreview,
+}: NodeProps<CanvasNode> & {
+  t: (key: WorkbenchLocaleKey) => string
+  onPreview?: (path: string, kind: 'image' | 'video') => void
+}): JSX.Element {
   const [bubbleOpen, setBubbleOpen] = useState(false)
   const spec = nodeSpec(data.kind)
   const planned = spec.availability !== 'runnable'
@@ -205,22 +272,35 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
     .join(' · ')
   const runStatus = data.runStatus
   const failed = runStatus === 'failed'
+  const outputPath = data.outputPath
+  const outputKind = data.outputKind ?? (outputPath === undefined ? undefined : mediaKindOf(outputPath))
   return (
     <div
       className="iv-node"
       data-workflow-node={data.kind}
       data-workflow-node-selected={selected ? 'true' : 'false'}
       data-workflow-node-availability={spec.availability}
+      data-workflow-node-group={spec.group}
       data-workflow-node-invalid={data.invalid === true ? 'true' : 'false'}
       data-workflow-node-run-status={runStatus ?? 'none'}
       role="button"
       tabIndex={0}
       aria-label={`${t(spec.labelKey as WorkbenchLocaleKey)}${runStatus === undefined ? '' : ` · ${t(nodeStatusKey(runStatus))}`}`}
     >
-      <Handle id={WORKFLOW_TARGET_HANDLE} type="target" position={Position.Left} />
+      <Handle
+        id={WORKFLOW_TARGET_HANDLE}
+        type="target"
+        position={Position.Left}
+        className={`iv-handle iv-handle--in iv-handle--${spec.input}`}
+      />
       <div className="iv-node-head">
         <Icon name={NODE_ICONS[data.kind]} size={13} />
         <span className="iv-node-title">{t(spec.labelKey as WorkbenchLocaleKey)}</span>
+        {data.cached === true ? (
+          <span className="iv-node-cached" data-workflow-node-cached="true" title={t('canvasCached')}>
+            {t('canvasCached')}
+          </span>
+        ) : null}
         {planned
           ? <span className="iv-node-planned" data-workflow-planned-tag="true">
             <Icon name="sparkles" size={9} />{t(external ? 'canvasExternalTag' : 'canvasPlannedTag')}
@@ -249,18 +329,90 @@ function WorkflowNodeCard({ data, selected, t }: NodeProps<CanvasNode> & { t: (k
         ) : null}
       </div>
       {summary === '' ? null : <div className="iv-node-body">{summary}</div>}
+      {outputPath === undefined
+        ? null
+        : (
+          <button
+            type="button"
+            className="iv-node-media"
+            data-workflow-node-media={outputKind ?? 'image'}
+            title={`${t('canvasOutputPreview')} · ${outputPath.split('/').pop() ?? outputPath}`}
+            onClick={event => {
+              event.stopPropagation()
+              if (outputPath !== undefined) onPreview?.(outputPath, outputKind ?? 'image')
+            }}
+          >
+            {outputKind === 'image'
+              ? <img src={outputUrl(outputPath)} alt="" loading="lazy" draggable={false} />
+              : (
+                <>
+                  <i className="iv-node-media-play" aria-hidden="true"><Icon name="play" size={12} /></i>
+                  <span className="iv-node-media-name">{outputPath.split('/').pop()}</span>
+                </>
+              )}
+          </button>
+        )}
       {failed && bubbleOpen ? (
         <div className="iv-node-bubble" data-workflow-node-error-bubble="true" role="status">
           {data.runError ?? t('statusFailed')}
         </div>
       ) : null}
-      <Handle id={WORKFLOW_SOURCE_HANDLE} type="source" position={Position.Right} />
+      <Handle
+        id={WORKFLOW_SOURCE_HANDLE}
+        type="source"
+        position={Position.Right}
+        className={`iv-handle iv-handle--out iv-handle--${spec.output}`}
+      />
+    </div>
+  )
+}
+
+/** 空画布起步卡：选模板 / 空白 / 导入（ComfyUI 默认工作流 + LiblibAI 一键同款的同位物）。 */
+function CanvasOnboarding({
+  t, templates, onPick, onBlank, onImport,
+}: {
+  readonly t: (key: WorkbenchLocaleKey) => string
+  readonly templates: readonly { readonly id: string; readonly labelKey: string; readonly nodeCount: number }[]
+  readonly onPick: (id: string) => void
+  readonly onBlank: () => void
+  readonly onImport: () => void
+}): JSX.Element {
+  return (
+    <div className="iv-wf-onboard" data-workflow-onboarding="true">
+      <div className="iv-wf-onboard-card">
+        <span className="iv-wf-onboard-eyebrow"><Icon name="sparkles" size={11} />{t('canvasOnboardingTitle')}</span>
+        <p className="iv-wf-onboard-hint">{t('canvasOnboardingHint')}</p>
+        <div className="iv-wf-onboard-grid">
+          {templates.map(template => (
+            <button
+              key={template.id}
+              type="button"
+              className="iv-wf-onboard-tpl"
+              data-workflow-onboarding-template={template.id}
+              onClick={() => { onPick(template.id) }}
+            >
+              <span className="iv-wf-onboard-tpl-name">{t(template.labelKey as WorkbenchLocaleKey)}</span>
+              <span className="iv-wf-onboard-tpl-meta">
+                {t('canvasOnboardingNodes').replace('{n}', String(template.nodeCount))}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="iv-wf-onboard-foot">
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-onboarding-blank="true" onClick={onBlank}>
+            {t('canvasOnboardingBlank')}
+          </button>
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-onboarding-import="true" onClick={onImport}>
+            <Icon name="upload" size={11} />{t('canvasOnboardingImport')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -270,7 +422,23 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
   const [logOpen, setLogOpen] = useState(false)
   /** 全屏画布：把整个工作流区抬成覆盖视口的浮层，画布独占剩余高度。 */
   const [maximized, setMaximized] = useState(false)
-  const { fitView } = useReactFlow<CanvasNode, Edge>()
+  /** 节点库检索词（分组内实时过滤；`/` 聚焦）。 */
+  const [libraryQuery, setLibraryQuery] = useState('')
+  /** 节点库收起态（窄窗口默认由 CSS 收成图标条，这里只记用户手动切换）。 */
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false)
+  /** 空画布起步卡是否已被用户主动收起（收起后就是一张干净的空白画布）。 */
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
+  /** 双击空白处的快速添加：位置（相对画布）与落点（画布坐标）。 */
+  const [quickAdd, setQuickAdd] = useState<{
+    readonly left: number
+    readonly top: number
+    readonly position: { readonly x: number; readonly y: number }
+  } | undefined>(undefined)
+  const [quickQuery, setQuickQuery] = useState('')
+  const { fitView, screenToFlowPosition } = useReactFlow<CanvasNode, Edge>()
+  const { zoom } = useViewport()
+  const flowRef = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const lastPushed = useRef<string>('')
   const seededId = useRef<string>(record.id)
   const clipboard = useRef<CanvasClipboard | undefined>(undefined)
@@ -311,6 +479,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     setEdges(nextEdges)
     resetHistory({ nodes: nextNodes, edges: nextEdges })
     setSelectedIds([])
+    setOnboardingDismissed(false)
   }, [record, setNodes, setEdges, resetHistory])
 
   // 图变化 → 回写唯一事实源（选择不在其中）。
@@ -347,9 +516,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     // 只在"问题节点集合"变化时同步，避免连环渲染
   }, [invalidFingerprint, setNodes])
 
-  // `B4`：把最近一次运行的节点状态/错误同步进卡片数据（运行记录是宿主事实，卡片只镜像）
+  // `B4`：把最近一次运行的节点状态/错误/产出同步进卡片数据（运行记录是宿主事实，卡片只镜像）
   const runFingerprint = (run?.latest?.nodeRuns ?? [])
-    .map(entry => `${entry.nodeId}:${entry.status}:${entry.error ?? ''}`)
+    .map(entry => `${entry.nodeId}:${entry.status}:${entry.error ?? ''}:${entry.outputPath ?? ''}:${entry.cached === true ? '1' : '0'}`)
     .join('|')
   useEffect(() => {
     const byId = new Map((run?.latest?.nodeRuns ?? []).map(entry => [entry.nodeId, entry]))
@@ -359,9 +528,17 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
         const entry = byId.get(node.id)
         const status = entry?.status
         const errorText = entry?.error
-        if (node.data.runStatus === status && node.data.runError === errorText) return node
+        const outputPath = entry?.outputPath
+        const outputKind = outputPath === undefined ? undefined : mediaKindOf(outputPath)
+        const cached = entry?.cached === true ? true : undefined
+        if (node.data.runStatus === status && node.data.runError === errorText
+          && node.data.outputPath === outputPath && node.data.outputKind === outputKind
+          && node.data.cached === cached) return node
         changed = true
-        return { ...node, data: { ...node.data, runStatus: status, runError: errorText } }
+        return {
+          ...node,
+          data: { ...node.data, runStatus: status, runError: errorText, outputPath, outputKind, cached },
+        }
       })
       return changed ? next : current
     })
@@ -377,8 +554,8 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
   }, [run?.latest?.status])
 
   const nodeTypes = useMemo(() => ({
-    workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} />,
-  }), [t])
+    workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} onPreview={onPreview} />,
+  }), [t, onPreview])
 
   /**
    * 应用一张新图：改本地状态 + 推历史 + 回写事实源（回写由上面的 effect 完成）。
@@ -391,20 +568,27 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     commitHistory(next, tag)
   }, [commitHistory, setNodes, setEdges])
 
+  /** 视口中心对应的画布坐标（点击节点库/快捷键加节点时用，避免全叠在左上角）。 */
+  const viewportCenter = useCallback((): { x: number, y: number } => {
+    const rect = flowRef.current?.getBoundingClientRect()
+    if (rect === undefined || rect.width === 0) return { x: 80, y: 80 }
+    return screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+  }, [screenToFlowPosition])
+
   // planned 节点按 `T3-2` 可以放进图并保存，只是**不可运行**（执行侧由 `T3-3` 拒绝）；
   // 因此这里不拦，只在卡片与参数面板上如实标注。
-  const addNode = useCallback((kind: WorkflowNodeKind) => {
-    const index = nodes.length
+  const addNodeAt = useCallback((kind: WorkflowNodeKind, position?: { x: number, y: number }) => {
+    const spot = position ?? viewportCenter()
     const node: CanvasNode = {
       id: nextNodeId(kind), type: 'workbench',
-      position: { x: 40 + (index % 4) * 190, y: 40 + Math.floor(index / 4) * 120 },
+      position: { x: Math.round(spot.x - 90), y: Math.round(spot.y - 40) },
       data: { kind, params: defaultParams(kind) },
       selected: true,
     }
     const nextNodes: CanvasNode[] = nodes.map<CanvasNode>(candidate => ({ ...candidate, selected: false }))
     nextNodes.push(node)
     applyGraph({ nodes: nextNodes, edges }, `add:${node.id}`)
-  }, [nodes, edges, applyGraph])
+  }, [nodes, edges, applyGraph, viewportCenter])
 
   const updateParam = useCallback((id: string, key: string, value: NodeParamValue) => {
     const nextNodes = nodes.map(node => (
@@ -416,12 +600,27 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
 
   const onConnect = useCallback((connection: Connection) => {
     if (connection.source === connection.target) { setError(t('canvasSelfLoop')); return }
+    const source = nodes.find(node => node.id === connection.source)
+    const target = nodes.find(node => node.id === connection.target)
+    if (source !== undefined && target !== undefined && !portsCompatible(source.data.kind, target.data.kind)) {
+      setError(t('issuePort'))
+      return
+    }
     setError(undefined)
     const id = `${connection.source}-${connection.target}`
     if (edges.some(edge => edge.id === id)) return
-    const nextEdges = addEdge({ ...connection, id }, edges)
+    const nextEdges = addEdge(withHandles({ ...connection, id } as Edge), edges)
     applyGraph({ nodes, edges: nextEdges }, `connect:${id}`)
   }, [nodes, edges, applyGraph, t])
+
+  /** 拖线时实时拒绝不兼容的端口（ComfyUI 口径：接不上的线不去日志里解释）。 */
+  const isValidConnection = useCallback<IsValidConnection<Edge>>(connection => {
+    if (connection.source === connection.target) return false
+    const source = nodes.find(node => node.id === connection.source)
+    const target = nodes.find(node => node.id === connection.target)
+    if (source === undefined || target === undefined) return false
+    return portsCompatible(source.data.kind, target.data.kind)
+  }, [nodes])
 
   const applyTemplate = useCallback((id: string) => {
     const template = WORKFLOW_TEMPLATES.find(candidate => candidate.id === id)
@@ -430,17 +629,37 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     const built: CanvasNode[] = template.nodes.map((spec, index) => ({
       id: `${template.id}-${index}-${stamp}`,
       type: 'workbench',
-      position: { x: 40 + (index % 2) * 200, y: 30 + Math.floor(index / 2) * 110 },
+      position: { x: 0, y: 0 },
       data: { kind: spec.kind, params: { ...defaultParams(spec.kind), ...spec.params ?? {} } },
     }))
-    const builtEdges = template.edges.map(([from, to]) => ({
+    const builtEdges: Edge[] = template.edges.map(([from, to]) => withHandles({
       id: `${built[from]?.id ?? from}->${built[to]?.id ?? to}`,
       source: built[from]?.id ?? String(from),
       target: built[to]?.id ?? String(to),
     }))
+    // 模板自带连线：直接按链路排版，用户看到的是一条从左到右的流水线而不是叠在一起
+    const positions = autoLayout(
+      built.map(node => ({ id: node.id, position: node.position })),
+      builtEdges,
+    )
+    const laidOut = built.map(node => ({ ...node, position: positions.get(node.id) ?? node.position }))
     setError(undefined)
-    applyGraph({ nodes: built, edges: builtEdges }, `template:${id}`)
-  }, [applyGraph])
+    setOnboardingDismissed(false)
+    applyGraph({ nodes: laidOut, edges: builtEdges }, `template:${id}`)
+    window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
+  }, [applyGraph, fitView])
+
+  /** 自动排列：按深度分列重排（导入的外部工作流尤其需要）。 */
+  const relayout = useCallback(() => {
+    const current = merge(record, nodes, edges)
+    const positions = autoLayout(current.nodes, current.edges)
+    const laidOut = nodes.map(node => {
+      const position = positions.get(node.id)
+      return position === undefined ? node : { ...node, position }
+    })
+    applyGraph({ nodes: laidOut, edges }, `layout:${Date.now().toString(36)}`)
+    window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
+  }, [record, nodes, edges, applyGraph, fitView])
 
   /** 删除选中的节点（批量：框选/多选后一次删完）。 */
   const deleteSelected = useCallback(() => {
@@ -482,7 +701,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
       }
     })
     const remap = (id: string): string => idMap.get(id) ?? id
-    const pastedEdges: Edge[] = clip.edges.map(edge => ({
+    const pastedEdges: Edge[] = clip.edges.map(edge => withHandles({
       ...edge,
       id: `${remap(edge.source)}->${remap(edge.target)}`,
       source: remap(edge.source),
@@ -502,6 +721,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
       const graph: WorkflowRecord = { ...record, nodes: [...parsed.nodes], edges: [...parsed.edges] }
       applyGraph({ nodes: toCanvasNodes(graph), edges: toCanvasEdges(graph) }, `import:${Date.now().toString(36)}`)
       setSelectedIds([])
+      setOnboardingDismissed(false)
       setError(undefined)
       const base = t('canvasImportWorkflowDone').replace('{n}', String(parsed.nodes.length))
       const report = parsed.report
@@ -514,7 +734,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
         ].join(' · ')
         onNotice?.(`${base} · ${detail}`, 'info')
       }
-      void fitView({ padding: 0.2 })
+      window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       setError(message)
@@ -542,6 +762,16 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     }
   }, [importWorkflowFile])
 
+  /** 从节点库拖进画布：落在松手的位置（而不是又回到左上角）。 */
+  const dropNode = useCallback((event: DragEvent): void => {
+    const kind = event.dataTransfer.getData(NODE_DND_TYPE)
+    if (kind === '') return
+    event.preventDefault()
+    const spec = NODE_CATALOG.find(candidate => candidate.kind === kind)
+    if (spec === undefined) return
+    addNodeAt(spec.kind, screenToFlowPosition({ x: event.clientX, y: event.clientY }))
+  }, [addNodeAt, screenToFlowPosition])
+
   /** 导出工作流 JSON：带格式标识与版本，换一台机器也能按同一套校验导回来。 */
   const exportWorkflowFile = useCallback(() => {
     downloadWorkflowFile(serializeWorkflow(merge(record, nodes, edges)), record.name || 'workflow')
@@ -563,27 +793,41 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
   }, [redoHistory, setNodes, setEdges])
 
   // `B13` 快捷键：Cmd/Ctrl+Z 撤销、Cmd/Ctrl+Shift+Z（或 +Y）重做、C/V 复制粘贴、
-  // Delete/Backspace 删除选中。输入控件里不劫持（让用户正常打字）。
+  // Delete/Backspace 删除选中、`/` 聚焦节点库检索。输入控件里不劫持（让用户正常打字）。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && maximized) {
-        event.preventDefault()
-        setMaximized(false)
-        return
-      }
       const target = event.target as HTMLElement | null
-      if (target !== null && (
+      const typing = target !== null && (
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
         || target.isContentEditable === true
-      )) return
+      )
+      if (event.key === 'Escape') {
+        if (quickAdd !== undefined) { event.preventDefault(); setQuickAdd(undefined); setQuickQuery(''); return }
+        if (maximized) { event.preventDefault(); setMaximized(false); return }
+        return
+      }
+      if (typing) return
       const meta = event.metaKey || event.ctrlKey
       const key = event.key.toLowerCase()
+      if (key === '/' && !meta) {
+        event.preventDefault()
+        setLibraryCollapsed(false)
+        searchRef.current?.focus()
+        return
+      }
       if (meta && key === 'z') {
         event.preventDefault()
         if (event.shiftKey) redo(); else undo()
         return
       }
       if (meta && key === 'y') { event.preventDefault(); redo(); return }
+      if (meta && key === 'a') {
+        event.preventDefault()
+        const ids = nodes.map(node => node.id)
+        setNodes(current => current.map(node => (node.selected === true ? node : { ...node, selected: true })))
+        setSelectedIds(ids)
+        return
+      }
       if (meta && key === 'c') { event.preventDefault(); copySelected(); return }
       if (meta && key === 'v') {
         event.preventDefault()
@@ -609,7 +853,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
     }
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized, importWorkflowText])
+  }, [
+    undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized,
+    importWorkflowText, quickAdd, nodes, setNodes,
+  ])
 
   // 拖拽结束 = 一步历史（拖动过程中的每个 position 变化都合并进来）
   const onNodeDragStop = useCallback((_event: unknown, node: Node) => {
@@ -618,6 +865,49 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
 
   // 点空白处：xyflow 会清掉内部选择（→ onSelectionChange([])），这里只清错误提示
   const onPaneClick = useCallback(() => { setError(undefined) }, [])
+
+  /** 双击空白：在光标处弹出快速添加（ComfyUI 的招牌交互）。 */
+  const onCanvasDoubleClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (!target.classList.contains('react-flow__pane')) return
+    const rect = flowRef.current?.getBoundingClientRect()
+    if (rect === undefined) return
+    setQuickAdd({
+      left: event.clientX - rect.left,
+      top: event.clientY - rect.top,
+      position: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+    })
+    setQuickQuery('')
+  }, [screenToFlowPosition])
+
+  // 节点库：已本地化的登记表 + 检索（分组在渲染时再切）
+  const libraryEntries = useMemo(() => NODE_CATALOG
+    .filter(spec => spec.availability !== 'external')
+    .map(spec => ({ spec, kind: spec.kind, label: t(spec.labelKey as WorkbenchLocaleKey) })), [t])
+  const filteredEntries = useMemo(
+    () => filterItems(libraryEntries, libraryQuery),
+    [libraryEntries, libraryQuery],
+  )
+  const quickMatches = useMemo(() => filterItems(libraryEntries, quickQuery), [libraryEntries, quickQuery])
+  const onboardingTemplates = useMemo(() => ONBOARD_TEMPLATES.flatMap(id => {
+    const template = WORKFLOW_TEMPLATES.find(candidate => candidate.id === id)
+    return template === undefined
+      ? []
+      : [{ id: template.id, labelKey: template.labelKey, nodeCount: template.nodes.length }]
+  }), [])
+
+  /** 运行进度（运行中才有）：卡片与顶部进度条共用。 */
+  const runProgress = run?.latest === undefined
+    ? undefined
+    : {
+      done: run.latest.nodeRuns.filter(entry => entry.status === 'succeeded').length,
+      total: run.latest.nodeRuns.length,
+      status: run.latest.status,
+    }
+  const runBusy = run?.busy === true || run?.latest?.status === 'running'
+  const progressPercent = runProgress === undefined || runProgress.total === 0
+    ? 0
+    : Math.round((runProgress.done / runProgress.total) * 100)
 
   return (
     <div
@@ -629,97 +919,51 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
       data-workflow-selected={selectedIds[0] ?? ''}
       data-workflow-selected-count={String(selectedIds.length)}
       data-workflow-history={`${undoDepth}/${redoDepth}`}
+      data-workflow-library-collapsed={libraryCollapsed ? 'true' : 'false'}
     >
-      <div className="iv-pal" data-workflow-palette="true">
-        <span className="iv-micro" style={{ width: '100%' }}>{t('canvasPalette')}</span>
-        {NODE_CATALOG.filter(spec => spec.availability === 'runnable').map(spec => (
-          <button
-            key={spec.kind}
-            type="button"
-            className="iv-pal-chip"
-            data-workflow-palette-item={spec.kind}
-            data-workflow-availability={spec.availability}
-            aria-label={`${t('canvasAdd')} ${spec.kind}`}
-            title={spec.reasonKey === undefined ? spec.kind : t(spec.reasonKey as WorkbenchLocaleKey)}
-            onClick={() => { addNode(spec.kind) }}
-          >
-            <Icon name={NODE_ICONS[spec.kind]} size={12} />
-            <span>{t(spec.labelKey as WorkbenchLocaleKey)}</span>
-          </button>
-        ))}
-        {NODE_CATALOG.some(spec => spec.availability === 'planned')
-          ? (
-            <>
-              <span className="iv-pal-sep" role="separator" />
-              {NODE_CATALOG.filter(spec => spec.availability === 'planned').map(spec => (
-                <button
-                  key={spec.kind}
-                  type="button"
-                  className="iv-pal-chip"
-                  data-workflow-palette-item={spec.kind}
-                  data-workflow-availability={spec.availability}
-                  aria-label={`${t('canvasAdd')} ${spec.kind}`}
-                  title={spec.reasonKey === undefined ? spec.kind : t(spec.reasonKey as WorkbenchLocaleKey)}
-                  onClick={() => { addNode(spec.kind) }}
-                >
-                  <Icon name={NODE_ICONS[spec.kind]} size={12} />
-                  <span>{t(spec.labelKey as WorkbenchLocaleKey)}</span>
-                  <span className="iv-meta">{t('canvasPlannedTag')}</span>
-                </button>
+      {/* 工具条：左边是「建图」的动作（模板/撤销/排版/适配/导入导出），右边是唯一的主按钮「运行」 */}
+      <div className="iv-wf-head" data-workflow-toolbar="true">
+        <div className="iv-wf-head-main">
+          <div className="iv-wf-tpl">
+            <select
+              className="iv-select iv-select--sm"
+              data-workflow-template="true"
+              aria-label={t('templateTitle')}
+              value={templateId}
+              onChange={event => { setTemplateId(event.target.value) }}
+            >
+              {WORKFLOW_TEMPLATES.map(template => (
+                <option key={template.id} value={template.id}>{t(template.labelKey as WorkbenchLocaleKey)}</option>
               ))}
-            </>
-          )
-          : null}
-      </div>
-
-      <div className="iv-workflow-body">
-        <div className="iv-toolbar">
-          <select
-            className="iv-select"
-            data-workflow-template="true"
-            aria-label={t('templateTitle')}
-            value={templateId}
-            onChange={event => { setTemplateId(event.target.value) }}
-          >
-            {WORKFLOW_TEMPLATES.map(template => (
-              <option key={template.id} value={template.id}>{t(template.labelKey as WorkbenchLocaleKey)}</option>
-            ))}
-          </select>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="apply-template"
-            onClick={() => { applyTemplate(templateId) }}>
-            <Icon name="copy" />{t('templateApply')}
-          </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="fit"
-            onClick={() => { void fitView({ padding: 0.2 }) }}>
-            <Icon name="search" />{t('canvasFit')}
-          </button>
+            </select>
+            <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="apply-template"
+              onClick={() => { applyTemplate(templateId) }}>
+              <Icon name="copy" size={12} />{t('templateApply')}
+            </button>
+          </div>
           <span className="iv-toolbar-sep" role="separator" aria-hidden="true" />
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="undo"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="undo"
             aria-label={t('canvasUndo')} title={`${t('canvasUndo')}（⌘Z）`}
             disabled={!canUndo} onClick={undo}>
-            <Icon name="undo" />{undoDepth > 0 ? undoDepth : ''}
+            <Icon name="undo" size={13} />
+            {undoDepth > 0 ? <span className="iv-btn-badge">{undoDepth}</span> : null}
           </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="redo"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="redo"
             aria-label={t('canvasRedo')} title={`${t('canvasRedo')}（⌘⇧Z）`}
             disabled={!canRedo} onClick={redo}>
-            <Icon name="redo" />{redoDepth > 0 ? redoDepth : ''}
+            <Icon name="redo" size={13} />
+            {redoDepth > 0 ? <span className="iv-btn-badge">{redoDepth}</span> : null}
           </button>
           <span className="iv-toolbar-sep" role="separator" aria-hidden="true" />
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="copy"
-            aria-label={t('canvasCopy')} title={`${t('canvasCopy')}（⌘C）`}
-            disabled={selectedIds.length === 0} onClick={copySelected}>
-            <Icon name="copy" />{t('canvasCopy')}
+          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="auto-layout"
+            aria-label={t('canvasAutoLayout')} title={t('canvasAutoLayout')} onClick={relayout}>
+            <Icon name="layers" size={12} />{t('canvasAutoLayout')}
           </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="paste"
-            aria-label={t('canvasPaste')} title={`${t('canvasPaste')}（⌘V）`} onClick={pasteClipboard}>
-            <Icon name="clipboard" />{t('canvasPaste')}
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="fit"
+            aria-label={t('canvasFit')} title={t('canvasFit')}
+            onClick={() => { void fitView({ padding: 0.2 }) }}>
+            <Icon name="expand" size={13} />
           </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="delete-node"
-            aria-label={t('canvasDeleteSelected')} title={`${t('canvasDeleteSelected')}（Delete）`}
-            disabled={selectedIds.length === 0} onClick={deleteSelected}>
-            <Icon name="trash" />{t('canvasDeleteSelected')}{selectedIds.length > 1 ? ` · ${selectedIds.length}` : ''}
-          </button>
-          <span className="iv-toolbar-sep" role="separator" aria-hidden="true" />
           <input
             ref={workflowFileRef}
             type="file"
@@ -732,59 +976,136 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
               if (file !== undefined) void importWorkflowFile(file)
             }}
           />
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="import"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="import"
             aria-label={t('canvasImportWorkflow')} title={t('canvasImportWorkflow')}
             onClick={() => workflowFileRef.current?.click()}>
-            <Icon name="upload" />{t('canvasImportWorkflow')}
+            <Icon name="upload" size={13} />
           </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="export"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="export"
             aria-label={t('canvasExportWorkflow')} title={t('canvasExportWorkflow')}
             onClick={exportWorkflowFile}>
-            <Icon name="download" />{t('canvasExportWorkflow')}
+            <Icon name="download" size={13} />
           </button>
+        </div>
+        <div className="iv-wf-head-run">
           {run === undefined
             ? null
             : (
               <div className="iv-run-actions" data-workflow-toolbar-run="true">
                 <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
-                  disabled={run.busy || !validation.ok || run.latest?.status === 'running'} onClick={run.onStart}>
-                  <Icon name="play" />{t('runStart')}
+                  disabled={runBusy || !validation.ok || nodes.length === 0} onClick={run.onStart}>
+                  <Icon name="play" size={12} />
+                  {run.latest?.status === 'running'
+                    ? t('canvasProgress').replace('{done}', String(runProgress?.done ?? 0)).replace('{total}', String(runProgress?.total ?? 0))
+                    : t('runStart')}
                 </button>
-                <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="cancel"
-                  disabled={run.latest?.status !== 'running'} onClick={run.onCancel}>
-                  {t('runCancel')}
-                </button>
-                <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="retry"
-                  disabled={run.latest?.status !== 'failed'} onClick={run.onRetry}>
-                  {t('runRetry')}
-                </button>
+                {run.latest?.status === 'running'
+                  ? (
+                    <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="cancel"
+                      onClick={run.onCancel}>
+                      {t('runCancel')}
+                    </button>
+                  )
+                  : run.latest?.status === 'failed'
+                    ? (
+                      <button type="button" className="iv-btn iv-btn--sm" data-workflow-run-action="retry"
+                        onClick={run.onRetry}>
+                        {t('runRetry')}
+                      </button>
+                    )
+                    : null}
               </div>
             )}
-          <span className="iv-count">
-            {nodes.length} {t('canvasNodesCount')} · {edges.length} {t('canvasEdgesCount')}
-          </span>
-          <button type="button" className="iv-btn iv-btn--sm"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon"
             data-workflow-log-toggle="true" aria-expanded={logOpen}
-            aria-controls="iv-workflow-log" title={t('canvasLogs')}
+            aria-controls="iv-workflow-log" aria-label={t('canvasLogs')} title={t('canvasLogs')}
             onClick={() => { setLogOpen(open => !open) }}>
-            <Icon name="script" />{t('canvasLogs')}
+            <Icon name="script" size={13} />
             {validation.issues.length > 0
               ? <span className="iv-chip iv-chip--err" data-workflow-log-issue-count="true">{validation.issues.length}</span>
               : null}
           </button>
-          <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="maximize"
+          <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="maximize"
             aria-pressed={maximized} aria-label={maximized ? t('canvasRestore') : t('canvasMaximize')}
             title={maximized ? t('canvasRestore') : t('canvasMaximize')}
             onClick={() => { setMaximized(value => !value) }}>
-            <Icon name={maximized ? 'shrink' : 'expand'} />
+            <Icon name={maximized ? 'shrink' : 'expand'} size={13} />
           </button>
         </div>
+      </div>
+
+      <div className="iv-wf-body">
+        {/* 节点库：分组 + 检索 + 拖拽；窄窗口由容器查询收成图标条 */}
+        <aside className="iv-wf-lib" data-workflow-library="true" aria-label={t('canvasPalette')}>
+          <div className="iv-wf-lib-head">
+            <span className="iv-wf-lib-title">
+              <Icon name="box" size={12} />{t('canvasPalette')}
+            </span>
+            <button type="button" className="iv-wf-lib-toggle" data-workflow-library-toggle="true"
+              aria-expanded={!libraryCollapsed} aria-label={t('canvasLibraryToggle')}
+              title={t('canvasLibraryToggle')}
+              onClick={() => { setLibraryCollapsed(value => !value) }}>
+              <Icon name="chevron" size={11} />
+            </button>
+          </div>
+          <div className="iv-wf-lib-search">
+            <Icon name="search" size={11} />
+            <input
+              ref={searchRef}
+              type="search"
+              className="iv-input iv-input--bare"
+              data-workflow-library-search="true"
+              placeholder={t('canvasLibraryHint')}
+              aria-label={t('canvasLibraryHint')}
+              value={libraryQuery}
+              onChange={event => { setLibraryQuery(event.target.value) }}
+            />
+          </div>
+          <div className="iv-wf-lib-body">
+            {filteredEntries.length === 0
+              ? <p className="iv-meta" data-workflow-library-empty="true">{t('canvasLibraryEmpty')}</p>
+              : LIBRARY_GROUPS.map(group => {
+                const items = filteredEntries.filter(entry => entry.spec.group === group.id)
+                if (items.length === 0) return null
+                return (
+                  <div key={group.id} className="iv-wf-lib-group" data-workflow-library-group={group.id}>
+                    <span className="iv-wf-lib-group-title">{t(group.labelKey)}</span>
+                    {items.map(entry => (
+                      <button
+                        key={entry.kind}
+                        type="button"
+                        className="iv-wf-lib-item"
+                        data-workflow-palette-item={entry.kind}
+                        data-workflow-availability={entry.spec.availability}
+                        draggable
+                        aria-label={`${t('canvasAdd')} ${entry.kind}`}
+                        title={entry.spec.reasonKey === undefined ? t('canvasDragHint') : t(entry.spec.reasonKey as WorkbenchLocaleKey)}
+                        onDragStart={event => {
+                          event.dataTransfer.setData(NODE_DND_TYPE, entry.kind)
+                          event.dataTransfer.effectAllowed = 'copy'
+                        }}
+                        onClick={() => { addNodeAt(entry.kind) }}
+                      >
+                        <Icon name={NODE_ICONS[entry.kind]} size={12} />
+                        <span className="iv-wf-lib-item-name">{entry.label}</span>
+                        {entry.spec.availability === 'planned'
+                          ? <span className="iv-wf-lib-item-tag">{t('canvasPlannedTag')}</span>
+                          : null}
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+          </div>
+        </aside>
 
         <div
+          ref={flowRef}
           className="iv-flow" data-workflow-flow="true"
           data-workflow-drop-import="true"
           onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
-          onDrop={importDroppedFile}
+          onDrop={event => { importDroppedFile(event); dropNode(event) }}
+          onDoubleClick={onCanvasDoubleClick}
         >
           <ReactFlow
             nodes={nodes}
@@ -793,214 +1114,391 @@ function CanvasSurface({ record, onChange, t, run, onNotice }: WorkflowCanvasPro
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            isValidConnection={isValidConnection}
             onSelectionChange={onSelectionChange}
             onNodeDragStop={onNodeDragStop}
             onPaneClick={onPaneClick}
             // 多选修饰键两个平台都认（默认值跟 isMacOs 走，Windows 用户按 Cmd 没反应）
             multiSelectionKeyCode={['Meta', 'Control']}
             selectionOnDrag
+            snapToGrid
+            snapGrid={[12, 12]}
             proOptions={{ hideAttribution: false }}
           >
             <Background gap={18} />
-            <Controls showInteractive={false} />
+            {nodes.length >= 6 ? (
+              <MiniMap
+                pannable zoomable
+                className="iv-flow-minimap"
+                style={{ width: 148, height: 92 }}
+                nodeColor={node => (selectedIds.includes(node.id) ? 'var(--iv-acc)' : 'var(--iv-tx3)')}
+                nodeStrokeWidth={0}
+                maskColor="color-mix(in srgb, var(--iv-panel) 70%, transparent)"
+              />
+            ) : null}
           </ReactFlow>
-        </div>
+          <div className="iv-flow-zoombadge" data-workflow-zoom={String(Math.round(zoom * 100))}>
+            {Math.round(zoom * 100)}%
+          </div>
 
-        {selectedNodes.length === 0
-          ? <p className="iv-meta">{t('canvasEmpty')}</p>
-          : (
-            <div className="iv-inspector" data-workflow-inspector={selectedNodes[0]!.id}>
-              <div className="iv-inspector-head">
-                <Icon name={NODE_ICONS[selectedNodes[0]!.data.kind]} size={13} />
-                {t('canvasParams')} · {selectedNodes[0]!.data.kind}
-                {selectedNodes.length > 1 ? <span className="iv-meta">{t('canvasSelected')} · {selectedNodes.length}</span> : null}
-                {run?.onRunNode === undefined || selectedNodes.length !== 1 ? null : (
-                  <button
-                    type="button"
-                    className="iv-btn iv-btn--sm"
-                    data-workflow-action="run-node"
-                    aria-label={t('canvasRunNode')}
-                    title={t('canvasRunNode')}
-                    disabled={run.busy || run.latest?.status === 'running'}
-                    onClick={() => { run.onRunNode?.(selectedNodes[0]!.id) }}
-                  >
-                    <Icon name="play" size={11} />{t('canvasRunNode')}
-                  </button>
-                )}
-              </div>
-              {nodeSpec(selectedNodes[0]!.data.kind).availability !== 'runnable'
-                ? (
-                  <span className="iv-meta" data-workflow-planned-note="true" style={{ color: 'var(--iv-warn)' }}>
-                    <Icon name="sparkles" size={12} /> {t(nodeSpec(selectedNodes[0]!.data.kind).reasonKey as WorkbenchLocaleKey)}
-                  </span>
-                )
-                : null}
-              {nodeSpec(selectedNodes[0]!.data.kind).params.length === 0
-                ? <span className="iv-meta">{t('canvasNoParams')}</span>
-                : nodeSpec(selectedNodes[0]!.data.kind).params.map(field => (
-                  <label key={field.id} className="iv-field">
-                    <span>{t(field.labelKey as WorkbenchLocaleKey)}</span>
-                    {field.type === 'boolean'
-                      ? (
-                        <input
-                          type="checkbox"
-                          data-workflow-param={field.id}
-                          checked={selectedNodes[0]!.data.params[field.id] === true}
-                          onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.checked) }}
-                        />
-                      )
-                      : field.type === 'select'
-                        ? (
-                          <select
-                            className="iv-select"
-                            data-workflow-param={field.id}
-                            value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
-                            onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.value) }}
-                          >
-                            {(field.options ?? []).map(option => (
-                              <option key={option.value} value={option.value}>{t(option.labelKey as WorkbenchLocaleKey)}</option>
-                            ))}
-                          </select>
-                        )
-                        : field.type === 'textarea'
-                          ? (
-                            <textarea
-                              className="iv-input iv-textarea"
-                              data-workflow-param={field.id}
-                              rows={2}
-                              value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
-                              onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.value) }}
-                            />
-                          )
-                          : (
-                            <input
-                              className="iv-input"
-                              data-workflow-param={field.id}
-                              type={field.type === 'number' ? 'number' : 'text'}
-                              value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
-                              onChange={event => {
-                                updateParam(selectedNodes[0]!.id, field.id, field.type === 'number'
-                                  ? Number(event.target.value) : event.target.value)
-                              }}
-                            />
-                          )}
-                  </label>
-                ))}
-            </div>
-          )}
-        <div className="iv-worklog" id="iv-workflow-log" data-workflow-log="true"
-          data-workflow-log-open={logOpen ? 'true' : 'false'}>
-          <button type="button" className="iv-worklog-head" data-workflow-log-head="true"
-            aria-expanded={logOpen} aria-controls="iv-workflow-log-body"
-            onClick={() => { setLogOpen(open => !open) }}>
-            <Icon name="chevron" size={12} className="iv-worklog-caret" />
-            <strong>{t('canvasLogs')}</strong>
-            {validation.ok
-              ? (
-                <span className="iv-chip iv-chip--ok" data-workflow-log-validation="ok">
-                  <Icon name="check" size={11} />{t('validationOk')}
-                </span>
-              )
-              : (
-                <span className="iv-chip iv-chip--err" data-workflow-log-validation={String(validation.issues.length)}>
-                  <Icon name="alert" size={11} />{validation.issues.length}
-                </span>
-              )}
-            {run === undefined
+          {nodes.length === 0 && !onboardingDismissed
+            ? (
+              <CanvasOnboarding
+                t={t}
+                templates={onboardingTemplates}
+                onPick={id => { applyTemplate(id) }}
+                onBlank={() => { setOnboardingDismissed(true) }}
+                onImport={() => { workflowFileRef.current?.click() }}
+              />
+            )
+            : null}
+          {nodes.length === 0 && onboardingDismissed
+            ? <p className="iv-flow-hint" data-workflow-empty-hint="true">{t('canvasEmpty')}</p>
+            : null}
+
+          {/* 选中态动作条：点选/框选后浮在画布顶上，不占固定高度 */}
+          <div className="iv-wf-selectbar" data-workflow-selection-bar="true" data-empty={selectedIds.length === 0 ? 'true' : 'false'}>
+            <span className="iv-wf-selectbar-count">
+              {selectedIds.length} {t('canvasSelected')}
+            </span>
+            <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="copy"
+              aria-label={t('canvasCopy')} title={`${t('canvasCopy')}（⌘C）`}
+              disabled={selectedIds.length === 0} onClick={copySelected}>
+              <Icon name="copy" size={11} />{t('canvasCopy')}
+            </button>
+            <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="paste"
+              aria-label={t('canvasPaste')} title={`${t('canvasPaste')}（⌘V）`} onClick={pasteClipboard}>
+              <Icon name="clipboard" size={11} />{t('canvasPaste')}
+            </button>
+            <button type="button" className="iv-btn iv-btn--sm" data-workflow-action="delete-node"
+              aria-label={t('canvasDeleteSelected')} title={`${t('canvasDeleteSelected')}（Delete）`}
+              disabled={selectedIds.length === 0} onClick={deleteSelected}>
+              <Icon name="trash" size={11} />{t('canvasDeleteSelected')}{selectedIds.length > 1 ? ` · ${selectedIds.length}` : ''}
+            </button>
+            {run?.onRunNode === undefined || selectedNodes.length !== 1
               ? null
-              : run.latest === undefined
-                ? <span className="iv-meta">{t('runNone')}</span>
-                : (
-                  <span className={runChipClass(run.latest.status)}>
-                    <i className="iv-dot" aria-hidden="true" />
-                    {t(runStatusKey(run.latest.status))}
-                    {' · '}
-                    {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
-                  </span>
-                )}
-          </button>
-          <div className="iv-worklog-body" id="iv-workflow-log-body" hidden={!logOpen}>
-            <div className="iv-issues" data-workflow-issues={String(validation.issues.length)}
-              data-workflow-runnable={validation.ok ? 'true' : 'false'} data-ok={validation.ok ? 'true' : 'false'}>
-              <strong>{t('validationTitle')}</strong>
-              {validation.ok
-                ? <span data-workflow-validation="ok"><Icon name="check" size={12} />{t('validationOk')}</span>
-                : validation.issues.slice(0, 6).map((issue: WorkflowIssue, index) => (
-                  <span key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? index}`} className="iv-issue"
-                    data-workflow-issue={issue.code} title={issue.message}>
-                    <Icon name="alert" size={12} />{issue.nodeId === undefined ? '' : `${issue.nodeId}: `}
-                    {t(issue.code === 'missing-required' ? 'issueRequired'
-                      : issue.code === 'port-mismatch' ? 'issuePort'
-                        : issue.code === 'self-loop' ? 'issueSelfLoop'
-                          : issue.code === 'dangling-edge' ? 'issueDangling'
-                            : issue.code === 'cycle' ? 'issueCycle' : 'issuePlanned')}
-                  </span>
-                ))}
-            </div>
+              : (
+                <button
+                  type="button"
+                  className="iv-btn iv-btn--sm"
+                  data-workflow-action="run-node"
+                  aria-label={t('canvasRunNode')}
+                  title={t('canvasRunNode')}
+                  disabled={runBusy}
+                  onClick={() => { run.onRunNode?.(selectedNodes[0]!.id) }}
+                >
+                  <Icon name="play" size={11} />{t('canvasRunNodeShort')}
+                </button>
+              )}
+          </div>
 
-            {run === undefined ? null : (
-              <div className="iv-run" data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}>
-                <div className="iv-run-head">
-                  <strong>{t('runTitle')}</strong>
-                  {run.latest === undefined
-                    ? <span className="iv-meta">{t('runNone')}</span>
-                    : (
-                      <>
-                        <span className={runChipClass(run.latest.status)}>
-                          <i className="iv-dot" aria-hidden="true" />
-                          {t(runStatusKey(run.latest.status))}
-                          {' · '}
-                          {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
-                        </span>
-                        {run.latest.error === undefined ? null : (
-                          <span className="iv-meta iv-ellipsis" title={run.latest.error}>{run.latest.error.slice(0, 80)}</span>
-                        )}
-                      </>
-                    )}
+          {/* 运行进度：一条细线，不抢画布高度 */}
+          {run !== undefined && run.latest?.status === 'running'
+            ? (
+              <div className="iv-wf-progress" data-workflow-progress={String(progressPercent)} role="progressbar"
+                aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100}>
+                <i style={{ width: `${progressPercent}%` }} />
+              </div>
+            )
+            : null}
+
+          {/* 参数检视器：选中即浮在画布右上，画布不因选中而变矮 */}
+          {selectedNodes.length === 0
+            ? null
+            : (
+              <div className="iv-inspector iv-wf-inspector" data-workflow-inspector={selectedNodes[0]!.id}>
+                <div className="iv-inspector-head">
+                  <Icon name={NODE_ICONS[selectedNodes[0]!.data.kind]} size={13} />
+                  <span className="iv-wf-inspector-title">{t(nodeSpec(selectedNodes[0]!.data.kind).labelKey as WorkbenchLocaleKey)}</span>
+                  {selectedNodes.length > 1
+                    ? <span className="iv-meta">{t('canvasSelected')} · {selectedNodes.length}</span>
+                    : null}
+                  <button type="button" className="iv-wf-inspector-close"
+                    aria-label={t('canvasCloseInspector')} title={t('canvasCloseInspector')}
+                    onClick={() => {
+                      setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
+                      setSelectedIds([])
+                    }}>
+                    <Icon name="x" size={11} />
+                  </button>
                 </div>
-                {run.history.length > 1
+                {nodeSpec(selectedNodes[0]!.data.kind).availability !== 'runnable'
                   ? (
-                    <div className="iv-run-history" data-workflow-run-history="true">
-                      {run.history.slice(0, 8).map(entry => (
-                        <button
-                          key={entry.id}
-                          type="button"
-                          className="iv-run-item"
-                          data-workflow-run-item={entry.id}
-                          data-workflow-run-item-selected={entry.id === run.selectedRunId ? 'true' : 'false'}
-                          onClick={() => { run.onSelectRun(entry.id) }}
-                        >
-                          {new Date(entry.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}
-                          {' · '}{t(runStatusKey(entry.status))}
-                          {' · '}{entry.nodeRuns.filter(node => node.outputPath !== undefined).length} {t('runArtifacts')}
-                        </button>
-                      ))}
-                    </div>
+                    <span className="iv-meta" data-workflow-planned-note="true" style={{ color: 'var(--iv-warn)' }}>
+                      <Icon name="sparkles" size={12} /> {t(nodeSpec(selectedNodes[0]!.data.kind).reasonKey as WorkbenchLocaleKey)}
+                    </span>
                   )
                   : null}
-                {run.latest === undefined
+                {selectedNodes[0]!.data.outputPath === undefined
                   ? null
                   : (
-                    <div className="iv-run-nodes">
-                      {run.latest.nodeRuns.map(node => (
-                        <span key={node.nodeId} className="iv-node-run" data-workflow-node-run={node.nodeId} data-workflow-node-status={node.status}>
-                          <i className="iv-dot" aria-hidden="true" />
-                          <span className="iv-ellipsis">
-                            {node.nodeId} · {t(nodeStatusKey(node.status))}
-                            {node.outputPath === undefined ? '' : ` · ${node.outputPath.split('/').pop() ?? ''}`}
-                            {node.error === undefined ? '' : ` · ${node.error.slice(0, 60)}`}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
+                    <button type="button" className="iv-wf-inspector-output" data-workflow-inspector-output="true"
+                      onClick={() => {
+                        const path = selectedNodes[0]!.data.outputPath
+                        if (path !== undefined) onPreview?.(path, selectedNodes[0]!.data.outputKind ?? 'image')
+                      }}>
+                      <Icon name="eye" size={11} />{t('canvasOutputPreview')}
+                    </button>
                   )}
+                {nodeSpec(selectedNodes[0]!.data.kind).params.length === 0
+                  ? <span className="iv-meta">{t('canvasNoParams')}</span>
+                  : nodeSpec(selectedNodes[0]!.data.kind).params.map(field => (
+                    <label key={field.id} className="iv-field">
+                      <span>{t(field.labelKey as WorkbenchLocaleKey)}</span>
+                      {field.id === 'model' && api !== undefined
+                        ? (
+                          <ModelPicker
+                            api={api}
+                            t={t}
+                            mediaMode={selectedNodes[0]!.data.kind === 'video-generate' ? 'video' : 'image'}
+                            value={String(selectedNodes[0]!.data.params.model ?? '')}
+                            onChange={model => { updateParam(selectedNodes[0]!.id, field.id, model) }}
+                            selectAttrs={{ 'data-workflow-param': field.id }}
+                          />
+                        )
+                        : field.type === 'boolean'
+                        ? (
+                          <input
+                            type="checkbox"
+                            data-workflow-param={field.id}
+                            checked={selectedNodes[0]!.data.params[field.id] === true}
+                            onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.checked) }}
+                          />
+                        )
+                        : field.type === 'select'
+                          ? (
+                            <select
+                              className="iv-select"
+                              data-workflow-param={field.id}
+                              value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
+                              onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.value) }}
+                            >
+                              {(field.options ?? []).map(option => (
+                                <option key={option.value} value={option.value}>{t(option.labelKey as WorkbenchLocaleKey)}</option>
+                              ))}
+                            </select>
+                          )
+                          : field.type === 'textarea'
+                            ? (
+                              <textarea
+                                className="iv-input iv-textarea"
+                                data-workflow-param={field.id}
+                                rows={2}
+                                value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
+                                onChange={event => { updateParam(selectedNodes[0]!.id, field.id, event.target.value) }}
+                              />
+                            )
+                            : (
+                              <input
+                                className="iv-input"
+                                data-workflow-param={field.id}
+                                type={field.type === 'number' ? 'number' : 'text'}
+                                value={String(selectedNodes[0]!.data.params[field.id] ?? '')}
+                                onChange={event => {
+                                  updateParam(selectedNodes[0]!.id, field.id, field.type === 'number'
+                                    ? Number(event.target.value) : event.target.value)
+                                }}
+                              />
+                            )}
+                    </label>
+                  ))}
               </div>
             )}
-          </div>
-        </div>
 
-        {error === undefined ? null : <p className="iv-notice iv-notice--error" role="status">{error}</p>}
-        <p className="iv-meta">{t('canvasTransient')}</p>
+          {/* 双击空白处的快速添加：输入名字回车即落在光标位置 */}
+          {quickAdd === undefined
+            ? null
+            : (
+              <div className="iv-wf-quick" data-workflow-quick-add="true"
+                style={{ left: quickAdd.left, top: quickAdd.top }}>
+                <input
+                  autoFocus
+                  type="text"
+                  className="iv-input"
+                  data-workflow-quick-input="true"
+                  placeholder={t('canvasQuickAddHint')}
+                  aria-label={t('canvasQuickAdd')}
+                  value={quickQuery}
+                  onChange={event => { setQuickQuery(event.target.value) }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') {
+                      const first = quickMatches[0]
+                      if (first !== undefined) {
+                        addNodeAt(first.kind, quickAdd.position)
+                        setQuickAdd(undefined)
+                        setQuickQuery('')
+                      }
+                    }
+                  }}
+                />
+                <div className="iv-wf-quick-list" role="listbox">
+                  {quickMatches.slice(0, 7).map(entry => (
+                    <button
+                      key={entry.kind}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      className="iv-wf-quick-item"
+                      data-workflow-quick-item={entry.kind}
+                      onClick={() => {
+                        addNodeAt(entry.kind, quickAdd.position)
+                        setQuickAdd(undefined)
+                        setQuickQuery('')
+                      }}
+                    >
+                      <Icon name={NODE_ICONS[entry.kind]} size={11} />
+                      <span>{entry.label}</span>
+                    </button>
+                  ))}
+                  {quickMatches.length === 0
+                    ? <span className="iv-meta">{t('canvasLibraryEmpty')}</span>
+                    : null}
+                </div>
+              </div>
+            )}
+
+          {error === undefined ? null : <p className="iv-notice iv-notice--error" role="status">{error}</p>}
+        </div>
+      </div>
+
+      {/* 状态条：节点/连线、校验、运行状态一排放定，替代原来散在画布下方的几行说明 */}
+      <div className="iv-wf-status" data-workflow-status="true">
+        <span className="iv-wf-status-count" data-workflow-count="true">
+          {nodes.length} {t('canvasNodesCount')} · {edges.length} {t('canvasEdgesCount')}
+        </span>
+        {nodes.length === 0
+          ? <span className="iv-wf-status-flag" data-workflow-status-validation="empty">{t('canvasStatusEmpty')}</span>
+          : (
+            <span
+              className={`iv-wf-status-flag${validation.ok ? ' iv-wf-status-flag--ok' : ' iv-wf-status-flag--err'}`}
+              data-workflow-status-validation={validation.ok ? 'ok' : 'issues'}
+            >
+              <Icon name={validation.ok ? 'check' : 'alert'} size={11} />
+              {validation.ok ? t('validationOk') : `${validation.issues.length}`}
+            </span>
+          )}
+        {run?.latest === undefined
+          ? <span className="iv-wf-status-run">{t('runNone')}</span>
+          : (
+            <span className={`${runChipClass(run.latest.status)} iv-wf-status-run`} data-workflow-status-run={run.latest.status}>
+              <i className="iv-dot" aria-hidden="true" />
+              {t(runStatusKey(run.latest.status))}
+              {' · '}
+              {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+            </span>
+          )}
+        <span className="iv-wf-status-note" title={t('canvasTransient')}>{t('canvasTransient')}</span>
+      </div>
+
+      <div className="iv-worklog" id="iv-workflow-log" data-workflow-log="true"
+        data-workflow-log-open={logOpen ? 'true' : 'false'}>
+        <button type="button" className="iv-worklog-head" data-workflow-log-head="true"
+          aria-expanded={logOpen} aria-controls="iv-workflow-log-body"
+          onClick={() => { setLogOpen(open => !open) }}>
+          <Icon name="chevron" size={12} className="iv-worklog-caret" />
+          <strong>{t('canvasLogs')}</strong>
+          {validation.ok
+            ? (
+              <span className="iv-chip iv-chip--ok" data-workflow-log-validation="ok">
+                <Icon name="check" size={11} />{t('validationOk')}
+              </span>
+            )
+            : (
+              <span className="iv-chip iv-chip--err" data-workflow-log-validation={String(validation.issues.length)}>
+                <Icon name="alert" size={11} />{validation.issues.length}
+              </span>
+            )}
+          {run === undefined
+            ? null
+            : run.latest === undefined
+              ? <span className="iv-meta">{t('runNone')}</span>
+              : (
+                <span className={runChipClass(run.latest.status)}>
+                  <i className="iv-dot" aria-hidden="true" />
+                  {t(runStatusKey(run.latest.status))}
+                  {' · '}
+                  {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+                </span>
+              )}
+        </button>
+        <div className="iv-worklog-body" id="iv-workflow-log-body" hidden={!logOpen}>
+          <div className="iv-issues" data-workflow-issues={String(validation.issues.length)}
+            data-workflow-runnable={validation.ok ? 'true' : 'false'} data-ok={validation.ok ? 'true' : 'false'}>
+            <strong>{t('validationTitle')}</strong>
+            {validation.ok
+              ? <span data-workflow-validation="ok"><Icon name="check" size={12} />{t('validationOk')}</span>
+              : validation.issues.slice(0, 6).map((issue: WorkflowIssue, index) => (
+                <span key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? index}`} className="iv-issue"
+                  data-workflow-issue={issue.code} title={issue.message}>
+                  <Icon name="alert" size={12} />{issue.nodeId === undefined ? '' : `${issue.nodeId}: `}
+                  {t(issue.code === 'missing-required' ? 'issueRequired'
+                    : issue.code === 'port-mismatch' ? 'issuePort'
+                      : issue.code === 'self-loop' ? 'issueSelfLoop'
+                        : issue.code === 'dangling-edge' ? 'issueDangling'
+                          : issue.code === 'cycle' ? 'issueCycle' : 'issuePlanned')}
+                </span>
+              ))}
+          </div>
+
+          {run === undefined ? null : (
+            <div className="iv-run" data-workflow-run={run.latest?.status ?? 'none'} data-workflow-run-count={String(run.latest?.nodeRuns.length ?? 0)}>
+              <div className="iv-run-head">
+                <strong>{t('runTitle')}</strong>
+                {run.latest === undefined
+                  ? <span className="iv-meta">{t('runNone')}</span>
+                  : (
+                    <>
+                      <span className={runChipClass(run.latest.status)}>
+                        <i className="iv-dot" aria-hidden="true" />
+                        {t(runStatusKey(run.latest.status))}
+                        {' · '}
+                        {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
+                      </span>
+                      {run.latest.error === undefined ? null : (
+                        <span className="iv-meta iv-ellipsis" title={run.latest.error}>{run.latest.error.slice(0, 80)}</span>
+                      )}
+                    </>
+                  )}
+              </div>
+              {run.history.length > 1
+                ? (
+                  <div className="iv-run-history" data-workflow-run-history="true">
+                    {run.history.slice(0, 8).map(entry => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className="iv-run-item"
+                        data-workflow-run-item={entry.id}
+                        data-workflow-run-item-selected={entry.id === run.selectedRunId ? 'true' : 'false'}
+                        onClick={() => { run.onSelectRun(entry.id) }}
+                      >
+                        {new Date(entry.startedAt).toLocaleTimeString('zh-CN', { hour12: false })}
+                        {' · '}{t(runStatusKey(entry.status))}
+                        {' · '}{entry.nodeRuns.filter(node => node.outputPath !== undefined).length} {t('runArtifacts')}
+                      </button>
+                    ))}
+                  </div>
+                )
+                : null}
+              {run.latest === undefined
+                ? null
+                : (
+                  <div className="iv-run-nodes">
+                    {run.latest.nodeRuns.map(node => (
+                      <span key={node.nodeId} className="iv-node-run" data-workflow-node-run={node.nodeId} data-workflow-node-status={node.status}>
+                        <i className="iv-dot" aria-hidden="true" />
+                        <span className="iv-ellipsis">
+                          {node.nodeId} · {t(nodeStatusKey(node.status))}
+                          {node.outputPath === undefined ? '' : ` · ${node.outputPath.split('/').pop() ?? ''}`}
+                          {node.error === undefined ? '' : ` · ${node.error.slice(0, 60)}`}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

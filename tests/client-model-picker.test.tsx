@@ -72,6 +72,39 @@ describe('模型选择器（T2）', () => {
     expect(Array.from(video.options).map(o => o.value)).toEqual(['', 'vid-b'])
   })
 
+  it('显示宿主解析的默认模型：下拉标「默认」+ 下方写出模型名', async () => {
+    const host = fakeApi({})
+    const catalog = vi.fn(async () => ({
+      cards: CARDS, consistencyIssues: [], defaults: { image: 'img-a', video: 'vid-b' },
+    }))
+    ;(host.api as unknown as { modelsCatalog: typeof catalog }).modelsCatalog = catalog
+    host.projects.push({
+      schemaVersion: 1, id: 'prj-1', name: '默认模型项目',
+      createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z',
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+
+    const note = await waitFor(() => {
+      const element = view.container.querySelector('[data-model-picker-default]')
+      if (element === null) throw new Error('默认模型说明没出现')
+      return element as HTMLElement
+    })
+    expect(note.textContent).toContain(en.modelDefaultHint)
+    expect(note.getAttribute('data-model-picker-default')).toBe('img-a')
+
+    const image = view.container.querySelector('[data-generate-model="image"]') as HTMLSelectElement
+    const chosen = Array.from(image.options).find(option => option.value === 'img-a')
+    expect(chosen?.textContent).toContain(en.modelDefaultTag)
+    // 视频侧同样有默认（vid-b）
+    await openCreateTab(view, 'video')
+    const video = await waitFor(() => {
+      const element = view.container.querySelector('[data-generate-model="video"]') as HTMLSelectElement | null
+      if (element === null) throw new Error('missing video picker')
+      return element
+    })
+    expect(video.getAttribute('data-generate-model')).toBe('video')
+  })
+
   it('选中后只回填下拉，不渲染能力摘要', async () => {
     const { view } = renderQuick()
     await waitFor(() => { expect(view.container.querySelector('[data-generate-model="image"]')).toBeTruthy() })
