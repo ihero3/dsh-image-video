@@ -24,7 +24,7 @@ import { useEffect } from 'react'
 export const MODERN_THEME_STYLE_ID = 'dsh-image-video-modern-theme'
 
 /** 样式表版本戳：同 id 但内容不同时整表覆盖，避免热替换后残留旧规则。 */
-export const MODERN_THEME_VERSION = '2026-11-26.5'
+export const MODERN_THEME_VERSION = '2026-11-26.6'
 
 /** 主题层样式表：令牌 + 控件 + 容器 + 引导层，布局规则（grid / flex / 定位）一律不动。 */
 export const MODERN_THEME_STYLE = `
@@ -218,6 +218,13 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-dock-preview--expanded{min-height:0;max-height:none}
 .iv .iv-preview-video-thumb{height:auto;min-height:160px;aspect-ratio:16/9}
 .iv .iv-preview-video-thumb video{width:100%;height:100%;object-fit:cover}
+/* 首帧 / 尾帧 / 参考视频槽位：19px 徽章胶囊塞不下可辨认的缩略图，会被压成一条横杠 */
+.iv .iv-slot-row{min-height:48px;gap:var(--iv-sp-2) var(--iv-sp-4)}
+.iv .iv-slot-row>.iv-meta:first-child{flex:none;min-width:64px;color:var(--iv-tx2)}
+.iv .iv-slot-row .iv-chip{height:auto;max-width:min(440px,100%);padding:var(--iv-sp-1);gap:var(--iv-sp-3);border-radius:var(--iv-r-sm)}
+.iv .iv-slot-row .iv-ref-open{max-width:100%;padding:0;gap:var(--iv-sp-3)}
+.iv .iv-slot-row .iv-ref-thumb{width:64px;height:40px;flex:none;border-radius:var(--iv-r-xs);object-fit:contain;background:var(--iv-monitor)}
+.iv .iv-slot-row .iv-ellipsis{max-width:220px;font-size:var(--iv-fs-meta)}
 @media (max-width:768px){.iv .iv-advanced-grid{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){.iv .iv-ref-cell,.iv .iv-ref-remove,.iv .iv-advanced-caret{transition:none}}
 .ivg-mask{

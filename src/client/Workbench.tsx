@@ -3319,7 +3319,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-first-frame-preview={generateImages[0]}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateImages[0])}`}
                                   onClick={() => { setPreviewPath({ path: generateImages[0] as string, kind: 'image' }); scrollToPane('panePreview') }}
                                 >
                                   <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateImages[0]))}`} alt="" />
@@ -3366,7 +3366,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-last-frame-preview={generateLastFrame}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateLastFrame)}`}
                                   onClick={() => { setPreviewPath({ path: generateLastFrame, kind: 'image' }); scrollToPane('panePreview') }}
                                 >
                                   <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateLastFrame))}`} alt="" />
@@ -3422,7 +3422,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-reference-preview={generateRefVideo}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateRefVideo)}`}
                                   onClick={() => { setPreviewPath({ path: generateRefVideo, kind: 'video' }); scrollToPane('panePreview') }}
                                 >
                                   <video className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateRefVideo))}`} muted preload="metadata" />

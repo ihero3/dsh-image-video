@@ -162,6 +162,16 @@ describe('modern theme coverage', () => {
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-dock-preview--expanded{min-height:0;max-height:none}')
   })
 
+  it('视频槽位（首帧/尾帧/参考视频）给足缩略图尺寸，不被徽章胶囊压扁（2026-11-26）', () => {
+    // .iv-chip 是 19px 高的徽章胶囊；槽位直接复用它会把缩略图压成一条横杠
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-slot-row .iv-chip{height:auto;max-width:min(440px,100%)')
+    // 缩略图给到 64×40 并按 contain 完整展示，避免竖图被裁
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-slot-row .iv-ref-thumb{width:64px;height:40px;flex:none')
+    expect(MODERN_THEME_STYLE).toContain('object-fit:contain;background:var(--iv-monitor)}')
+    // 文件名给足宽度，否则只剩前几位时间戳
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-slot-row .iv-ellipsis{max-width:220px')
+  })
+
   it('keeps every selector scoped to the plugin (no bare global overrides)', () => {
     // 每条规则独占一行；只取含选择器的行，跳过根块的属性行与 @media 包裹行。
     const rules = MODERN_THEME_STYLE
