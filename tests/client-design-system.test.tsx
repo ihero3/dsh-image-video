@@ -220,14 +220,17 @@ describe('待启用契约（由对应批次改为 it）', () => {
     // 配音卡与多比例导出必须落在 pane 内、且位于 pane-head 之后
     const pane = view.container.querySelector('[data-workbench-pane="paneTimeline"]') as HTMLElement
     expect(pane).toBeTruthy()
-    const children = [...pane.children]
-    const headIndex = children.findIndex(el => el.classList.contains('iv-pane-head'))
-    // 配音卡（.iv-card）与多比例（.iv-sub）都是子区块，必须落在 pane-head 之后
-    const blocks = children.filter(el => el.classList.contains('iv-sub') || el.classList.contains('iv-card'))
-    expect(blocks.length, 'paneTimeline 应有两个子区块（配音卡 / 多比例）').toBeGreaterThanOrEqual(2)
+    const head = pane.querySelector('.iv-pane-head') as HTMLElement
+    const aux = pane.querySelector('[data-timeline-aux="true"]') as HTMLElement
+    expect(aux, '配音卡 / 多比例应收进辅助折叠区').toBeTruthy()
+    // 2026-11-26：两块辅助工具移到 details 里（不再都是 pane 直接子节点），
+    // 但仍必须在 pane-head 之后，且默认收起。
+    const blocks = [...aux.querySelectorAll('.iv-sub, .iv-card')]
+    expect(blocks.length, '辅助区应有配音卡 / 多比例两个子区块').toBeGreaterThanOrEqual(2)
     for (const block of blocks) {
-      expect(children.indexOf(block)).toBeGreaterThan(headIndex)
+      expect(head.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
+    expect(aux.hasAttribute('open')).toBe(false)
   })
 })
 

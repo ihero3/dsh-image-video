@@ -291,7 +291,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-chip--ok{color:var(--iv-ok);border-color:color-mix(in srgb,var(--iv-ok) 35%,transparent);background:var(--iv-ok-soft)}
 .iv-chip--warn{color:var(--iv-warn);border-color:color-mix(in srgb,var(--iv-warn) 35%,transparent);background:var(--iv-warn-soft)}
 .iv-chip--err{color:var(--iv-danger);border-color:color-mix(in srgb,var(--iv-danger) 35%,transparent);background:var(--iv-danger-soft)}
-.iv-chip--run{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 35%,transparent);background:var(--iv-acc-soft)}
+.iv-chip--run{color:var(--iv-info);border-color:color-mix(in srgb,var(--iv-info) 35%,transparent);background:color-mix(in srgb,var(--iv-info) 12%,transparent)}
 .iv-chip--run .iv-dot{animation:iv-pulse 1.2s ease-in-out infinite}
 @keyframes iv-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.iv-chip--run .iv-dot{animation:none}.iv-btn,.iv-row,.iv-clip{transition:none}}
@@ -669,14 +669,14 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-tc-total{font-family:var(--iv-mono);font-size:var(--iv-fs-meta);color:var(--iv-tx3);white-space:nowrap}
 .iv-zoom{display:flex;align-items:center;gap:var(--iv-sp-2);margin-left:auto;font-size:var(--iv-fs-meta);color:var(--iv-tx3);white-space:nowrap}
 .iv-zoom .iv-scrub{max-width:64px;flex:none}
-.iv-tl{position:relative;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);overflow:hidden}
-.iv-ruler{position:relative;height:16px;margin-left:46px;border-bottom:1px solid var(--iv-line-2);
+.iv-tl{--iv-tl-head:46px;position:relative;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);overflow:hidden}
+.iv-ruler{position:relative;height:16px;margin-left:var(--iv-tl-head);border-bottom:1px solid var(--iv-line-2);
   background:var(--iv-panel-3)}
 .iv-ruler i{position:absolute;top:0;bottom:0;width:1px;background:var(--iv-line-2)}
 .iv-ruler b{position:absolute;top:2px;font-family:var(--iv-mono);font-size:var(--iv-fs-tick);font-weight:var(--iv-fw-regular);color:var(--iv-tx3);
   transform:translateX(-50%);font-variant-numeric:tabular-nums}
 .iv-tracks{position:relative}
-.iv-track{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:stretch;border-bottom:1px solid var(--iv-line)}
+.iv-track{display:grid;grid-template-columns:var(--iv-tl-head) minmax(0,1fr);align-items:stretch;border-bottom:1px solid var(--iv-line)}
 .iv-track:last-child{border-bottom:0}
 .iv-t-head{display:flex;flex-direction:column;justify-content:center;gap:0;padding:5px 0 5px 8px;
   border-right:1px solid var(--iv-line);background:var(--iv-panel-3)}
@@ -689,7 +689,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   padding:3px 7px 3px 9px;border-radius:var(--iv-r-xs);border:1px solid var(--iv-line-2);background:var(--iv-panel);
   font-size:var(--iv-fs-meta);position:absolute;top:0;bottom:0;overflow:hidden;cursor:grab}
 .iv-clip:active{cursor:grabbing}
-.iv-clip--sel{border-color:var(--iv-acc);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-acc) 30%,transparent)}
+.iv-clip--sel{border-color:var(--iv-solid);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-solid) 35%,transparent)}
 /* B5：左右手柄改起点/时长 */
 .iv-clip-h{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:var(--iv-z-sticky);border:0;background:transparent;padding:0}
 .iv-clip-h--l{left:0}
@@ -700,9 +700,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* B5：放置落点高亮 */
 .iv-t-lane--drop{background:var(--iv-acc-soft);outline:1px dashed var(--iv-acc);outline-offset:-2px}
 .iv-clip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
-.iv-clip--video{border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);
-  background:linear-gradient(90deg,var(--iv-acc-soft),transparent 46%),var(--iv-panel)}
-.iv-clip--video::before{background:var(--iv-acc)}
+.iv-clip--video{border-color:color-mix(in srgb,var(--iv-tx2) 45%,transparent);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--iv-tx2) 10%,transparent),transparent 46%),var(--iv-panel)}
+.iv-clip--video::before{background:var(--iv-tx2)}
 .iv-clip--audio{border-color:color-mix(in srgb,var(--iv-ok) 45%,transparent);
   background:linear-gradient(90deg,var(--iv-ok-soft),transparent 46%),var(--iv-panel)}
 .iv-clip--audio::before{background:var(--iv-ok)}
@@ -814,7 +814,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   background:color-mix(in srgb,var(--iv-acc) 16%,transparent);pointer-events:none}
 .iv-wf-progress>i{display:block;height:100%;background:var(--iv-acc);transition:width .3s ease}
 /* 参数检视器：浮在右上，不占画布高度（选中才出现） */
-.iv-wf-inspector{position:absolute;top:7px;right:7px;z-index:var(--iv-z-canvas-pop);width:266px;max-height:calc(100% - 14px);
+.iv-wf-inspector{position:absolute;top:7px;right:7px;z-index:var(--iv-z-drawer);width:266px;max-height:calc(100% - 14px);
   overflow:auto;background:var(--iv-surface);box-shadow:var(--iv-shadow-2)}
 .iv-wf-inspector-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium);letter-spacing:0;text-transform:none;color:var(--iv-tx)}

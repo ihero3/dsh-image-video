@@ -59,6 +59,24 @@ describe('剧本生成页 · 四个分区', () => {
     expect(view.container.querySelector('[data-module="pipeline"]')).toBeNull()
   })
 
+  it('tabs expose a full roving keyboard model (2026-11-26)', async () => {
+    const { view } = await renderScript()
+    const tab = (key: string): HTMLButtonElement =>
+      view.container.querySelector(`[data-script-tab="${key}"]`) as HTMLButtonElement
+    expect(tab('split').tabIndex).toBe(0)
+    expect(tab('extract').tabIndex).toBe(-1)
+    expect(tab('split').getAttribute('aria-controls')).toBe('script-panel')
+    expect(view.container.querySelector('#script-panel')?.getAttribute('role')).toBe('tabpanel')
+
+    fireEvent.keyDown(tab('split'), { key: 'ArrowRight' })
+    await waitFor(() => { expect(tab('extract').getAttribute('aria-selected')).toBe('true') })
+    await waitFor(() => { expect(document.activeElement).toBe(tab('extract')) })
+    fireEvent.keyDown(tab('extract'), { key: 'End' })
+    await waitFor(() => { expect(tab('motion').getAttribute('aria-selected')).toBe('true') })
+    fireEvent.keyDown(tab('motion'), { key: 'Home' })
+    await waitFor(() => { expect(tab('split').getAttribute('aria-selected')).toBe('true') })
+  })
+
   it('素材提取：四种类型并排按钮切换，默认角色', async () => {
     const { view } = await renderScript()
     fireEvent.click(view.container.querySelector('[data-script-tab="extract"]') as HTMLElement)

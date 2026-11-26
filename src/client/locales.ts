@@ -1051,6 +1051,22 @@ export type WorkbenchLocaleKey =
   | 'roleCardPreview'
   | 'roleCardGenerated'
   | 'roleCardNeedsProject'
+  | 'planEpisodeUnit'
+  | 'planSegmentUnit'
+  | 'timelineClipDeleted'
+  | 'timelineUndo'
+  | 'tlAuxTools'
+  | 'segPreviewRole'
+  | 'clipInspectorAdvanced'
+  | 'segmentAdvanced'
+  | 'segmentShotUnit'
+  | 'segmentSummary'
+  | 'scriptSettings'
+  | 'episodeMore'
+  | 'episodeSyncConfirmTitle'
+  | 'episodeSyncConfirmBody'
+  | 'episodeSyncUndo'
+  | 'episodeSyncDone'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export { NS } from './locale-ns.ts'
@@ -2120,6 +2136,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineEntitiesEmpty: 'No references extracted.',
   pipelineCancel: 'Cancel',
   pipelineCancelled: 'Stopped — nothing was saved.',
+  planEpisodeUnit: 'eps',
+  planSegmentUnit: 'segs',
+  timelineClipDeleted: 'Clip deleted',
+  timelineUndo: 'Undo',
+  tlAuxTools: 'More tools',
+  segPreviewRole: 'Sequential preview · independent playback, does not move the playhead',
+  clipInspectorAdvanced: 'More parameters',
+  segmentAdvanced: 'Advanced',
+  segmentShotUnit: 'shots',
+  segmentSummary: '{duration}s · {shots} shots',
+  scriptSettings: 'Generation settings',
+  episodeMore: 'More actions',
+  episodeSyncConfirmTitle: 'Sync this episode to the canvas?',
+  episodeSyncConfirmBody: 'The current workflow graph will be rebuilt. This can be undone.',
+  episodeSyncUndo: 'Undo sync',
+  episodeSyncDone: 'Workflow synced',
 }
 
 /** Simplified Chinese copy. */
@@ -3188,4 +3220,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineEntitiesEmpty: '没有抽取到实体。',
   pipelineCancel: '取消',
   pipelineCancelled: '已停止，没有保存任何东西。',
+  planEpisodeUnit: '集',
+  planSegmentUnit: '段',
+  timelineClipDeleted: '已删除片段',
+  timelineUndo: '撤销',
+  tlAuxTools: '辅助工具',
+  segPreviewRole: '顺序预览·独立播放，不影响播放头',
+  clipInspectorAdvanced: '更多参数',
+  segmentAdvanced: '高级设置',
+  segmentShotUnit: '镜',
+  segmentSummary: '{duration}s · {shots} 镜',
+  scriptSettings: '生成设置',
+  episodeMore: '更多操作',
+  episodeSyncConfirmTitle: '同步本集到画布？',
+  episodeSyncConfirmBody: '当前工作流画布会被重建，操作可撤销。',
+  episodeSyncUndo: '撤销同步',
+  episodeSyncDone: '已同步到工作流',
 }

@@ -274,6 +274,39 @@ describe('B5 timeline interaction', () => {
       .toBe(view.container.querySelectorAll('[data-timeline-clip]')[1]?.getAttribute('data-timeline-clip'))
   })
 
+  it('offers an undo after deleting a single clip (2026-11-26)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+    fireEvent.click(view.container.querySelector('[data-timeline-insp-remove]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-clip-undo]')).toBeTruthy() })
+    expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(0)
+
+    fireEvent.click(view.container.querySelector('[data-timeline-clip-undo-button]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+    expect(view.container.querySelector('[data-timeline-clip]')?.getAttribute('data-timeline-clip-selected')).toBe('true')
+  })
+
+  it('supports keyboard clip selection and a real zoom slider (2026-11-26)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    const clip = view.container.querySelector('[data-timeline-clip]') as HTMLElement
+    expect(clip.getAttribute('role')).toBe('group')
+    expect(clip.tabIndex).toBe(0)
+    fireEvent.keyDown(clip, { key: 'Enter' })
+    await waitFor(() => { expect(clip.getAttribute('aria-current')).toBe('true') })
+    expect(view.container.querySelector('[data-timeline-clip-inspector-fallback]')?.getAttribute('data-timeline-clip-inspector-fallback')).toBe('false')
+
+    const beforeTicks = view.container.querySelectorAll('.iv-ruler b').length
+    const zoom = view.container.querySelector('[data-timeline-zoom]') as HTMLInputElement
+    expect(zoom.value).not.toBe('')
+    fireEvent.change(zoom, { target: { value: '100' } })
+    await waitFor(() => {
+      expect(view.container.querySelectorAll('.iv-ruler b').length).toBeGreaterThan(beforeTicks)
+    })
+    expect((view.container.querySelector('.iv-tl') as HTMLElement).style.getPropertyValue('--iv-tl-zoom')).not.toBe('')
+  })
+
   it('disables split when the playhead is outside the clip (B17)', async () => {
     const { view } = await renderTimeline()
     await addClipViaPicker(view)

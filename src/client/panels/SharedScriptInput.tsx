@@ -66,18 +66,17 @@ export function SharedScriptInput(props: SharedScriptInputProps) {
   }
 
   return (
-    <div data-shared-script-input="true" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
+    <div className="iv-sc-io" data-shared-script-input="true">
         <span className="iv-meta">{t('pipelineScriptLabel')}</span>
         <textarea
           ref={scriptRef}
-          className="iv-input"
+          className="iv-input iv-textarea"
           rows={SCRIPT_ROWS}
           value={script}
           placeholder={t('pipelineScriptPlaceholder')}
           data-pipeline-script="true"
           disabled={disabled === true}
           onChange={event => setScript(event.target.value)}
-          style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
         />
         {/* 导入整本小说后只看全文字数：不切段、不展示「第几段」选择 */}
         {scriptChars === 0
@@ -141,7 +140,7 @@ export function SharedScriptInput(props: SharedScriptInputProps) {
                       title={t('pipelineImportRemove')}
                       onClick={() => setImportedFiles(current => current.filter(item => item.name !== file.name))}
                     >
-                      ×
+                      <Icon name="x" size={11} />
                     </button>
                   </span>
                 ))}

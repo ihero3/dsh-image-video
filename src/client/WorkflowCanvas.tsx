@@ -443,7 +443,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
   const [pendingReplace, setPendingReplace] = useState<{ label: string; run: () => void } | undefined>(undefined)
   const replacePanelRef = useRef<HTMLDivElement | null>(null)
   useDialogFocus(pendingReplace !== undefined, replacePanelRef, () => { setPendingReplace(undefined) })
-  const { fitView, screenToFlowPosition } = useReactFlow<CanvasNode, Edge>()
+  const { fitView, screenToFlowPosition, setCenter } = useReactFlow<CanvasNode, Edge>()
   const { zoom } = useViewport()
   const flowRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -468,6 +468,33 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     () => nodes.filter(node => selectedIds.includes(node.id)),
     [nodes, selectedIds],
   )
+  /** 关抽屉 = 清空选中（与点画布空白同语义），焦点管理由此统一入口驱动。 */
+  const closeInspector = useCallback(() => {
+    setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
+    setSelectedIds([])
+  }, [setNodes])
+  const inspectorRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(selectedNodes.length > 0, inspectorRef, closeInspector, '.iv-flow')
+
+  // 窄屏抽屉会盖住右缘节点：仅在选中节点确实落入覆盖区时把视口左移一次。
+  useEffect(() => {
+    if (selectedNodes.length === 0) return
+    const flow = flowRef.current
+    if (flow === undefined || flow === null || window.innerWidth >= 900) return
+    const drawerWidth = Math.min(300, flow.clientWidth * 0.86)
+    const trigger = selectedNodes[0]!
+    const x = trigger.position.x + (trigger.measured?.width ?? 180) / 2
+    const y = trigger.position.y + (trigger.measured?.height ?? 60) / 2
+    const project = flow.querySelector<HTMLElement>('.react-flow__viewport')
+    const matrix = project?.style.transform ?? ''
+    const scale = Number(/scale\(([\d.]+)\)/.exec(matrix)?.[1] ?? '1')
+    const translate = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(matrix)
+    const screenX = (translate !== null ? Number(translate[1]) : 0) + x * scale
+    const screenY = (translate !== null ? Number(translate[2]) : 0) + y * scale
+    if (screenX > flow.clientWidth - drawerWidth && screenY >= 0 && screenY <= flow.clientHeight) {
+      void setCenter(x - drawerWidth / (2 * scale), y, { zoom: scale, duration: 180 })
+    }
+  }, [selectedIds.join(','), setCenter])
 
   // 全屏浮层盖住整个工作台：锁住页面滚动，退出时恢复原值
   useEffect(() => {
@@ -1021,6 +1048,18 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             ? null
             : (
               <div className="iv-run-actions" data-workflow-toolbar-run="true">
+                {validation.issues.length === 0
+                  ? null
+                  : (
+                    <button type="button" className="iv-chip iv-chip--warn" data-workflow-log-issue-count="true"
+                      title={t('validationTitle')} onClick={() => { setLogOpen(true) }}>
+                      <Icon name="alert" size={11} />{validation.issues.length}
+                    </button>
+                  )}
+                <span className="iv-wf-runstate" data-workflow-run-status={run.latest?.status ?? 'none'}>
+                  <i className="iv-dot" aria-hidden="true" />
+                  {run.latest === undefined ? t('runNone') : t(runStatusKey(run.latest.status))}
+                </span>
                 <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
                   disabled={runBusy || !validation.ok || nodes.length === 0} onClick={run.onStart}>
                   <Icon name="play" size={12} />
@@ -1050,10 +1089,6 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             aria-controls="iv-workflow-log" aria-label={t('canvasLogs')} title={t('canvasLogs')}
             onClick={() => { setLogOpen(open => !open) }}>
             <Icon name="script" size={13} />
-            {validation.issues.length > 0
-              /* planned 节点是「预期状态」而非错误，用 warn 不用 danger */
-              ? <span className="iv-chip iv-chip--warn" data-workflow-log-issue-count="true">{validation.issues.length}</span>
-              : null}
           </button>
           <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="maximize"
             aria-pressed={maximized} aria-label={maximized ? t('canvasRestore') : t('canvasMaximize')}
@@ -1132,7 +1167,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
         <div
           ref={flowRef}
           className="iv-flow" data-workflow-flow="true"
-          data-workflow-drop-import="true"
+          data-workflow-drop-import="true" tabIndex={-1}
           onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
           onDrop={event => { importDroppedFile(event); dropNode(event) }}
           onDoubleClick={onCanvasDoubleClick}
@@ -1236,7 +1271,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
           {selectedNodes.length === 0
             ? null
             : (
-              <div className="iv-inspector iv-wf-inspector" data-workflow-inspector={selectedNodes[0]!.id}>
+              <aside className="iv-inspector iv-wf-inspector" ref={inspectorRef} tabIndex={-1}
+                role="complementary" aria-label={t('canvasParams')}
+                data-workflow-inspector={selectedNodes[0]!.id} data-workflow-inspector-open="true">
                 <div className="iv-inspector-head">
                   <Icon name={NODE_ICONS[selectedNodes[0]!.data.kind]} size={13} />
                   <span className="iv-wf-inspector-title">{t(nodeSpec(selectedNodes[0]!.data.kind).labelKey as WorkbenchLocaleKey)}</span>
@@ -1244,11 +1281,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                     ? <span className="iv-meta">{t('canvasSelected')} · {selectedNodes.length}</span>
                     : null}
                   <button type="button" className="iv-wf-inspector-close"
+                    data-workflow-inspector-close="true"
                     aria-label={t('canvasCloseInspector')} title={t('canvasCloseInspector')}
-                    onClick={() => {
-                      setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
-                      setSelectedIds([])
-                    }}>
+                    onClick={closeInspector}>
                     <Icon name="x" size={11} />
                   </button>
                 </div>
@@ -1332,7 +1367,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                             )}
                     </label>
                   ))}
-              </div>
+              </aside>
             )}
 
           {/* 双击空白处的快速添加：输入名字回车即落在光标位置 */}

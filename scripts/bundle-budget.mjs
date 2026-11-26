@@ -77,7 +77,11 @@ export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // 属可解释的功能增长而非打包失控。本轮还要落地剧本页/时间轴两批重设计（预估 +18 KB raw / +3.5 KB gzip），
 // 故按「实测 + 预留」抬到 1_320_000 / 288_000（预算 1_584_000 / 345_600，当前占用约 97%）。
 // 单批增量另设硬上限：raw ≤6 KB、gzip ≤1.2 KB，超了先瘦身再合并。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_320_000, gzip: 288_000 })
+// 2026-11-26 三批连续落地后实测 1_599_629 / 348_932（对上一条预算 101%/101%）：
+// 剧本页整批改造（pane 头 / tab 语义 / 折叠 / 同步确认）与时间轴的辅助区、检查器、
+// 缩放真值都在首屏 chunk 内，属产品功能增长而非打包失控。按同一口径抬到
+// 1_350_000 / 297_000（预算 1_620_000 / 356_400，实测占 98.7% / 97.9%）。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_350_000, gzip: 297_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

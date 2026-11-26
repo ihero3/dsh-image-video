@@ -343,6 +343,25 @@ describe('B4 canvas interaction', () => {
     expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('false')
     expect(document.body.style.overflow).toBe('')
   })
+
+  it('closes the inspector first on Escape, then leaves maximize (2026-11-26)', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-inspector]')).toBeTruthy() })
+    const inspector = view.container.querySelector('[data-workflow-inspector-open]') as HTMLElement
+    expect(inspector.getAttribute('role')).toBe('complementary')
+    expect(inspector.contains(document.activeElement)).toBe(true)
+
+    fireEvent.click(view.container.querySelector('[data-workflow-action="maximize"]') as HTMLElement)
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('true')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-inspector]')).toBeNull() })
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('true')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('false')
+  })
 })
 
 describe('工作流画布：节点式编辑器的上手路径', () => {

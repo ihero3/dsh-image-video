@@ -177,7 +177,7 @@ describe('modern theme coverage', () => {
     const rules = MODERN_THEME_STYLE
       .split('\n')
       .map(line => line.trim())
-      .filter(line => line.includes('{') && !line.startsWith('@media'))
+      .filter(line => line.includes('{') && !line.startsWith('@'))
     expect(rules.length).toBeGreaterThan(30)
     for (const rule of rules) {
       expect(/^\.iv[\s{]|^\.ivg-mask[\s{]/.test(rule), `未限定作用域: ${rule}`).toBe(true)
