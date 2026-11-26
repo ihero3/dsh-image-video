@@ -333,6 +333,10 @@ export type WorkbenchLocaleKey =
   | 'modelDefaultTag'
   | 'modelDefaultHint'
   | 'canvasStatusEmpty'
+  | 'canvasRunIdle'
+  | 'canvasIssueUnit'
+  | 'canvasPlannedHint'
+  | 'canvasDismissHint'
   | 'canvasAdd'
   | 'canvasParams'
   | 'canvasFit'
@@ -1432,6 +1436,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modelDefaultTag: 'default',
   modelDefaultHint: 'Default model: ',
   canvasStatusEmpty: 'Empty canvas',
+  canvasRunIdle: 'Ready',
+  canvasIssueUnit: 'issues',
+  canvasPlannedHint: 'Planned nodes can be placed and saved, but cannot run yet',
+  canvasDismissHint: 'Got it',
   canvasAdd: 'Add to canvas',
   canvasParams: 'Node parameters',
   canvasFit: 'Fit view',
@@ -2587,6 +2595,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modelDefaultTag: '默认',
   modelDefaultHint: '默认模型：',
   canvasStatusEmpty: '空画布',
+  canvasRunIdle: '就绪',
+  canvasIssueUnit: '个问题',
+  canvasPlannedHint: '规划中的节点可以放置与保存，但暂时还不能运行',
+  canvasDismissHint: '知道了',
   canvasAdd: '加入画布',
   canvasParams: '节点参数',
   canvasFit: '适配窗口',

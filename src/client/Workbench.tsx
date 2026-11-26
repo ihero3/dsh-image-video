@@ -618,6 +618,26 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [subtitleBatchDraft, setSubtitleBatchDraft] = useState('')
   const [templateOpen, setTemplateOpen] = useState(false)
+  // 模板市场是浮层（D2）：点浮层外或按 Esc 关闭；关闭后画布高度不应发生任何变化
+  useEffect(() => {
+    if (!templateOpen) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setTemplateOpen(false)
+    }
+    const onPointerDown = (event: MouseEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target === null) return
+      if (target.closest('[data-workflow-template-market]') !== null) return
+      if (target.closest('[data-workflow-template-toggle]') !== null) return
+      setTemplateOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [templateOpen])
   const [diagnostics, setDiagnostics] = useState<WorkbenchDiagnostics | undefined>(undefined)
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -3912,10 +3932,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <PaneBoundary label={t('paneCanvas')} t={t}>
                   <div className="iv-pane-head">
                     <span className="iv-pane-tile"><Icon name="flow" size={13} /></span>
-                    <h3 className="iv-pane-title">{t('paneCanvas')}</h3>
+                    <h3 className="iv-pane-title">{t('modeWorkflow')}</h3>
                     <div className="iv-pane-actions">
                       <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
                         aria-label={t('templateMarket')} aria-expanded={templateOpen}
+                        aria-controls="iv-workflow-template-market"
                         data-workflow-template-toggle="true"
                         onClick={() => { setTemplateOpen(open => !open) }}>
                         <Icon name="sparkles" size={11} />{t('templateMarket')}
@@ -3928,7 +3949,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </div>
                   {templateOpen
                     ? (
-                      <div className="iv-tpl" data-workflow-template-market="true">
+                      <div className="iv-tpl iv-wf-drawer" id="iv-workflow-template-market"
+                        role="dialog" aria-label={t('templateMarket')}
+                        data-workflow-template-market="true" data-workflow-template-drawer="true">
                         {([
                           { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
                           { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },

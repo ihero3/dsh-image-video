@@ -529,3 +529,81 @@ describe('工作流画布：模型字段是选择器而不是空白输入框', (
     expect(Array.from(select.options).map(option => option.value)).toEqual(['', 'vid-b'])
   })
 })
+
+describe('工作流画布：运行组 / 问题胶囊 / 检视器抽屉（WORKFLOW-PANE-REDESIGN v1.2）', () => {
+  /** 最小运行控制面（只测展示，不点运行）。 */
+  function runControl(latest?: WorkflowRunRecord): WorkflowCanvasProps['run'] {
+    return {
+      ...latest === undefined ? {} : { latest },
+      history: [], busy: false,
+      onStart: () => {}, onCancel: () => {}, onRetry: () => {}, onSelectRun: () => {},
+    }
+  }
+
+  it('运行组常显状态点与文案，缺省是「就绪」而不是空白', () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} run={runControl()} />)
+    const bar = view.container.querySelector('[data-workflow-runbar]') as HTMLElement
+    expect(bar.getAttribute('data-workflow-run-status')).toBe('none')
+    expect(bar.querySelector('[data-workflow-run-state]')?.textContent).toContain(en.canvasRunIdle)
+  })
+
+  it('失败时状态点切到 failed，取消时为 cancelled', () => {
+    const failed: WorkflowRunRecord = {
+      schemaVersion: 1, id: 'run-f', workflowId: 'wfl-1', projectId: 'prj-1', status: 'failed',
+      graph: { nodes: [], edges: [] },
+      nodeRuns: [{ nodeId: 'n1', kind: 'script', status: 'failed', startedAt: '2026-10-15T00:00:00.000Z' }],
+      startedAt: '2026-10-15T00:00:00.000Z',
+    }
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} run={runControl(failed)} />)
+    const bar = view.container.querySelector('[data-workflow-runbar]') as HTMLElement
+    expect(bar.getAttribute('data-workflow-run-status')).toBe('failed')
+    expect(bar.querySelector('[data-workflow-run-state]')?.textContent).toContain(en.statusFailed)
+  })
+
+  it('图里有 planned 节点：运行组旁出现 warn 色问题胶囊，点击展开日志', async () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} run={runControl()} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))
+    const capsule = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-run-blocked]')
+      if (element === null) throw new Error('问题胶囊没出现')
+      return element as HTMLElement
+    })
+    expect(capsule.className).toContain('iv-wf-issues')
+    expect(capsule.textContent).toContain(en.canvasIssueUnit)
+    // 点击 = 展开日志（原因不再只藏在日志按钮里）
+    fireEvent.click(capsule)
+    expect(view.container.querySelector('[data-workflow-log]')?.getAttribute('data-workflow-log-open')).toBe('true')
+  })
+
+  it('放置 planned 节点给一次性提示，可手动收起', async () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} run={runControl()} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} face-swap` }))
+    const hint = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-planned-hint]')
+      if (element === null) throw new Error('提示没出现')
+      return element as HTMLElement
+    })
+    expect(hint.textContent).toContain(en.canvasPlannedHint)
+    fireEvent.click(hint.querySelector('button') as HTMLElement)
+    expect(view.container.querySelector('[data-workflow-planned-hint]')).toBeNull()
+  })
+
+  it('检视器是可访问抽屉：complementary + aria-label + 可聚焦，Esc 收起并清空选中', async () => {
+    const view = render(<WorkflowCanvas record={makeRecord()} onChange={() => {}} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} script` }))
+    const aside = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-inspector]')
+      if (element === null) throw new Error('抽屉没出现')
+      return element as HTMLElement
+    })
+    expect(aside.getAttribute('role')).toBe('complementary')
+    expect(aside.getAttribute('aria-label')).toBe(en.canvasParams)
+    expect(aside.getAttribute('tabindex')).toBe('-1')
+    expect(aside.getAttribute('data-workflow-inspector-open')).toBe('true')
+    expect(view.container.querySelector('[data-workflow-inspector-close]')).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-inspector]')).toBeNull() })
+    expect(canvas(view).getAttribute('data-workflow-selected-count')).toBe('0')
+  })
+})

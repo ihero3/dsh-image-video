@@ -80,3 +80,19 @@ describe('B-6 template market cards (F4)', () => {
     })
   })
 })
+
+describe('模板市场浮层（WORKFLOW-PANE-REDESIGN D2）', () => {
+  it('是浮在画布上的对话框：带抽屉类名，Esc 可关闭', async () => {
+    const { view } = await openTemplateMarket()
+    const market = view.container.querySelector('[data-workflow-template-market="true"]') as HTMLElement
+    expect(market.className).toContain('iv-wf-drawer')
+    expect(market.getAttribute('role')).toBe('dialog')
+    expect(market.getAttribute('aria-label')).toBe(en.templateMarket)
+    // aria-controls 必须指向这块浮层
+    const toggle = view.container.querySelector('[data-workflow-template-toggle="true"]') as HTMLElement
+    expect(toggle.getAttribute('aria-controls')).toBe(market.id)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-template-market="true"]')).toBeNull() })
+  })
+})

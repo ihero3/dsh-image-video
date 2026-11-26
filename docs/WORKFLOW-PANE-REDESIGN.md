@@ -531,3 +531,29 @@ planned 卡片额外标一个 `canvasPlannedTag` 小字。两者都能点、都�
 ### 12.3 与另两份方案共享的原语
 
 pane 头、分段/标签、`<details>` 折叠、状态胶囊按 `SCRIPT-PANE-REDESIGN.md` §11.3。本方案的 `iv-wf-*` 只保留画布独有（stage 定位、抽屉、节点条分组、运行组）。**不要**为画布另建头骨架或分段控件——这正是 M1 的教训。
+
+---
+
+## 十三、实施记录（2026-11-26）
+
+| 决策 | 状态 | 落地 |
+|------|------|------|
+| D1 三层压缩 | 已达成（以另一种形态） | 上一轮已把「节点条」换成**左侧分组节点库**（可用 12 / 规划 3，15 项常在 DOM）；本轮 chrome = pane 头（约 34）+ 单行工具条（约 26），无需再压节点条 |
+| D2 模板市场浮层 | ✅ | `.iv-wf-drawer` 绝对定位覆盖画布右上，`role=dialog` + `aria-controls`，Esc / 点外关闭；画布高度不变 |
+| D3 检查器抽屉 | ✅ | 仅选中时渲染的浮层 + `role=complementary` + `aria-label` + `tabIndex=-1`；焦点移入 / 收起还焦点；宽度 `min(300px,86%)`；滑入动效 |
+| D4 运行组右置 | ✅ | `.iv-wf-runbar` 独立分组 + 状态点 + 文案；`data-workflow-run-status` 缺省 `none` |
+| D5 问题胶囊 | ✅ | `N 个问题` 胶囊贴运行组，warn 色，点击展开日志 |
+| D6 planned 提示 | ✅ | 放置后状态条一次性提示，可收起；planned 仍可放置（`T3-2` 未动） |
+
+### 与方案的偏差
+
+1. **节点条未回退成横条**：D1 的「节点条两行」是旧布局的压缩手段；上一轮已用左侧节点库达到同样的分组与更少的高度占用，横条会回退体验。15 项与 `data-workflow-palette-item` 契约保持不变。
+2. **没有新增 `--iv-z-drawer`**：上一轮已引入 `--iv-z-canvas-hud:6` / `--iv-z-canvas-pop:8` 承担画布浮层语义，抽屉用 8（> xyflow 控件 5、< 模板浮层 40），再加一个同义 token 只会制造两套口径。
+3. **节点卡左侧色条未加**：卡片标题栏已按分组着色（输入/分镜/生成/交付），再叠一条 3px 色条属于重复编码。
+4. **体积 +7.9 KB raw**，略超 +≤6 KB 预估；增量来自运行组/胶囊/抽屉可访问性与浮层样式。
+
+### 验证
+
+- `pnpm run lint` 通过；全量 1367 例 1356 通过（6 例既有失败：版本号漂移 / Node 25 localStorage）。
+- 新增 6 例：运行态文案与 `data-workflow-run-status`、问题胶囊 warn + 展开日志、planned 一次性提示、抽屉 `role/aria/tabIndex` 与 Esc、模板浮层 `dialog/Esc/aria-controls`。
+- 未做真机几何复核：验证时 App 被关闭，CDP 目标消失；`getBoundingClientRect` 的「打开浮层前后画布高度不变」建议在真机补一次。

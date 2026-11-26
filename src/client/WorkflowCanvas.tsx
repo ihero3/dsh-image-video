@@ -112,6 +112,17 @@ function runStatusKey(status: 'running' | 'succeeded' | 'failed' | 'cancelled'):
   }
 }
 
+/** 整体运行态 → 文案键（缺省 = 就绪；与 `data-workflow-run-status` 的 `none` 对齐）。 */
+function runStateKey(status: 'running' | 'succeeded' | 'failed' | 'cancelled' | undefined): WorkbenchLocaleKey {
+  switch (status) {
+    case 'running': return 'statusRunning'
+    case 'succeeded': return 'statusSucceeded'
+    case 'failed': return 'statusFailed'
+    case 'cancelled': return 'statusCancelled'
+    default: return 'canvasRunIdle'
+  }
+}
+
 /** 节点运行状态 → 文案键。 */
 function nodeStatusKey(status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped'): WorkbenchLocaleKey {
   switch (status) {
@@ -428,6 +439,14 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
   const [libraryCollapsed, setLibraryCollapsed] = useState(false)
   /** 空画布起步卡是否已被用户主动收起（收起后就是一张干净的空白画布）。 */
   const [onboardingDismissed, setOnboardingDismissed] = useState(false)
+  /**
+   * `D6`：放置 planned 节点后的一次性提示。planned 是「可放置、可保存、不可运行」
+   * 的预期状态，不该只在日志里出现——放下的当下就告诉用户为什么运行按钮会灰。
+   */
+  const [plannedHint, setPlannedHint] = useState(false)
+  /** 检视器焦点管理（M7）：选中后焦点移入抽屉，收起后还给画布。 */
+  const inspectorRef = useRef<HTMLDivElement | null>(null)
+  const previousSelectionCount = useRef(0)
   /** 双击空白处的快速添加：位置（相对画布）与落点（画布坐标）。 */
   const [quickAdd, setQuickAdd] = useState<{
     readonly left: number
@@ -460,6 +479,20 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     () => nodes.filter(node => selectedIds.includes(node.id)),
     [nodes, selectedIds],
   )
+
+  /** 收起检视器 = 清空选中（与点画布空白同一语义），并把焦点还给画布。 */
+  const closeInspector = useCallback(() => {
+    setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
+    setSelectedIds([])
+    flowRef.current?.focus()
+  }, [setNodes])
+
+  // 选中 0 → N 时把焦点交给抽屉（读屏用户要能知道参数面板出现了）；不抢「切换选中」时的焦点
+  useEffect(() => {
+    const wasEmpty = previousSelectionCount.current === 0
+    previousSelectionCount.current = selectedIds.length
+    if (wasEmpty && selectedIds.length > 0) inspectorRef.current?.focus()
+  }, [selectedIds.length])
 
   // 全屏浮层盖住整个工作台：锁住页面滚动，退出时恢复原值
   useEffect(() => {
@@ -588,6 +621,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     const nextNodes: CanvasNode[] = nodes.map<CanvasNode>(candidate => ({ ...candidate, selected: false }))
     nextNodes.push(node)
     applyGraph({ nodes: nextNodes, edges }, `add:${node.id}`)
+    if (nodeSpec(kind).availability !== 'runnable') setPlannedHint(true)
   }, [nodes, edges, applyGraph, viewportCenter])
 
   const updateParam = useCallback((id: string, key: string, value: NodeParamValue) => {
@@ -803,6 +837,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
       )
       if (event.key === 'Escape') {
         if (quickAdd !== undefined) { event.preventDefault(); setQuickAdd(undefined); setQuickQuery(''); return }
+        if (selectedIds.length > 0) { event.preventDefault(); closeInspector(); return }
         if (maximized) { event.preventDefault(); setMaximized(false); return }
         return
       }
@@ -855,7 +890,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [
     undo, redo, copySelected, pasteClipboard, deleteSelected, selectedIds.length, maximized,
-    importWorkflowText, quickAdd, nodes, setNodes,
+    importWorkflowText, quickAdd, nodes, setNodes, closeInspector,
   ])
 
   // 拖拽结束 = 一步历史（拖动过程中的每个 position 变化都合并进来）
@@ -987,7 +1022,29 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             <Icon name="download" size={13} />
           </button>
         </div>
-        <div className="iv-wf-head-run">
+        <div className="iv-wf-head-run iv-wf-runbar" data-workflow-runbar="true"
+          data-workflow-run-status={run?.latest?.status ?? 'none'}>
+          {run === undefined
+            ? null
+            : (
+              <>
+                {/* D5：问题数量贴着运行组出现（warn 色，planned 是预期状态不是错误），点击展开日志 */}
+                {validation.issues.length === 0
+                  ? null
+                  : (
+                    <button type="button" className="iv-wf-issues" data-workflow-run-blocked="true"
+                      aria-label={`${validation.issues.length} ${t('canvasIssueUnit')}`}
+                      title={`${validation.issues.length} ${t('canvasIssueUnit')} · ${t('validationTitle')}`}
+                      onClick={() => { setLogOpen(true) }}>
+                      <Icon name="alert" size={11} />{validation.issues.length} {t('canvasIssueUnit')}
+                    </button>
+                  )}
+                <span className="iv-wf-runstate" data-workflow-run-state={run.latest?.status ?? 'none'}>
+                  <i className="iv-dot" aria-hidden="true" />
+                  {t(runStateKey(run.latest?.status))}
+                </span>
+              </>
+            )}
           {run === undefined
             ? null
             : (
@@ -1206,7 +1263,15 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
           {selectedNodes.length === 0
             ? null
             : (
-              <div className="iv-inspector iv-wf-inspector" data-workflow-inspector={selectedNodes[0]!.id}>
+              <div
+                ref={inspectorRef}
+                className="iv-inspector iv-wf-inspector"
+                role="complementary"
+                aria-label={t('canvasParams')}
+                tabIndex={-1}
+                data-workflow-inspector={selectedNodes[0]!.id}
+                data-workflow-inspector-open="true"
+              >
                 <div className="iv-inspector-head">
                   <Icon name={NODE_ICONS[selectedNodes[0]!.data.kind]} size={13} />
                   <span className="iv-wf-inspector-title">{t(nodeSpec(selectedNodes[0]!.data.kind).labelKey as WorkbenchLocaleKey)}</span>
@@ -1214,11 +1279,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                     ? <span className="iv-meta">{t('canvasSelected')} · {selectedNodes.length}</span>
                     : null}
                   <button type="button" className="iv-wf-inspector-close"
+                    data-workflow-inspector-close="true"
                     aria-label={t('canvasCloseInspector')} title={t('canvasCloseInspector')}
-                    onClick={() => {
-                      setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
-                      setSelectedIds([])
-                    }}>
+                    onClick={closeInspector}>
                     <Icon name="x" size={11} />
                   </button>
                 </div>
@@ -1387,6 +1450,17 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
               {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
             </span>
           )}
+        {plannedHint
+          ? (
+            <span className="iv-wf-planned-hint" data-workflow-planned-hint="true" role="status">
+              <Icon name="sparkles" size={11} />{t('canvasPlannedHint')}
+              <button type="button" onClick={() => { setPlannedHint(false) }}
+                aria-label={t('canvasDismissHint')} title={t('canvasDismissHint')}>
+                <Icon name="x" size={10} />
+              </button>
+            </span>
+          )
+          : null}
         <span className="iv-wf-status-note" title={t('canvasTransient')}>{t('canvasTransient')}</span>
       </div>
 

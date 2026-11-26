@@ -291,6 +291,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-chip--err{color:var(--iv-danger);border-color:color-mix(in srgb,var(--iv-danger) 35%,transparent);background:var(--iv-danger-soft)}
 .iv-chip--run{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 35%,transparent);background:var(--iv-acc-soft)}
 .iv-chip--run .iv-dot{animation:iv-pulse 1.2s ease-in-out infinite}
+@keyframes iv-wf-slide-in{from{transform:translateX(14%);opacity:0}to{transform:none;opacity:1}}
 @keyframes iv-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.iv-chip--run .iv-dot{animation:none}.iv-btn,.iv-row,.iv-clip{transition:none}}
 .iv-badge{display:inline-flex;align-items:center;gap:var(--iv-sp-2);padding:0 7px;height:17px;border-radius:var(--iv-r-pill);

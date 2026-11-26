@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### 工作流 pane 按 `WORKFLOW-PANE-REDESIGN` v1.2 优化 UI/UX（2026-11-26）
+
+上一轮已把画布改成节点式工作区（左节点库 / 浮层检视器 / 运行主按钮），本轮把设计稿里仍然成立的条目补齐：
+
+- **D4 运行组**：顶栏右侧独立成组（左侧 1px 分隔），常显状态点 + 文案（就绪 / 运行中 / 已完成 / 已失败 / 已取消），`data-workflow-run-status` 缺省 `none`；运行中色点脉冲。
+- **D5 问题胶囊**：校验问题贴着运行组出现（`N 个问题`，warn 色而非 danger——planned 是预期状态不是错误），点击直接展开日志；原来只藏在最右侧日志按钮里。
+- **D6 planned 提示**：放置 planned 节点后，底部状态条给一次性提示「可放置可保存、暂不能运行」，可手动收起，缩短「按钮为什么灰」的因果距离。
+- **D3 抽屉可访问性**：检视器补 `role="complementary"` + `aria-label` + `tabIndex={-1}`，选中 0→N 时焦点移入，`[✕]` / Esc / 点空白三种收起方式都等价于清空选中并把焦点还给画布；宽度收敛到 `min(300px, 86%)`，加滑入动效（`prefers-reduced-motion` 关闭）。
+- **D2 模板市场浮层**：从 pane 内联块改为覆盖画布右上的浮层（`position:absolute`，宽 `min(560px,92%)`，`max-height:60vh`），带 `role="dialog"`、`aria-controls`，Esc / 点外部关闭；**打开时画布高度不再被顶下去**。
+- **D1 标题统一**：pane 头标题由「工作流画布」改为「专业工作流」，与顶部模式导航一致。
+- 测试：新增 6 例（运行组状态、问题胶囊 + 展开日志、planned 提示、检视器可访问性与 Esc、模板浮层 Esc/aria）；全量 1356 通过，6 例失败仍为既有问题（版本号漂移 + Node 25 原生 localStorage）。
+- 体积：总产物 1.552 MB → 1.560 MB（+7.9 KB raw / +1.7 KB gzip，111%）；设计稿预估 +≤6 KB，略超。
+- 说明：设计稿按旧版画布（节点 chip 条 + 内联工具条）书写，其中「节点条两行分组」一项已由上一轮的**左侧分组节点库**实现（可用 12 / 规划 3 分组仍在、15 项全部常在 DOM），未回退成横条。
+
 ### 时间轴精剪按 `TIMELINE-PANE-REDESIGN` v1.2 重构（2026-11-26）
 
 参考剪映/CapCut 与开源时间轴（OpenCut、react-timeline-editor、dnd-timeline 等，见 `docs/research/timeline-editor-references.md`），把时间轴从「表单堆叠」改成精剪工作区：
