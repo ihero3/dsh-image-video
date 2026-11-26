@@ -333,9 +333,9 @@ function clockTime(iso: string): string {
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-/** File name of an absolute path. */
+/** File name of an absolute path (POSIX or Windows — 宿主在 Windows 上给的是反斜杠路径). */
 function baseName(path: string): string {
-  return path.split('/').pop() ?? path
+  return path.split(/[\\/]/).pop() ?? path
 }
 
 /** 资源类型在参考图选择列表里的短标签（没有翻译的少见类型直接显示原值）。 */
@@ -694,6 +694,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [generatePrompt, setGeneratePrompt] = useWorkbenchField(api, 'generatePrompt')
   const [generating, setGenerating] = useState<'image' | 'video' | undefined>(undefined)
   const [generateTaskId, setGenerateTaskId] = useState<string | undefined>(undefined)
+  // 取消是异步的：宿主收到中断后要等工具真正退出才落 `cancelled`，
+  // 这期间按钮得显示「取消中…」，否则点下去像没反应。
+  const [cancelling, setCancelling] = useState(false)
   // `F2`：多参考图（**按序**）：首图=底图，其余=风格/脸部参考。
   // 图片走 `images[]`（≥2 张）或 `image`（1 张，兼容 A151）；视频首帧取第一张。
   const [generateImages, setGenerateImages] = useWorkbenchField(api, 'generateImages')
@@ -943,6 +946,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       return
     }
     setGenerating(mediaMode)
+    setCancelling(false)
     // `F3`：进度条起点（本地点击时间）；视频随后被 tasks/running 的 startedAt 校正
     setGenerateStartedAt(Date.now())
     // `B-4`：续写显式模式——必须有参考视频；缺则响亮拒绝，绝不静默降级成普通生视频。
@@ -951,6 +955,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       setNotice({ text: t('videoContinuationNeedsRefVideo'), tone: 'error' })
       return
     }
+    let pendingTaskId: string | undefined
     try {
       const references = generateImages
       const first = references[0]
@@ -983,9 +988,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ...generateAspect.trim() === '' ? {} : { aspectRatio: generateAspect.trim() },
               ...Number(generateDuration) > 0 ? { duration: Number(generateDuration) } : {},
             },
-        ...mediaMode === 'video' ? { wait: false } : {},
+        // 图片与视频**都**走非阻塞：只有立刻拿到 `taskId`，「生成中」的取消按钮才有 id 可发。
+        // 图片以前是同步等待（wait 缺省 true），取消按钮点了只能空转（2026-11-26 真机反馈）。
+        wait: false,
       })
       if (result.pending === true && result.taskId !== undefined) {
+        pendingTaskId = result.taskId
         setGenerateTaskId(result.taskId)
         return
       }
@@ -999,8 +1007,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       setNotice({ text: `${t('generateFailed')}：${message}`, tone: 'error' })
       // `T4`：失败不止报错——同时给出可点的补救动作
     } finally {
-      if (mediaMode === 'image') setGenerating(undefined)
+      // 已交给轮询的任务不能在这里清掉「生成中」，否则取消按钮会提前消失
+      if (pendingTaskId === undefined) setGenerating(undefined)
     }
+  }
+
+  /**
+   * 取消在飞生成：`tasks/cancel` 中断宿主侧任务，终态（`cancelled`）由轮询回写。
+   * 拿不到 `taskId` 说明这条请求不可中断，如实告知，不假装已经停了。
+   */
+  const cancelGenerate = (): void => {
+    const id = generateTaskId
+    if (id === undefined) {
+      setNotice({ text: t('generateCannotCancel'), tone: 'error' })
+      return
+    }
+    setCancelling(true)
+    void (async () => {
+      try {
+        const cancelled = await apiRef.current.cancelTask(id)
+        if (cancelled) {
+          setNotice({ text: t('generateCancelling'), tone: 'info' })
+          return
+        }
+        // 宿主已经找不到这个任务（多半刚跑完）：拉一次账本让界面立刻收敛
+        setCancelling(false)
+        await loadTasks()
+      } catch (error) {
+        setCancelling(false)
+        const message = error instanceof Error ? error.message : String(error)
+        setNotice({ text: `${t('generateFailed')}：${message}`, tone: 'error' })
+      }
+    })()
   }
 
   // `T4` 自动定位：结果卡一出现就滚进视口（smooth；已在视口内则等同无操作）。
@@ -1018,6 +1056,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     if (row === undefined || row.status === 'running') return
     setGenerateTaskId(undefined)
     setGenerating(undefined)
+    setCancelling(false)
     if (row.status === 'succeeded') {
       // `T3`：视频是非阻塞返回的，产物路径从任务账本拿，同样就地展示
       if (row.outputPath !== undefined) {
@@ -1030,7 +1069,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       return
     }
     if (row.status === 'cancelled') {
-      setNotice({ text: t('generateCancel'), tone: 'info' })
+      setNotice({ text: t('generateCancelled'), tone: 'info' })
       return
     }
     setNotice({ text: `${t('generateFailed')}：${row.error ?? ''}`, tone: 'error' })
@@ -2975,280 +3014,260 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             {mode === 'quick'
               ? (
                 <>
-                <section className="iv-pane" data-workbench-pane="paneCreate">
+                <section className="iv-pane iv-pane--compact" data-workbench-pane="paneCreate">
                   <PaneBoundary label={t('modeQuick')} t={t}>
-                  {/* 两等宽标签页：内容生产 / 提取提示词 */}
-                  <div className="iv-quick-tabs" role="tablist" data-quick-tabs="true">
+                  {/* v1.2：内容生产是主体，提取提示词降级为 pane 头部右侧的次级入口（data-quick-tab 不能丢） */}
+                  <div className="iv-quick-tabs iv-quick-tabs--minor" role="tablist" data-quick-tabs="true">
                     <button
                       type="button"
                       role="tab"
                       aria-selected={quickTab === 'produce'}
-                      className={`iv-btn${quickTab === 'produce' ? ' iv-btn--acc' : ''}`}
-                      style={{ flex: 1 }}
+                      className={`iv-btn iv-btn--ghost iv-btn--sm${quickTab === 'produce' ? ' is-active' : ''}`}
                       data-quick-tab="produce"
                       onClick={() => { setQuickTab('produce') }}
                     >
-                      {t('quickTabProduce')}
+                      <Icon name="sparkles" size={12} /> {t('quickTabProduce')}
                     </button>
                     <button
                       type="button"
                       role="tab"
                       aria-selected={quickTab === 'prompt'}
-                      className={`iv-btn${quickTab === 'prompt' ? ' iv-btn--acc' : ''}`}
-                      style={{ flex: 1 }}
+                      className={`iv-btn iv-btn--ghost iv-btn--sm${quickTab === 'prompt' ? ' is-active' : ''}`}
                       data-quick-tab="prompt"
                       onClick={() => { setQuickTab('prompt') }}
                     >
-                      {t('quickTabPrompt')}
+                      <Icon name="script" size={12} /> {t('quickTabPrompt')}
                     </button>
                   </div>
                   {quickTab === 'produce'
                     ? (<>
-                  <div className="iv-modules" data-quick-modules="true">
-                  {/* 单条生成（快速创作）——"一句话出一张图或一条视频" */}
-                  <section className="iv-module" data-module="quick">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="quick"
-                      aria-expanded={openModules.quick}
-                      aria-label={`${openModules.quick ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleQuick')}`}
-                      onClick={() => { toggleModule('quick') }}
-                    >
-                      <span className="iv-module-n">1</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="quick">{t('moduleQuick')}</span>
-                        <span className="iv-meta">{t('moduleQuickDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.quick ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body" data-module-body="quick" hidden={!openModules.quick}>
-                  <div className="iv-create">
+                  {/* v1.2：module 容器只作测试元数据；编号徽标、说明与折叠按钮已删除。
+                      openModules/toggleModule 与样式仍保留给 pipeline / episode 使用。 */}
+                  <div className="iv-modules iv-modules--quick" data-quick-modules="true">
+                  <section className="iv-module iv-module--quick" data-module="quick">
+                    <span className="iv-module-title" data-module-title="quick" hidden>{t('moduleQuick')}</span>
+                    <div className="iv-module-body" data-module-body="quick">
+                  <div className="iv-quick-create">
                     {/* 模块头已经有一句白话说明（moduleQuickDesc），这里只留"三步流程"这种能扫的，
                         不再堆两段解释性长文（截图反馈：进页面先看到三行灰字，提示词框被挤到下面）。 */}
                     {busy ? <span className="iv-meta">{t('busy')}</span> : null}
-                    {/* 生成方式：生图（参考图可选 = 文生/图生） / 生视频 */}
-                    <div className="iv-quick-tabs" role="tablist" aria-label={t('generateHeading')} data-create-tabs="true">
+                    {/* 生成方式：上提为表单第一行 */}
+                    <div className="iv-create-tabs" role="tablist" aria-label={t('generateHeading')} data-create-tabs="true">
                       <button
                         type="button"
                         role="tab"
                         aria-selected={createTab === 'image'}
                         className={`iv-btn${createTab === 'image' ? ' iv-btn--acc' : ''}`}
-                        style={{ flex: 1 }}
                         data-create-tab="image"
                         onClick={() => { setCreateTab('image') }}
                       >
-                        {t('createTabImage')}
+                        <Icon name="image" size={14} /> {t('createTabImage')}
                       </button>
                       <button
                         type="button"
                         role="tab"
+
                         aria-selected={createTab === 'video'}
                         className={`iv-btn${createTab === 'video' ? ' iv-btn--acc' : ''}`}
-                        style={{ flex: 1 }}
                         data-create-tab="video"
                         onClick={() => { setCreateTab('video') }}
                       >
-                        {t('createTabVideo')}
+                        <Icon name="film" size={14} /> {t('createTabVideo')}
                       </button>
                     </div>
                     {createTab !== 'image'
                       ? null
                       : (
                     <div className="iv-create-panel" role="tabpanel" data-create-panel="image">
-                      <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
-                      <textarea
-                        className="iv-input iv-textarea"
-                        rows={3}
-                        value={generatePrompt}
-                        placeholder={t('generatePromptPlaceholder')}
-                        data-generate-prompt="true"
-                        disabled={generating !== undefined}
-                        onChange={event => setGeneratePrompt(event.target.value)}
-                        onKeyDown={event => {
-                          if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
-                          event.preventDefault()
-                          if (generating === undefined && activeId !== undefined) void runGenerate('image')
-                        }}
-                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                      />
-                      {/* `F2` 多参考图：参考图可选——不带 = 文生图，带 = 图生图；首图为底图 */}
-                      <div
-                        className="iv-refs"
-                        data-generate-refs="true"
-                        data-ref-dropzone={refDragOver ? 'true' : undefined}
-                        onDragOver={event => {
-                          if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
-                          event.preventDefault()
-                          event.dataTransfer.dropEffect = 'copy'
-                          setRefDragOver(true)
-                        }}
-                        onDragLeave={() => { setRefDragOver(false) }}
-                        onDrop={event => { onReferenceDrop(event, 'image', addReferenceImage) }}
-                      >
-                        <div className="iv-ref-head">
-                          <span className="iv-meta">{t('generateRefsLabel')}</span>
-                          <span className="iv-meta">{t('generateRefsModeHint')}</span>
+                      <div className="iv-qc-field">
+                        <div className="iv-qc-field-head">
+                          <label className="iv-qc-field-label" htmlFor="iv-quick-prompt">{t('generatePromptLabel')}</label>
+                          <span className="iv-qc-field-hint">{t('quickGenShortcut')}</span>
                         </div>
-                        <div className="iv-ref-actions">
-                          <RefPickField
-                            id="refs"
-                            label={t('generateRefsPick')}
-                            t={t}
-                            assets={imageAssets}
-                            resources={resources}
-                            kind="image"
-                            keepOpen
-                            picked={path => generateImages.includes(path)}
-                            onPick={addReferenceImage}
-                            triggerData={{ 'data-generate-refs-pick': 'true' }}
-                          />
-                          <button
-                            type="button"
-                            className="iv-btn iv-btn--ghost iv-btn--sm"
-                            data-generate-refs-add="true"
-                            disabled={selectedAsset === undefined || selectedAsset.kind !== 'image' || generateImages.length >= MAX_REFERENCE_IMAGES}
-                            onClick={() => { addReferenceImage(selectedAsset?.path) }}
-                          >
-                            {t('generateRefsAdd')}
-                          </button>
-                          {generateImages.length === 0
-                            ? null
-                            : (
-                              <button
-                                type="button"
-                                className="iv-btn iv-btn--ghost iv-btn--sm"
-                                onClick={() => { setGenerateImages([]); setRefDragFrom(undefined); setRefDropAt(undefined) }}
-                              >
-                                {t('generateClearReference')}
-                              </button>
-                            )}
-                          {generateImages.length >= MAX_REFERENCE_IMAGES
-                            ? <span className="iv-meta">{t('generateRefsFull')}</span>
-                            : null}
-                        </div>
-                        {generateImages.length === 0
-                          ? <span className="iv-ref-drop">{t('generateRefsDragHint')}</span>
-                          : (
-                            <ul className="iv-ref-chips">
-                              {generateImages.map((path, index) => (
-                                <li
-                                  key={path}
-                                  className="iv-ref-chip"
-                                  data-generate-ref={path}
-                                  data-generate-ref-index={String(index)}
-                                  data-ref-drop={refDropAt === index && refDragFrom !== index ? 'true' : undefined}
-                                  draggable
-                                  onDragStart={event => {
-                                    event.dataTransfer.setData('text/plain', path)
-                                    event.dataTransfer.effectAllowed = 'move'
-                                    setRefDragFrom(index)
-                                  }}
-                                  onDragOver={event => {
-                                    if (refDragFrom === undefined) return
-                                    event.preventDefault()
-                                    setRefDropAt(index)
-                                  }}
-                                  onDrop={event => {
-                                    event.preventDefault()
-                                    const from = refDragFrom
-                                    setRefDragFrom(undefined)
-                                    setRefDropAt(undefined)
-                                    if (from !== undefined) moveReferenceImage(from, index)
-                                  }}
-                                  onDragEnd={() => { setRefDragFrom(undefined); setRefDropAt(undefined) }}
-                                >
-                                  <span className="iv-ref-order">{index + 1}</span>
-                                  <span className="iv-ref-role">{index === 0 ? t('generateRefsBase') : t('generateRefsStyle')}</span>
-                                  {/* 缩略图 + 文件名一起当"预览按钮"：文件名本身对不上图，必须能看一眼 */}
-                                  <button
-                                    type="button"
-                                    className="iv-ref-open"
-                                    data-generate-ref-preview={path}
-                                    title={t('generateRefsPreviewHint')}
-                                    aria-label={`${t('generateRefsPreviewHint')} ${baseName(path)}`}
-                                    onClick={() => { setPreviewPath({ path, kind: 'image' }); scrollToPane('panePreview') }}
-                                  >
-                                    <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}`} alt="" />
-                                    <span className="iv-ellipsis" title={path}>{baseName(path)}</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--up"
-                                    aria-label={`${t('generateRefsMoveUp')} ${baseName(path)}`}
-                                    title={t('generateRefsMoveUp')}
-                                    disabled={index === 0}
-                                    onClick={() => { moveReferenceImage(index, index - 1) }}
-                                  >
-                                    <Icon name="chevron" size={11} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--sm iv-ref-move iv-ref-move--down"
-                                    aria-label={`${t('generateRefsMoveDown')} ${baseName(path)}`}
-                                    title={t('generateRefsMoveDown')}
-                                    disabled={index === generateImages.length - 1}
-                                    onClick={() => { moveReferenceImage(index, index + 1) }}
-                                  >
-                                    <Icon name="chevron" size={11} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="iv-btn iv-btn--icon iv-btn--sm"
-                                    data-generate-ref-remove={path}
-                                    aria-label={`${t('remove')} ${baseName(path)}`}
-                                    title={t('remove')}
-                                    onClick={() => { setGenerateImages(generateImages.filter(candidate => candidate !== path)) }}
-                                  >
-                                    <Icon name="x" size={11} />
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        <span className="iv-meta">{t('generateRefsHint')}</span>
-                      </div>
-                      {/* 图片参数：尺寸 + 图像模型——常驻显示，默认跟随整体配置 */}
-                      <div className="iv-model-row" data-image-advanced="true">
-                        <span className="iv-meta">{t('defaultImageSize')}：</span>
-                        {/* `T1` 参数改成候选下拉：候选来自宿主 `health.options`（与协议层校验同源），
-                            浏览器包不内置服务商名单；空值 = 跟随「当前生效参数」。 */}
-                        <select
-                          className="iv-select iv-select--sm"
-                          aria-label={t('defaultImageSize')}
-                          data-generate-size="true"
-                          value={generateSize}
+                        <textarea
+                          id="iv-quick-prompt"
+                          className="iv-input iv-textarea"
+                          rows={4}
+                          value={generatePrompt}
+                          placeholder={t('generatePromptPlaceholder')}
+                          data-generate-prompt="true"
                           disabled={generating !== undefined}
-                          onChange={event => setGenerateSize(event.target.value)}
-                        >
-                          {generateParameterOptions('imageSize').map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                        <span className="iv-meta">{t('generateImageModel')}：</span>
-                        <ModelPicker
-                          api={apiRef.current} t={t} mediaMode="image"
-                          value={generateImageModel} onChange={setGenerateImageModel}
-                          disabled={generating !== undefined}
+                          onChange={event => setGeneratePrompt(event.target.value)}
+                          onKeyDown={event => {
+                            if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+                            event.preventDefault()
+                            if (generating === undefined && activeId !== undefined) void runGenerate('image')
+                          }}
                         />
                       </div>
+                      {/* `F2` 多参考图：缩略图网格；首图即底图，上移/下移按钮已移除，排序走拖拽 */}
+                      <div className="iv-qc-field">
+                        <div className="iv-qc-field-head">
+                          <label className="iv-qc-field-label">{t('quickRefsLabel')} ({generateImages.length}/{MAX_REFERENCE_IMAGES})</label>
+                          <div className="iv-qc-field-actions">
+                            {generateImages.length === 0
+                              ? null
+                              : (
+                                <button
+                                  type="button"
+                                  className="iv-btn iv-btn--ghost iv-btn--sm"
+                                  onClick={() => { setGenerateImages([]); setRefDragFrom(undefined); setRefDropAt(undefined) }}
+                                >
+                                  {t('generateClearReference')}
+                                </button>
+                              )}
+                            {generateImages.length >= MAX_REFERENCE_IMAGES
+                              ? <span className="iv-meta">{t('generateRefsFull')}</span>
+                              : null}
+                          </div>
+                        </div>
+                        <div
+                          className="iv-refs iv-ref-zone"
+                          data-generate-refs="true"
+                          data-ref-dropzone={refDragOver ? 'true' : undefined}
+                          onDragOver={event => {
+                            if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'copy'
+                            setRefDragOver(true)
+                          }}
+                          onDragLeave={() => { setRefDragOver(false) }}
+                          onDrop={event => { onReferenceDrop(event, 'image', addReferenceImage) }}
+                        >
+                          {/* 网格与添加入口都恒定渲染：0→1 张切换时 picker 不卸载，keepOpen 状态不丢 */}
+                          <div className="iv-ref-grid">
+                            {generateImages.map((path, index) => (
+                              <div
+                                key={path}
+                                className={`iv-ref-cell${index === 0 ? ' iv-ref-cell--base' : ''}`}
+                                data-generate-ref={path}
+                                data-generate-ref-index={String(index)}
+                                data-ref-drop={refDropAt === index && refDragFrom !== index ? 'true' : undefined}
+                                draggable
+                                onDragStart={event => {
+                                  event.dataTransfer.setData('text/plain', path)
+                                  event.dataTransfer.effectAllowed = 'move'
+                                  setRefDragFrom(index)
+                                }}
+                                onDragOver={event => {
+                                  if (refDragFrom === undefined) return
+                                  event.preventDefault()
+                                  setRefDropAt(index)
+                                }}
+                                onDrop={event => {
+                                  event.preventDefault()
+                                  const from = refDragFrom
+                                  setRefDragFrom(undefined)
+                                  setRefDropAt(undefined)
+                                  if (from !== undefined) moveReferenceImage(from, index)
+                                }}
+                                onDragEnd={() => { setRefDragFrom(undefined); setRefDropAt(undefined) }}
+                              >
+                                <button
+                                  type="button"
+                                  className="iv-ref-thumb-wrap"
+                                  data-generate-ref-preview={path}
+                                  title={t('generateRefsPreviewHint')}
+                                  aria-label={`${t('generateRefsPreviewHint')} ${baseName(path)}`}
+                                  onClick={() => { setPreviewPath({ path, kind: 'image' }); scrollToPane('panePreview') }}
+                                >
+                                  <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(path))}`} alt="" />
+                                </button>
+                                {index === 0 ? <span className="iv-ref-base-badge">{t('quickRefsBase')}</span> : null}
+                                <button
+                                  type="button"
+                                  className="iv-ref-remove"
+                                  data-generate-ref-remove={path}
+                                  aria-label={`${t('remove')} ${baseName(path)}`}
+                                  title={t('remove')}
+                                  onClick={() => { setGenerateImages(generateImages.filter(candidate => candidate !== path)) }}
+                                >
+                                  <Icon name="x" size={10} />
+                                </button>
+                              </div>
+                            ))}
+                            {generateImages.length < MAX_REFERENCE_IMAGES
+                              ? (
+                                <div className="iv-ref-add-cell">
+                                  <RefPickField
+                                    id="refs"
+                                    label={t('quickRefsAdd')}
+                                    t={t}
+                                    assets={imageAssets}
+                                    resources={resources}
+                                    kind="image"
+                                    keepOpen
+                                    picked={path => generateImages.includes(path)}
+                                    onPick={addReferenceImage}
+                                    triggerData={{ 'data-generate-refs-pick': 'true' }}
+                                  />
+                                </div>
+                              )
+                              : null}
+                          </div>
+                          {generateImages.length === 0
+                            ? <span className="iv-ref-empty-hint">{t('quickRefsEmptyHint')}</span>
+                            : null}
+                        </div>
+                        <span className="iv-qc-field-hint">{t('generateRefsHint')}</span>
+                      </div>
+                      {/* 高级参数：默认折叠；当前值在标题栏回显。T1 候选下拉来自宿主 health.options，空值 = 跟随默认 */}
+                      <details className="iv-advanced" data-image-advanced="true">
+                        <summary className="iv-advanced-head">
+                          <Icon name="sliders" size={14} />
+                          <span className="iv-advanced-title">{t('quickAdvanced')}</span>
+                          <span className="iv-advanced-defaults">
+                            {t('quickAdvancedDefaults')
+                              .replace('{model}', generateImageModel || '—')
+                              .replace('{size}', generateSize || '—')}
+                          </span>
+                          <Icon className="iv-advanced-caret" name="chevron" size={10} />
+                        </summary>
+                        <div className="iv-advanced-body">
+                          <div className="iv-advanced-grid">
+                            <div className="iv-qc-field">
+                              <label className="iv-qc-field-label">{t('defaultImageSize')}</label>
+                              <select
+                                className="iv-select"
+                                aria-label={t('defaultImageSize')}
+                                data-generate-size="true"
+                                value={generateSize}
+                                disabled={generating !== undefined}
+                                onChange={event => setGenerateSize(event.target.value)}
+                              >
+                                {generateParameterOptions('imageSize').map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="iv-qc-field">
+                              <label className="iv-qc-field-label">{t('generateImageModel')}</label>
+                              <ModelPicker
+                                api={apiRef.current} t={t} mediaMode="image"
+                                value={generateImageModel} onChange={setGenerateImageModel}
+                                disabled={generating !== undefined}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </details>
                       {/* 唯一主按钮：文案跟着生成方式走；生成中就地变成"取消生成" */}
                       <div className="iv-gen-actions" data-generate-actions="true">
+                        <div className="iv-gen-separator" aria-hidden="true" />
                         <button
                           type="button"
                           className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'image' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
                           aria-busy={generating === 'image' ? true : undefined}
                           data-generate-image="true"
-                          disabled={generating === 'video' || activeId === undefined || (generating !== 'image' && generatePrompt.trim() === '')}
+                          disabled={generating === 'video' || activeId === undefined || (generating === 'image' && cancelling) || (generating !== 'image' && generatePrompt.trim() === '')}
                           onClick={() => {
-                            if (generating === 'image') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
+                            if (generating === 'image') { cancelGenerate(); return }
                             void runGenerate('image')
                           }}
                         >
-                          {generating === 'image' ? t('generateCancel') : t('generateImage')}
+                          {generating === 'image' ? (cancelling ? t('generateCancelling') : t('generateCancel')) : t('generateImage')}
                         </button>
+                        <span className="iv-gen-shortcut" aria-hidden="true">{t('quickGenShortcut')}</span>
                       </div>
                     </div>
                       )}
@@ -3256,22 +3275,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       ? null
                       : (
                     <div className="iv-create-panel" role="tabpanel" data-create-panel="video">
-                      <span className="iv-meta">{t('generateHeading')} · {t('generatePromptLabel')}</span>
-                      <textarea
-                        className="iv-input iv-textarea"
-                        rows={3}
-                        value={generatePrompt}
-                        placeholder={t('generatePromptPlaceholder')}
-                        data-generate-prompt-video="true"
-                        disabled={generating !== undefined}
-                        onChange={event => setGeneratePrompt(event.target.value)}
-                        onKeyDown={event => {
-                          if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
-                          event.preventDefault()
-                          if (generating === undefined && activeId !== undefined) void runGenerate('video')
-                        }}
-                        style={{ resize: 'vertical', font: 'inherit', padding: '6px 8px', borderRadius: '6px' }}
-                      />
+                      <div className="iv-qc-field">
+                        <div className="iv-qc-field-head">
+                          <label className="iv-qc-field-label" htmlFor="iv-quick-prompt-video">{t('generatePromptLabel')}</label>
+                          <span className="iv-qc-field-hint">{t('quickGenShortcut')}</span>
+                        </div>
+                        <textarea
+                          id="iv-quick-prompt-video"
+                          className="iv-input iv-textarea"
+                          rows={4}
+                          value={generatePrompt}
+                          placeholder={t('generatePromptPlaceholder')}
+                          data-generate-prompt-video="true"
+                          disabled={generating !== undefined}
+                          onChange={event => setGeneratePrompt(event.target.value)}
+                          onKeyDown={event => {
+                            if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return
+                            event.preventDefault()
+                            if (generating === undefined && activeId !== undefined) void runGenerate('video')
+                          }}
+                        />
+                      </div>
                       {/* `G4` 视频槽：首帧 / 尾帧 / 参考视频 + 真人、续写；都支持素材库拖入 */}
                       <div className="iv-refs" data-video-slots="true">
                         <div
@@ -3295,7 +3319,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-first-frame-preview={generateImages[0]}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateImages[0])}`}
                                   onClick={() => { setPreviewPath({ path: generateImages[0] as string, kind: 'image' }); scrollToPane('panePreview') }}
                                 >
                                   <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateImages[0]))}`} alt="" />
@@ -3342,7 +3366,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-last-frame-preview={generateLastFrame}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateLastFrame)}`}
                                   onClick={() => { setPreviewPath({ path: generateLastFrame, kind: 'image' }); scrollToPane('panePreview') }}
                                 >
                                   <img className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateLastFrame))}`} alt="" />
@@ -3398,7 +3422,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   type="button"
                                   className="iv-ref-open iv-chip"
                                   data-video-reference-preview={generateRefVideo}
-                                  title={t('generateRefsPreviewHint')}
+                                  title={`${t('generateRefsPreviewHint')} · ${baseName(generateRefVideo)}`}
                                   onClick={() => { setPreviewPath({ path: generateRefVideo, kind: 'video' }); scrollToPane('panePreview') }}
                                 >
                                   <video className="iv-ref-thumb" src={`/outputs/${encodeURIComponent(baseName(generateRefVideo))}`} muted preload="metadata" />
@@ -3456,55 +3480,77 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           ? null
                           : <span className="iv-meta" data-video-edit-pending="true">{t('videoEditPending')}</span>}
                       </div>
-                      {/* 视频参数：比例 / 时长 / 模型——常驻一行，默认跟随整体配置，可逐项重选 */}
-                      <div className="iv-model-row iv-model-row--inline" data-video-advanced="true">
-                        <span className="iv-meta">{t('defaultVideoAspectRatio')}：</span>
-                        <select
-                          className="iv-select iv-select--sm"
-                          aria-label={t('defaultVideoAspectRatio')}
-                          data-generate-aspect="true"
-                          value={generateAspect}
-                          disabled={generating !== undefined}
-                          onChange={event => setGenerateAspect(event.target.value)}
-                        >
-                          {generateParameterOptions('videoAspectRatio').map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                        <span className="iv-meta">{t('defaultVideoDuration')}：</span>
-                        <select
-                          className="iv-select iv-select--sm"
-                          aria-label={t('defaultVideoDuration')}
-                          data-generate-duration="true"
-                          value={generateDuration}
-                          disabled={generating !== undefined}
-                          onChange={event => setGenerateDuration(event.target.value)}
-                        >
-                          {generateParameterOptions('videoDuration').map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                        <span className="iv-meta">{t('generateVideoModel')}：</span>
-                        <ModelPicker
-                          api={apiRef.current} t={t} mediaMode="video"
-                          value={generateVideoModel} onChange={setGenerateVideoModel}
-                          disabled={generating !== undefined}
-                        />
-                      </div>
+                      {/* 视频参数比生图多，默认展开；结构与生图一致，2 列 grid */}
+                      <details className="iv-advanced" data-video-advanced="true" open>
+                        <summary className="iv-advanced-head">
+                          <Icon name="sliders" size={14} />
+                          <span className="iv-advanced-title">{t('quickAdvanced')}</span>
+                          <span className="iv-advanced-defaults">
+                            {t('quickAdvancedDefaults')
+                              .replace('{model}', generateVideoModel || '—')
+                              .replace('{size}', generateAspect || '—')}
+                          </span>
+                          <Icon className="iv-advanced-caret" name="chevron" size={10} />
+                        </summary>
+                        <div className="iv-advanced-body">
+                          <div className="iv-advanced-grid">
+                            <div className="iv-qc-field">
+                              <label className="iv-qc-field-label">{t('defaultVideoAspectRatio')}</label>
+                              <select
+                                className="iv-select"
+                                aria-label={t('defaultVideoAspectRatio')}
+                                data-generate-aspect="true"
+                                value={generateAspect}
+                                disabled={generating !== undefined}
+                                onChange={event => setGenerateAspect(event.target.value)}
+                              >
+                                {generateParameterOptions('videoAspectRatio').map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="iv-qc-field">
+                              <label className="iv-qc-field-label">{t('defaultVideoDuration')}</label>
+                              <select
+                                className="iv-select"
+                                aria-label={t('defaultVideoDuration')}
+                                data-generate-duration="true"
+                                value={generateDuration}
+                                disabled={generating !== undefined}
+                                onChange={event => setGenerateDuration(event.target.value)}
+                              >
+                                {generateParameterOptions('videoDuration').map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="iv-qc-field iv-qc-field--wide">
+                              <label className="iv-qc-field-label">{t('generateVideoModel')}</label>
+                              <ModelPicker
+                                api={apiRef.current} t={t} mediaMode="video"
+                                value={generateVideoModel} onChange={setGenerateVideoModel}
+                                disabled={generating !== undefined}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </details>
                       <div className="iv-gen-actions" data-generate-actions="true">
+                        <div className="iv-gen-separator" aria-hidden="true" />
                         <button
                           type="button"
                           className={`iv-btn iv-btn--lg iv-gen-btn${generating === 'video' ? ' iv-btn--danger' : ' iv-btn--acc'}`}
                           aria-busy={generating === 'video' ? true : undefined}
                           data-generate-video="true"
-                          disabled={generating === 'image' || activeId === undefined || (generating !== 'video' && generatePrompt.trim() === '')}
+                          disabled={generating === 'image' || activeId === undefined || (generating === 'video' && cancelling) || (generating !== 'video' && generatePrompt.trim() === '')}
                           onClick={() => {
-                            if (generating === 'video') { if (generateTaskId !== undefined) void apiRef.current.cancelTask(generateTaskId); return }
+                            if (generating === 'video') { cancelGenerate(); return }
                             void runGenerate('video')
                           }}
                         >
-                          {generating === 'video' ? t('generateCancel') : t('generateVideo')}
+                          {generating === 'video' ? (cancelling ? t('generateCancelling') : t('generateCancel')) : t('generateVideo')}
                         </button>
+                        <span className="iv-gen-shortcut" aria-hidden="true">{t('quickGenShortcut')}</span>
                       </div>
                     </div>
                       )}
@@ -3573,6 +3619,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </span>
                           </div>
                         )}
+
                   </div>
                     </div>
                   </section>

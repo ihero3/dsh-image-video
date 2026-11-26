@@ -85,7 +85,7 @@ describe('F3 generation progress (B-2)', () => {
     }, { timeout: 12_000 })
   })
 
-  it('ticks the elapsed clock for a synchronous image generation', async () => {
+  it('falls back to the local click clock when the host answers an image at once', async () => {
     const { host } = renderQuick()
     let release = (): void => {}
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -98,7 +98,7 @@ describe('F3 generation progress (B-2)', () => {
     await typePrompt()
     fireEvent.click(screen.getByRole('button', { name: en.generateImage }))
 
-    // 同步图片没有 taskId：用本地点击时间起步，秒表每秒推一次
+    // 宿主直接返回产物（没有 pending/taskId）：用本地点击时间起步，秒表每秒推一次
     await waitFor(() => { expect(screen.getByText('Generating · 0s')).toBeTruthy() })
     await waitFor(() => { expect(screen.getByText('Generating · 1s')).toBeTruthy() }, { timeout: 3000 })
 

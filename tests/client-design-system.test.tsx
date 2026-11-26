@@ -302,7 +302,8 @@ describe('视觉层级契约（R7）', () => {
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
 
     // 提示词：必须带 iv-textarea，否则会被 .iv-input{height:23px} 压成单行
-    const prompt = view.container.querySelector('.iv-create textarea') as HTMLTextAreaElement
+    // v1.2：改用 data-* 契约取元素，不再依赖 .iv-create 这个已重命名的类名
+    const prompt = view.container.querySelector('[data-generate-prompt="true"]') as HTMLTextAreaElement
     expect(prompt, '主创提示词应是 textarea').toBeTruthy()
     expect(prompt.classList.contains('iv-textarea')).toBe(true)
 

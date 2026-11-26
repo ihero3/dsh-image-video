@@ -332,21 +332,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   border:1px solid var(--iv-line-2);color:var(--iv-tx3);white-space:nowrap}
 /* 工作台/composer 改过的值用动作色点出来，和"设置里的默认"一眼可分 */
 .iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
-.iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
-/* 生成动作行：每页只有一个主按钮并占满整行；生成中就地变「取消生成」 */
-.iv-gen-actions{display:flex;gap:var(--iv-sp-4);min-width:0}
-.iv-gen-btn{flex:1 1 0;min-width:0;justify-content:center}
-/* 参考图 chip 的"缩略图 + 文件名"预览按钮：名字本身认不出图，点一下就能看 */
-.iv-ref-open{display:inline-flex;align-items:center;gap:var(--iv-sp-2);min-width:0;max-width:220px;
-  padding:1px 4px;border:1px solid transparent;border-radius:var(--iv-r-sm);background:transparent;
-  color:var(--iv-tx);font:inherit;cursor:pointer}
-.iv-ref-open:hover{border-color:var(--iv-line-2);background:var(--iv-panel-3)}
-.iv-storage{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-3);min-width:0}
-.iv-ref-thumb-btn{display:inline-flex;align-items:center;justify-content:center;padding:0;border:1px solid var(--iv-line-2);
-  border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
-.iv-ref-thumb{width:22px;height:16px;object-fit:cover;border-radius:var(--iv-r-xs);display:block}
-.iv-ref-thumb-btn:hover{border-color:var(--iv-acc)}
-.iv-def-src{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 40%,transparent)}
+.iv-def[data-default-source=override] .iv-def-src{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 40%,transparent)}
 .iv-def+.iv-def::before{content:"";width:1px;height:9px;background:var(--iv-line-2);margin-right:10px;align-self:center}
 /* 触发按钮本身不建定位上下文：弹层挂到摘要条上，位置只跟栏宽有关 */
 .iv-pop{display:inline-flex}

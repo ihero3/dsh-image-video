@@ -58,7 +58,7 @@ describe('页面 · 模块化分区', () => {
     const { view } = await renderQuick()
     const quickModules = [...view.container.querySelectorAll('[data-quick-modules] > [data-module]')]
     expect(quickModules.map(element => element.getAttribute('data-module'))).toEqual(['quick'])
-    expect(quickModules[0]!.querySelector('.iv-module-n')?.textContent).toBe('1')
+    // v1.2：编号徽标 .iv-module-n 已删除；标题作为纯元数据由 hidden span 承载
     expect(quickModules[0]!.querySelector('[data-module-title="quick"]')?.textContent).toBe(en.moduleQuick)
 
     // 「剧本生成」是独立模式页：① 剧本 → 成片、② 本集工作区（并列）
@@ -115,18 +115,14 @@ describe('页面 · 模块化分区', () => {
     expect(backBox.value).toBe('雨夜霓虹，一名撑伞的少女')
   })
 
-  it('collapses a whole module from the toggle at the far right of its header (2026-11-05)', async () => {
+  it('collapses the script module from the toggle at the far right of its header (2026-11-05)', async () => {
     const { view } = await renderQuick()
     const body = (key: string): HTMLElement => view.container.querySelector(`[data-module-body="${key}"]`) as HTMLElement
     const toggle = (key: string): HTMLElement => view.container.querySelector(`[data-module-toggle="${key}"]`) as HTMLElement
 
-    // 快速创作页：① 默认展开，收起后整块内容藏起来
-    expect(body('quick').hasAttribute('hidden')).toBe(false)
-    fireEvent.click(toggle('quick'))
-    await waitFor(() => { expect(body('quick').hasAttribute('hidden')).toBe(true) })
-    expect(toggle('quick').getAttribute('aria-expanded')).toBe('false')
+    // v1.2：快速创作页的 module 折叠已移除（表单直接平铺），只保留剧本页的折叠能力
 
-    // 剧本生成页：① 同样可整块收起（剧本卡 + 分层结构一起藏起来）
+    // 剧本生成页：① 可整块收起（剧本卡 + 分层结构一起藏起来）
     await switchMode(view, 'modeScript', '[data-module="pipeline"]')
     expect(body('pipeline').hasAttribute('hidden')).toBe(false)
     expect(toggle('pipeline').getAttribute('aria-expanded')).toBe('true')
@@ -140,19 +136,8 @@ describe('页面 · 模块化分区', () => {
     await waitFor(() => { expect(body('pipeline').hasAttribute('hidden')).toBe(false) })
   })
 
-  it('clicking anywhere on the module header row toggles it (2026-11-05)', async () => {
-    const { view } = await renderQuick()
-    const head = view.container.querySelector('[data-module-toggle="quick"]') as HTMLButtonElement
-    const body = view.container.querySelector('[data-module-body="quick"]') as HTMLElement
-    // 整行就是一个 button：点标题文字区域（不是右边那枚小胶囊）也要能收起
-    expect(head.tagName).toBe('BUTTON')
-    const title = head.querySelector('[data-module-title="quick"]') as HTMLElement
-    fireEvent.click(title)
-    await waitFor(() => { expect(body.hasAttribute('hidden')).toBe(true) })
-    expect(head.getAttribute('aria-expanded')).toBe('false')
-    fireEvent.click(title)
-    await waitFor(() => { expect(body.hasAttribute('hidden')).toBe(false) })
-  })
+  // v1.2：原「点 module 标题行折叠」用例已删除——快速创作页不再有折叠按钮。
+  // 剧本页的同类行为由上一个用例覆盖；module 骨架仍由结构断言守住。
 
   it('keeps 模型详情 at shell level, collapsed by default, between params and the notice (2026-11-06)', async () => {
     // 需要参数条存在（它只在宿主给了 defaults 时渲染），所以这里单独造 host

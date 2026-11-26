@@ -17,9 +17,9 @@ describe('B10 empty states and onboarding', () => {
   it('no longer shows the 3-step onboarding guide (deleted on 2026-11-05)', async () => {
     const host = fakeApi()
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
-    await waitFor(() => { expect(screen.getByText(en.moduleQuickDesc)).toBeTruthy() })
-    // 引导三步已删；模块头的一句话说明还在（承担"这页是干什么的"）
-    // 三步引导整块已删（.iv-steps 不再渲染）
+    // v1.2 紧凑表单：quick 页不再在模块头堆说明文字，等生成区挂载即可断言结构
+    await waitFor(() => { expect(view.container.querySelector('[data-quick-modules]')).toBeTruthy() })
+    // 引导三步与「生成快捷入口」都已删，不再回来
     expect(view.container.querySelector('.iv-steps')).toBeNull()
     expect(view.container.querySelector('[data-generate-shortcut]')).toBeNull()
   })

@@ -10,3 +10,4 @@ _commit_msg.txt
 # 视觉回归：基线 PNG 入库，新采图与标红图不入库（每次改样式都变）
 docs/ui-baseline/current/
 docs/ui-baseline/diff/
+.workbuddy/memory/2026-11-26.md
