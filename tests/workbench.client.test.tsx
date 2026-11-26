@@ -309,7 +309,8 @@ describe('workbench project and asset flow', () => {
     })
 
     // 字幕样式 + 烧录开关都会落库
-    fireEvent.change(view.container.querySelector('[data-timeline-track="subtitle"] input[type="color"]') as HTMLElement, {
+    // 字幕样式控件随 D3 移入片段检查器（片段条只留位置/内容/手柄）
+    fireEvent.change(view.container.querySelector('[data-timeline-clip-inspector] input[type="color"]') as HTMLElement, {
       target: { value: '#ffcc00' },
     })
     fireEvent.click(view.container.querySelector('[data-timeline-burn]') as HTMLElement)

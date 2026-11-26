@@ -12,7 +12,7 @@
  * colours resolve through the Harness design tokens with currentColor-mix
  * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the main-panel slot declarations this body registers under.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -1323,12 +1323,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     }))
   }
 
-  /** 末尾追加一个 clip（起点接在该轨当前末尾）。 */
+  /**
+   * 末尾追加一个 clip（起点接在该轨当前末尾），并把它设为选中：
+   * 刚加进来的片段理应成为检查器的对象（`TIMELINE-PANE-REDESIGN` §2.4「加入片段」）。
+   */
   const appendClip = (trackId: string, clip: { assetPath?: string; text?: string }): void => {
-    const stamp = new Date().toISOString()
+    const id = nextClipId()
     patchTrack(trackId, track => {
       const end = track.clips.reduce((longest, existing) => Math.max(longest, existing.startMs + existing.durationMs), 0)
-      const id = `clip-${Date.now().toString(36)}-${track.clips.length}`
       return {
         ...track,
         clips: [...track.clips, {
@@ -1338,7 +1340,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         }],
       }
     })
-    void stamp
+    setSelectedClipId(id)
   }
 
   /**
@@ -1435,10 +1437,43 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [selectedClipId, setSelectedClipId] = useState<string | undefined>(undefined)
   /** 正在拖的手柄（窗口级 mousemove/mouseup 期间活着）。 */
   const [resizing, setResizing] = useState<{ trackId: string; clipId: string; side: 'left' | 'right'; startX: number } | undefined>(undefined)
+  /**
+   * 片段检查器（D3/M2）：选中片段优先；**未选中时展示第一段**（fallback=true，不写选中态），
+   * 这样「进页面就能改参数」与「进页面就有片段被选中」两件事解耦。
+   */
+  const clipEntries = timeline === undefined
+    ? []
+    : timeline.tracks.flatMap(track => track.clips.map(clip => ({ track, clip })))
+  const inspectedEntry = clipEntries.find(entry => entry.clip.id === selectedClipId) ?? clipEntries[0]
+  const inspectorFallback = selectedClipId === undefined && inspectedEntry !== undefined
+  const inspected = inspectedEntry
+  /**
+   * 改检查器里的参数：首次修改即把该片段写入选中态，避免「改了参数但不知道改的是哪一段」。
+   * @param update - 片段更新函数。
+   */
+  const ifInspected = (update: (clip: TimelineClip) => TimelineClip): void => {
+    if (inspected === undefined) return
+    setSelectedClipId(inspected.clip.id)
+    patchClip(inspected.track.id, inspected.clip.id, update)
+  }
+  /**
+   * 删掉指定片段（检查器用）；删的是当前选中项时清掉选中，让检查器回落到下一段。
+   * @param trackId - 轨道 id。
+   * @param clipId - 片段 id。
+   */
+  const removeClip = (trackId: string, clipId: string): void => {
+    patchTrack(trackId, track => ({ ...track, clips: track.clips.filter(clip => clip.id !== clipId) }))
+    if (selectedClipId === clipId) setSelectedClipId(undefined)
+  }
   /** 轨道 lane 的 DOM 引用（量 rect 用：像素 ↔ 毫秒的换算基准）。 */
   const laneRefs = useRef(new Map<string, HTMLElement>())
   /** 顺序播放开关。 */
   const [playing, setPlaying] = useState(false)
+  /** 时间轴缩放（0.5×–3×）：只放大内层宽度，片段仍是百分比定位，拖拽换算仍以 lane rect 为准。 */
+  const [tlZoom, setTlZoom] = useState(1)
+  /** 横向滚动容器与播放头层（缩放后把播放头所在时间点重新居中）。 */
+  const tlScrollRef = useRef<HTMLDivElement | null>(null)
+  const tlLaneLayerRef = useRef<HTMLDivElement | null>(null)
 
   /** 素材行开始拖拽：路径 + 媒体类型放进 dataTransfer。 */
   const onAssetDragStart = (event: ReactDragEvent, asset: AssetRecord): void => {
@@ -1696,6 +1731,25 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   useEffect(() => {
     if (mode !== 'timeline') setPlaying(false)
   }, [mode])
+
+  /** 刻度数量随缩放变化：放大才需要更密的参考点（6 / 8 / 12 格）。 */
+  const tlTickCount = tlZoom <= 1.2 ? 6 : tlZoom <= 2 ? 8 : 12
+  const tlTicks = Array.from({ length: tlTickCount + 1 }, (_, index) => index / tlTickCount)
+  const tlInnerStyle = { '--iv-tl-zoom': String(tlZoom) } as CSSProperties
+  /** 检查器里选中的片段能否在播放头处分割（与片段上的按钮同口径）。 */
+  const splitInsideInspected = inspected !== undefined
+    && playheadMs > inspected.clip.startMs
+    && playheadMs < inspected.clip.startMs + effectiveDurationMs(inspected.clip)
+
+  // 缩放后把播放头所在时间点重新居中；只依赖 tlZoom（播放推进时不能抢用户的横向滚动位置）
+  useEffect(() => {
+    const scroller = tlScrollRef.current
+    const layer = tlLaneLayerRef.current
+    if (scroller === null || layer === null) return
+    const ratio = Math.min(1, playheadMs / Math.max(1, timelineTotal))
+    scroller.scrollLeft = Math.max(0, layer.offsetLeft + ratio * layer.offsetWidth - scroller.clientWidth / 2)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tlZoom])
 
   // B5/B13 时间轴快捷键：空格播放/暂停、Delete 删除选中片段。
   // 输入控件里不劫持（让用户正常改数字）。
@@ -4011,7 +4065,519 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <Icon name="clock" />
                       {t('timelineTotal')} {Math.round(timelineDurationMs(timeline.tracks) / 1000)}s
                     </span>
+                    {/* D5：ffmpeg 收进 pane 头一枚色点 chip；只有不可用时才展开说明（含下一步动作） */}
+                    <div
+                      className="iv-tl-ffmpeg"
+                      data-timeline-ffmpeg={ffmpeg === undefined ? 'unknown' : ffmpeg.available ? 'ok' : ffmpeg.code ?? 'unavailable'}
+                    >
+                      <span className={`iv-chip iv-tl-ffmpeg-chip${ffmpeg !== undefined && ffmpeg.available ? ' iv-chip--ok' : ffmpeg === undefined ? '' : ' iv-chip--err'}`}>
+                        <i className="iv-dot" aria-hidden="true" />
+                        {ffmpeg === undefined ? '…' : ffmpeg.available ? `${t('ffmpegOk')} ${ffmpeg.version ?? ''}`.trim() : t('healthFailed')}
+                      </span>
+                      {ffmpeg !== undefined && !ffmpeg.available
+                        ? <span className="iv-meta iv-tl-ffmpeg-msg" title={ffmpeg.message ?? ''}>{ffmpeg.message ?? ''}</span>
+                        : null}
+                      <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm iv-btn--icon"
+                        aria-label={t('ffmpegRecheck')} title={t('ffmpegRecheck')}
+                        onClick={() => { void recheckFfmpeg() }}>
+                        <Icon name="refresh" size={11} />
+                      </button>
+                    </div>
                     <div className="iv-pane-actions">
+                      <span className={saveChipClass(timelineState)} data-timeline-save={timelineState} role="status">
+                        <i className="iv-dot" aria-hidden="true" />
+                        {t(timelineState === 'dirty' ? 'saveDirty' : timelineState === 'saving' ? 'saveSaving' : timelineState === 'failed' ? 'saveFailed' : 'saveSaved')}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="iv-tl-pane">
+                  {/* 节目监视器：整列里唯一可伸缩的元素 —— 「监视器 + 轨道同屏」由布局保证，不靠魔法数字 */}
+                  <div className="iv-monitor" data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
+                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}>
+                    {activeVideo?.assetPath === undefined
+                      ? <span className="iv-meta iv-mon-idle">{t('previewIdle')}</span>
+                      : /\.(png|jpe?g|webp|gif)$/i.test(activeVideo.assetPath)
+                        ? <img src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} alt="" />
+                        : <video src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} muted />}
+                    <span className="iv-mon-tc">{timecode(playheadMs)} / {timecode(timelineTotal)}</span>
+                    <span className="iv-mon-badge">{t('monitorProgram')}</span>
+                    {activeSubtitle?.text === undefined ? null : (
+                      <span data-timeline-subtitle-preview="true"
+                        className="iv-mon-sub"
+                        style={{
+                          // 成片字幕恒白/自选色：预览必须等于导出结果，不跟主题走
+                          fontSize: `${Math.max(11, Math.min(26, Math.round((activeSubtitle.style?.fontSize ?? 32) / 2)))}px`,
+                          color: activeSubtitle.style?.color ?? '#ffffff',
+                          ...(activeSubtitle.style?.position ?? 'bottom') === 'bottom' ? { bottom: '9px' } : {},
+                          ...activeSubtitle.style?.position === 'top' ? { top: '9px' } : {},
+                          ...activeSubtitle.style?.position === 'middle' ? { top: '50%', transform: 'translateY(-50%)' } : {},
+                        }}>
+                        {activeSubtitle.text}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* transport：播放 / 时间码 / 拖播放头 / 真缩放（D6） */}
+                  <div className="iv-transport">
+                    <button type="button" className="iv-tp-btn iv-tp-btn--play" data-timeline-play="true"
+                      aria-label={playing ? t('transportPause') : t('transportPlay')}
+                      title={playing ? t('transportPause') : t('transportPlay')}
+                      aria-pressed={playing}
+                      onClick={togglePlay}>
+                      <Icon name={playing ? 'pause' : 'play'} size={11} />
+                    </button>
+                    <span className="iv-tc-now">{timecode(playheadMs)}</span>
+                    <input type="range" className="iv-scrub" data-timeline-playhead="true" min={0} max={Math.max(1, timelineTotal)}
+                      value={playheadMs} aria-label={t('playhead')}
+                      onChange={event => { setPreviewMs(Number(event.target.value)) }} />
+                    <span className="iv-tc-total">/ {timecode(timelineTotal)}</span>
+                    <span className="iv-zoom">
+                      <Icon name="search" size={11} />
+                      {t('timelineZoom')}
+                      <input className="iv-scrub" type="range" min={50} max={300} step={10}
+                        value={Math.round(tlZoom * 100)} aria-label={t('timelineZoom')} data-timeline-zoom="true"
+                        onChange={event => { setTlZoom(Number(event.target.value) / 100) }} />
+                      <span className="iv-tc-total">{Math.round(tlZoom * 100)}%</span>
+                    </span>
+                  </div>
+
+                  {/* 刻度 + 三轨：缩放只放大内层宽度，片段仍是百分比定位（拖拽换算仍以 lane rect 为准） */}
+                  <div className="iv-tl" data-timeline-tracks="true">
+                    <div className="iv-tl-scroll" ref={tlScrollRef} data-timeline-scroll="true">
+                      <div className="iv-tl-inner" style={tlInnerStyle}>
+                        <div className="iv-ruler" aria-hidden="true">
+                          {tlTicks.map(ratio => (
+                            <i key={`tick-${ratio}`} style={{ left: `${ratio * 100}%` }} />
+                          ))}
+                          {tlTicks.map(ratio => (
+                            <b key={`label-${ratio}`} style={{ left: `${ratio * 100}%` }}>{timecode(timelineTotal * ratio)}</b>
+                          ))}
+                        </div>
+                        <div className="iv-tracks">
+                          {/* 播放头只覆盖轨道区（左边界由 --iv-tl-head-w 一处定义），不再有 46px 的 JS 数学 */}
+                          <div className="iv-tl-lane-layer" ref={tlLaneLayerRef} aria-hidden="true">
+                            <div className="iv-playhead" style={{ left: `${(playheadMs / Math.max(1, timelineTotal)) * 100}%` }} />
+                          </div>
+                          {timeline.tracks.map(track => (
+                            <div key={track.id} className="iv-track" data-timeline-track={track.kind}>
+                              <div className="iv-t-head">
+                                <span className="micro">{t(trackIdKey(track.kind))}</span>
+                                <span className="iv-t-kind">{t(trackKindKey(track.kind))}</span>
+                                {track.kind === 'audio'
+                                  ? (
+                                    <label className="iv-t-fade">
+                                      <span className="micro">{t('trackFade')}</span>
+                                      <input type="number" className="iv-input" min={0} max={MAX_TRACK_FADE_MS} step={50}
+                                        value={track.fadeMs ?? 0} aria-label={t('trackFade')} title={t('trackFade')} data-timeline-track-fade={track.fadeMs ?? 0}
+                                        onChange={event => {
+                                          const fadeMs = Number(event.target.value)
+                                          patchTrack(track.id, current => ({ ...current, fadeMs: Math.max(0, Math.min(MAX_TRACK_FADE_MS, fadeMs)) }))
+                                        }} />
+                                      <span className="micro">ms</span>
+                                    </label>
+                                  )
+                                  : null}
+                              </div>
+                              <div
+                                className={`iv-t-lane${dropTrackId === track.id ? ' iv-t-lane--drop' : ''}`}
+                                data-timeline-lane={track.kind}
+                                ref={element => {
+                                  if (element === null) laneRefs.current.delete(track.id)
+                                  else laneRefs.current.set(track.id, element)
+                                }}
+                                onDragOver={event => {
+                                  // 只有本轨吃得下的载荷才给落点高亮
+                                  const clipDrag = event.dataTransfer.types.includes(CLIP_DRAG_TYPE)
+                                  const assetDrag = event.dataTransfer.types.includes(ASSET_DRAG_TYPE)
+                                    || event.dataTransfer.types.includes('text/plain')
+                                  if (clipDrag || (assetDrag && track.kind !== 'subtitle')) {
+                                    event.preventDefault()
+                                    setDropTrackId(track.id)
+                                  }
+                                }}
+                                onDragLeave={() => { setDropTrackId(current => (current === track.id ? undefined : current)) }}
+                                onDrop={event => { onLaneDrop(event, track) }}
+                              >
+                                {track.clips.length === 0
+                                  ? <p className="iv-meta">{t('timelineEmpty')}</p>
+                                  : (
+                                    <div className="iv-clips">
+                                      {track.clips.map(clip => {
+                                        const ratio = Math.max(1, timelineTotal)
+                                        const left = (clip.startMs / ratio) * 100
+                                        const width = Math.max(1.5, (clip.durationMs / ratio) * 100)
+                                        // `B17`：分割点=播放头，必须严格落在片段内部
+                                        //（与域层 splitClipAt 同口径；两端点上是无效拆分）
+                                        const splitInside = playheadMs > clip.startMs
+                                          && playheadMs < clip.startMs + effectiveDurationMs(clip)
+                                        const label = track.kind === 'subtitle' ? (clip.text ?? '') : baseName(clip.assetPath ?? '')
+                                        const imageClip = track.kind !== 'subtitle' && /\.(png|jpe?g|webp|gif|avif)$/i.test(clip.assetPath ?? '')
+                                        return (
+                                          <div
+                                            key={clip.id}
+                                            className={`iv-clip iv-clip--${track.kind}${selectedClipId === clip.id ? ' iv-clip--sel' : ''}`}
+                                            data-timeline-clip={clip.id}
+                                            data-timeline-clip-kind={track.kind}
+                                            data-timeline-clip-selected={selectedClipId === clip.id ? 'true' : 'false'}
+                                            role="group"
+                                            tabIndex={0}
+                                            aria-label={`${label} · ${(clip.durationMs / 1000).toFixed(1)}s`}
+                                            aria-current={selectedClipId === clip.id ? 'true' : undefined}
+                                            draggable
+                                            onDragStart={event => { onClipDragStart(event, track.id, clip.id) }}
+                                            onClick={() => { setSelectedClipId(clip.id) }}
+                                            onKeyDown={event => {
+                                              if (event.key !== 'Enter' && event.key !== ' ') return
+                                              event.preventDefault()
+                                              event.stopPropagation()
+                                              setSelectedClipId(clip.id)
+                                            }}
+                                            style={{ left: `${left}%`, width: `${width}%` }}
+                                          >
+                                            <div
+                                              className="iv-clip-h iv-clip-h--l"
+                                              data-timeline-clip-handle="left"
+                                              role="separator"
+                                              aria-orientation="vertical"
+                                              aria-label={`${t('clipResizeStart')} ${clip.id}`}
+                                              tabIndex={0}
+                                              aria-valuemin={0}
+                                              aria-valuemax={Math.round(clip.startMs + clip.durationMs - MIN_CLIP_MS)}
+                                              aria-valuenow={Math.round(clip.startMs)}
+                                              aria-valuetext={formatTimecode(clip.startMs)}
+                                              onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'left') }}
+                                              onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'left') }}
+                                            />
+                                            <div
+                                              className="iv-clip-h iv-clip-h--r"
+                                              data-timeline-clip-handle="right"
+                                              role="separator"
+                                              aria-orientation="vertical"
+                                              aria-label={`${t('clipResizeEnd')} ${clip.id}`}
+                                              tabIndex={0}
+                                              aria-valuemin={Math.round(clip.startMs + MIN_CLIP_MS)}
+                                              aria-valuemax={Math.round(clip.startMs + Math.min(MAX_CLIP_DURATION_MS, Math.max(MIN_CLIP_MS, timelineTotal - clip.startMs)))}
+                                              aria-valuenow={Math.round(clip.startMs + clip.durationMs)}
+                                              aria-valuetext={formatTimecode(clip.startMs + clip.durationMs)}
+                                              onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'right') }}
+                                              onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'right') }}
+                                            />
+                                            {imageClip
+                                              ? <img className="iv-clip-thumb" draggable={false}
+                                                src={`/outputs/${encodeURIComponent(baseName(clip.assetPath ?? ''))}`} alt="" loading="lazy" />
+                                              : null}
+                                            <span className="iv-clip-top">
+                                              <Icon name={TRACK_ICONS[track.kind]} size={11} />
+                                              <span className="iv-ellipsis" title={clip.assetPath ?? clip.text ?? ''}>{label}</span>
+                                              <span className="iv-clip-dur">{(clip.durationMs / 1000).toFixed(1)}s</span>
+                                            </span>
+                                            <button type="button" className="iv-clip-split"
+                                              data-timeline-clip-split={clip.id}
+                                              aria-label={`${t('clipSplit')} ${clip.id}`}
+                                              title={splitInside ? t('clipSplit') : t('clipSplitOutsideHint')}
+                                              disabled={!splitInside}
+                                              onClick={event => { event.stopPropagation(); splitClip(clip.id) }}>
+                                              <Icon name="storyboard" size={11} />
+                                            </button>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                {track.kind === 'subtitle'
+                                  ? (
+                                    <>
+                                      <div className="iv-add-row">
+                                        <input className="iv-input" style={{ flex: 1, minWidth: '110px' }}
+                                          placeholder={t('subtitlePlaceholder')} aria-label={t('subtitlePlaceholder')}
+                                          value={subtitleDraft}
+                                          onChange={event => { setSubtitleDraft(event.target.value) }} />
+                                        <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleDraft.trim() === ''}
+                                          aria-label={t('addSubtitle')}
+                                          onClick={() => { appendClip(track.id, { text: subtitleDraft.trim() }); setSubtitleDraft('') }}>
+                                          <Icon name="plus" />{t('addSubtitle')}
+                                        </button>
+                                      </div>
+                                      <div className="iv-add-row" data-timeline-subtitles-batch="true">
+                                        <textarea className="iv-input" rows={2} style={{ flex: 1, minWidth: '140px', resize: 'vertical' }}
+                                          placeholder={t('subtitlesBatchPlaceholder')} aria-label={t('subtitlesBatchPlaceholder')}
+                                          data-timeline-subtitles-batch-input="true"
+                                          value={subtitleBatchDraft}
+                                          onChange={event => { setSubtitleBatchDraft(event.target.value) }} />
+                                        <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleBatchDraft.trim() === ''}
+                                          aria-label={t('subtitlesBatch')} data-timeline-subtitles-batch-apply="true"
+                                          onClick={() => { applyBatchSubtitles(track.id, subtitleBatchDraft); setSubtitleBatchDraft('') }}>
+                                          <Icon name="subtitle" />{t('subtitlesBatch')}
+                                        </button>
+                                      </div>
+                                    </>
+                                  )
+                                  : (
+                                    <div className="iv-add-row">
+                                      <select className="iv-select" aria-label={`${t('pickAsset')} ${track.kind}`} value={clipAssetPath}
+                                        onChange={event => { setClipAssetPath(event.target.value) }}>
+                                        <option value=''>{t('pickAsset')}</option>
+                                        {assets
+                                          .filter(candidate => track.kind === 'audio' ? candidate.kind === 'video' : candidate.kind === track.kind)
+                                          .map(candidate => (
+                                            <option key={candidate.id} value={candidate.path}>{baseName(candidate.path)}</option>
+                                          ))}
+                                      </select>
+                                      <button type="button" className="iv-btn iv-btn--sm" disabled={clipAssetPath === ''}
+                                        aria-label={`${t('addClip')} ${track.kind}`}
+                                        onClick={() => { appendClip(track.id, { assetPath: clipAssetPath }); setClipAssetPath('') }}>
+                                        <Icon name="plus" />{t('addClip')}
+                                      </button>
+                                    </div>
+                                  )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 片段检查器（D3）：选中优先；未选中时「展示」首段（fallback），但不高亮、破坏性动作禁用 */}
+                  <div className="iv-clip-ins" data-timeline-clip-inspector={inspected?.clip.id ?? ''}
+                    data-timeline-clip-inspector-fallback={inspectorFallback ? 'true' : 'false'}>
+                    {inspected === undefined
+                      ? <span className="iv-meta">{t('clipInspectorEmpty')}</span>
+                      : (
+                        <>
+                          <span className="iv-clip-ins-title">
+                            <Icon name={TRACK_ICONS[inspected.track.kind]} size={12} />
+                            <span className="iv-ellipsis">
+                              {inspected.track.kind === 'subtitle' ? (inspected.clip.text ?? '') : baseName(inspected.clip.assetPath ?? '')}
+                            </span>
+                            {inspectorFallback
+                              ? <span className="iv-clip-ins-hint">{t('clipInspectorFallback')}</span>
+                              : null}
+                          </span>
+                          <div className="iv-clip-ins-grid">
+                            <label className="iv-clip-ins-field">
+                              <span>{t('clipStart')}</span>
+                              <input type="number" className="iv-input" value={Math.round(inspected.clip.startMs)}
+                                aria-label={`${t('clipStart')} ${inspected.clip.id}`}
+                                onChange={event => {
+                                  const startMs = Number(event.target.value)
+                                  ifInspected(item => ({ ...item, startMs }))
+                                }} />
+                            </label>
+                            <label className="iv-clip-ins-field">
+                              <span>{t('clipDuration')}</span>
+                              <input type="number" className="iv-input" value={Math.round(inspected.clip.durationMs)}
+                                aria-label={`${t('clipDuration')} ${inspected.clip.id}`}
+                                onChange={event => {
+                                  const durationMs = Number(event.target.value)
+                                  ifInspected(item => ({ ...item, durationMs }))
+                                }} />
+                            </label>
+                            {inspected.track.kind === 'subtitle'
+                              ? (
+                                <>
+                                  <label className="iv-clip-ins-field">
+                                    <span>{t('styleFontSize')}</span>
+                                    <input type="number" className="iv-input" min={8} max={200} value={inspected.clip.style?.fontSize ?? 32}
+                                      aria-label={`${t('styleFontSize')} ${inspected.clip.id}`}
+                                      onChange={event => {
+                                        const fontSize = Number(event.target.value)
+                                        ifInspected(item => ({ ...item, style: { ...item.style, fontSize } }))
+                                      }} />
+                                  </label>
+                                  <label className="iv-clip-ins-field">
+                                    <span>{t('styleColor')}</span>
+                                    <input type="color" className="iv-color" value={inspected.clip.style?.color ?? '#ffffff'}
+                                      aria-label={`${t('styleColor')} ${inspected.clip.id}`}
+                                      onChange={event => {
+                                        const color = event.target.value
+                                        ifInspected(item => ({ ...item, style: { ...item.style, color } }))
+                                      }} />
+                                  </label>
+                                  <label className="iv-clip-ins-field">
+                                    <span>{t('stylePosition')}</span>
+                                    <select className="iv-select" value={inspected.clip.style?.position ?? 'bottom'}
+                                      aria-label={`${t('stylePosition')} ${inspected.clip.id}`}
+                                      onChange={event => {
+                                        const position = event.target.value as 'top' | 'middle' | 'bottom'
+                                        ifInspected(item => ({ ...item, style: { ...item.style, position } }))
+                                      }}>
+                                      <option value="top">top</option>
+                                      <option value="middle">middle</option>
+                                      <option value="bottom">bottom</option>
+                                    </select>
+                                  </label>
+                                </>
+                              )
+                              : (
+                                <>
+                                  <label className="iv-clip-ins-field">
+                                    <span>{t('clipSpeed')}</span>
+                                    <input type="number" className="iv-input" min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
+                                      value={inspected.clip.speed ?? 1} aria-label={`${t('clipSpeed')} ${inspected.clip.id}`}
+                                      onChange={event => {
+                                        const speed = Number(event.target.value)
+                                        ifInspected(item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
+                                      }} />
+                                  </label>
+                                  <label className="iv-clip-ins-field">
+                                    <span>{t('clipFade')}</span>
+                                    <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
+                                      value={inspected.clip.fade ?? 0} aria-label={`${t('clipFade')} ${inspected.clip.id}`}
+                                      onChange={event => {
+                                        const fade = Number(event.target.value)
+                                        ifInspected(item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
+                                      }} />
+                                  </label>
+                                  {inspected.track.kind === 'video'
+                                    ? (
+                                      <>
+                                        <label className="iv-clip-ins-field">
+                                          <span>{t('clipTransition')}</span>
+                                          <select className="iv-select" value={inspected.clip.transition ?? ''}
+                                            aria-label={`${t('clipTransition')} ${inspected.clip.id}`}
+                                            onChange={event => {
+                                              const transition = event.target.value === '' ? undefined : event.target.value as ClipTransition
+                                              ifInspected(item => ({ ...item, ...transition === undefined ? { transition: undefined } : { transition } }))
+                                            }}>
+                                            <option value="">{t('none')}</option>
+                                            <option value="fade">{t('transitionFade')}</option>
+                                            <option value="wipeleft">{t('transitionWipeleft')}</option>
+                                            <option value="circleopen">{t('transitionCircleopen')}</option>
+                                          </select>
+                                        </label>
+                                        {inspected.clip.transition === undefined
+                                          ? null
+                                          : (
+                                            <label className="iv-clip-ins-field">
+                                              <span>{t('clipTransitionDuration')}</span>
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_TRANSITION_MS} step={50}
+                                                value={inspected.clip.transitionDurationMs ?? 400}
+                                                aria-label={`${t('clipTransitionDuration')} ${inspected.clip.id}`}
+                                                onChange={event => {
+                                                  const transitionDurationMs = Number(event.target.value)
+                                                  ifInspected(item => ({ ...item, transitionDurationMs: Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, transitionDurationMs)) }))
+                                                }} />
+                                            </label>
+                                          )}
+                                        {inspected.clip.crop === undefined
+                                          ? (
+                                            <button type="button" className="iv-btn iv-btn--sm"
+                                              aria-label={`${t('clipCrop')} ${inspected.clip.id}`} title={t('clipCrop')}
+                                              onClick={() => { ifInspected(item => ({ ...item, crop: { x: 0, y: 0, width: 1920, height: 1080 } })) }}>
+                                              <Icon name="sliders" size={11} />{t('clipCrop')}
+                                            </button>
+                                          )
+                                          : (
+                                            <>
+                                              <label className="iv-clip-ins-field">
+                                                <span>{t('clipCropX')}</span>
+                                                <input type="number" className="iv-input" min={0} value={inspected.clip.crop.x}
+                                                  aria-label={`${t('clipCropX')} ${inspected.clip.id}`}
+                                                  onChange={event => {
+                                                    const x = Math.max(0, Number(event.target.value))
+                                                    ifInspected(item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x } }))
+                                                  }} />
+                                              </label>
+                                              <label className="iv-clip-ins-field">
+                                                <span>{t('clipCropY')}</span>
+                                                <input type="number" className="iv-input" min={0} value={inspected.clip.crop.y}
+                                                  aria-label={`${t('clipCropY')} ${inspected.clip.id}`}
+                                                  onChange={event => {
+                                                    const y = Math.max(0, Number(event.target.value))
+                                                    ifInspected(item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y } }))
+                                                  }} />
+                                              </label>
+                                              <label className="iv-clip-ins-field">
+                                                <span>{t('clipCropW')}</span>
+                                                <input type="number" className="iv-input" min={2} step={2} value={inspected.clip.crop.width}
+                                                  aria-label={`${t('clipCropW')} ${inspected.clip.id}`}
+                                                  onChange={event => {
+                                                    const width = Math.max(2, Number(event.target.value))
+                                                    ifInspected(item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width } }))
+                                                  }} />
+                                              </label>
+                                              <label className="iv-clip-ins-field">
+                                                <span>{t('clipCropH')}</span>
+                                                <input type="number" className="iv-input" min={2} step={2} value={inspected.clip.crop.height}
+                                                  aria-label={`${t('clipCropH')} ${inspected.clip.id}`}
+                                                  onChange={event => {
+                                                    const height = Math.max(2, Number(event.target.value))
+                                                    ifInspected(item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height } }))
+                                                  }} />
+                                              </label>
+                                              <button type="button" className="iv-btn iv-btn--sm"
+                                                aria-label={`${t('clipCropRemove')} ${inspected.clip.id}`} title={t('clipCropRemove')}
+                                                onClick={() => { ifInspected(item => ({ ...item, crop: undefined })) }}>
+                                                <Icon name="x" size={11} />
+                                              </button>
+                                            </>
+                                          )}
+                                      </>
+                                    )
+                                    : null}
+                                </>
+                              )}
+                          </div>
+                          <div className="iv-clip-ins-actions">
+                            <button type="button" className="iv-btn iv-btn--sm"
+                              aria-label={`${t('clipSplit')} ${inspected.clip.id}`}
+                              title={splitInsideInspected ? t('clipSplit') : t('clipSplitOutsideHint')}
+                              disabled={inspectorFallback || !splitInsideInspected}
+                              onClick={() => { splitClip(inspected.clip.id) }}>
+                              <Icon name="storyboard" size={11} />{t('clipSplit')}
+                            </button>
+                            <button type="button" className="iv-btn iv-btn--sm"
+                              aria-label={`${t('clipDuplicate')} ${inspected.clip.id}`} title={t('clipDuplicate')}
+                              disabled={inspectorFallback}
+                              onClick={() => { duplicateClip(inspected.clip.id) }}>
+                              <Icon name="copy" size={11} />{t('clipDuplicate')}
+                            </button>
+                            <button type="button" className="iv-btn iv-btn--sm"
+                              aria-label={`${t('remove')} ${inspected.clip.id}`} title={t('remove')}
+                              disabled={inspectorFallback}
+                              onClick={() => { removeClip(inspected.track.id, inspected.clip.id) }}>
+                              <Icon name="trash" size={11} />{t('remove')}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                  </div>
+
+                  {/* 导出条（D1）：常驻轨道下方，参数行 + 动作/结果行；导出中参数置灰 */}
+                  <div className="iv-tl-export" data-timeline-export-bar="true" data-busy={renderRunning ? 'true' : 'false'}>
+                    <div className="iv-tl-params">
+                      <label className="iv-field">
+                        <span className="iv-field-label">{t('paramResolution')}</span>
+                        <select className="iv-select iv-select--sm" data-timeline-export-resolution="true" aria-label={t('paramResolution')}
+                          value={exportResolution} onChange={event => { setExportResolution(event.target.value); setAssetRegistered(false) }}>
+                          <option value="default">{t('resolutionDefault')}</option>
+                          <option value="480">{t('resolution480')}</option>
+                          <option value="768">{t('resolution768')}</option>
+                          <option value="2k">{t('resolution2k')}</option>
+                        </select>
+                      </label>
+                      <label className="iv-field">
+                        <span className="iv-field-label">{t('fps')}</span>
+                        <select className="iv-select iv-select--sm" data-timeline-export-fps="true" aria-label={t('fps')}
+                          value={exportFps} onChange={event => { setExportFps(Number(event.target.value)); setAssetRegistered(false) }}>
+                          <option value={24}>24</option>
+                          <option value={25}>25</option>
+                          <option value={30}>30</option>
+                          <option value={60}>60</option>
+                        </select>
+                      </label>
+                      <label className="iv-field">
+                        <span className="iv-field-label">{t('paramRatio')}</span>
+                        <select className="iv-select iv-select--sm" data-timeline-export-aspect="true" aria-label={t('paramRatio')}
+                          value={exportAspect} onChange={event => { setExportAspect(event.target.value); setAssetRegistered(false) }}>
+                          <option value="landscape">{t('ratioLandscape')}</option>
+                          <option value="portrait">{t('ratioPortrait')}</option>
+                          <option value="square">{t('ratioSquare')}</option>
+                          <option value="vertical">{t('ratioVertical')}</option>
+                        </select>
+                      </label>
                       <label className="iv-check">
                         <input type="checkbox" data-timeline-burn="true" checked={timeline.burnSubtitles}
                           aria-label={t('burnSubtitles')}
@@ -4032,521 +4598,101 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           }} />
                         {t('normalizeLoudness')}
                       </label>
-                      <span className={saveChipClass(timelineState)} data-timeline-save={timelineState} role="status">
-                        <i className="iv-dot" aria-hidden="true" />
-                        {t(timelineState === 'dirty' ? 'saveDirty' : timelineState === 'saving' ? 'saveSaving' : timelineState === 'failed' ? 'saveFailed' : 'saveSaved')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* ffmpeg 状态行 */}
-                  <div className="iv-toolbar" data-timeline-ffmpeg={ffmpeg === undefined ? 'unknown' : ffmpeg.available ? 'ok' : ffmpeg.code ?? 'unavailable'}>
-                    <span className={`iv-chip${ffmpeg !== undefined && ffmpeg.available ? ' iv-chip--ok' : ffmpeg === undefined ? '' : ' iv-chip--err'}`}>
-                      <i className="iv-dot" aria-hidden="true" />
-                      {ffmpeg === undefined
-                        ? '…'
-                        : ffmpeg.available
-                          ? `${t('ffmpegOk')} ${ffmpeg.version ?? ''}`
-                          : t('healthFailed')}
-                    </span>
-                    <span className="iv-meta iv-ellipsis" style={{ flex: 1 }} title={ffmpeg?.path ?? ffmpeg?.message ?? ''}>
-                      {ffmpeg === undefined ? '' : ffmpeg.available ? ffmpeg.path ?? '' : ffmpeg.message ?? ''}
-                    </span>
-                    <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => { void recheckFfmpeg() }}>
-                      <Icon name="refresh" />{t('ffmpegRecheck')}
-                    </button>
-                  </div>
-
-                  {/* B-13 逐段预览 */}
-                  <div className="iv-toolbar iv-seg-wrap">
-                    <span className="iv-meta">{t('segPreviewTitle')}</span>
-                    <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)} />
-                  </div>
-
-
-                  {/* 导出操作行 */}
-                  <div className="iv-toolbar iv-toolbar--export">
-                    {/* B6 分辨率 / 帧率 / 宽高比选择 */}
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('paramResolution')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-resolution="true" aria-label={t('paramResolution')}
-                        value={exportResolution} onChange={event => { setExportResolution(event.target.value); setAssetRegistered(false) }}>
-                        <option value="default">{t('resolutionDefault')}</option>
-                        <option value="480">{t('resolution480')}</option>
-                        <option value="768">{t('resolution768')}</option>
-                        <option value="2k">{t('resolution2k')}</option>
-                      </select>
-                    </label>
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('fps')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-fps="true" aria-label={t('fps')}
-                        value={exportFps} onChange={event => { setExportFps(Number(event.target.value)); setAssetRegistered(false) }}>
-                        <option value={24}>24</option>
-                        <option value={25}>25</option>
-                        <option value={30}>30</option>
-                        <option value={60}>60</option>
-                      </select>
-                    </label>
-                    <label className="iv-field">
-                      <span className="iv-field-label">{t('paramRatio')}</span>
-                      <select className="iv-select iv-select--sm" data-timeline-export-aspect="true" aria-label={t('paramRatio')}
-                        value={exportAspect} onChange={event => { setExportAspect(event.target.value); setAssetRegistered(false) }}>
-                        <option value="landscape">{t('ratioLandscape')}</option>
-                        <option value="portrait">{t('ratioPortrait')}</option>
-                        <option value="square">{t('ratioSquare')}</option>
-                        <option value="vertical">{t('ratioVertical')}</option>
-                      </select>
-                    </label>
-
-                    <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
-                      aria-busy={renderRunning ? 'true' : undefined}
-                      disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
-                      onClick={() => {
-                        setAssetRegistered(false)
-                        void run(async () => {
-                          // `B-16`：先记一笔导出账（遥测性质，记账失败不挡导出本身）
-                          try {
-                            const attempt = await apiRef.current.recordExport({
-                              projectId: timeline.projectId, timelineId: timeline.id,
-                            })
-                            setExportRecordId(attempt.id)
-                          } catch {
-                            // 历史记账失败静默：导出照常，历史里少一条
-                          }
-                          setRenderJob(await apiRef.current.renderTimeline(
-                            timeline.id, timeline.projectId,
-                            { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
-                          ))
-                        })
-                      }}>
-                      <Icon name="download" />{t('exportStart')}
-                    </button>
-                    <button type="button" className="iv-btn iv-btn--sm" disabled={!renderRunning} data-timeline-export-cancel="true"
-                      onClick={() => {
-                        void run(async () => {
-                          const id = renderJob?.id
-                          if (id === undefined) return
-                          await apiRef.current.cancelRender(id)
-                        })
-                      }}>
-                      {t('exportCancel')}
-                    </button>
-                    {renderJob === undefined
-                      ? null
-                      : (
-                        <>
-                          <span
-                            className={`iv-chip${renderJob.status === 'succeeded' ? ' iv-chip--ok' : renderJob.status === 'running' ? ' iv-chip--run' : renderJob.status === 'failed' ? ' iv-chip--err' : ''}`}
-                            data-timeline-render={renderJob.status}
-                            data-timeline-render-percent={String(renderJob.percent)}
-                          >
-                            <i className="iv-dot" aria-hidden="true" />
-                            {t(renderJob.status === 'running' ? 'exportRunning' : renderJob.status === 'succeeded' ? 'exportDone' : 'exportFailed')}
-                            {renderJob.status === 'running' ? ` ${renderJob.percent}%` : ''}
-                            {renderJob.outputPath === undefined ? '' : ` · ${t('exportResult')} ${baseName(renderJob.outputPath)}`}
-                            {renderJob.error === undefined ? '' : ` · ${renderJob.error.slice(0, 90)}`}
-                          </span>
-                          {renderJob.status === 'running'
-                            ? <span className="iv-progress"><i style={{ width: `${Math.max(2, renderJob.percent)}%` }} /></span>
-                            : null}
-                          {renderJob.status === 'succeeded' && renderJob.outputPath !== undefined
-                            ? (
-                              <button type="button" className="iv-btn iv-btn--sm" data-timeline-register="true"
-                                disabled={assetRegistered}
-                                onClick={() => {
-                                  void run(async () => {
-                                    await apiRef.current.attachAsset({
-                                      projectId: timeline.projectId, path: renderJob.outputPath!, kind: 'video',
-                                    })
-                                    setAssetRegistered(true)
-                                  })
-                                }}>
-                                <Icon name="layers" />
-                                {assetRegistered ? t('alreadyRegistered') : t('registerAsAsset')}
-                              </button>
-                            )
-                            : null}
-                        </>
-                      )}
-                  </div>
-
-                  {/* 节目监视器（恒深，媒体惯例） */}
-                  <div className="iv-monitor" data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
-                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}>
-                    {activeVideo?.assetPath === undefined
-                      ? <span className="iv-meta" style={{ color: '#9aa0a8' }}>{t('previewIdle')}</span>
-                      : /\.(png|jpe?g|webp|gif)$/i.test(activeVideo.assetPath)
-                        ? <img src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} alt="" />
-                        : <video src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} muted />}
-                    <span className="iv-mon-tc">{timecode(playheadMs)} / {timecode(timelineTotal)}</span>
-                    <span className="iv-mon-badge">{t('monitorProgram')}</span>
-                    {activeSubtitle?.text === undefined ? null : (
-                      <span data-timeline-subtitle-preview="true"
-                        className="iv-mon-sub"
-                        style={{
-                          fontSize: `${Math.max(11, Math.min(26, Math.round((activeSubtitle.style?.fontSize ?? 32) / 2)))}px`,
-                          color: activeSubtitle.style?.color ?? '#ffffff',
-                          ...(activeSubtitle.style?.position ?? 'bottom') === 'bottom' ? { bottom: '9px' } : {},
-                          ...activeSubtitle.style?.position === 'top' ? { top: '9px' } : {},
-                          ...activeSubtitle.style?.position === 'middle' ? { top: '50%', transform: 'translateY(-50%)' } : {},
+                      <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
+                        aria-busy={renderRunning ? 'true' : undefined}
+                        disabled={renderRunning || timeline.tracks.find(track => track.kind === 'video')?.clips.length === 0}
+                        onClick={() => {
+                          setAssetRegistered(false)
+                          void run(async () => {
+                            // `B-16`：先记一笔导出账（遥测性质，记账失败不挡导出本身）
+                            try {
+                              const attempt = await apiRef.current.recordExport({
+                                projectId: timeline.projectId, timelineId: timeline.id,
+                              })
+                              setExportRecordId(attempt.id)
+                            } catch {
+                              // 历史记账失败静默：导出照常，历史里少一条
+                            }
+                            setRenderJob(await apiRef.current.renderTimeline(
+                              timeline.id, timeline.projectId,
+                              { resolution: exportResolution, fps: exportFps, aspect: exportAspect },
+                            ))
+                          })
                         }}>
-                        {activeSubtitle.text}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* transport：播放头 + 时间码 */}
-                  <div className="iv-transport">
-                    <button type="button" className="iv-tp-btn iv-tp-btn--play" data-timeline-play="true"
-                      aria-label={playing ? t('transportPause') : t('transportPlay')}
-                      title={playing ? t('transportPause') : t('transportPlay')}
-                      aria-pressed={playing}
-                      onClick={togglePlay}>
-                      <Icon name={playing ? 'pause' : 'play'} size={11} />
-                    </button>
-                    <span className="iv-tc-now">{timecode(playheadMs)}</span>
-                    <input type="range" className="iv-scrub" data-timeline-playhead="true" min={0} max={Math.max(1, timelineTotal)}
-                      value={playheadMs} aria-label={t('playhead')}
-                      onChange={event => { setPreviewMs(Number(event.target.value)) }} />
-                    <span className="iv-tc-total">/ {timecode(timelineTotal)}</span>
-                    <span className="iv-zoom">
-                      <Icon name="search" size={11} />
-                      {t('timelineZoom')}
-                      <input className="iv-scrub" type="range" min={0} max={100} defaultValue={60} aria-label={t('timelineZoom')} />
-                    </span>
-                  </div>
-
-                  {/* 轨道区：刻度尺 + V1/A1/S1 + 播放头 */}
-                  <div className="iv-tl">
-                    <div className="iv-ruler" aria-hidden="true">
-                      {[0, 25, 50, 75, 100].map(pct => (
-                        <i key={pct} style={{ left: `${pct}%` }} />
-                      ))}
-                      {[0, 25, 50, 75, 100].map(pct => (
-                        <b key={pct} style={{ left: `${pct}%` }}>{timecode((timelineTotal * pct) / 100)}</b>
-                      ))}
+                        <Icon name="download" />{t('exportStart')}
+                      </button>
                     </div>
-                    <div className="iv-tracks">
-                      <div className="iv-playhead" style={{ left: `calc(46px + (100% - 46px) * ${playheadMs / Math.max(1, timelineTotal)})` }} />
-                      {timeline.tracks.map(track => (
-                        <div key={track.id} className="iv-track" data-timeline-track={track.kind}>
-                          <div className="iv-t-head">
-                            <span className="micro">{t(trackIdKey(track.kind))}</span>
-                            <span className="iv-t-kind">{t(trackKindKey(track.kind))}</span>
-                            {track.kind === 'audio'
-                              ? (
-                                <label className="iv-t-fade">
-                                  <span className="micro">{t('trackFade')}</span>
-                                  <input type="number" className="iv-input" min={0} max={MAX_TRACK_FADE_MS} step={50}
-                                    value={track.fadeMs ?? 0} aria-label={t('trackFade')} title={t('trackFade')} data-timeline-track-fade={track.fadeMs ?? 0}
-                                    onChange={event => {
-                                      const fadeMs = Number(event.target.value)
-                                      patchTrack(track.id, current => ({ ...current, fadeMs: Math.max(0, Math.min(MAX_TRACK_FADE_MS, fadeMs)) }))
-                                    }} />
-                                  <span className="micro">ms</span>
-                                </label>
-                              )
+                    <div className="iv-tl-run-row" data-idle={renderJob === undefined ? 'true' : 'false'}>
+                      {renderJob === undefined
+                        ? null
+                        : (
+                          <>
+                            <span
+                              className={`iv-chip${renderJob.status === 'succeeded' ? ' iv-chip--ok' : renderJob.status === 'running' ? ' iv-chip--run' : renderJob.status === 'failed' ? ' iv-chip--err' : ''}`}
+                              data-timeline-render={renderJob.status}
+                              data-timeline-render-percent={String(renderJob.percent)}
+                            >
+                              <i className="iv-dot" aria-hidden="true" />
+                              {t(renderJob.status === 'running' ? 'exportRunning' : renderJob.status === 'succeeded' ? 'exportDone' : 'exportFailed')}
+                              {renderJob.status === 'running' ? ` ${renderJob.percent}%` : ''}
+                              {renderJob.outputPath === undefined ? '' : ` · ${t('exportResult')} ${baseName(renderJob.outputPath)}`}
+                              {renderJob.error === undefined ? '' : ` · ${renderJob.error.slice(0, 90)}`}
+                            </span>
+                            {renderJob.status === 'running'
+                              ? <span className="iv-progress"><i style={{ width: `${Math.max(2, renderJob.percent)}%` }} /></span>
                               : null}
-                          </div>
-                          <div
-                            className={`iv-t-lane${dropTrackId === track.id ? ' iv-t-lane--drop' : ''}`}
-                            data-timeline-lane={track.kind}
-                            ref={element => {
-                              if (element === null) laneRefs.current.delete(track.id)
-                              else laneRefs.current.set(track.id, element)
-                            }}
-                            onDragOver={event => {
-                              // 只有本轨吃得下的载荷才给落点高亮
-                              const clipDrag = event.dataTransfer.types.includes(CLIP_DRAG_TYPE)
-                              const assetDrag = event.dataTransfer.types.includes(ASSET_DRAG_TYPE)
-                                || event.dataTransfer.types.includes('text/plain')
-                              if (clipDrag || (assetDrag && track.kind !== 'subtitle')) {
-                                event.preventDefault()
-                                setDropTrackId(track.id)
-                              }
-                            }}
-                            onDragLeave={() => { setDropTrackId(current => (current === track.id ? undefined : current)) }}
-                            onDrop={event => { onLaneDrop(event, track) }}
-                          >
-                            {track.clips.length === 0
-                              ? <p className="iv-meta">{t('timelineEmpty')}</p>
-                              : (
-                                <div className="iv-clips">
-                                  {track.clips.map(clip => {
-                                    const ratio = Math.max(1, timelineTotal)
-                                    const left = (clip.startMs / ratio) * 100
-                                    const width = Math.max(1.5, (clip.durationMs / ratio) * 100)
-                                    // `B17`：分割点=播放头，必须严格落在片段内部
-                                    //（与域层 splitClipAt 同口径；两端点上是无效拆分）
-                                    const splitInside = playheadMs > clip.startMs
-                                      && playheadMs < clip.startMs + effectiveDurationMs(clip)
-                                    return (
-                                      <div
-                                        key={clip.id}
-                                        className={`iv-clip iv-clip--${track.kind}${selectedClipId === clip.id ? ' iv-clip--sel' : ''}`}
-                                        data-timeline-clip={clip.id}
-                                        data-timeline-clip-kind={track.kind}
-                                        data-timeline-clip-selected={selectedClipId === clip.id ? 'true' : 'false'}
-                                        draggable
-                                        onDragStart={event => { onClipDragStart(event, track.id, clip.id) }}
-                                        onClick={() => { setSelectedClipId(clip.id) }}
-                                        style={{ left: `${left}%`, width: `${width}%` }}
-                                      >
-                                        <div
-                                          className="iv-clip-h iv-clip-h--l"
-                                          data-timeline-clip-handle="left"
-                                          role="separator"
-                                          aria-orientation="vertical"
-                                          aria-label={`${t('clipResizeStart')} ${clip.id}`}
-                                          tabIndex={0}
-                                          aria-valuemin={0}
-                                          aria-valuemax={Math.round(clip.startMs + clip.durationMs - MIN_CLIP_MS)}
-                                          aria-valuenow={Math.round(clip.startMs)}
-                                          aria-valuetext={formatTimecode(clip.startMs)}
-                                          onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'left') }}
-                                          onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'left') }}
-                                        />
-                                        <div
-                                          className="iv-clip-h iv-clip-h--r"
-                                          data-timeline-clip-handle="right"
-                                          role="separator"
-                                          aria-orientation="vertical"
-                                          aria-label={`${t('clipResizeEnd')} ${clip.id}`}
-                                          tabIndex={0}
-                                          aria-valuemin={Math.round(clip.startMs + MIN_CLIP_MS)}
-                                          aria-valuemax={Math.round(clip.startMs + Math.min(MAX_CLIP_DURATION_MS, Math.max(MIN_CLIP_MS, timelineTotal - clip.startMs)))}
-                                          aria-valuenow={Math.round(clip.startMs + clip.durationMs)}
-                                          aria-valuetext={formatTimecode(clip.startMs + clip.durationMs)}
-                                          onMouseDown={event => { onHandleMouseDown(event, track.id, clip.id, 'right') }}
-                                          onKeyDown={event => { onHandleKeyDown(event, track.id, clip.id, 'right') }}
-                                        />
-                                        <div className="iv-clip-top">
-                                          <Icon name={TRACK_ICONS[track.kind]} size={11} />
-                                          <span className="iv-ellipsis" title={clip.assetPath ?? clip.text ?? ''}>
-                                            {track.kind === 'subtitle' ? (clip.text ?? '') : baseName(clip.assetPath ?? '')}
-                                          </span>
-                                          <span className="iv-clip-dur">{(clip.durationMs / 1000).toFixed(1)}s</span>
-                                        </div>
-                                      <div className="iv-clip-row">
-                                        <input type="number" className="iv-input" value={clip.startMs} aria-label={`${t('clipStart')} ${clip.id}`}
-                                          onChange={event => {
-                                            const startMs = Number(event.target.value)
-                                            patchTrack(track.id, current => ({
-                                              ...current,
-                                              clips: current.clips.map(item => (item.id === clip.id ? { ...item, startMs } : item)),
-                                            }))
-                                          }} />
-                                        <input type="number" className="iv-input" value={clip.durationMs} aria-label={`${t('clipDuration')} ${clip.id}`}
-                                          onChange={event => {
-                                            const durationMs = Number(event.target.value)
-                                            patchClip(track.id, clip.id, item => ({ ...item, durationMs }))
-                                          }} />
-                                        {track.kind === 'subtitle'
-                                          ? null
-                                          : (
-                                            <>
-                                              <input type="number" className="iv-input" min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
-                                                value={clip.speed ?? 1} aria-label={`${t('clipSpeed')} ${clip.id}`} title={t('clipSpeed')}
-                                                onChange={event => {
-                                                  const speed = Number(event.target.value)
-                                                  patchClip(track.id, clip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
-                                                }} />
-                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
-                                                value={clip.fade ?? 0} aria-label={`${t('clipFade')} ${clip.id}`} title={t('clipFade')}
-                                                onChange={event => {
-                                                  const fade = Number(event.target.value)
-                                                  patchClip(track.id, clip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
-                                                }} />
-                                              {track.kind === 'video'
-                                                ? (
-                                                  <>
-                                                    <select className="iv-select"
-                                                      value={clip.transition ?? ''} aria-label={`${t('clipTransition')} ${clip.id}`} title={t('clipTransition')}
-                                                      onChange={event => {
-                                                        const transition = event.target.value === '' ? undefined : event.target.value as ClipTransition
-                                                        patchClip(track.id, clip.id, item => ({ ...item, ...transition === undefined ? { transition: undefined } : { transition } }))
-                                                      }}>
-                                                      <option value="">{t('none')}</option>
-                                                      <option value="fade">{t('transitionFade')}</option>
-                                                      <option value="wipeleft">{t('transitionWipeleft')}</option>
-                                                      <option value="circleopen">{t('transitionCircleopen')}</option>
-                                                    </select>
-                                                    {clip.transition === undefined
-                                                      ? null
-                                                      : (
-                                                        <input type="number" className="iv-input" min={0} max={MAX_CLIP_TRANSITION_MS} step={50}
-                                                          value={clip.transitionDurationMs ?? 400}
-                                                          aria-label={`${t('clipTransitionDuration')} ${clip.id}`} title={t('clipTransitionDuration')}
-                                                          onChange={event => {
-                                                            const transitionDurationMs = Number(event.target.value)
-                                                            patchClip(track.id, clip.id, item => ({ ...item, transitionDurationMs: Math.max(0, Math.min(MAX_CLIP_TRANSITION_MS, transitionDurationMs)) }))
-                                                          }} />
-                                                      )}
-                                                    {clip.crop === undefined
-                                                      ? (
-                                                        <button type="button" className="iv-btn iv-btn--sm"
-                                                          aria-label={`${t('clipCrop')} ${clip.id}`} title={t('clipCrop')}
-                                                          onClick={event => {
-                                                            event.stopPropagation()
-                                                            patchClip(track.id, clip.id, item => ({ ...item, crop: { x: 0, y: 0, width: 1920, height: 1080 } }))
-                                                          }}>
-                                                          <Icon name="sliders" size={11} />
-                                                        </button>
-                                                      )
-                                                      : (
-                                                        <>
-                                                          <input type="number" className="iv-input" min={0} value={clip.crop.x}
-                                                            aria-label={`${t('clipCropX')} ${clip.id}`} title={t('clipCropX')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={0} value={clip.crop.y}
-                                                            aria-label={`${t('clipCropY')} ${clip.id}`} title={t('clipCropY')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.width}
-                                                            aria-label={`${t('clipCropW')} ${clip.id}`} title={t('clipCropW')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
-                                                          <input type="number" className="iv-input" min={2} step={2} value={clip.crop.height}
-                                                            aria-label={`${t('clipCropH')} ${clip.id}`} title={t('clipCropH')}
-                                                            onChange={event => { patchClip(track.id, clip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
-                                                          <button type="button" className="iv-btn iv-btn--sm"
-                                                            aria-label={`${t('clipCropRemove')} ${clip.id}`} title={t('clipCropRemove')}
-                                                            onClick={event => {
-                                                              event.stopPropagation()
-                                                              patchClip(track.id, clip.id, item => ({ ...item, crop: undefined }))
-                                                            }}>
-                                                            <Icon name="x" size={11} />
-                                                          </button>
-                                                        </>
-                                                      )}
-                                                  </>
-                                                )
-                                                : null}
-                                            </>
-                                          )}
-                                        {track.kind === 'subtitle'
-                                          ? (
-                                            <>
-                                              <input type="number" className="iv-input" min={8} max={200} value={clip.style?.fontSize ?? 32}
-                                                aria-label={`${t('styleFontSize')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const fontSize = Number(event.target.value)
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, fontSize } }
-                                                      : item)),
-                                                  }))
-                                                }} />
-                                              <input type="color" className="iv-color" value={clip.style?.color ?? '#ffffff'}
-                                                aria-label={`${t('styleColor')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const color = event.target.value
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, color } }
-                                                      : item)),
-                                                  }))
-                                                }} />
-                                              <select className="iv-select" value={clip.style?.position ?? 'bottom'}
-                                                aria-label={`${t('stylePosition')} ${clip.id}`}
-                                                onChange={event => {
-                                                  const position = event.target.value as 'top' | 'middle' | 'bottom'
-                                                  patchTrack(track.id, current => ({
-                                                    ...current,
-                                                    clips: current.clips.map(item => (item.id === clip.id
-                                                      ? { ...item, style: { ...item.style, position } }
-                                                      : item)),
-                                                  }))
-                                                }}>
-                                                <option value="top">top</option>
-                                                <option value="middle">middle</option>
-                                                <option value="bottom">bottom</option>
-                                              </select>
-                                            </>
-                                          )
-                                          : null}
-                                        <button type="button" className="iv-btn"
-                                          data-timeline-clip-split={clip.id}
-                                          aria-label={`${t('clipSplit')} ${clip.id}`}
-                                          title={splitInside ? t('clipSplit') : t('clipSplitOutsideHint')}
-                                          disabled={!splitInside}
-                                          onClick={event => { event.stopPropagation(); splitClip(clip.id) }}>
-                                          <Icon name="storyboard" size={11} />
-                                        </button>
-                                        <button type="button" className="iv-btn" aria-label={`${t('clipDuplicate')} ${clip.id}`}
-                                          title={t('clipDuplicate')}
-                                          onClick={event => { event.stopPropagation(); duplicateClip(clip.id) }}>
-                                          <Icon name="copy" size={11} />
-                                        </button>
-                                        <button type="button" className="iv-btn" aria-label={`${t('remove')} ${clip.id}`}
-                                          onClick={() => {
-                                            patchTrack(track.id, current => ({
-                                              ...current, clips: current.clips.filter(item => item.id !== clip.id),
-                                            }))
-                                          }}>
-                                          <Icon name="trash" size={11} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            {track.kind === 'subtitle'
-                              ? (
-                                <>
-                                  <div className="iv-add-row">
-                                    <input className="iv-input" style={{ flex: 1, minWidth: '110px' }}
-                                      placeholder={t('subtitlePlaceholder')} aria-label={t('subtitlePlaceholder')}
-                                      value={subtitleDraft}
-                                      onChange={event => { setSubtitleDraft(event.target.value) }} />
-                                    <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleDraft.trim() === ''}
-                                      aria-label={t('addSubtitle')}
-                                      onClick={() => { appendClip(track.id, { text: subtitleDraft.trim() }); setSubtitleDraft('') }}>
-                                      <Icon name="plus" />{t('addSubtitle')}
-                                    </button>
-                                  </div>
-                                  <div className="iv-add-row" data-timeline-subtitles-batch="true">
-                                    <textarea className="iv-input" rows={2} style={{ flex: 1, minWidth: '140px', resize: 'vertical' }}
-                                      placeholder={t('subtitlesBatchPlaceholder')} aria-label={t('subtitlesBatchPlaceholder')}
-                                      data-timeline-subtitles-batch-input="true"
-                                      value={subtitleBatchDraft}
-                                      onChange={event => { setSubtitleBatchDraft(event.target.value) }} />
-                                    <button type="button" className="iv-btn iv-btn--sm" disabled={subtitleBatchDraft.trim() === ''}
-                                      aria-label={t('subtitlesBatch')} data-timeline-subtitles-batch-apply="true"
-                                      onClick={() => { applyBatchSubtitles(track.id, subtitleBatchDraft); setSubtitleBatchDraft('') }}>
-                                      <Icon name="subtitle" />{t('subtitlesBatch')}
-                                    </button>
-                                  </div>
-                                </>
-                              )
-                              : (
-                                <div className="iv-add-row">
-                                  <select className="iv-select" aria-label={`${t('pickAsset')} ${track.kind}`} value={clipAssetPath}
-                                    onChange={event => { setClipAssetPath(event.target.value) }}>
-                                    <option value=''>{t('pickAsset')}</option>
-                                    {assets
-                                      .filter(candidate => track.kind === 'audio' ? candidate.kind === 'video' : candidate.kind === track.kind)
-                                      .map(candidate => (
-                                        <option key={candidate.id} value={candidate.path}>{baseName(candidate.path)}</option>
-                                      ))}
-                                  </select>
-                                  <button type="button" className="iv-btn iv-btn--sm" disabled={clipAssetPath === ''}
-                                    aria-label={`${t('addClip')} ${track.kind}`}
-                                    onClick={() => { appendClip(track.id, { assetPath: clipAssetPath }); setClipAssetPath('') }}>
-                                    <Icon name="plus" />{t('addClip')}
-                                  </button>
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      ))}
+                          </>
+                        )}
+                      <button type="button" className="iv-btn iv-btn--sm" data-timeline-export-cancel="true"
+                        disabled={!renderRunning}
+                        onClick={() => {
+                          void run(async () => {
+                            const id = renderJob?.id
+                            if (id === undefined) return
+                            await apiRef.current.cancelRender(id)
+                          })
+                        }}>
+                        {t('exportCancel')}
+                      </button>
+                      {renderJob?.status === 'succeeded' && renderJob.outputPath !== undefined
+                        ? (
+                          <button type="button" className="iv-btn iv-btn--sm" data-timeline-register="true"
+                            disabled={assetRegistered}
+                            onClick={() => {
+                              void run(async () => {
+                                await apiRef.current.attachAsset({
+                                  projectId: timeline.projectId, path: renderJob.outputPath!, kind: 'video',
+                                })
+                                setAssetRegistered(true)
+                              })
+                            }}>
+                            <Icon name="layers" />
+                            {assetRegistered ? t('alreadyRegistered') : t('registerAsAsset')}
+                          </button>
+                        )
+                        : null}
                     </div>
                   </div>
-                  <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
-                  {/* `B-5：配音卡与多比例导出属辅助动作，放在主内容之后` 成片多比例切片：一条成片按多种画幅各导出一次 */}
-                  <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
+
+                  {/* 辅助区：逐段预览 / 配音 / 多比例导出默认收起，主线上只留精剪需要的三块 */}
+                  <details className="iv-tl-aux" data-timeline-aux="true">
+                    <summary>
+                      <Icon name="chevron" size={11} />
+                      {t('tlAuxTools')}
+                      <span className="iv-meta">{t('segPreviewTitle')}</span>
+                    </summary>
+                    <div className="iv-tl-aux-body">
+                      <div className="iv-toolbar iv-seg-wrap">
+                        <span className="iv-meta">{t('segPreviewTitle')}</span>
+                        <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)} />
+                      </div>
+                      <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
+                      <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
+                    </div>
+                  </details>
                   <p className="iv-meta">{t('previewNote')}</p>
+                  </div>
+
                   </PaneBoundary>
                 </section>
               )

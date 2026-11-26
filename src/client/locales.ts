@@ -250,6 +250,9 @@ export type WorkbenchLocaleKey =
   | 'timelineTotal'
   | 'clipDuration'
   | 'clipStart'
+  | 'clipInspectorEmpty'
+  | 'clipInspectorFallback'
+  | 'tlAuxTools'
   | 'timelineEmpty'
   | 'addSubtitle'
   | 'addClip'
@@ -1346,6 +1349,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   timelineTotal: 'Total',
   clipDuration: 'Duration (ms)',
   clipStart: 'Start (ms)',
+  clipInspectorEmpty: 'Select a clip to edit its parameters',
+  clipInspectorFallback: 'first clip',
+  tlAuxTools: 'More tools',
   timelineEmpty: 'No clips yet — add from the assets on the right',
   addSubtitle: 'Add subtitle',
   addClip: 'Add to track',
@@ -2498,6 +2504,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   timelineTotal: '总时长',
   clipDuration: '时长(ms)',
   clipStart: '起点(ms)',
+  clipInspectorEmpty: '选择片段以编辑参数',
+  clipInspectorFallback: '首段',
+  tlAuxTools: '辅助工具',
   timelineEmpty: '还没有片段——从右侧素材里加入',
   addSubtitle: '加入字幕',
   addClip: '加入轨道',

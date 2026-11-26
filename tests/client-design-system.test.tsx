@@ -217,17 +217,20 @@ describe('待启用契约（由对应批次改为 it）', () => {
     await waitFor(() => { expect(view.container.querySelector('[data-timeline-lane="video"]')).toBeTruthy() })
 
     expect(assertPaneSkeleton(view.container)).toBeGreaterThan(0)
-    // 配音卡与多比例导出必须落在 pane 内、且位于 pane-head 之后
+    // v1.2：配音卡与多比例导出收进「辅助」折叠区，不再平铺在时间轴主线之后；
+    // 契约保留「必须位于 pane-head 之后」这条顺序要求
     const pane = view.container.querySelector('[data-workbench-pane="paneTimeline"]') as HTMLElement
     expect(pane).toBeTruthy()
     const children = [...pane.children]
     const headIndex = children.findIndex(el => el.classList.contains('iv-pane-head'))
-    // 配音卡（.iv-card）与多比例（.iv-sub）都是子区块，必须落在 pane-head 之后
-    const blocks = children.filter(el => el.classList.contains('iv-sub') || el.classList.contains('iv-card'))
-    expect(blocks.length, 'paneTimeline 应有两个子区块（配音卡 / 多比例）').toBeGreaterThanOrEqual(2)
-    for (const block of blocks) {
-      expect(children.indexOf(block)).toBeGreaterThan(headIndex)
-    }
+    const aux = pane.querySelector('[data-timeline-aux]') as HTMLElement | null
+    expect(aux, '时间轴应有辅助折叠区').toBeTruthy()
+    // 文档顺序上必须排在 pane-head 之后（v1.2 起辅助区嵌在 .iv-tl-pane 里，不再是 pane 的直接子节点）
+    const head = children[headIndex] as HTMLElement
+    expect(head.compareDocumentPosition(aux as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING,
+      '辅助区必须位于 pane-head 之后').toBeTruthy()
+    const blocks = aux!.querySelectorAll('.iv-sub, .iv-card')
+    expect(blocks.length, '辅助区应含配音卡与多比例两个子区块').toBeGreaterThanOrEqual(2)
   })
 })
 

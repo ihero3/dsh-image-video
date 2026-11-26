@@ -647,7 +647,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-monitor{position:relative;min-height:168px;border-radius:var(--iv-r-sm);overflow:hidden;display:grid;place-items:center;
   background:radial-gradient(130% 130% at 50% 0%,#1c1f27 0%,var(--iv-monitor) 72%);
   border:1px solid var(--iv-line-2);box-shadow:inset 0 1px 6px color-mix(in srgb,#000 45%,transparent)}
-.iv-monitor img,.iv-monitor video{max-width:100%;max-height:200px;display:block}
+.iv-monitor img,.iv-monitor video{max-width:100%;max-height:100%;display:block}
 .iv-mon-tc{position:absolute;left:8px;top:7px;font-family:var(--iv-mono);font-size:var(--iv-fs-meta);color:#cfd3d8;
   background:color-mix(in srgb,#000 60%,transparent);border:1px solid color-mix(in srgb,#fff 14%,transparent);
   border-radius:var(--iv-r-xs);padding:1px 6px;font-variant-numeric:tabular-nums}
@@ -710,12 +710,6 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-clip-top{display:flex;align-items:center;gap:var(--iv-sp-2);min-width:0}
 .iv-clip-top .iv-ico{color:var(--iv-tx3)}
 .iv-clip-dur{margin-left:auto;font-family:var(--iv-mono);font-size:var(--iv-fs-micro);color:var(--iv-tx3);white-space:nowrap;font-variant-numeric:tabular-nums}
-.iv-clip-row{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
-.iv-clip .iv-input{height:18px;font-size:var(--iv-fs-meta);width:56px;padding:0 4px}
-.iv-clip .iv-select{height:18px;font-size:var(--iv-fs-meta);width:74px;padding:0 16px 0 5px}
-.iv-clip .iv-color{width:22px;height:18px}
-.iv-clip .iv-btn{height:18px;width:18px;padding:0;border-color:transparent;background:transparent;color:var(--iv-tx3);margin-left:auto}
-.iv-clip .iv-btn:hover:not(:disabled){color:var(--iv-danger);background:var(--iv-danger-soft)}
 .iv-playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--iv-warn);z-index:var(--iv-z-playhead);pointer-events:none}
 .iv-playhead::before{content:"";position:absolute;top:0;left:-4px;border:5px solid transparent;border-top:6px solid var(--iv-warn)}
 
