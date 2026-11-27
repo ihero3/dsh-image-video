@@ -3992,6 +3992,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <h3 className="iv-pane-title">{t('modeScript')}</h3>
                     <div className="iv-pane-actions iv-quick-tabs" role="tablist"
                       aria-label={t('modeScript')} data-script-tabs="true">
+                      {/* tab 按内容宽度排，不再 `flex: 1` 均分：均分会在窄栏里把「剧本分镜」压成
+                          两行（2026-11-27）。空间不够时让整组换行，标签内部不折行。 */}
                       {SCRIPT_TABS.map((tab, index) => (
                         <button
                           key={tab.key}
@@ -4002,7 +4004,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           aria-selected={scriptTab === tab.key}
                           tabIndex={scriptTab === tab.key ? 0 : -1}
                           className="iv-tab"
-                          style={{ flex: 1 }}
                           data-script-tab={tab.key}
                           onKeyDown={event => { onScriptTabKeyDown(event, index) }}
                           onClick={() => { setScriptTab(tab.key) }}

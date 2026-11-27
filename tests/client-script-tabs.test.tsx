@@ -51,6 +51,8 @@ describe('剧本生成页 · 四个分区', () => {
       en.scriptTabSplit, en.scriptTabExtract, en.scriptTabVoice, en.scriptTabMotion,
     ])
     expect(view.container.querySelector('[data-script-tab="split"]')?.getAttribute('aria-selected')).toBe('true')
+    // 宽度不再由 inline flex:1 均分（均分会把「剧本分镜」压成两行），标签宽度交给内容
+    expect(tabs.map(tab => (tab as HTMLElement).style.flex)).toEqual(['', '', '', ''])
     expect(view.container.querySelector('[data-module="pipeline"]')).toBeTruthy()
     expect(view.container.querySelector('[data-script-extract]')).toBeNull()
 

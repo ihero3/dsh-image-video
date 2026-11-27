@@ -507,7 +507,10 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 
 /* ============ G2 物料库分栏 ============ */
 .iv-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
+/* white-space:nowrap —— tab 是胶囊按钮，文字一旦折行会顶出固定高度、图标与文字错位
+   （2026-11-27「剧本分镜 / 素材提取」被挤成两行）。宁可让整组换行，也不让标签内部折行。 */
 .iv-tab{display:inline-flex;align-items:center;gap:var(--iv-sp-2);height:22px;padding:0 9px;border-radius:var(--iv-r);
+  white-space:nowrap;
   border:1px solid var(--iv-line-2);background:var(--iv-panel-2);color:var(--iv-tx2);font-size:var(--iv-fs-meta);cursor:pointer}
 .iv-tab:hover{color:var(--iv-tx);border-color:color-mix(in srgb,currentColor 35%,transparent)}
 .iv-tab .iv-ico{color:var(--iv-tx3)}

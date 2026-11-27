@@ -72,7 +72,7 @@ font-size:var(--iv-fs-root);line-height:1.55;
 @container iv-panel (max-width:560px){.iv .iv-brand-text{display:none}.iv .iv-top .iv-select{max-width:104px!important}}
 @container iv-panel (max-width:460px){.iv .iv-modes-txt{display:none}.iv .iv-tools-txt{display:none}.iv .iv-modes-btn{padding:0 11px}}
 .iv .iv-tabs,.iv .iv-quick-tabs,.iv .iv-skill-tabs,.iv .iv-health-tabs{gap:3px;padding:3px;border:0;border-radius:11px;background:color-mix(in srgb,var(--iv-tx) 5%,transparent)}
-.iv .iv-tab{height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:500}
+.iv .iv-tab{flex:none;height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:500}
 .iv .iv-tab:hover{border-color:transparent;color:var(--iv-tx)}
 .iv .iv-tab.on,.iv .iv-tab[aria-selected="true"]{border:.5px solid var(--iv-line);background:var(--iv-panel);color:var(--iv-tx);font-weight:600;box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 12%,transparent)}
 .iv .iv-tab.on .iv-ico,.iv .iv-tab[aria-selected="true"] .iv-ico{color:var(--iv-tx)}

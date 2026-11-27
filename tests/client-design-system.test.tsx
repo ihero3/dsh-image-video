@@ -374,6 +374,14 @@ describe('视觉层级契约（R7）', () => {
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-actions{flex:none}')
   })
 
+  it('胶囊 tab 的文字不折行，剧本页四个 tab 按内容宽度排（2026-11-27 截图缺陷）', () => {
+    // 起因：`.iv-tab` 没写 white-space，脚本页四个 tab 又用 inline `flex:1` 均分宽度，
+    // 窄栏里「剧本分镜 / 素材提取」被压成两行，固定 32px 高度装不下、图标与文字错位。
+    // 口径：标签内部永不折行；宽度不够时让整组换行。
+    expect(WORKBENCH_STYLE).toContain('white-space:nowrap')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-tab{flex:none;height:32px')
+  })
+
   it('运行历史选中态命中真实存在的属性（2026-11-27 修复 F9）', () => {
     // 起因：JSX 写 data-workflow-run-item-selected，CSS 命的却是 [data-active]，
     // 选中项有属性没样式；属性名统一到 JSX 一侧（测试也按它断言）。
