@@ -78,6 +78,23 @@ describe('B6 export panel', () => {
     expect(host.exportOptions()).toEqual({ resolution: '2k', fps: 60, aspect: 'square' })
   })
 
+  it('previews the actual output spec and updates it as the presets change (B2)', async () => {
+    const { view } = await renderTimeline()
+    await addVideoClip(view)
+    const spec = (): string => view.container.querySelector('[data-timeline-export-spec]')?.textContent ?? ''
+    // 默认 = 时间轴规格（720p30）
+    expect(spec()).toContain('1280×720')
+    expect(spec()).toContain('30fps')
+
+    fireEvent.change(view.container.querySelector('[data-timeline-export-resolution]') as HTMLSelectElement, { target: { value: '2k' } })
+    fireEvent.change(view.container.querySelector('[data-timeline-export-fps]') as HTMLSelectElement, { target: { value: '60' } })
+    fireEvent.change(view.container.querySelector('[data-timeline-export-aspect]') as HTMLSelectElement, { target: { value: 'square' } })
+
+    // 2K + 1:1 → 短边 1440 的正方形；预览与宿主换算同源，不是前端另算一份
+    expect(spec()).toContain('1440×1440')
+    expect(spec()).toContain('60fps')
+  })
+
   it('marks the job running after starting export, and offers register-to-asset on success', async () => {
     const { view } = await renderTimeline()
     await addVideoClip(view)

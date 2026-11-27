@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { WorkflowCanvas } from '../src/client/WorkflowCanvas.tsx'
 import { en, type WorkbenchLocaleKey } from '../src/client/locales.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
+import { defaultParams } from '../src/workbench/workflow.ts'
 
 // 每个用例互不干扰：上一次挂载的画布必须卸载，否则 screen 会查到重复元素
 afterEach(() => { cleanup() })
@@ -70,6 +71,104 @@ describe('workflow canvas', () => {
       expect(item.getAttribute('title')).toBeTruthy()
     }
     expect(view.container.querySelectorAll('[data-workflow-availability="runnable"]')).toHaveLength(12)
+  })
+
+  it('B5：后期与交付组标「规划中」，四个无执行器节点在节点库里带提示', () => {
+    const { view } = renderCanvas()
+    const finish = view.container.querySelector('[data-workflow-library-group="finish"]') as HTMLElement
+    expect(finish.querySelector('.iv-wf-lib-group-title')?.textContent).toBe(en.canvasGroupFinishPlanned)
+
+    const noExec = view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-no-executor="true"]')
+    expect(noExec).toHaveLength(4)
+    for (const item of noExec) {
+      expect(item.getAttribute('data-workflow-availability')).toBe('runnable')
+      expect(item.querySelector('[data-workflow-no-executor-tag]')?.textContent).toContain(en.canvasNoExecutorTag)
+      expect((item as HTMLButtonElement).disabled).toBe(false)
+    }
+    // T3-2 不受影响：planned 仍是 3 个、仍可放置，且不带「不执行」标记
+    expect(view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-availability="planned"]')).toHaveLength(3)
+    expect(view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-no-executor="true"][data-workflow-availability="planned"]')).toHaveLength(0)
+  })
+
+  it('B5：无执行器节点可加入画布，但卡片和检视器如实标「不执行」', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} preview` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="preview"]')?.getAttribute('data-workflow-node-no-executor'))
+        .toBe('true')
+    })
+    const card = view.container.querySelector('[data-workflow-node="preview"]') as HTMLElement
+    expect(card.getAttribute('data-workflow-node-availability')).toBe('runnable')
+    expect(card.querySelector('[data-workflow-no-executor-tag]')?.textContent).toContain(en.canvasNoExecutorTag)
+    expect(card.querySelector('[data-workflow-planned-tag]')).toBeNull()
+    expect(view.container.querySelector('[data-workflow-no-executor-note]')?.textContent).toContain(en.canvasNoExecutorHint)
+
+    // 真正有执行器的节点不该被误标
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="image-generate"]')?.getAttribute('data-workflow-node-no-executor'))
+        .toBeNull()
+    })
+  })
+
+  it('applies an external replacement through history so Cmd/Ctrl+Z restores the old graph (F3)', async () => {
+    // 模板市场承诺"整图替换后可撤销"。替换必须复用同一条工作流记录（同 id），
+    // 让画布走 applyGraph 而不是重播种——否则 resetHistory 会把撤销栈清空。
+    const base = makeRecord()
+    const view = render(<WorkflowCanvas record={base} onChange={() => {}} t={t} replaceRevision={0} />)
+    expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0')
+
+    const replaced: WorkflowRecord = {
+      ...base,
+      nodes: [{
+        id: 'wfl-1-0-x', kind: 'image-generate',
+        position: { x: 0, y: 0 }, params: defaultParams('image-generate'),
+      }],
+    }
+    view.rerender(<WorkflowCanvas record={replaced} onChange={() => {}} t={t} replaceRevision={1} />)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+
+    // 撤销 → 回到替换前的空图（承诺成立）
+    fireEvent.keyDown(window, { key: 'z', metaKey: true })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
+    // 重做 → 替换后的图（替换是一条历史，不是一次性状态）
+    fireEvent.keyDown(window, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+  })
+
+  it('节点卡可用键盘 Enter/Space 激活并打开检视器（F18）', async () => {
+    const record: WorkflowRecord = {
+      ...makeRecord(),
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: {} }],
+      edges: [],
+    }
+    const view = render(<WorkflowCanvas record={record} onChange={() => {}} t={t} />)
+    const card = (): HTMLElement => view.container.querySelector('[data-workflow-node="image-generate"]') as HTMLElement
+
+    // 未选中：卡片刻意带 role=button + tabIndex=0，但键盘以前按了什么都不发生
+    expect(card().getAttribute('role')).toBe('button')
+    expect(card().getAttribute('data-workflow-node-selected')).toBe('false')
+    expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeNull()
+
+    card().focus()
+    fireEvent.keyDown(card(), { key: 'Enter' })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeTruthy()
+    })
+    expect(card().getAttribute('data-workflow-node-selected')).toBe('true')
+    // 检视器一开就接管焦点（useDialogFocus），键盘用户不会被留在卡片上
+    const inspector = view.container.querySelector('[data-workflow-inspector]') as HTMLElement
+    await waitFor(() => { expect(inspector.contains(document.activeElement)).toBe(true) })
+
+    // 关掉再按空格：两个键都要能用
+    fireEvent.click(view.container.querySelector('[data-workflow-inspector-close="true"]') as HTMLElement)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeNull()
+    })
+    fireEvent.keyDown(card(), { key: ' ' })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeTruthy()
+    })
   })
 
   it('lets a planned node be placed but marks it as not runnable', async () => {
@@ -342,6 +441,25 @@ describe('B4 canvas interaction', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('false')
     expect(document.body.style.overflow).toBe('')
+  })
+
+  it('closes the inspector first on Escape, then leaves maximize (2026-11-26)', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-inspector]')).toBeTruthy() })
+    const inspector = view.container.querySelector('[data-workflow-inspector-open]') as HTMLElement
+    expect(inspector.getAttribute('role')).toBe('complementary')
+    expect(inspector.contains(document.activeElement)).toBe(true)
+
+    fireEvent.click(view.container.querySelector('[data-workflow-action="maximize"]') as HTMLElement)
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('true')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-inspector]')).toBeNull() })
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('true')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(canvas(view).getAttribute('data-workflow-maximized')).toBe('false')
   })
 })
 

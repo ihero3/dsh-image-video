@@ -66,11 +66,16 @@ describe('页面 · 模块化分区', () => {
     const scriptModules = [...view.container.querySelectorAll('.iv-modules > [data-module]')]
     expect(scriptModules.map(element => element.getAttribute('data-module'))).toEqual(['pipeline', 'episode'])
     const pipeline = view.container.querySelector('[data-module="pipeline"]') as HTMLElement
-    expect(pipeline.querySelector('.iv-module-n')?.textContent).toBe('1')
+    // 2026-11-26：编号徽标与折叠头已删除，标题降级为 hidden 元数据，两层容器仍是测试契约
+    expect(pipeline.querySelector('.iv-module-n')).toBeNull()
+    expect(pipeline.querySelector('[data-module-toggle]')).toBeNull()
     expect(pipeline.querySelector('[data-module-title="pipeline"]')?.textContent).toBe(en.modulePipeline)
+    expect(pipeline.querySelector('[data-module-title="pipeline"]')?.hasAttribute('hidden')).toBe(true)
     const episode = view.container.querySelector('[data-module="episode"]') as HTMLElement
-    expect(episode.querySelector('.iv-module-n')?.textContent).toBe('2')
+    expect(episode.querySelector('.iv-module-n')).toBeNull()
+    expect(episode.querySelector('[data-module-toggle]')).toBeNull()
     expect(episode.querySelector('[data-module-title="episode"]')?.textContent).toBe(en.moduleEpisode)
+    expect(episode.querySelector('[data-module-title="episode"]')?.hasAttribute('hidden')).toBe(true)
     // 快速创作页不再承载剧本层级
     expect(view.container.querySelector('[data-quick-modules]')).toBeNull()
   })
@@ -115,25 +120,16 @@ describe('页面 · 模块化分区', () => {
     expect(backBox.value).toBe('雨夜霓虹，一名撑伞的少女')
   })
 
-  it('collapses the script module from the toggle at the far right of its header (2026-11-05)', async () => {
+  it('keeps both script modules flat and always visible (2026-11-26)', async () => {
     const { view } = await renderQuick()
     const body = (key: string): HTMLElement => view.container.querySelector(`[data-module-body="${key}"]`) as HTMLElement
-    const toggle = (key: string): HTMLElement => view.container.querySelector(`[data-module-toggle="${key}"]`) as HTMLElement
 
-    // v1.2：快速创作页的 module 折叠已移除（表单直接平铺），只保留剧本页的折叠能力
-
-    // 剧本生成页：① 可整块收起（剧本卡 + 分层结构一起藏起来）
+    // 两个装饰性折叠头已删除：内容恒展开，容器与 data-module-body 仍在 DOM 供断言定位
     await switchMode(view, 'modeScript', '[data-module="pipeline"]')
     expect(body('pipeline').hasAttribute('hidden')).toBe(false)
-    expect(toggle('pipeline').getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(toggle('pipeline'))
-    await waitFor(() => { expect(body('pipeline').hasAttribute('hidden')).toBe(true) })
-    expect(toggle('pipeline').getAttribute('aria-expanded')).toBe('false')
-    expect(toggle('pipeline').textContent).toContain(en.moduleExpand)
-
-    // 再点回来
-    fireEvent.click(toggle('pipeline'))
-    await waitFor(() => { expect(body('pipeline').hasAttribute('hidden')).toBe(false) })
+    expect(body('episode').hasAttribute('hidden')).toBe(false)
+    expect(view.container.querySelector('[data-module-toggle="pipeline"]')).toBeNull()
+    expect(view.container.querySelector('[data-module-toggle="episode"]')).toBeNull()
   })
 
   // v1.2：原「点 module 标题行折叠」用例已删除——快速创作页不再有折叠按钮。

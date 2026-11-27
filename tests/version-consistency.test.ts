@@ -24,7 +24,8 @@ describe('version consistency (A73/A75)', () => {
   it('package.json, src/version.ts and the newest CHANGELOG entry agree', async () => {
     const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8')) as { version: string }
     const changelog = await readFile(join(ROOT, 'CHANGELOG.md'), 'utf8')
-    const newest = /^## \[(\d+\.\d+\.\d+)-workbench-(\d+)\]/m.exec(changelog)
+    // 1.0.6 起版本条目标题不再带 `-workbench-N` 后缀（如 `## [1.0.6]`），两种都算
+    const newest = /^## \[(\d+\.\d+\.\d+)(?:-workbench-(\d+))?\]/m.exec(changelog)
 
     expect(newest, 'CHANGELOG 里找不到形如 ## [x.y.z-workbench-n] 的条目').not.toBeNull()
     expect(pkg.version).toBe(PLUGIN_VERSION)

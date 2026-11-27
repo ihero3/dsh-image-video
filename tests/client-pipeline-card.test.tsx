@@ -39,7 +39,7 @@ const generateButton = (container: HTMLElement): HTMLButtonElement =>
 
 describe('PipelineCard · 只生成剧本', () => {
   it('没有分镜 / 画布 / 图片 / 视频 / 每镜秒数 / 切段这些入口', () => {
-    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" />)
     for (const attr of [
       'data-pipeline-compose', 'data-pipeline-to-canvas', 'data-pipeline-inline-image',
       'data-pipeline-inline-run', 'data-pipeline-duration', 'data-pipeline-cancel',
@@ -55,7 +55,7 @@ describe('PipelineCard · 只生成剧本', () => {
   })
 
   it('剧本框 6 行；三级数量默认用占位「自动」，点击直接输入数字，清空后仍是自动', () => {
-    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={makeApi()} t={t} projectId="prj-1" />)
     expect(scriptInput(container).rows).toBe(6)
     for (const attr of ['data-pipeline-plan-episodes', 'data-pipeline-plan-segments', 'data-pipeline-plan-shots']) {
       const input = container.querySelector(`[${attr}]`) as HTMLInputElement
@@ -81,7 +81,7 @@ describe('PipelineCard · 只生成剧本', () => {
     const api = makeApi({ generateEpisodes } as unknown as Partial<WorkbenchApi>)
     const { container } = render(
       <PipelineCard api={api} t={t} projectId="prj-1" episodeId="ep-1"
-        onStarted={() => {}} onEpisodesGenerated={onEpisodesGenerated} />,
+        onEpisodesGenerated={onEpisodesGenerated} />,
     )
     expect(generateButton(container).className).toContain('iv-btn--action--primary')
 
@@ -102,7 +102,7 @@ describe('PipelineCard · 只生成剧本', () => {
     let resolve!: (value: { episodes: readonly unknown[] }) => void
     const generateEpisodes = vi.fn(() => new Promise<{ episodes: readonly unknown[] }>(done => { resolve = done }))
     const api = makeApi({ generateEpisodes } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(scriptInput(container), { target: { value: '一句话创意。' } })
     fireEvent.click(generateButton(container))
     await waitFor(() => {
@@ -113,7 +113,7 @@ describe('PipelineCard · 只生成剧本', () => {
     await waitFor(() => { expect(generateButton(container).disabled).toBe(false) })
 
     const failing = makeApi({ generateEpisodes: vi.fn(async () => { throw new Error('宿主拒绝了') }) } as unknown as Partial<WorkbenchApi>)
-    const view = render(<PipelineCard api={failing} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const view = render(<PipelineCard api={failing} t={t} projectId="prj-1" />)
     fireEvent.change(scriptInput(view.container), { target: { value: '另一句话。' } })
     fireEvent.click(generateButton(view.container))
     await waitFor(() => {
@@ -123,7 +123,7 @@ describe('PipelineCard · 只生成剧本', () => {
 
   it('导入后展示全文总字数（不切段），原文并入剧本框', async () => {
     const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     const file = new File(['正文'], 'episode.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
     fireEvent.change(container.querySelector('[data-pipeline-import-file]') as HTMLInputElement, { target: { files: [file] } })
     await waitFor(() => { expect(scriptInput(container).value).toBe('导入的正文。') })
@@ -135,7 +135,7 @@ describe('PipelineCard · 只生成剧本', () => {
   })
 
   it('没有项目时按钮禁用并说明原因', () => {
-    const { container } = render(<PipelineCard api={makeApi()} t={t} onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={makeApi()} t={t} />)
     fireEvent.change(scriptInput(container), { target: { value: '剧本' } })
     expect(generateButton(container).disabled).toBe(true)
     expect(container.textContent).toContain(en.pipelineNeedsProject)
@@ -143,7 +143,7 @@ describe('PipelineCard · 只生成剧本', () => {
 
   it('切换剧集：上一集剧本不会留在下一集，切回来内容还在', () => {
     const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     act(() => { switchPipelineEpisode(api, 'ep-1') })
     fireEvent.change(scriptInput(container), { target: { value: '第一部的剧本' } })
     act(() => { switchPipelineEpisode(api, 'ep-2') })

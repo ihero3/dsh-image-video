@@ -56,6 +56,56 @@ describe('ModelCardsPanel (B-6)', () => {
     expect(screen.getByText('Model One')).toBeTruthy()
   })
 
+  it('lists synthesis and clone voice models next to the text models', async () => {
+    const host = fakeApi({
+      voiceStatus: {
+        available: true,
+        provider: 'threevideo',
+        voices: [
+          { id: 'v1', name: 'Voice One' },
+          { id: 'v2', name: 'Voice Two' },
+        ],
+        model: 'fake-tts-model',
+        cloneModel: 'fake-clone-model',
+      },
+    })
+    const view = render(<ModelCardsPanel api={host.api} t={t} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-voice-models]')).toBeTruthy() })
+    expect(screen.getByText(en.modelCardsVoiceModels)).toBeTruthy()
+    expect(view.container.querySelector('[data-model-voice-synth="fake-tts-model"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-model-voice-clone="fake-clone-model"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-model-voice-availability="ready"]')).toBeTruthy()
+    expect(screen.getByText(/2 voices/)).toBeTruthy()
+    expect(view.container.querySelector('[data-model-voice-reason]')).toBeNull()
+  })
+
+  it('keeps the voice models visible with an actionable reason when voice is not ready', async () => {
+    const host = fakeApi({
+      voiceStatus: {
+        available: false,
+        provider: 'threevideo',
+        reason: 'voice API key missing',
+        voices: [],
+        model: 'fake-tts-model',
+        cloneModel: 'fake-clone-model',
+      },
+    })
+    const view = render(<ModelCardsPanel api={host.api} t={t} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-voice-availability="unavailable"]')).toBeTruthy() })
+    expect(view.container.querySelector('[data-model-voice-synth="fake-tts-model"]')).toBeTruthy()
+    expect(screen.getByText(/voice API key missing/)).toBeTruthy()
+    expect(screen.getByText(/0 voices/)).toBeTruthy()
+  })
+
+  it('surfaces a voice status failure without hiding the text models', async () => {
+    const host = fakeApi()
+    host.api.voiceStatus = async () => { throw new Error('voice endpoint exploded') }
+    const view = render(<ModelCardsPanel api={host.api} t={t} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-model-voice-failure]')).toBeTruthy() })
+    expect(screen.getByText(/voice endpoint exploded/)).toBeTruthy()
+    expect(screen.getByText('Fake text')).toBeTruthy()
+  })
+
   it('surfaces a drift warning when consistencyIssues is non-empty', async () => {
     const host = fakeApi()
     host.api.modelsCatalog = async () => ({

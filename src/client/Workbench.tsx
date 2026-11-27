@@ -12,7 +12,7 @@
  * colours resolve through the Harness design tokens with currentColor-mix
  * fallbacks (`R-NFR-3`); no deployment fact is baked into the bundle.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type CSSProperties } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the main-panel slot declarations this body registers under.
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -25,6 +25,8 @@ import {
   timelineDurationMs, type ClipTransition, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind,
 } from '../workbench/timeline.ts'
 import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
+// `B2`：导出规格预览与宿主共用同一套档位换算，避免"显示 2K、实际 720p"
+import { resolveExportFormat } from '../workbench/export-selection.ts'
 import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
@@ -120,7 +122,7 @@ type HealthState =
     version: string
     provider: string
     defaults?: Record<string, string | number | null>
-    /** 每个默认值字段的来源：区分"我改过的"与"设置里的默认"（宿主未下发时不标注）。 */
+    /** 每个默认值字段的来源：只有「已覆盖」会挂徽章（宿主未下发时不标注）。 */
     defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
     options?: WorkbenchOptions
   }
@@ -146,6 +148,24 @@ const SCRIPT_TABS: ReadonlyArray<{ readonly key: WorkbenchScriptTab, readonly la
   { key: 'extract', label: 'scriptTabExtract' },
   { key: 'voice', label: 'scriptTabVoice' },
   { key: 'motion', label: 'scriptTabMotion' },
+]
+/** 分区图标：复用既有图标，不引入 emoji。 */
+const SCRIPT_TAB_ICONS: Record<WorkbenchScriptTab, IconName> = {
+  split: 'storyboard', extract: 'box', voice: 'music', motion: 'motion',
+}
+
+/** 剧本页第几步：1 写剧本 → 2 分段 → 3 分镜；0 表示三步都已完成。 */
+type ScriptStepNo = 0 | 1 | 2 | 3
+/** 步进条的三步定义：序号即步骤号，锚点用于点按后滚动到对应区块。 */
+const SCRIPT_STEPS: ReadonlyArray<{
+  readonly no: 1 | 2 | 3
+  readonly label: WorkbenchLocaleKey
+  readonly hint: WorkbenchLocaleKey
+  readonly anchor: string
+}> = [
+  { no: 1, label: 'scriptStepScript', hint: 'scriptStepHintScript', anchor: 'script-step-pipeline' },
+  { no: 2, label: 'scriptStepSplit', hint: 'scriptStepHintSplit', anchor: 'script-step-segments' },
+  { no: 3, label: 'scriptStepStoryboard', hint: 'scriptStepHintStoryboard', anchor: 'script-step-storyboard' },
 ]
 
 /** Resource kind → icon (resource library rows). */
@@ -193,6 +213,24 @@ function scrollToPane(pane: string): void {
   // jsdom / 旧 WebView 没有 scrollIntoView：定位失败不该把流程打断（`T9` 同款防御）
   if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   // 重启动画：先摘掉类，强制一次重排，再挂回去
+  target.classList.remove('iv-pane--flash')
+  void target.offsetWidth
+  target.classList.add('iv-pane--flash')
+  target.addEventListener('animationend', () => { target.classList.remove('iv-pane--flash') }, { once: true })
+}
+
+/**
+ * 跳到剧本页的某一步（步进条点按、以及生成剧本后自动指向下一步）。
+ *
+ * 与 `scrollToPane` 同一套防御：目标不存在直接返回，没有 `scrollIntoView`
+ * （jsdom / 旧 WebView）就只给高亮——跳转失败不该打断流程。
+ *
+ * @param anchor - 步骤区块的 DOM id（`script-step-pipeline` / `-segments` / `-storyboard`）。
+ */
+function jumpToScriptStep(anchor: string): void {
+  const target = document.getElementById(anchor)
+  if (target === null) return
+  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'start' })
   target.classList.remove('iv-pane--flash')
   void target.offsetWidth
   target.classList.add('iv-pane--flash')
@@ -285,6 +323,29 @@ const REF_PICKER_HEIGHT = 360
 /** 片段 id 生成器（分割/复制用；随机后缀保证同帧内多次操作也不撞 id）。 */
 function nextClipId(): string {
   return `clip-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/**
+ * 检查器数字输入的统一夹紧（`F6`）。
+ *
+ * 宿主校验对片段字段是**硬拒**：start / duration 必须在 `0..MAX_CLIP_DURATION_MS`、
+ * duration ≥ `MIN_CLIP_MS`、crop 宽高必须偶数。以前输入框把 `Number(value)` 原样写库，
+ * 一个手滑（清空输入 → 0、多打一位 → 越界）就让整个时间轴保存态变 `failed`。
+ * 现在的口径：空值/非数字**不落库**（保留上一次合法值），越界夹到边界。
+ */
+function clampMs(raw: string, min: number, max: number): number | undefined {
+  if (raw.trim() === '') return undefined
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return undefined
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+/** 裁剪宽高夹紧：先夹到区间，再向下取偶（ffmpeg yuv420p 只吃偶数尺寸）。 */
+function clampEven(raw: string, min: number, max: number): number | undefined {
+  const value = clampMs(raw, min, max)
+  if (value === undefined) return undefined
+  const even = value - (value % 2)
+  return even < min ? min : even
 }
 
 /** Localized label for one timeline track kind. */
@@ -618,10 +679,36 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [subtitleBatchDraft, setSubtitleBatchDraft] = useState('')
   const [templateOpen, setTemplateOpen] = useState(false)
+  /**
+   * 模板浮层：非模态抽屉，但焦点行为要和模态一致（`F17`）——打开移入、Tab 在抽屉内循环、
+   * Esc 关闭、关闭后焦点还给开关按钮。以前只有 Esc/外部点击，键盘用户 Tab 进来后
+   * 焦点还在浮层背后的画布上，等于"看不见的抽屉"。
+   */
+  const templateRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(templateOpen, templateRef, () => { setTemplateOpen(false) }, '[data-workflow-template-toggle="true"]')
+  useEffect(() => {
+    if (!templateOpen) return
+    const onPointerDown = (event: MouseEvent): void => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (templateRef.current?.contains(target) === true) return
+      if (target instanceof Element && target.closest('[data-workflow-template-toggle]') !== null) return
+      setTemplateOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [templateOpen])
   /** 模板市场卡片点击：图非空时先确认再替换（同一张确认口径表）。 */
   const [pendingTemplate, setPendingTemplate] = useState<{ label: string; run: () => void } | undefined>(undefined)
   const pendingTemplateRef = useRef<HTMLDivElement>(null)
   useDialogFocus(pendingTemplate !== undefined, pendingTemplateRef, () => { setPendingTemplate(undefined) })
+  /**
+   * 模板整图替换信号（`F3`）：自增一次，画布就把 `workflow` 的最新图作为**一次可撤销的替换**
+   * 应用（而不是重播种清空撤销栈）。确认弹窗承诺的 Ctrl/Cmd+Z 靠它成立。
+   */
+  const [templateRevision, setTemplateRevision] = useState(0)
   const [diagnostics, setDiagnostics] = useState<WorkbenchDiagnostics | undefined>(undefined)
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -638,6 +725,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [exportResolution, setExportResolution] = useState('default')
   const [exportFps, setExportFps] = useState(30)
   const [exportAspect, setExportAspect] = useState('landscape')
+  /**
+   * 导出条的实时规格预览（`B2`）。
+   *
+   * 与宿主 `timelines/render` 调**同一个** `resolveExportFormat`，所以下拉上显示的尺寸
+   * 就是 ffmpeg 真正会输出的尺寸——不是前端另算一份"大概是这样"。
+   * 档位非法时返回 undefined（下拉值都是白名单，理论上不会走到）。
+   */
+  const exportPreviewFormat = (() => {
+    try {
+      return resolveExportFormat(timeline?.exportFormat, {
+        resolution: exportResolution, fps: exportFps, aspect: exportAspect,
+      })
+    } catch {
+      return undefined
+    }
+  })()
   // B6 导出成功后「登记到素材库」的反馈。
   const [assetRegistered, setAssetRegistered] = useState(false)
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
@@ -734,11 +837,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 为什么不是"左物料/中创作/右产物"三栏：DSH 右栏默认只有视口 45%（1280 窗口实测内宽 575px），
   // 260+内容+320 物理放不下；同宽度下正确的做法是**纵向分段 + 高级功能折叠**，
   // 让「提示词 → 参数 → 生成 → 结果」在主视线内闭环，低频块不抢位置。
-  /**
-   * 模块级收起（用户 2026-11-05）：①②③ 三个模块都在标题行**最右**有一个"收起/展开"，
-   * 收起就把整块内容一起藏起来。
-   */
-  const [openModules, setOpenModules] = useState<{ pipeline: boolean; quick: boolean; episode: boolean }>({ pipeline: true, quick: true, episode: true })
+  // 2026-11-26：快速创作与剧本页的装饰性 module 折叠已移除，两层容器只作结构契约保留。
   // 展示列开合（宽档两栏 / 窄档浮层，见样式表容器查询）
   const [dockOpen, setDockOpen] = useWorkbenchField(api, 'dockOpen')
   // 展示列各块的收起态：高频块（预览）默认展开，低频块（资源/导出/任务）默认收起。
@@ -779,7 +878,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }, [])
 
   useEffect(() => { void loadAuthLabel() }, [loadAuthLabel])
-  const toggleModule = (key: 'pipeline' | 'quick' | 'episode'): void => { setOpenModules(current => ({ ...current, [key]: !current[key] })) }
+  /** 剧本分区 tab 的 roving 键盘模型：←/→/Home/End 切换并把焦点跟过去。 */
+  const onScriptTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const last = SCRIPT_TABS.length - 1
+    const next = event.key === 'ArrowRight' ? (index === last ? 0 : index + 1)
+      : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
+        : event.key === 'Home' ? 0
+          : event.key === 'End' ? last : -1
+    if (next < 0) return
+    event.preventDefault()
+    const key = SCRIPT_TABS[next]!.key
+    setScriptTab(key)
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>(`[data-script-tab="${key}"]`)?.focus()
+    })
+  }
   /** 结果卡 / 失败条的锚点：生成结束后自动滚到它，省掉用户找。 */
   const generateOutcomeRef = useRef<HTMLDivElement | null>(null)
 
@@ -1310,6 +1423,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 与导出共用同一边界判断（`R-TML-3`）
   const activeVideo = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'video', playheadMs)
   const activeSubtitle = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'subtitle', playheadMs)
+  /**
+   * 监视器要显示的**源内时间**（`F5`）：入点 + （播放头 − 片段起点）× 速度。
+   * 变速片段的 `durationMs` 是源时长，时间轴上占用的是 `effectiveDurationMs`，
+   * 所以按播放头线性换算是 `× speed`；结果夹在 [入点, 入点 + 源时长] 内。
+   */
+  const monitorMediaMs = activeVideo === undefined
+    ? 0
+    : (() => {
+      const inMs = activeVideo.inMs ?? 0
+      const elapsed = (playheadMs - activeVideo.startMs) * (activeVideo.speed ?? 1)
+      return Math.max(inMs, Math.min(inMs + activeVideo.durationMs, inMs + elapsed))
+    })()
+  /** 节目监视器跟着视频轨的音量/静音走（导出按同一字段应用，预览不该是另一套）。 */
+  const programVideoTrack = timeline?.tracks.find(track => track.kind === 'video')
 
   /** 时间轴通用改法：换掉某条轨道。 */
   const patchTrack = (trackId: string, update: (track: TimelineTrack) => TimelineTrack): void => {
@@ -1410,26 +1537,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    * 把内置模板实例化成工作流记录（`B15` 模板市场）。
    * 两类模板（`WORKFLOW_TEMPLATES` 的 `WorkflowTemplate` 与 `DRAMA_TEMPLATES` 的 `DramaTemplate`）
    * 结构一致：节点 `kind + params?`（缺省参数用 `defaultParams` 补）＋ 下标连线。
+   *
+   * `reuse` 传入当前记录时**复用同一条工作流**（id / 项目 / 名称 / 创建时间不变）：
+   * 模板市场是"替换本项目的图"，不是新建一条工作流——否则每个项目会攒下一串孤儿记录，
+   * 而且 `record.id` 一变画布会重置撤销栈，确认弹窗承诺的 Ctrl/Cmd+Z 就失效了（`F3`）。
    */
   const instantiateAnyTemplate = (
     template: { id: string; labelKey: string; describe?: string; nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]; edges: readonly (readonly [number, number])[] },
+    reuse?: WorkflowRecord,
   ): WorkflowRecord => {
     const stamp = new Date().toISOString()
     const title = template.describe?.split('：')[0] ?? template.id
-    const id = newWorkbenchId('wfl')
+    const id = reuse?.id ?? newWorkbenchId('wfl')
+    // 同一条工作流可反复套模板：给节点 id 加一次性后缀，避免上一张图的节点 id 撞上
+    // （撤销栈里两张图各自完整，撞 id 会让 xyflow 复用旧节点实例）。
+    const seq = Date.now().toString(36)
     return {
       schemaVersion: 1,
       id,
-      projectId: activeProject?.id ?? '',
-      name: title,
+      projectId: reuse?.projectId ?? activeProject?.id ?? '',
+      name: reuse?.name ?? title,
       nodes: template.nodes.map((node, index) => ({
-        id: `${id}-${index}`,
+        id: `${id}-${index}-${seq}`,
         kind: node.kind,
         position: { x: (index % 4) * 220, y: Math.floor(index / 4) * 160 },
         params: node.params ?? defaultParams(node.kind),
       })),
-      edges: template.edges.map(([from, to]) => ({ id: `${id}-${from}-${to}`, source: `${id}-${from}`, target: `${id}-${to}` })),
-      createdAt: stamp,
+      edges: template.edges.map(([from, to]) => ({
+        id: `${id}-${from}-${to}-${seq}`,
+        source: `${id}-${from}-${seq}`,
+        target: `${id}-${to}-${seq}`,
+      })),
+      createdAt: reuse?.createdAt ?? stamp,
       updatedAt: stamp,
     }
   }
@@ -1442,6 +1581,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [dropTrackId, setDropTrackId] = useState<string | undefined>(undefined)
   /** 选中的片段（键盘 Delete 与复制按钮用；UI 瞬时状态，不入库）。 */
   const [selectedClipId, setSelectedClipId] = useState<string | undefined>(undefined)
+  /** 单条删除后给一次撤销入口（确认/撤销表：单条删除不弹模态）。 */
+  const [clipUndo, setClipUndo] = useState<{ trackId: string; clip: TimelineClip; index: number } | undefined>(undefined)
   /**
    * 片段检查器要展示的片段：真正选中的优先；没选中时**展示**首个片段但不写入选中态
    * （`fallback`）。这样「进页面就能改参数」与「没有片段被高亮」两件事同时成立，
@@ -1459,8 +1600,35 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [resizing, setResizing] = useState<{ trackId: string; clipId: string; side: 'left' | 'right'; startX: number } | undefined>(undefined)
   /** 轨道 lane 的 DOM 引用（量 rect 用：像素 ↔ 毫秒的换算基准）。 */
   const laneRefs = useRef(new Map<string, HTMLElement>())
-  /** 顺序播放开关。 */
+  /** 顺序播放开关（节目监视器）。 */
   const [playing, setPlaying] = useState(false)
+  /**
+   * 节目监视器里的 `<video>`（`F5`）。以前只是"换 src 的静态画面"，
+   * 播放靠定时器推播放头，片段内不 seek、不出声；现在 play/pause/currentTime
+   * 与播放头双向对齐，声音也放出来（被拦自动播放时退回静音）。
+   */
+  const monitorVideoRef = useRef<HTMLVideoElement | null>(null)
+  /** 逐段预览播放开关：与监视器互斥，同一时刻只有一个在播。 */
+  const [segPlaying, setSegPlaying] = useState(false)
+  /** 辅助工具折叠区：外部触发逐段预览时先展开，避免"点了没反应"。 */
+  const [auxOpen, setAuxOpen] = useState(false)
+  /** 轨道缩放倍率（0.5×–3×），滑块 rAF 节流后写状态。 */
+  const [timelineZoom, setTimelineZoom] = useState(1)
+  const zoomFrame = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (segPlaying) setAuxOpen(true)
+  }, [segPlaying])
+  useEffect(() => () => { if (zoomFrame.current !== undefined) cancelAnimationFrame(zoomFrame.current) }, [])
+  /** 刻度密度随缩放变化：6–12 格，末格不裁。 */
+  const tickCount = timelineZoom <= 1 ? 6 : timelineZoom <= 2 ? 8 : 12
+  /** 滑块用 rAF 节流，避免连续输入把 React 渲染压成 long task。 */
+  const onZoomInput = (value: number): void => {
+    if (zoomFrame.current !== undefined) cancelAnimationFrame(zoomFrame.current)
+    zoomFrame.current = requestAnimationFrame(() => {
+      setTimelineZoom(Math.round((0.5 + (value / 100) * 2.5) * 20) / 20)
+      zoomFrame.current = undefined
+    })
+  }
 
   /** 素材行开始拖拽：路径 + 媒体类型放进 dataTransfer。 */
   const onAssetDragStart = (event: ReactDragEvent, asset: AssetRecord): void => {
@@ -1664,11 +1832,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
 
   /** 删除选中的片段（键盘 Delete 与垃圾桶按钮共用）。 */
+  /**
+   * 删除选中片段：键盘 Delete/Backspace 与检视器垃圾桶共用一条路径（`F4`）。
+   * 两条路径都必须写 `clipUndo`——否则键盘删了就再也找不回来，
+   * 与「删除后可撤销」的界面承诺不一致。
+   */
   const removeSelectedClip = (): void => {
-    if (selectedClipId === undefined) return
+    if (selectedClipId === undefined || timeline === undefined) return
+    const track = timeline.tracks.find(item => item.clips.some(clip => clip.id === selectedClipId))
+    const clip = track?.clips.find(item => item.id === selectedClipId)
+    if (track === undefined || clip === undefined) return
+    setClipUndo({ trackId: track.id, clip, index: track.clips.findIndex(item => item.id === clip.id) })
     setTimeline(current => current === undefined ? current : {
       ...current,
-      tracks: current.tracks.map(track => ({ ...track, clips: track.clips.filter(clip => clip.id !== selectedClipId) })),
+      tracks: current.tracks.map(item => ({ ...item, clips: item.clips.filter(entry => entry.id !== selectedClipId) })),
     })
     setTimelineState('dirty')
     setSelectedClipId(undefined)
@@ -1677,9 +1854,55 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   /** 播放/暂停：不在任何片段里（或已到尽头）就从头开始；顺序播放跳过空隙。 */
   const togglePlay = (): void => {
     if (playing) { setPlaying(false); return }
+    // 两个播放器互斥：启动监视器前先停下逐段预览
+    if (segPlaying) setSegPlaying(false)
+    // 上次可能因浏览器拦自动播放退回了静音；这次是用户手势，先恢复出声再试
+    const video = monitorVideoRef.current
+    if (video !== null) video.muted = false
     if (playheadMs >= timelineTotal || activeVideo === undefined) setPreviewMs(0)
     setPlaying(true)
   }
+
+  /**
+   * 把监视器 `<video>` 定位到当前播放头（`F5`）。
+   * @param force - `true` = 精确 seek（暂停、元数据到达）；`false` = 播放中只纠正 >250ms 的漂移，
+   *   避免每个 tick 都打断解码。
+   */
+  const seekMonitor = useCallback((force: boolean): void => {
+    const video = monitorVideoRef.current
+    if (video === null) return
+    const target = monitorMediaMs / 1000
+    if (!Number.isFinite(target)) return
+    if (!force && Math.abs(video.currentTime - target) <= 0.25) return
+    video.currentTime = target
+  }, [monitorMediaMs])
+
+  /** 播放状态 / 片段 → 监视器：play/pause + 速度对齐；位置由 `seekMonitor` 负责。 */
+  useEffect(() => {
+    const video = monitorVideoRef.current
+    if (video === null) return
+    video.playbackRate = Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, activeVideo?.speed ?? 1))
+    video.muted = programVideoTrack?.muted === true
+    video.volume = Math.min(1, Math.max(0, programVideoTrack?.volume ?? 1))
+    if (!playing) {
+      // 已经是暂停态就别再调（避免每次重渲染都触发一次无意义的 pause）
+      if (!video.paused) video.pause()
+      return
+    }
+    const started = video.play()
+    if (started === undefined) return
+    // 没有用户手势时浏览器会拦带声音的自动播放：退回静音，至少画面不冻住
+    void started.catch(() => {
+      video.muted = true
+      const retry = video.play()
+      if (retry !== undefined) void retry.catch(() => {})
+    })
+  }, [playing, activeVideo?.id, activeVideo?.speed, programVideoTrack?.muted, programVideoTrack?.volume])
+
+  /** 播放头 → 监视器：暂停时精确对齐，播放中按阈值纠偏。 */
+  useEffect(() => {
+    seekMonitor(!playing)
+  }, [seekMonitor, playing])
 
   // 顺序播放：每 100ms 按真实流逝推进播放头；过了当前视频片段的结尾就跳到
   // 下一个视频片段（跳过空隙）；没有下一个就停在尽头并暂停。
@@ -1695,8 +1918,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       const current = previewMsRef.current
       const active = activeClipAt(timeline.tracks, 'video', current)
       let next = current + delta
-      if (active !== undefined && next >= active.startMs + active.durationMs) {
-        const following = nextVideoClipStart(timeline.tracks, active.startMs + active.durationMs)
+      // 片段在时间轴上占用 `effectiveDurationMs`（变速折算后），不是源时长 `durationMs`
+      if (active !== undefined && next >= active.startMs + effectiveDurationMs(active)) {
+        const following = nextVideoClipStart(timeline.tracks, active.startMs + effectiveDurationMs(active))
         if (following === undefined) {
           setPlaying(false)
           previewMsRef.current = timelineTotal
@@ -1845,6 +2069,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     ref,
     asset: assets.find(asset => asset.id === ref.assetId),
   }))
+  /**
+   * 剧本页三步进度（写剧本 → 分段 → 分镜）。
+   *
+   * 判定只用当前集的**真实数据**，不看按钮点过没有：剧本非空 = 第一步完成；
+   * 有分段 = 第二步完成；任一段有镜头 = 第三步完成。
+   * 有分段就认为第一步也过了（用户可能只手动加了段、没落剧本正文），
+   * 否则会出现「明明有分段，却提示去写剧本」的倒退。
+   *
+   * 「下一步」取第一个未完成的步骤，用来**收敛主按钮**：三个按钮不再同时实心主色，
+   * 只有对应下一步的那个是主色（`--action--primary`），其余降为柔色（`--action--soft`）。
+   * 未选集 / 未选剧本时停在第一步，此时「生成剧本」仍是唯一主按钮。
+   */
+  const scriptStep = (() => {
+    const hasScript = (activeEpisode?.script?.text ?? '').trim() !== ''
+    const hasSegments = (activeEpisode?.segments?.length ?? 0) > 0
+    const hasStoryboard = (activeEpisode?.storyboards ?? [])
+      .some(storyboard => (storyboard.shots?.length ?? 0) > 0)
+    const step1Done = hasScript || hasSegments
+    const next: ScriptStepNo = !step1Done ? 1 : !hasSegments ? 2 : !hasStoryboard ? 3 : 0
+    return { next, hasScript, hasSegments, hasStoryboard }
+  })()
   // 搜索框跟着当前 tab 走：本集已选只在本集已选里匹配，剧集全部仍走 visibleResources。
   // 用单独的列表做展示过滤，原始 rows 继续给「加入本集」等判断用，避免误判成未引用。
   const filteredEpisodeResourceRows = episodeResourceRows.filter(({ resource }) =>
@@ -2283,7 +2528,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
   // `field` 是接口字段名（imageSize…），`key` 是界面文案键：下发 patch 必须用前者
-  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string; display: string; source?: 'override' | 'settings' | 'none' }> = health.status === 'ok' && health.defaults !== undefined
+  // `label` 是这一项该不该标来源徽章：只标「来源改变了值」的字段（`T2-11` 修订）
+  const defaultRows: Array<{
+    key: WorkbenchLocaleKey
+    field: string
+    value: string
+    display: string
+    source?: 'override' | 'settings' | 'none'
+    label: boolean
+  }> = health.status === 'ok' && health.defaults !== undefined
     ? ([
       ['defaultImageProvider', health.defaults.imageProvider],
       ['defaultImageSize', health.defaults.imageSize],
@@ -2299,7 +2552,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         const source = health.status === 'ok' ? health.defaultsSources?.[field] : undefined
         const raw = empty ? '' : String(value)
         // `value` 是下发口径（1024*1024 / photo），`display` 才是给人看的（1:1 / 摄影）
-        return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source }
+        // 徽章只标「这一轮真的偏离了默认」：`override` 是用户在工作台/composer 临时改的，
+        // 重启就回退，必须让人看见。`settings` 与 `none` 都不标——设置项是长期状态、兜底值
+        // 是插件自带，两者都改不动这一轮的判断，标出来只是给每行加噪声（`T2-11` 修订二）。
+        const label = source === 'override'
+        return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source, label }
       })
     : []
 
@@ -2419,8 +2676,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         data-workbench-header="true"
         onDoubleClick={onWindowStripDoubleClick}
       >
-        <div className="iv-brand">
-          <BrandMark size={22} />
+        <div className="iv-brand" title={t('brandTagline')}>
+          <BrandMark size={20} />
           <span className="iv-brand-text">
             <span className="iv-brand-name">{t('brandName')}</span>
             <span className="iv-brand-sub">{t('brandTagline')}</span>
@@ -2496,7 +2753,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             />
             <button
               type="button"
-              className="iv-btn iv-btn--acc iv-btn--sm"
+              className={`iv-btn iv-btn--sm${name.trim().length > 0 ? ' iv-btn--acc' : ''}`}
               disabled={busy || name.trim().length === 0}
               onClick={() => {
                 void run(async () => {
@@ -2617,7 +2874,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 title={t('episodeNew')}
                 onClick={createEpisode}
               >
-                <Icon name="plus" size={11} />{t('episodeNew')}
+                <Icon name="plus" size={11} /><span className="iv-btn-txt">{t('episodeNew')}</span>
               </button>
               {forceTarget === activeEpisodeId && activeEpisode !== undefined
                 ? (
@@ -2635,7 +2892,83 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             </div>
           </>
         )}
-        <span className="iv-top-sep" aria-hidden="true" />
+        {/* 保存状态与右侧工具合成一个整体：窄档换行时一起下去靠右，
+            不会出现「工具被甩到下一行最左边」的错位。 */}
+        <div className="iv-top-end">
+          <div className="iv-top-meta">
+            <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
+              <i className="iv-dot" aria-hidden="true" />
+              {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
+            </span>
+            {/* 健康状态只在异常 / 检测中时提示：正常的版本号收进帮助浮层（2026-11-20） */}
+            {health.status === 'ok' ? null : (
+              <span
+                className={`iv-chip${health.status === 'checking' ? '' : ' iv-chip--err'}`}
+                title={health.status === 'failed' ? health.message : undefined}
+              >
+                <i className="iv-dot" aria-hidden="true" />
+                {healthText}
+              </span>
+            )}
+            <button
+              type="button"
+              className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+              aria-label={t('refresh')}
+              title={t('refresh')}
+              disabled={busy}
+              onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
+            >
+              <Icon name="refresh" />
+            </button>
+          </div>
+
+          {/* 登录 / 帮助 / 工作台：吸附在最右侧，替换掉原「输出产物 / 素材 / 任务」三个统计块的位置。 */}
+          <div className="iv-top-tools">
+            <button
+              type="button"
+              className={`iv-btn iv-btn--sm iv-btn--ghost${connectOpen ? ' iv-btn--on' : ''}`}
+              aria-label={authT('dialogTitle')}
+              aria-expanded={connectOpen}
+              data-workbench-connect-toggle="true"
+              data-connect-signed-in={authLabel?.signedIn === true ? 'true' : 'false'}
+              title={authT('dialogTitle')}
+              onClick={() => { setConnectOpen(open => !open) }}
+            >
+              <Icon name="link" size={12} />
+              <span className="iv-tools-txt">
+                {authLabel?.signedIn === true && authLabel.label !== undefined && authLabel.label !== ''
+                  ? authLabel.label
+                  : t('loginThreeView')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${helpOpen ? ' iv-btn--on' : ''}`}
+              aria-label={t('railHelp')}
+              aria-expanded={helpOpen}
+              data-workbench-help-toggle="true"
+              title={t('railHelp')}
+              onClick={() => { setHelpOpen(open => !open) }}
+            >
+              <Icon name="help" />
+            </button>
+            <button
+              type="button"
+              className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
+              aria-label={t('tabTitle')}
+              aria-pressed={dockOpen}
+              title={t('tabTitle')}
+              data-workbench-dock-toggle="true"
+              onClick={() => { setDockOpen(open => !open) }}
+            >
+              <Icon name="layers" />
+            </button>
+          </div>
+        </div>
+
+        {/* 视图导航独占一行：四个模式是全产品的主动脉，压进上下文行会被剧集/集控件淹没。
+            分隔线在换行后没有意义，视觉上隐藏，但保留节点（顶栏契约要求它存在）。 */}
+        <span className="iv-top-sep iv-top-sep--stacked" aria-hidden="true" />
         <nav className="iv-modes" aria-label={t('tabTitle')}>
           {MODES.map(candidate => (
             <button
@@ -2644,81 +2977,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               className={`iv-modes-btn${candidate === mode ? ' on' : ''}`}
               aria-label={t(MODE_KEYS[candidate])}
               aria-pressed={candidate === mode}
+              title={t(MODE_KEYS[candidate])}
               onClick={() => { setMode(candidate) }}
             >
-              <Icon name={MODE_ICONS[candidate]} size={12} />
-              {t(MODE_KEYS[candidate])}
+              <Icon name={MODE_ICONS[candidate]} size={14} />
+              <span className="iv-modes-txt">{t(MODE_KEYS[candidate])}</span>
             </button>
           ))}
         </nav>
-
-        <div className="iv-top-meta">
-          <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
-            <i className="iv-dot" aria-hidden="true" />
-            {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
-          </span>
-          {/* 健康状态只在异常 / 检测中时提示：正常的版本号收进帮助浮层（2026-11-20） */}
-          {health.status === 'ok' ? null : (
-            <span
-              className={`iv-chip${health.status === 'checking' ? '' : ' iv-chip--err'}`}
-              title={health.status === 'failed' ? health.message : undefined}
-            >
-              <i className="iv-dot" aria-hidden="true" />
-              {healthText}
-            </span>
-          )}
-          <button
-            type="button"
-            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-            aria-label={t('refresh')}
-            title={t('refresh')}
-            disabled={busy}
-            onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
-          >
-            <Icon name="refresh" />
-          </button>
-        </div>
-
-        {/* 登录 / 帮助 / 工作台：吸附在最右侧，替换掉原「输出产物 / 素材 / 任务」三个统计块的位置。 */}
-        <div className="iv-top-tools">
-          <button
-            type="button"
-            className={`iv-btn iv-btn--sm iv-btn--ghost${connectOpen ? ' iv-btn--on' : ''}`}
-            aria-label={authT('dialogTitle')}
-            aria-expanded={connectOpen}
-            data-workbench-connect-toggle="true"
-            data-connect-signed-in={authLabel?.signedIn === true ? 'true' : 'false'}
-            title={authT('dialogTitle')}
-            onClick={() => { setConnectOpen(open => !open) }}
-          >
-            <Icon name="link" size={12} />
-            {authLabel?.signedIn === true && authLabel.label !== undefined && authLabel.label !== ''
-              ? authLabel.label
-              : t('loginThreeView')}
-          </button>
-          <button
-            type="button"
-            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${helpOpen ? ' iv-btn--on' : ''}`}
-            aria-label={t('railHelp')}
-            aria-expanded={helpOpen}
-            data-workbench-help-toggle="true"
-            title={t('railHelp')}
-            onClick={() => { setHelpOpen(open => !open) }}
-          >
-            <Icon name="help" />
-          </button>
-          <button
-            type="button"
-            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
-            aria-label={t('tabTitle')}
-            aria-pressed={dockOpen}
-            title={t('tabTitle')}
-            data-workbench-dock-toggle="true"
-            onClick={() => { setDockOpen(open => !open) }}
-          >
-            <Icon name="layers" />
-          </button>
-        </div>
       </header>
 
       {/* ============ 改名行 ============ */}
@@ -2816,42 +3082,67 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         ? null
         : (
           <div className="iv-defaults" data-workbench-defaults="true" onDoubleClick={onWindowStripDoubleClick}>
-            <span className="iv-micro">{t('defaultsTitle')}</span>
-            {defaultRows.map(row => (
-              <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
-                <i>{t(row.key)}</i><b>{row.display}</b>
-                {row.source === undefined
-                  ? null
-                  : (
-                    <em className="iv-def-src" data-default-source-label={row.source}>
-                      {t(row.source === 'override'
-                        ? 'defaultsSourceOverride'
-                        : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
-                    </em>
-                  )}
-              </span>
-            ))}
-            {scriptModels.length === 0
-              ? null
-              : (
-                <span className="iv-def iv-def--select" data-workbench-text-model-row="true" data-default-source="none">
-                  <i>{t('defaultTextModel')}</i>
-                  <select
-                    className="iv-select iv-select--sm"
-                    aria-label={t('defaultTextModel')}
-                    data-workbench-text-model="true"
-                    value={scriptTextModel}
-                    onChange={event => { setScriptTextModel(event.target.value) }}
-                  >
-                    <option value="rules">{t('scriptSplitModeRule')}</option>
-                    {scriptModels.map(model => (
-                      <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
-                        {model.providerName} · {model.name}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              )}
+            {/* 标题与参数之间留一道竖线："当前生效参数"是名词，不是第一个参数。
+                参数按模态分组（图像/视频/文本），与编辑器弹层的分组保持一致。 */}
+            <div className="iv-defaults-head">
+              <Icon name="sliders" size={12} />
+              <span className="iv-defaults-title">{t('defaultsTitle')}</span>
+              <span className="iv-defaults-hint">{t('defaultsStripHint')}</span>
+            </div>
+            <div className="iv-defaults-body">
+              {DEFAULT_GROUPS.map(group => {
+                const rows = defaultRows.filter(row => group.fields.includes(row.field))
+                if (rows.length === 0) return null
+                return (
+                  <div key={group.key} className="iv-def-group" data-defaults-group={group.key}>
+                    <span className="iv-def-group-label">{t(group.key)}</span>
+                    <div className="iv-def-group-items">
+                      {rows.map(row => (
+                        <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
+                          <i>{t(row.key)}</i><b>{row.display}</b>
+                          {row.label && row.source !== undefined
+                            ? (
+                              // 只有「已覆盖」还会渲染：设置里的默认与兜底值都不标（见 `defaultRows`
+                              // 的 `label` 判定），徽章存在的唯一理由是提示"这轮参数被临时改过"。
+                              <em className="iv-def-src" data-default-source-label={row.source}>
+                                {t('defaultsSourceOverride')}
+                              </em>
+                            )
+                            : null}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {scriptModels.length === 0
+                ? null
+                : (
+                  <div className="iv-def-group" data-defaults-group="text">
+                    <span className="iv-def-group-label">{t('defaultsGroupText')}</span>
+                    <div className="iv-def-group-items">
+                      <span className="iv-def iv-def--select" data-workbench-text-model-row="true" data-default-source="none">
+                        <i>{t('defaultTextModel')}</i>
+                        <select
+                          className="iv-select iv-select--sm"
+                          aria-label={t('defaultTextModel')}
+                          data-workbench-text-model="true"
+                          value={scriptTextModel}
+                          onChange={event => { setScriptTextModel(event.target.value) }}
+                        >
+                          <option value="rules">{t('scriptSplitModeRule')}</option>
+                          {scriptModels.map(model => (
+                            <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                              {model.providerName} · {model.name}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </div>
+                  </div>
+                )}
+            </div>
+            <div className="iv-defaults-actions">
             <span className="iv-pop">
               <button
                 type="button"
@@ -3003,9 +3294,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               style={{ marginLeft: 'auto' }}
               onClick={() => { setModelDetailsOpen(value => !value) }}
             >
-              <Icon name="sliders" size={12} />{t('modelDetails')}
+              <Icon name="sliders" size={14} />{t('modelDetails')}
               <span aria-hidden="true" style={{ fontSize: 10 }}>{modelDetailsOpen ? '▴' : '▾'}</span>
             </button>
+            </div>
           </div>
         )}
 
@@ -3685,51 +3977,89 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               ? (
                 <section className="iv-pane" data-workbench-pane="paneScript">
                   <PaneBoundary label={t('modeScript')} t={t}>
-                  {/* 四个分区标签页：剧本分段 / 角色 / 场景 / 道具·服装 */}
-                  <div className="iv-quick-tabs" role="tablist" data-script-tabs="true">
-                    {SCRIPT_TABS.map(tab => (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={scriptTab === tab.key}
-                        className={`iv-btn${scriptTab === tab.key ? ' iv-btn--acc' : ''}`}
-                        style={{ flex: 1 }}
-                        data-script-tab={tab.key}
-                        onClick={() => { setScriptTab(tab.key) }}
-                      >
-                        {t(tab.label)}
-                      </button>
-                    ))}
+                  {/* 分区头：标题与四个胶囊 tab 同属一行，tab 用完整的 roving 键盘模型 */}
+                  <div className="iv-pane-head">
+                    <span className="iv-pane-tile"><Icon name="script" size={13} /></span>
+                    <h3 className="iv-pane-title">{t('modeScript')}</h3>
+                    <div className="iv-pane-actions iv-quick-tabs" role="tablist"
+                      aria-label={t('modeScript')} data-script-tabs="true">
+                      {/* tab 按内容宽度排，不再 `flex: 1` 均分：均分会在窄栏里把「剧本分镜」压成
+                          两行（2026-11-27）。空间不够时让整组换行，标签内部不折行。 */}
+                      {SCRIPT_TABS.map((tab, index) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          role="tab"
+                          id={`script-tab-${tab.key}`}
+                          aria-controls="script-panel"
+                          aria-selected={scriptTab === tab.key}
+                          tabIndex={scriptTab === tab.key ? 0 : -1}
+                          className="iv-tab"
+                          data-script-tab={tab.key}
+                          onKeyDown={event => { onScriptTabKeyDown(event, index) }}
+                          onClick={() => { setScriptTab(tab.key) }}
+                        >
+                          <Icon name={SCRIPT_TAB_ICONS[tab.key]} size={12} />
+                          {t(tab.label)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  <div role="tabpanel" id="script-panel" aria-labelledby={`script-tab-${scriptTab}`}>
                   {scriptTab === 'split'
                     ? (
+                  <>
+                  {/* 步进条：进度来自当前集真实数据（剧本/分段/分镜），点按可跳到对应区块。
+                      它的第二个作用是**收敛主按钮**——只有「下一步」的那个按钮是实心主色。 */}
+                  <div className="iv-steps" role="group" aria-label={t('scriptStepPlan')} data-script-steps="true">
+                    {SCRIPT_STEPS.map((step, index) => {
+                      const done = scriptStep.next === 0 || step.no < scriptStep.next
+                      const now = scriptStep.next === step.no
+                      const state = now ? 'now' : done ? 'done' : 'todo'
+                      return (
+                        <span className="iv-steps-item" key={step.no}>
+                          {index === 0 ? null : <span className="iv-step-sep" aria-hidden="true">›</span>}
+                          <button
+                            type="button"
+                            className={`iv-step iv-step--${state}`}
+                            data-script-step={step.no}
+                            data-script-step-state={state}
+                            aria-current={now ? 'step' : undefined}
+                            aria-label={state === 'todo'
+                              ? t(step.label)
+                              : `${t(step.label)}, ${t(state === 'now' ? 'scriptStepNow' : 'scriptStepDone')}`}
+                            title={t('scriptStepJump')}
+                            onClick={() => {
+                              // 分镜锚点在分段为空时不存在，退回分段区块，避免点了没反应
+                              jumpToScriptStep(document.getElementById(step.anchor) === null
+                                ? 'script-step-segments'
+                                : step.anchor)
+                            }}
+                          >
+                            <span className="iv-step-idx" aria-hidden="true">{done ? '✓' : step.no}</span>
+                            <span className="iv-step-txt">{t(step.label)}</span>
+                            {now ? <span className="iv-step-tag">{t('scriptStepNow')}</span> : null}
+                          </button>
+                        </span>
+                      )
+                    })}
+                    <span className="iv-steps-hint" data-script-step-hint={scriptStep.next}>
+                      {scriptStep.next === 0
+                        ? t('scriptStepAllDone')
+                        : t(SCRIPT_STEPS[scriptStep.next - 1].hint)}
+                    </span>
+                  </div>
                   <div className="iv-modules">
                   {/* 剧本生成：剧本 → 集 → 分段 → 分镜（原「剧本 · 分段」已并入，2026-11-20 独立成页） */}
-                  <section className="iv-module" data-module="pipeline">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="pipeline"
-                      aria-expanded={openModules.pipeline}
-                      aria-label={`${openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')} · ${t('modulePipeline')}`}
-                      onClick={() => { toggleModule('pipeline') }}
-                    >
-                      <span className="iv-module-n">1</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="pipeline">{t('modulePipeline')}</span>
-                        <span className="iv-meta">{t('modulePipelineDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.pipeline ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body" data-module-body="pipeline" hidden={!openModules.pipeline}>
+                  <section className="iv-module" data-module="pipeline" id="script-step-pipeline">
+                    <span className="iv-module-title" data-module-title="pipeline" hidden>{t('modulePipeline')}</span>
+                    <div className="iv-module-body" data-module-body="pipeline">
                   <PipelineCard
                     api={apiRef.current}
                     t={t}
                     projectId={activeProject?.id}
-                    onStarted={() => { setMode('workflow') }}
+                    // 只有「下一步 = 写剧本」时它才是主按钮；已有剧本时降为柔色，让位给分段
+                    emphasis={scriptStep.next === 1 ? 'primary' : 'soft'}
                     // `B-20`：分镜卡片自带剧本导入/编辑/落库，不再需要外部注入剧本
                     episodeId={activeEpisodeId}
                     // `B-22`：生成剧本会新建 / 更新集记录，刷新后选中第一集，用户接着逐级增删
@@ -3737,31 +4067,21 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       if (activeId !== undefined) await loadEpisodes(activeId)
                       const first = created[0]
                       if (first !== undefined) setActiveEpisodeId(first.id)
+                      // 生成完视口还停在按钮上，看不到下面新集的「开始分段」：
+                      // 等这一帧渲染完直接把视口带到下一步（异步，避免和 setState 同帧冲突）
+                      if (typeof requestAnimationFrame === 'function') {
+                        requestAnimationFrame(() => { jumpToScriptStep('script-step-segments') })
+                      }
                     }}
                   />
                     </div>
                   </section>
 
                   {/* 模块2：本集工作区——选一集，编辑剧本 / 分段 / 分镜 / 生图生视频 / 工作流 */}
+                  <div className="iv-sc-divider"><span>{t('moduleEpisode')}</span></div>
                   <section className="iv-module" data-module="episode">
-                    <button
-                      type="button"
-                      className="iv-module-head"
-                      data-module-toggle="episode"
-                      aria-expanded={openModules.episode}
-                      aria-label={`${openModules.episode ? t('moduleCollapse') : t('moduleExpand')} · ${t('moduleEpisode')}`}
-                      onClick={() => { toggleModule('episode') }}
-                    >
-                      <span className="iv-module-n">2</span>
-                      <span className="iv-module-text">
-                        <span className="iv-module-title" data-module-title="episode">{t('moduleEpisode')}</span>
-                        <span className="iv-meta">{t('moduleEpisodeDesc')}</span>
-                      </span>
-                      <span className="iv-module-toggle" aria-hidden="true">
-                        <Icon name="chevron" size={11} />{openModules.episode ? t('moduleCollapse') : t('moduleExpand')}
-                      </span>
-                    </button>
-                    <div className="iv-module-body" data-module-body="episode" hidden={!openModules.episode}>
+                    <span className="iv-module-title" data-module-title="episode" hidden>{t('moduleEpisode')}</span>
+                    <div className="iv-module-body" data-module-body="episode">
                       {activeProject === undefined || activeEpisode === undefined
                         ? <div className="iv-empty" data-script-empty="true">{t('storyboardNeedsProject')}</div>
                         : (
@@ -3770,6 +4090,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             t={t}
                             projectId={activeProject.id}
                             episode={activeEpisode}
+                            // 分段 = 第 2 步、分镜 = 第 3 步；两者都按它决定谁是主按钮
+                            activeStep={scriptStep.next}
                             resources={resources}
                             assets={assets}
                             options={options}
@@ -3815,6 +4137,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </section>
 
                   </div>
+                  </>
                     )
                     : scriptTab === 'extract'
                       ? (
@@ -3878,6 +4201,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             onNotice={(text, tone) => { setNotice({ text, tone }) }}
                           />
                         )}
+                  </div>{/* /tabpanel */}
                   </PaneBoundary>
                 </section>
               )
@@ -3905,7 +4229,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {/* 模板市场：浮层抽屉挂在 pane 头下方，覆盖画布右上，不再把画布高度顶走 */}
                   {templateOpen
                     ? (
-                      <div className="iv-tpl iv-wf-drawer" data-workflow-template-market="true">
+                      <div className="iv-tpl iv-wf-drawer" ref={templateRef} role="dialog" aria-label={t('templateMarket')} data-workflow-template-market="true">
                         {([
                           { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
                           { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
@@ -3929,8 +4253,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   onClick={() => {
                                     if (activeProject === undefined) return
                                     const apply = () => {
-                                      setWorkflow(instantiateAnyTemplate(template))
+                                      // 复用当前记录：模板是"替换本项目这张图"，不是新建工作流；
+                                      // 同 id 才不会让画布重置撤销栈（`F3`）
+                                      setWorkflow(current => instantiateAnyTemplate(template, current))
                                       setWorkflowState('dirty')
+                                      setTemplateRevision(revision => revision + 1)
                                       setTemplateOpen(false)
                                     }
                                     // 图里有节点时先确认：模板会整图替换
@@ -3992,7 +4319,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
                     t={t}
                     api={apiRef.current}
+                    replaceRevision={templateRevision}
                     onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                    // 节点产物缩略图 / 检视器「产出预览」统一送右侧预览列
+                    onPreview={previewAsset}
                     run={{
                       ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined
                         ? {}
@@ -4041,8 +4371,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           }
                         })
                       },
-                      // B4 单节点运行：只跑选中节点及其下游（宿主 `workflows/run` 的 `only`，
-                      // 认领状态见 docs/API-SURFACE.md「B 申请」）
+                      // B4 单节点运行：只跑选中节点及其下游（宿主 `workflows/run` 的 `only` 已认领）
                       onRunNode: nodeId => {
                         void run(async () => {
                           setRunBusy(true)
@@ -4106,21 +4435,24 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     </div>
                   </div>
 
-                  {/* B-13 逐段预览 */}
-                  <div className="iv-toolbar iv-seg-wrap">
-                    <span className="iv-meta">{t('segPreviewTitle')}</span>
-                    <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)} />
-                  </div>
-
-
                   {/* 节目监视器（恒深，媒体惯例） */}
                   <div className="iv-monitor" data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
-                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}>
+                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}
+                    data-timeline-monitor-media={Math.round(monitorMediaMs)}>
                     {activeVideo?.assetPath === undefined
-                      ? <span className="iv-meta" style={{ color: '#9aa0a8' }}>{t('previewIdle')}</span>
+                      ? <span className="iv-meta">{t('previewIdle')}</span>
                       : /\.(png|jpe?g|webp|gif)$/i.test(activeVideo.assetPath)
                         ? <img src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} alt="" />
-                        : <video src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} muted />}
+                        : (
+                          <video
+                            ref={monitorVideoRef}
+                            src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`}
+                            preload="auto"
+                            playsInline
+                            data-timeline-monitor-video="true"
+                            // 换片段后元数据才到，之前设的 currentTime 会被丢掉：到齐后再对齐一次
+                            onLoadedMetadata={() => { seekMonitor(true) }} />
+                        )}
                     <span className="iv-mon-tc">{timecode(playheadMs)} / {timecode(timelineTotal)}</span>
                     <span className="iv-mon-badge">{t('monitorProgram')}</span>
                     {activeSubtitle?.text === undefined ? null : (
@@ -4155,22 +4487,25 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <span className="iv-zoom">
                       <Icon name="search" size={11} />
                       {t('timelineZoom')}
-                      <input className="iv-scrub" type="range" min={0} max={100} defaultValue={60} aria-label={t('timelineZoom')} />
+                      <input className="iv-scrub" type="range" data-timeline-zoom="true" min={0} max={100}
+                        value={Math.round(((timelineZoom - 0.5) / 2.5) * 100)}
+                        aria-label={t('timelineZoom')}
+                        onChange={event => { onZoomInput(Number(event.target.value)) }} />
                     </span>
                   </div>
 
                   {/* 轨道区：刻度尺 + V1/A1/S1 + 播放头 */}
-                  <div className="iv-tl">
+                  <div className="iv-tl" style={{ '--iv-tl-zoom': timelineZoom } as CSSProperties}>
                     <div className="iv-ruler" aria-hidden="true">
-                      {[0, 25, 50, 75, 100].map(pct => (
+                      {Array.from({ length: tickCount + 1 }, (_, index) => (index / tickCount) * 100).map(pct => (
                         <i key={pct} style={{ left: `${pct}%` }} />
                       ))}
-                      {[0, 25, 50, 75, 100].map(pct => (
+                      {Array.from({ length: tickCount + 1 }, (_, index) => (index / tickCount) * 100).map(pct => (
                         <b key={pct} style={{ left: `${pct}%` }}>{timecode((timelineTotal * pct) / 100)}</b>
                       ))}
                     </div>
                     <div className="iv-tracks">
-                      <div className="iv-playhead" style={{ left: `calc(46px + (100% - 46px) * ${playheadMs / Math.max(1, timelineTotal)})` }} />
+                      <div className="iv-playhead" style={{ left: `calc(var(--iv-tl-head) + (100% - var(--iv-tl-head)) * ${playheadMs / Math.max(1, timelineTotal)})` }} />
                       {timeline.tracks.map(track => (
                         <div key={track.id} className="iv-track" data-timeline-track={track.kind}>
                           <div className="iv-t-head">
@@ -4212,7 +4547,32 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             onDrop={event => { onLaneDrop(event, track) }}
                           >
                             {track.clips.length === 0
-                              ? <p className="iv-meta">{t('timelineEmpty')}</p>
+                              ? (
+                                <div className="iv-t-empty" data-timeline-empty={track.kind}>
+                                  <span className="iv-meta">{t('timelineEmpty')}</span>
+                                  {/* `F15`：空轨只有一行灰字，而右侧素材面板可能被收起——
+                                      给一个真入口：打开展示列 + 展开素材块，并滚到它 */}
+                                  {track.kind === 'video'
+                                    ? (
+                                      <button
+                                        type="button"
+                                        className="iv-btn iv-btn--ghost iv-btn--sm"
+                                        data-timeline-empty-action="assets"
+                                        onClick={() => {
+                                          setDockOpen(true)
+                                          setDockFolded(current => ({ ...current, assets: false }))
+                                          // 面板刚展开时高度还没结算，等下一帧再滚
+                                          requestAnimationFrame(() => {
+                                            document.querySelector('[data-workbench-pane="paneAssets"]')?.scrollIntoView({ block: 'nearest' })
+                                          })
+                                        }}
+                                      >
+                                        <Icon name="plus" size={11} />{t('timelineEmptyAction')}
+                                      </button>
+                                    )
+                                    : null}
+                                </div>
+                              )
                               : (
                                 <div className="iv-clips">
                                   {track.clips.map(clip => {
@@ -4230,9 +4590,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                         data-timeline-clip={clip.id}
                                         data-timeline-clip-kind={track.kind}
                                         data-timeline-clip-selected={selectedClipId === clip.id ? 'true' : 'false'}
+                                        role="group"
+                                        tabIndex={0}
+                                        aria-current={selectedClipId === clip.id ? 'true' : undefined}
+                                        aria-label={`${track.kind} ${(clip.durationMs / 1000).toFixed(1)}s`}
                                         draggable
                                         onDragStart={event => { onClipDragStart(event, track.id, clip.id) }}
                                         onClick={() => { setSelectedClipId(clip.id) }}
+                                        onKeyDown={event => {
+                                          if (event.key !== 'Enter' && event.key !== ' ') return
+                                          event.preventDefault()
+                                          setSelectedClipId(clip.id)
+                                          const inspector = document.querySelector<HTMLElement>('[data-timeline-clip-inspector]')
+                                          inspector?.focus?.()
+                                        }}
                                         style={{ left: `${left}%`, width: `${width}%` }}
                                       >
                                         <div
@@ -4274,7 +4645,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           ? null
                                           /* 图片片段给缩略底；视频/音频需要抽帧或解码，本批不做 */
                                           : clip.assetPath !== undefined && /\.(png|jpe?g|webp|gif)$/i.test(clip.assetPath)
-                                            ? <img className="iv-clip-thumb" alt="" src={`/outputs/${encodeURIComponent(baseName(clip.assetPath))}`} />
+                                            ? <span className="iv-clip-thumb-wrap"><img className="iv-clip-thumb" alt="" src={`/outputs/${encodeURIComponent(baseName(clip.assetPath))}`} /></span>
                                             : null}
                                         <button type="button" className="iv-clip-split"
                                           data-timeline-clip-split={clip.id}
@@ -4354,6 +4725,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     const claim = (): void => { if (isInspectorFallback) setSelectedClipId(inspClip.id) }
                     return (
                       <div className={`iv-clip-ins${isInspectorFallback ? ' iv-clip-ins--fallback' : ''}`}
+                        tabIndex={-1}
                         data-timeline-clip-inspector={inspClip.id}
                         data-timeline-clip-inspector-fallback={isInspectorFallback ? 'true' : 'false'}>
                         <div className="iv-clip-ins-head">
@@ -4372,12 +4744,19 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             </button>
                             <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-duplicate={inspClip.id}
                               aria-label={`${t('clipDuplicate')} ${inspClip.id}`} title={t('clipDuplicate')}
+                              disabled={isInspectorFallback}
                               onClick={() => { claim(); duplicateClip(inspClip.id) }}>
                               <Icon name="copy" size={11} />
                             </button>
                             <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-remove={inspClip.id}
                               aria-label={`${t('remove')} ${inspClip.id}`} title={t('remove')}
+                              disabled={isInspectorFallback}
                               onClick={() => {
+                                setClipUndo({
+                                  trackId: inspTrack.id,
+                                  clip: inspClip,
+                                  index: inspTrack.clips.findIndex(item => item.id === inspClip.id),
+                                })
                                 patchTrack(inspTrack.id, current => ({ ...current, clips: current.clips.filter(item => item.id !== inspClip.id) }))
                                 if (!isInspectorFallback) setSelectedClipId(undefined)
                               }}>
@@ -4390,10 +4769,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <label className="iv-clip-ins-field">
                             <span>{t('clipStart')}</span>
                             <input type="number" className="iv-input" data-timeline-insp-field="start"
+                              min={0} max={MAX_CLIP_DURATION_MS}
                               value={inspClip.startMs} aria-label={`${t('clipStart')} ${inspClip.id}`}
                               onChange={event => {
                                 claim()
-                                const startMs = Number(event.target.value)
+                                const startMs = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                if (startMs === undefined) return
                                 patchTrack(inspTrack.id, current => ({
                                   ...current,
                                   clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, startMs } : item)),
@@ -4403,10 +4784,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <label className="iv-clip-ins-field">
                             <span>{t('clipDuration')}</span>
                             <input type="number" className="iv-input" data-timeline-insp-field="duration"
+                              min={MIN_CLIP_MS} max={MAX_CLIP_DURATION_MS}
                               value={inspClip.durationMs} aria-label={`${t('clipDuration')} ${inspClip.id}`}
                               onChange={event => {
                                 claim()
-                                const durationMs = Number(event.target.value)
+                                const durationMs = clampMs(event.target.value, MIN_CLIP_MS, MAX_CLIP_DURATION_MS)
+                                if (durationMs === undefined) return
                                 patchClip(inspTrack.id, inspClip.id, item => ({ ...item, durationMs }))
                               }} />
                           </label>
@@ -4420,9 +4803,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                     min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
                                     value={inspClip.speed ?? 1} aria-label={`${t('clipSpeed')} ${inspClip.id}`}
                                     onChange={event => {
+                                      const parsed = Number(event.target.value)
+                                      if (event.target.value.trim() === '' || !Number.isFinite(parsed)) return
                                       claim()
-                                      const speed = Number(event.target.value)
-                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
+                                      const speed = Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, parsed))
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, speed }))
                                     }} />
                                 </label>
                                 <label className="iv-clip-ins-field">
@@ -4430,11 +4815,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
                                     value={inspClip.fade ?? 0} aria-label={`${t('clipFade')} ${inspClip.id}`}
                                     onChange={event => {
+                                      const fade = clampMs(event.target.value, 0, MAX_CLIP_FADE_MS)
+                                      if (fade === undefined) return
                                       claim()
-                                      const fade = Number(event.target.value)
-                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, fade }))
                                     }} />
                                 </label>
+                                <details className="iv-disclosure iv-clip-ins-more" data-timeline-insp-advanced="true">
+                                  <summary className="iv-disclosure-head">
+                                    <Icon name="sliders" size={11} />{t('clipInspectorAdvanced')}
+                                    <Icon name="chevron" size={10} className="iv-caret" />
+                                  </summary>
+                                  <div className="iv-disclosure-body iv-clip-ins-grid">
                                 {inspTrack.kind === 'video'
                                   ? (
                                     <>
@@ -4483,27 +4875,47 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           <>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropX')}</span>
-                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.x}
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_DURATION_MS} value={inspClip.crop.x}
                                                 aria-label={`${t('clipCropX')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const x = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                                  if (x === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropY')}</span>
-                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.y}
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_DURATION_MS} value={inspClip.crop.y}
                                                 aria-label={`${t('clipCropY')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const y = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                                  if (y === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropW')}</span>
-                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.width}
+                                              <input type="number" className="iv-input" min={2} max={MAX_CLIP_DURATION_MS} step={2} value={inspClip.crop.width}
                                                 aria-label={`${t('clipCropW')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const width = clampEven(event.target.value, 2, MAX_CLIP_DURATION_MS)
+                                                  if (width === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropH')}</span>
-                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.height}
+                                              <input type="number" className="iv-input" min={2} max={MAX_CLIP_DURATION_MS} step={2} value={inspClip.crop.height}
                                                 aria-label={`${t('clipCropH')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const height = clampEven(event.target.value, 2, MAX_CLIP_DURATION_MS)
+                                                  if (height === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height } }))
+                                                }} />
                                             </label>
                                             <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-crop-remove={inspClip.id}
                                               aria-label={`${t('clipCropRemove')} ${inspClip.id}`} title={t('clipCropRemove')}
@@ -4515,11 +4927,18 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                     </>
                                   )
                                   : null}
+                                  </div>
+                                </details>
                               </>
                             )}
                           {inspTrack.kind === 'subtitle'
                             ? (
-                              <>
+                              <details className="iv-disclosure iv-clip-ins-more" data-timeline-insp-advanced="true">
+                                <summary className="iv-disclosure-head">
+                                  <Icon name="sliders" size={11} />{t('clipInspectorAdvanced')}
+                                  <Icon name="chevron" size={10} className="iv-caret" />
+                                </summary>
+                                <div className="iv-disclosure-body iv-clip-ins-grid">
                                 <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                   <span>{t('styleFontSize')}</span>
                                   <input type="number" className="iv-input" min={8} max={200} value={inspClip.style?.fontSize ?? 32}
@@ -4563,7 +4982,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                     <option value="bottom">bottom</option>
                                   </select>
                                 </label>
-                              </>
+                                </div>
+                              </details>
                             )
                             : null}
                         </div>
@@ -4632,6 +5052,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       {t('normalizeLoudness')}
                     </label>
                     </div>
+                    {/* `B2`：把档位换算结果直接摆出来。选完参数就能看见会导出多大，
+                        不用等成片、也不用信下拉文案——这是"规格控件到底生效没有"的当场凭证。 */}
+                    {exportPreviewFormat === undefined
+                      ? null
+                      : (
+                        <span className="iv-tl-spec" data-timeline-export-spec="true" title={t('exportSpecHint')}>
+                          <b>{exportPreviewFormat.width}×{exportPreviewFormat.height}</b>
+                          <i>{exportPreviewFormat.frameRate}fps</i>
+                        </span>
+                      )}
 
                     <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
                       aria-busy={renderRunning ? 'true' : undefined}
@@ -4704,9 +5134,42 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                         </>
                       )}
                   </div>
-                  <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
-                  {/* `B-5：配音卡与多比例导出属辅助动作，放在主内容之后` 成片多比例切片：一条成片按多种画幅各导出一次 */}
-                  <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
+                  {clipUndo === undefined
+                    ? null
+                    : (
+                      <p className="iv-notice" role="status" data-timeline-clip-undo="true">
+                        {t('timelineClipDeleted')}
+                        <button type="button" className="iv-btn iv-btn--sm" data-timeline-clip-undo-button="true"
+                          onClick={() => {
+                            const { trackId, clip, index } = clipUndo
+                            patchTrack(trackId, current => {
+                              const clips = [...current.clips]
+                              clips.splice(Math.max(0, index), 0, clip)
+                              return { ...current, clips }
+                            })
+                            setSelectedClipId(clip.id)
+                            setClipUndo(undefined)
+                          }}>
+                          {t('timelineUndo')}
+                        </button>
+                      </p>
+                    )}
+                  {/* 辅助工具：逐段预览 / 配音 / 多比例，默认收起；与主时间轴互斥的两个播放器都在明确职责 */}
+                  <details className="iv-tl-aux" data-timeline-aux="true" open={auxOpen}
+                    onToggle={event => { setAuxOpen(event.currentTarget.open) }}>
+                    <summary className="iv-disclosure-head">
+                      <Icon name="sliders" size={12} />{t('tlAuxTools')}
+                      <Icon name="chevron" size={11} className="iv-caret" />
+                    </summary>
+                    <div className="iv-tl-aux-body">
+                      <span className="iv-tl-aux-role">{t('segPreviewRole')}</span>
+                      <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)}
+                        programPlaying={playing} onPlayChange={setSegPlaying} />
+                      <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id}
+                        onNotice={(text, tone) => { setNotice({ text, tone }) }} />
+                      <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
+                    </div>
+                  </details>
                   <p className="iv-meta">{t('previewNote')}</p>
                   </PaneBoundary>
                 </section>

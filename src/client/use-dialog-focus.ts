@@ -48,6 +48,8 @@ export function useDialogFocus(
   open: boolean,
   rootRef: RefObject<HTMLElement | null>,
   onClose: () => void,
+  /** 归还焦点时原元素已被卸载（例如节点被删）时的兜底选择器。 */
+  fallbackSelector?: string,
 ): void {
   // onClose 每次渲染都是新函数；用它做依赖会让 effect 反复重跑、焦点反复重置
   const onCloseRef = useRef(onClose)
@@ -97,7 +99,8 @@ export function useDialogFocus(
     return () => {
       document.removeEventListener('keydown', onKeyDown, true)
       // 关闭后归还焦点：用户按 Esc 关闭时不该被丢回文档开头
-      previous?.focus()
+      if (previous !== null && previous.isConnected) previous.focus()
+      else if (fallbackSelector !== undefined) document.querySelector<HTMLElement>(fallbackSelector)?.focus()
     }
-  }, [open, rootRef])
+  }, [open, rootRef, fallbackSelector])
 }

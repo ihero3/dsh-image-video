@@ -15,6 +15,7 @@ import { planDub } from '../workbench/voice.ts'
 import { buildComposePrompt, normalizeComposeCrop } from '../workbench/compose.ts'
 import { cropImage } from '../media/image-crop.ts'
 import { planRatioSlices } from '../workbench/derive-ratios.ts'
+import { hasExportSelection, resolveExportFormat, sameExportFormat, type ExportSelection } from '../workbench/export-selection.ts'
 import { catalogConsistencyIssues, isTextModelEntry, modelCards } from '../media/model-catalog.ts'
 import { compareCardsAgainstRegistry, type ModelCatalogLive, type ModelRegistryProbe } from '../media/model-health.ts'
 import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
@@ -1430,7 +1431,10 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const workflowId = text(payload, 'workflowId')
       const workflow = await deps.store.findWorkflow(workflowId)
       if (workflow === undefined) throw new Error(`unknown workflow: ${workflowId}`)
-      return { run: await deps.runner.begin(workflow) }
+      // `only` = 部分运行：只跑这些节点及其全部下游；上游/旁支不执行，
+      // 运行记录里如实标 `skipped + not part of this run`（语义由 runner 保证）。
+      const only = optionalStringArray(payload, 'only')
+      return { run: await deps.runner.begin(workflow, only === undefined ? {} : { only }) }
     }
     case 'workflows/runs':
       return {
@@ -2325,7 +2329,13 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       const timelineId = text(payload, 'timelineId')
       const timeline = await deps.store.findTimeline(timelineId)
       if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
+      // 预估与导出同口径：档位先换算成规格，再让显式 width/height/frameRate 覆盖（数值优先）
+      const estimateSelection = exportSelectionFrom(payload)
+      const estimateFormat = hasExportSelection(estimateSelection)
+        ? resolveExportFormat(timeline.exportFormat, estimateSelection)
+        : undefined
       const estimate = estimateExport(timeline, {
+        ...estimateFormat === undefined ? {} : { width: estimateFormat.width, height: estimateFormat.height, frameRate: estimateFormat.frameRate },
         ...optionalNumber(payload, 'width') === undefined ? {} : { width: optionalNumber(payload, 'width') as number },
         ...optionalNumber(payload, 'height') === undefined ? {} : { height: optionalNumber(payload, 'height') as number },
         ...optionalNumber(payload, 'frameRate') === undefined ? {} : { frameRate: optionalNumber(payload, 'frameRate') as number },
@@ -2352,12 +2362,17 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (projectId !== undefined && projectId !== '' && projectId !== timeline.projectId) {
         throw new Error(`timeline ${timelineId} does not belong to project ${projectId}`)
       }
+      // `B2`：导出条给的是档位（480P/2K、24–60fps、16:9/9:16…），渲染器只认 exportFormat。
+      // 换算在这里做，且只覆盖**本次**导出——不改存储里的时间轴。
+      const selection = exportSelectionFrom(payload)
+      const resolved = hasExportSelection(selection) ? resolveExportFormat(timeline.exportFormat, selection) : undefined
       return {
         render: deps.renders.start(timeline, {
           ...optionalNumber(payload, 'priority') === undefined ? {} : { priority: optionalNumber(payload, 'priority') as number },
           ...field(payload, 'retryTransient') === true ? { retryTransient: true } : {},
           ...optionalNumber(payload, 'thumbnailAtMs') === undefined ? {} : { thumbnailAtMs: optionalNumber(payload, 'thumbnailAtMs') as number },
           ...optionalText(payload, 'subtitleFormat') === 'vtt' ? { subtitleFormat: 'vtt' as const } : {},
+          ...resolved === undefined || sameExportFormat(resolved, timeline.exportFormat) ? {} : { exportFormat: resolved },
         }),
       }
     }
@@ -2400,7 +2415,12 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (blocked !== undefined) throw new Error(blocked)
       const timeline = await deps.store.findTimeline(previous.timelineId)
       if (timeline === undefined) throw new Error(`原时间轴 ${previous.timelineId} 已删除，无法重试：请重新选择时间轴导出`)
-      const render = deps.renders.start(timeline, { ...previous.priority === undefined ? {} : { priority: previous.priority } })
+      // 按**原规格**重跑：用户选 2K 失败后重试，不能悄悄退回时间轴默认的 720p
+      const recordedFormat = deps.renders.exportFormatOf(previous.id)
+      const render = deps.renders.start(timeline, {
+        ...previous.priority === undefined ? {} : { priority: previous.priority },
+        ...recordedFormat === undefined ? {} : { exportFormat: recordedFormat },
+      })
       return { render, retriedFrom: previous.id }
     }
     // `A90`：导出队列全景（正在跑/排队/最近成败/吞吐与耗时分布）
@@ -2531,6 +2551,23 @@ function optionalNumber(payload: unknown, key: string): number | undefined {
   return value
 }
 
+/**
+ * 读取导出条的三个档位（`B2`）。
+ *
+ * 与 `width/height/frameRate` 并存：档位是界面语言（480P/2K、16:9…），
+ * 数值是程序语言，两者都支持，数值优先（见各调用点）。
+ */
+function exportSelectionFrom(payload: unknown): ExportSelection {
+  const resolution = optionalText(payload, 'resolution')
+  const fps = optionalNumber(payload, 'fps')
+  const aspect = optionalText(payload, 'aspect')
+  return {
+    ...resolution === undefined ? {} : { resolution },
+    ...fps === undefined ? {} : { fps },
+    ...aspect === undefined ? {} : { aspect },
+  }
+}
+
 /** Read one required string array field. */
 function stringArray(payload: unknown, key: string): string[] {
   const value = field(payload, key)
@@ -2538,6 +2575,15 @@ function stringArray(payload: unknown, key: string): string[] {
     throw new Error(`invalid workbench payload: ${key} must be a string array`)
   }
   return value
+}
+
+/** Read an optional string array field; an explicitly empty array is a misuse. */
+function optionalStringArray(payload: unknown, key: string): string[] | undefined {
+  const value = field(payload, key)
+  if (value === undefined || value === null) return undefined
+  const parsed = stringArray(payload, key)
+  if (parsed.length === 0) throw new Error(`invalid workbench payload: ${key} must be a non-empty string array`)
+  return parsed
 }
 
 /** Read the episode reference action (`list` / `add` / `remove` / `move`). */

@@ -79,6 +79,13 @@ export type WorkbenchLocaleKey =
   | 'voiceCardPitch'
   | 'voiceCardEmotion'
   | 'voiceCardEmotionPlaceholder'
+  | 'voiceEmotionCalm'
+  | 'voiceEmotionExcited'
+  | 'voiceEmotionSad'
+  | 'voiceEmotionAngry'
+  | 'voiceEmotionGentle'
+  | 'voiceEmotionTense'
+  | 'voiceEmotionNarration'
   | 'voiceCardRefAudio'
   | 'voiceCardRefAudioPlaceholder'
   | 'voiceCardSave'
@@ -132,6 +139,17 @@ export type WorkbenchLocaleKey =
   | 'moduleEpisode'
   | 'moduleEpisodeDesc'
   | 'modulePipelineDesc'
+  | 'scriptStepPlan'
+  | 'scriptStepScript'
+  | 'scriptStepSplit'
+  | 'scriptStepStoryboard'
+  | 'scriptStepNow'
+  | 'scriptStepDone'
+  | 'scriptStepJump'
+  | 'scriptStepHintScript'
+  | 'scriptStepHintSplit'
+  | 'scriptStepHintStoryboard'
+  | 'scriptStepAllDone'
   | 'scriptTextModel'
   | 'scriptTextModelEmpty'
   | 'scriptImageModel'
@@ -192,6 +210,7 @@ export type WorkbenchLocaleKey =
   | 'statusCancelled'
   | 'cancelTask'
   | 'defaultsEditHint'
+  | 'defaultsStripHint'
   | 'defaultsGroupMode'
   | 'defaultsGroupImage'
   | 'defaultsGroupVideo'
@@ -211,7 +230,6 @@ export type WorkbenchLocaleKey =
   | 'defaultsSave'
   | 'defaultsEdit'
   | 'defaultsSourceOverride'
-  | 'defaultsSourceSettings'
   | 'resourceUseUnit'
   | 'resourceUsedBy'
   | 'resourceUnused'
@@ -235,6 +253,7 @@ export type WorkbenchLocaleKey =
   | 'exportRunning'
   | 'exportCancel'
   | 'exportStart'
+  | 'exportSpecHint'
   | 'ffmpegRecheck'
   | 'ffmpegOk'
   | 'stylePosition'
@@ -251,6 +270,7 @@ export type WorkbenchLocaleKey =
   | 'clipDuration'
   | 'clipStart'
   | 'timelineEmpty'
+  | 'timelineEmptyAction'
   | 'addSubtitle'
   | 'addClip'
   | 'trackSubtitle'
@@ -310,7 +330,9 @@ export type WorkbenchLocaleKey =
   | 'canvasGroupInput'
   | 'canvasGroupStory'
   | 'canvasGroupGenerate'
-  | 'canvasGroupFinish'
+  | 'canvasGroupFinishPlanned'
+  | 'canvasNoExecutorTag'
+  | 'canvasNoExecutorHint'
   | 'canvasGroupPlanned'
   | 'canvasOnboardingTitle'
   | 'canvasOnboardingHint'
@@ -341,7 +363,7 @@ export type WorkbenchLocaleKey =
   | 'canvasFit'
   | 'canvasEmpty'
   | 'canvasPlannedTag'
-  | 'canvasTransient'
+  | 'canvasAutoSave'
   | 'canvasLogs'
   | 'canvasMaximize'
   | 'canvasRestore'
@@ -692,7 +714,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotDuration'
   | 'pipelineShotEditable'
   | 'modelDetails'
-  | 'defaultsBuiltinSource'
   | 'defaultsFollow'
   | 'defaultSeriesName'
   | 'generateRefsHint'
@@ -1001,6 +1022,12 @@ export type WorkbenchLocaleKey =
   | 'modelCardsTextModels'
   | 'modelCardsTextModelsEmpty'
   | 'modelCardsTextFailures'
+  | 'modelCardsVoiceModels'
+  | 'modelCardsVoiceReady'
+  | 'modelCardsVoiceSynth'
+  | 'modelCardsVoiceClone'
+  | 'modelCardsVoiceCount'
+  | 'modelCardsVoiceFailed'
   | 'modelCardKindsImage'
   | 'modelCardKindsVideo'
   | 'modelCardDuration'
@@ -1068,6 +1095,22 @@ export type WorkbenchLocaleKey =
   | 'roleCardPreview'
   | 'roleCardGenerated'
   | 'roleCardNeedsProject'
+  | 'planEpisodeUnit'
+  | 'planSegmentUnit'
+  | 'timelineClipDeleted'
+  | 'timelineUndo'
+  | 'tlAuxTools'
+  | 'segPreviewRole'
+  | 'clipInspectorAdvanced'
+  | 'segmentAdvanced'
+  | 'segmentShotUnit'
+  | 'segmentSummary'
+  | 'scriptSettings'
+  | 'episodeMore'
+  | 'episodeSyncConfirmTitle'
+  | 'episodeSyncConfirmBody'
+  | 'episodeSyncUndo'
+  | 'episodeSyncDone'
 
 /** Dictionary namespace owned by this plugin's browser half. */
 export { NS } from './locale-ns.ts'
@@ -1168,6 +1211,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   voiceCardPitch: 'Pitch',
   voiceCardEmotion: 'Emotion',
   voiceCardEmotionPlaceholder: 'e.g. calm / excited / narration',
+  voiceEmotionCalm: 'calm',
+  voiceEmotionExcited: 'excited',
+  voiceEmotionSad: 'sad',
+  voiceEmotionAngry: 'angry',
+  voiceEmotionGentle: 'gentle',
+  voiceEmotionTense: 'tense',
+  voiceEmotionNarration: 'narration',
   voiceCardRefAudio: 'Reference audio',
   voiceCardRefAudioPlaceholder: 'Optional path under outputs, e.g. outputs/voice-ref.wav',
   voiceCardSave: 'Save to library',
@@ -1241,6 +1291,17 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: 'Script → episode → segments → shots. Every level can be added to, edited or reordered below.',
   moduleEpisode: 'Episode workspace',
   moduleEpisodeDesc: 'Pick an episode to edit its script, segments, shots, generated images/clips and workflow.',
+  scriptStepPlan: 'Script steps',
+  scriptStepScript: 'Write script',
+  scriptStepSplit: 'Segments',
+  scriptStepStoryboard: 'Storyboard',
+  scriptStepNow: 'Next',
+  scriptStepDone: 'Done',
+  scriptStepJump: 'Jump to this step',
+  scriptStepHintScript: 'Write or paste the full text, then generate the script.',
+  scriptStepHintSplit: 'Split the script into segments — each segment becomes a group of shots.',
+  scriptStepHintStoryboard: 'Plan shots segment by segment, then batch-generate images and clips.',
+  scriptStepAllDone: 'All three steps are done — sync the storyboard to the canvas, or send clips to the timeline.',
   scriptTextModel: 'Text model',
   scriptTextModelEmpty: 'Not selected',
   scriptImageModel: 'Image model',
@@ -1344,6 +1405,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
   defaultsEditHint: 'Leave "Not set" to follow settings',
+  defaultsStripHint: 'Applied automatically on generation',
   defaultsGroupMode: 'Media type',
   defaultsGroupImage: 'Image',
   defaultsGroupVideo: 'Video',
@@ -1361,9 +1423,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsSaved: 'Defaults saved',
   defaultsCancel: 'Cancel',
   defaultsSave: 'Save defaults',
-  defaultsEdit: 'Edit',
+  defaultsEdit: 'Settings',
   defaultsSourceOverride: 'overridden',
-  defaultsSourceSettings: 'from settings',
   resourceUseUnit: 'artifacts',
   resourceUsedBy: 'Used by',
   resourceDetails: 'Details',
@@ -1392,6 +1453,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   exportRunning: 'Exporting',
   exportCancel: 'Cancel export',
   exportStart: 'Export video',
+  exportSpecHint: 'Actual output size and frame rate; changing the presets above updates it immediately',
   ffmpegRecheck: 'Re-check ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: 'Position',
@@ -1408,6 +1470,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   clipDuration: 'Duration (ms)',
   clipStart: 'Start (ms)',
   timelineEmpty: 'No clips yet — add from the assets on the right',
+  timelineEmptyAction: 'Add from assets',
   addSubtitle: 'Add subtitle',
   addClip: 'Add to track',
   trackSubtitle: 'Subtitle track',
@@ -1467,7 +1530,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasGroupInput: 'Input & copy',
   canvasGroupStory: 'Storyboard & assets',
   canvasGroupGenerate: 'Generate',
-  canvasGroupFinish: 'Finish & deliver',
+  canvasGroupFinishPlanned: 'Finish & deliver (planned)',
+  canvasNoExecutorTag: 'no executor',
+  canvasNoExecutorHint: 'This node can be added and saved, but this version has no executor — runs skip it and produce no result.',
   canvasGroupPlanned: 'Reserved',
   canvasOnboardingTitle: 'Start from a template, run a whole chain',
   canvasOnboardingHint: 'Templates carry example copy and parameters — tweak a few words, then run.',
@@ -1498,7 +1563,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasFit: 'Fit view',
   canvasEmpty: 'Add nodes from the library on the left',
   canvasPlannedTag: 'not available',
-  canvasTransient: 'Workflow is kept on this machine; series storage lands with the host endpoint',
+  canvasAutoSave: 'Edits save automatically to this episode\'s workflow',
   canvasLogs: 'Logs',
   canvasMaximize: 'Fullscreen canvas',
   canvasRestore: 'Exit fullscreen',
@@ -1853,7 +1918,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: 'Shot seconds',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
   modelDetails: 'Model details',
-  defaultsBuiltinSource: 'Built-in',
   defaultsFollow: 'Follow default',
   defaultSeriesName: 'First series',
   generateRefsHint: 'First image is the base, the rest are style references. Drag a thumbnail to reorder.',
@@ -2063,6 +2127,12 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modelCardsTextModels: 'Available text models',
   modelCardsTextModelsEmpty: 'No text models available.',
   modelCardsTextFailures: 'Some providers could not be listed:',
+  modelCardsVoiceModels: 'Available voice models',
+  modelCardsVoiceReady: 'Ready',
+  modelCardsVoiceSynth: 'speech',
+  modelCardsVoiceClone: 'clone',
+  modelCardsVoiceCount: '{n} voices',
+  modelCardsVoiceFailed: 'Failed to read the voice model status',
   modelCardKindsImage: 'Image',
   modelCardKindsVideo: 'Video',
   modelCardDuration: 'Duration',
@@ -2154,6 +2224,22 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineEntitiesEmpty: 'No references extracted.',
   pipelineCancel: 'Cancel',
   pipelineCancelled: 'Stopped — nothing was saved.',
+  planEpisodeUnit: 'eps',
+  planSegmentUnit: 'segs',
+  timelineClipDeleted: 'Clip deleted',
+  timelineUndo: 'Undo',
+  tlAuxTools: 'More tools',
+  segPreviewRole: 'Sequential preview · independent playback, does not move the playhead',
+  clipInspectorAdvanced: 'More parameters',
+  segmentAdvanced: 'Advanced',
+  segmentShotUnit: 'shots',
+  segmentSummary: '{duration}s · {shots} shots',
+  scriptSettings: 'Generation settings',
+  episodeMore: 'More actions',
+  episodeSyncConfirmTitle: 'Sync this episode to the canvas?',
+  episodeSyncConfirmBody: 'The current workflow graph will be rebuilt. This can be undone.',
+  episodeSyncUndo: 'Undo sync',
+  episodeSyncDone: 'Workflow synced',
 }
 
 /** Simplified Chinese copy. */
@@ -2213,6 +2299,12 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modelCardsDrift: '卡片与运行时能力漂移——依赖前请先核对。',
   modelCardsTextModels: '可用文本模型',
   modelCardsTextModelsEmpty: '暂无可用的文本模型。',
+  modelCardsVoiceModels: '可用语音模型',
+  modelCardsVoiceReady: '已就绪',
+  modelCardsVoiceSynth: '合成',
+  modelCardsVoiceClone: '克隆',
+  modelCardsVoiceCount: '{n} 个音色',
+  modelCardsVoiceFailed: '语音模型状态读取失败',
   modelCardsTextFailures: '部分服务商目录不可用：',
   modelCardKindsImage: '图',
   modelCardKindsVideo: '视频',
@@ -2364,6 +2456,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   voiceCardPitch: '音调',
   voiceCardEmotion: '情绪',
   voiceCardEmotionPlaceholder: '如 平静 / 兴奋 / 旁白',
+  voiceEmotionCalm: '平静',
+  voiceEmotionExcited: '兴奋',
+  voiceEmotionSad: '悲伤',
+  voiceEmotionAngry: '愤怒',
+  voiceEmotionGentle: '温柔',
+  voiceEmotionTense: '紧张',
+  voiceEmotionNarration: '旁白',
   voiceCardRefAudio: '参考音频',
   voiceCardRefAudioPlaceholder: 'outputs 下的路径，如 outputs/voice-ref.wav',
   voiceCardSave: '存入资源库',
@@ -2437,6 +2536,17 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: '剧本 → 集 → 分段 → 分镜；每一级都能在下面继续增删、修改。',
   moduleEpisode: '本集工作区',
   moduleEpisodeDesc: '选一集编辑剧本、分段、分镜、生图生视频与工作流；每一集的内容独立归属。',
+  scriptStepPlan: '剧本流程',
+  scriptStepScript: '写剧本',
+  scriptStepSplit: '分段',
+  scriptStepStoryboard: '生成分镜',
+  scriptStepNow: '下一步',
+  scriptStepDone: '已完成',
+  scriptStepJump: '跳到这一步',
+  scriptStepHintScript: '先写好或粘贴全文，再点「生成剧本」。',
+  scriptStepHintSplit: '点「开始分段」把剧本拆成段，每段对应一组镜头。',
+  scriptStepHintStoryboard: '逐段点「规划分镜」，再批量生图、生视频。',
+  scriptStepAllDone: '三步都已完成：分镜可同步到工作流，素材可加入时间轴。',
   scriptTextModel: '文本模型',
   scriptTextModelEmpty: '未选择',
   scriptImageModel: '图像模型',
@@ -2540,6 +2650,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusCancelled: '已取消',
   cancelTask: '取消任务',
   defaultsEditHint: '选「未设置」= 跟随设置',
+  defaultsStripHint: '生成时自动套用',
   defaultsGroupMode: '媒体类型',
   defaultsGroupImage: '图像',
   defaultsGroupVideo: '视频',
@@ -2557,9 +2668,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsSaved: '默认值已保存',
   defaultsCancel: '取消',
   defaultsSave: '保存默认值',
-  defaultsEdit: '编辑',
+  defaultsEdit: '设置',
   defaultsSourceOverride: '已覆盖',
-  defaultsSourceSettings: '来自设置',
   resourceUseUnit: '次产物',
   resourceUsedBy: '被用到',
   resourceDetails: '详情',
@@ -2588,6 +2698,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   exportRunning: '导出中',
   exportCancel: '取消导出',
   exportStart: '导出成片',
+  exportSpecHint: '成片的实际尺寸与帧率；改上面的参数会立刻更新',
   ffmpegRecheck: '重新检查 ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: '位置',
@@ -2604,6 +2715,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   clipDuration: '时长(ms)',
   clipStart: '起点(ms)',
   timelineEmpty: '还没有片段——从右侧素材里加入',
+  timelineEmptyAction: '从素材添加',
   addSubtitle: '加入字幕',
   addClip: '加入轨道',
   trackSubtitle: '字幕轨',
@@ -2663,7 +2775,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasGroupInput: '输入与文案',
   canvasGroupStory: '分镜与素材',
   canvasGroupGenerate: '生成',
-  canvasGroupFinish: '后期与交付',
+  canvasGroupFinishPlanned: '后期与交付（规划中）',
+  canvasNoExecutorTag: '不执行',
+  canvasNoExecutorHint: '该节点可加入画布并保存，但本版本没有执行器；运行时会跳过，不产出结果。',
   canvasGroupPlanned: '预留能力',
   canvasOnboardingTitle: '选一个模板，立刻跑通整条链路',
   canvasOnboardingHint: '模板自带示例文案与参数，改几个字就能跑。',
@@ -2694,7 +2808,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasFit: '适配窗口',
   canvasEmpty: '从左侧节点库添加节点',
   canvasPlannedTag: '未提供',
-  canvasTransient: '工作流暂存在本机（剧集存储随宿主端点接入）',
+  canvasAutoSave: '改动自动保存到本集工作流',
   canvasLogs: '工作日志',
   canvasMaximize: '全屏画布',
   canvasRestore: '退出全屏',
@@ -3037,7 +3151,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: '本镜时长(秒)',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
   modelDetails: '模型详情',
-  defaultsBuiltinSource: '内置默认',
   defaultsFollow: '跟随默认',
   defaultSeriesName: '三视剧集',
   generateRefsHint: '首图为底图，其余作风格参考；拖拽缩略图可调整顺序',
@@ -3239,4 +3352,20 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineEntitiesEmpty: '没有抽取到实体。',
   pipelineCancel: '取消',
   pipelineCancelled: '已停止，没有保存任何东西。',
+  planEpisodeUnit: '集',
+  planSegmentUnit: '段',
+  timelineClipDeleted: '已删除片段',
+  timelineUndo: '撤销',
+  tlAuxTools: '辅助工具',
+  segPreviewRole: '顺序预览·独立播放，不影响播放头',
+  clipInspectorAdvanced: '更多参数',
+  segmentAdvanced: '高级设置',
+  segmentShotUnit: '镜',
+  segmentSummary: '{duration}s · {shots} 镜',
+  scriptSettings: '生成设置',
+  episodeMore: '更多操作',
+  episodeSyncConfirmTitle: '同步本集到画布？',
+  episodeSyncConfirmBody: '当前工作流画布会被重建，操作可撤销。',
+  episodeSyncUndo: '撤销同步',
+  episodeSyncDone: '已同步到工作流',
 }

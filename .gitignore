@@ -1,5 +1,6 @@
 node_modules/
 outputs/
+.screenshots/
 lib/
 *.log
 .DS_Store

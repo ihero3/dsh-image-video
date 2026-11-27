@@ -26,7 +26,7 @@ describe('PipelineCard · 物料匹配已移出', () => {
       listSkills: vi.fn(async () => []),
       generateEpisodes: vi.fn(async () => ({ episodes: [{ id: 'ep-1' }] })),
     } as unknown as WorkbenchApi
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, {
       target: { value: '雨夜街头，林夏撑伞走来。' },
     })

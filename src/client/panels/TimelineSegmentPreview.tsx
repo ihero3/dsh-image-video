@@ -12,6 +12,10 @@ import type { WorkbenchLocaleKey } from '../locales.ts'
 interface TimelineSegmentPreviewProps {
   readonly timeline: TimelineRecord | undefined
   readonly t: (key: WorkbenchLocaleKey) => string
+  /** 节目监视器正在播放：逐段预览必须停下（双播放器互斥）。 */
+  readonly programPlaying?: boolean
+  /** 播放态变化时通知宿主，便于外部先展开辅助区并停掉另一个播放器。 */
+  readonly onPlayChange?: (playing: boolean) => void
 }
 
 /** `m:ss` 文案（`0:03`）。 */
@@ -36,16 +40,26 @@ function outputUrl(path: string): string {
   return `/outputs/${encodeURIComponent(path.split(/[\\/]/).pop() ?? '')}`
 }
 
-export function TimelineSegmentPreview({ timeline, t }: TimelineSegmentPreviewProps) {
+export function TimelineSegmentPreview({ timeline, t, programPlaying = false, onPlayChange }: TimelineSegmentPreviewProps) {
   const clips = useMemo(() => collectVideoClips(timeline), [timeline])
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const totalMs = clips.reduce((sum, clip) => sum + clip.durationMs, 0)
   const current = clips[Math.min(index, clips.length - 1)]
+  /** 单一出口：内部状态与宿主同步，两个播放器才不会同时出声。 */
+  const setPlayState = (next: boolean): void => {
+    setPlaying(next)
+    onPlayChange?.(next)
+  }
 
   // 时间轴换成别的项目时回到第一段。
-  useEffect(() => { setIndex(0); setPlaying(false) }, [timeline?.id])
+  useEffect(() => { setIndex(0); setPlayState(false) }, [timeline?.id])
+
+  // 监视器开播时本组件立刻停下；这是"同一时刻只播一个"的最后一道闸。
+  useEffect(() => {
+    if (programPlaying && playing) setPlayState(false)
+  }, [programPlaying, playing])
 
   // 段播完自动前进；最后一段停在结尾。
   useEffect(() => {
@@ -53,7 +67,7 @@ export function TimelineSegmentPreview({ timeline, t }: TimelineSegmentPreviewPr
     if (!playing || video === null) return
     const advance = () => {
       if (index < clips.length - 1) setIndex(index + 1)
-      else setPlaying(false)
+      else setPlayState(false)
     }
     video.addEventListener('ended', advance)
     return () => { video.removeEventListener('ended', advance) }
@@ -63,7 +77,7 @@ export function TimelineSegmentPreview({ timeline, t }: TimelineSegmentPreviewPr
   useEffect(() => {
     const video = videoRef.current
     if (video === null) return
-    if (playing) void video.play().catch(() => { setPlaying(false) })
+    if (playing && !programPlaying) void video.play().catch(() => { setPlayState(false) })
     else video.pause()
   }, [playing, index])
 
@@ -78,17 +92,20 @@ export function TimelineSegmentPreview({ timeline, t }: TimelineSegmentPreviewPr
   const seek = (next: number) => {
     if (next < 0 || next >= clips.length) return
     setIndex(next)
-    setPlaying(true)
+    setPlayState(true)
   }
 
   return (
     <div className="iv-seg-preview" data-seg-preview="true">
       <div className="iv-seg-head">
-        <button type="button" className="iv-btn iv-btn--sm" onClick={() => { setPlaying(value => !value) }}>
+        <button type="button" className="iv-btn iv-btn--sm" data-seg-play="true"
+          disabled={programPlaying}
+          title={programPlaying ? t('segPreviewRole') : undefined}
+          onClick={() => { setPlayState(!playing) }}>
           <Icon name={playing ? 'pause' : 'play'} size={11} />
           {playing ? t('segPause') : t('segPlay')}
         </button>
-        <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" onClick={() => { seek(0) }}>
+        <button type="button" className="iv-btn iv-btn--ghost iv-btn--sm" disabled={programPlaying} onClick={() => { seek(0) }}>
           <Icon name="undo" size={11} />{t('segReplay')}
         </button>
         <span className="iv-meta" data-seg-counter="true">

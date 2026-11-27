@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Icon } from '../icons.tsx'
-import type { ModelCardView, ModelLiveStatusView, ModelRegistryProbeView, TextModelOption, WorkbenchApi } from '../api.ts'
+import type { ModelCardView, ModelLiveStatusView, ModelRegistryProbeView, TextModelOption, VoiceStatus, WorkbenchApi } from '../api.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 import { PanelState } from './PanelState.tsx'
 
@@ -44,6 +44,9 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
   const [live, setLive] = useState<{ probe: ModelRegistryProbeView; targets: Readonly<Record<string, ModelLiveStatusView>> } | undefined>(undefined)
   const [textModels, setTextModels] = useState<readonly TextModelOption[] | undefined>(undefined)
   const [textFailures, setTextFailures] = useState<readonly string[]>([])
+  // 语音模型（合成 / 克隆）也在这里展示：此前只有图/视频卡片与文本模型，语音能力像是"没有"
+  const [voice, setVoice] = useState<VoiceStatus | undefined>(undefined)
+  const [voiceFailure, setVoiceFailure] = useState<string | undefined>(undefined)
 
   // `refresh` = 用户点了刷新：要求宿主**现场重探**服务商模型目录，而不是再读一遍静态清单
   const load = async (refresh = false) => {
@@ -66,6 +69,12 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
           setTextModels([])
           setTextFailures([thrown instanceof Error ? thrown.message : String(thrown)])
         }),
+      // 语音模型与实际可用性一起取：旧宿主没有该端点时整条不渲染，不假装"没有语音模型"
+      typeof api.voiceStatus !== 'function'
+        ? Promise.resolve()
+        : api.voiceStatus()
+          .then(value => { setVoice(value); setVoiceFailure(undefined) })
+          .catch(thrown => { setVoice(undefined); setVoiceFailure(thrown instanceof Error ? thrown.message : String(thrown)) }),
     ])
     setLoading(false)
   }
@@ -151,6 +160,59 @@ export function ModelCardsPanel({ api, t }: ModelCardsPanelProps) {
           ? null
           : <span className="iv-meta iv-meta--warn" data-model-text-failures="true">{t('modelCardsTextFailures')} {textFailures.join('；')}</span>}
       </div>
+
+      {/* 可用语音模型：合成与克隆各标一回，可用性如实（未配置凭证时说明原因） */}
+      {voice !== undefined
+        ? (
+          <div
+            className="iv-text-models"
+            data-model-voice-models="true"
+            data-model-voice-ready={voice.available ? 'true' : 'false'}
+          >
+            <div className="iv-text-model-group">
+              <span className="iv-micro">{t('modelCardsVoiceModels')}</span>
+              <span
+                className={`iv-chip iv-chip--${voice.available ? 'ok' : 'warn'}`}
+                data-model-voice-availability={voice.available ? 'ready' : 'unavailable'}
+                title={voice.reason}
+              >
+                {voice.available ? t('modelCardsVoiceReady') : t('voiceNotReady')}
+              </span>
+              <span className="iv-meta">
+                {voice.provider} · {t('modelCardsVoiceCount').replace('{n}', String(voice.voices.length))}
+              </span>
+            </div>
+            <div className="iv-text-model-chips">
+              {voice.model === undefined || voice.model === ''
+                ? null
+                : (
+                  <span className="iv-chip iv-text-model-chip" title={`${voice.provider} · ${voice.model}`} data-model-voice-synth={voice.model}>
+                    {voice.model}
+                    <span className="iv-meta"> · {t('modelCardsVoiceSynth')}</span>
+                  </span>
+                )}
+              {voice.cloneModel === undefined || voice.cloneModel === ''
+                ? null
+                : (
+                  <span className="iv-chip iv-text-model-chip" title={`${voice.provider} · ${voice.cloneModel}`} data-model-voice-clone={voice.cloneModel}>
+                    {voice.cloneModel}
+                    <span className="iv-meta"> · {t('modelCardsVoiceClone')}</span>
+                  </span>
+                )}
+            </div>
+            {voice.available || voice.reason === undefined
+              ? null
+              : <span className="iv-meta iv-meta--warn" data-model-voice-reason="true">{voice.reason}</span>}
+          </div>
+        )
+        : voiceFailure === undefined
+          ? null
+          : (
+            <div className="iv-text-models" data-model-voice-models="true">
+              <span className="iv-micro">{t('modelCardsVoiceModels')}</span>
+              <span className="iv-meta iv-meta--warn" data-model-voice-failure="true">{t('modelCardsVoiceFailed')}：{voiceFailure}</span>
+            </div>
+          )}
 
       {/* 刷新中：保留旧卡片，只在顶部给一条细进度 */}
       {loading && cards !== undefined ? <PanelState view={{ kind: 'refreshing' }} /> : null}

@@ -11,8 +11,9 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
 import {
-  LANE_PADDING_PX, laneTimeFromClientX, nextVideoClipStart, resizeClipLeft, resizeClipRight,
+  LANE_PADDING_PX, MIN_CLIP_MS, laneTimeFromClientX, nextVideoClipStart, resizeClipLeft, resizeClipRight,
 } from '../src/client/timeline-math.ts'
+import { MAX_CLIP_DURATION_MS } from '../src/workbench/timeline.ts'
 import { clientProps, cleanup, createProject, fakeApi, render } from './client-fake-api.ts'
 
 afterEach(cleanup)
@@ -249,6 +250,10 @@ describe('B5 timeline interaction', () => {
     })
     fireEvent.keyDown(window, { key: 'Delete' })
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+    // F4：键盘删除与垃圾桶同一撤销路径——删完必须给得出「撤销」
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-clip-undo]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-timeline-clip-undo-button]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
   })
 
   it('splits a clip at the playhead through the domain rule (B17)', async () => {
@@ -272,6 +277,107 @@ describe('B5 timeline interaction', () => {
     expect(Number(inspField(view, 'duration').value)).toBe(1500)
     expect(view.container.querySelector('[data-timeline-clip-inspector]')?.getAttribute('data-timeline-clip-inspector'))
       .toBe(view.container.querySelectorAll('[data-timeline-clip]')[1]?.getAttribute('data-timeline-clip'))
+  })
+
+  it('offers an undo after deleting a single clip (2026-11-26)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+    fireEvent.click(view.container.querySelector('[data-timeline-insp-remove]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-clip-undo]')).toBeTruthy() })
+    expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(0)
+
+    fireEvent.click(view.container.querySelector('[data-timeline-clip-undo-button]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+    expect(view.container.querySelector('[data-timeline-clip]')?.getAttribute('data-timeline-clip-selected')).toBe('true')
+  })
+
+  it('clamps inspector numbers instead of writing values the host would reject (F6)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    const start = inspField(view, 'start')
+    const duration = inspField(view, 'duration')
+
+    // 超上限（1 小时）→ 夹到宿主接受的 30 分钟，不把越界值写进文档
+    fireEvent.change(start, { target: { value: String(60 * 60 * 1000) } })
+    await waitFor(() => { expect(start.value).toBe(String(MAX_CLIP_DURATION_MS)) })
+
+    // 清空输入 → 保持上一次合法值（以前会写 0 或 NaN，把保存态打成 failed）
+    fireEvent.change(start, { target: { value: '' } })
+    expect(start.value).toBe(String(MAX_CLIP_DURATION_MS))
+
+    // 时长下限：0 夹到 MIN_CLIP_MS（宿主要求 ≥ 1ms，界面按最小时长兜底）
+    fireEvent.change(duration, { target: { value: '0' } })
+    await waitFor(() => { expect(duration.value).toBe(String(MIN_CLIP_MS)) })
+
+    // 变速清空不写 NaN，控件保持原值
+    fireEvent.change(inspField(view, 'speed'), { target: { value: '' } })
+    expect(inspField(view, 'speed').value).toBe('1')
+  })
+
+  it('drives the monitor video from the playhead instead of swapping a poster (F5)', async () => {
+    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    // 视频元素会随"当前是否有可播片段"挂载/卸载，断言时按当前 DOM 取，不缓存节点
+    const monitorVideo = (): HTMLVideoElement =>
+      view.container.querySelector('[data-timeline-monitor-video]') as HTMLVideoElement
+
+    expect(monitorVideo()).toBeTruthy()
+    // 以前固定 muted，成片有声却听不到；现在默认出声（被浏览器拦时运行时退回静音）
+    expect(monitorVideo().hasAttribute('muted')).toBe(false)
+
+    const playhead = view.container.querySelector('[data-timeline-playhead]') as HTMLInputElement
+    // 片段内定位：拖到 1500ms，监视器 seek 到源内 1.5s
+    fireEvent.change(playhead, { target: { value: '1500' } })
+    await waitFor(() => { expect(monitorVideo().currentTime).toBeCloseTo(1.5, 2) })
+
+    // 变速 2×：时间轴 1s = 源 2s（片段内偏移按 speed 折算）
+    fireEvent.change(inspField(view, 'speed'), { target: { value: '2' } })
+    fireEvent.change(playhead, { target: { value: '1000' } })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-timeline-monitor-media]')?.getAttribute('data-timeline-monitor-media')).toBe('2000')
+    })
+    await waitFor(() => { expect(monitorVideo().currentTime).toBeCloseTo(2, 2) })
+  })
+
+  it('空轨给「从素材添加」真入口，点了会展开并滚到素材面板（F15）', async () => {
+    const { view } = await renderTimeline()
+    const pane = (): HTMLElement => view.container.querySelector('[data-workbench-pane="paneAssets"]') as HTMLElement
+
+    // 先收起素材块：这正是评审指出的场景——灰字说「从右侧素材里加入」，右侧却看不到
+    fireEvent.click(view.container.querySelector('[data-dock-fold="assets"]') as HTMLElement)
+    expect(pane().className).toContain('iv-pane--folded')
+
+    const action = view.container.querySelector('[data-timeline-empty-action="assets"]') as HTMLButtonElement
+    expect(action.textContent).toContain(en.timelineEmptyAction)
+
+    // jsdom 没有 scrollIntoView，打桩才能断言"确实滚过去了"
+    const scrolled: string[] = []
+    pane().scrollIntoView = () => { scrolled.push('paneAssets') }
+    fireEvent.click(action)
+    await waitFor(() => { expect(pane().className).not.toContain('iv-pane--folded') })
+    await waitFor(() => { expect(scrolled).toHaveLength(1) })
+  })
+
+  it('supports keyboard clip selection and a real zoom slider (2026-11-26)', async () => {    const { view } = await renderTimeline()
+    await addClipViaPicker(view)
+
+    const clip = view.container.querySelector('[data-timeline-clip]') as HTMLElement
+    expect(clip.getAttribute('role')).toBe('group')
+    expect(clip.tabIndex).toBe(0)
+    fireEvent.keyDown(clip, { key: 'Enter' })
+    await waitFor(() => { expect(clip.getAttribute('aria-current')).toBe('true') })
+    expect(view.container.querySelector('[data-timeline-clip-inspector-fallback]')?.getAttribute('data-timeline-clip-inspector-fallback')).toBe('false')
+
+    const beforeTicks = view.container.querySelectorAll('.iv-ruler b').length
+    const zoom = view.container.querySelector('[data-timeline-zoom]') as HTMLInputElement
+    expect(zoom.value).not.toBe('')
+    fireEvent.change(zoom, { target: { value: '100' } })
+    await waitFor(() => {
+      expect(view.container.querySelectorAll('.iv-ruler b').length).toBeGreaterThan(beforeTicks)
+    })
+    expect((view.container.querySelector('.iv-tl') as HTMLElement).style.getPropertyValue('--iv-tl-zoom')).not.toBe('')
   })
 
   it('disables split when the playhead is outside the clip (B17)', async () => {

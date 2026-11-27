@@ -432,7 +432,7 @@ export function apply(ctx: Context, rawConfig: Config): void {
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
-      // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
+      // 每个字段的来源（override / settings / none）：界面只在「已覆盖」时挂徽章
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
       // 生效默认模型：配置显式值 → 服务商内置默认（界面显示"默认：xxx"而不是空白）
       defaultModels: () => {

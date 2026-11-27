@@ -19,6 +19,8 @@ export interface VoiceCardProps {
   readonly t: (key: WorkbenchLocaleKey) => string
   /** 当前时间轴 id；没有时间轴时只显示状态与提示。 */
   readonly timelineId?: string
+  /** 合成结果/失败的提示出口；不传时卡片内就地显示错误与产物路径。 */
+  readonly onNotice?: (text: string, tone: 'info' | 'error') => void
 }
 
 /** 一行合成结果。 */
@@ -51,7 +53,7 @@ function audioSrc(path: string): string {
  * @returns 状态行 + 配音计划 + 合成结果。
  */
 export function VoiceCard(props: VoiceCardProps) {
-  const { api, t, timelineId } = props
+  const { api, t, timelineId, onNotice } = props
   const [status, setStatus] = useState<VoiceStatus | undefined>(undefined)
   const [plan, setPlan] = useState<DubPlanView | undefined>(undefined)
   const [voiceId, setVoiceId] = useState('')
@@ -129,9 +131,15 @@ export function VoiceCard(props: VoiceCardProps) {
         setLines([...done])
       }
       setProgress({ done: planned.length, total: planned.length })
+      // 全部成功后才提示一次：逐句弹提示会盖住时间轴，且卡片里已有可试听列表
+      if (done.length > 0) {
+        onNotice?.(`${t('voiceCardSynthesized')} · ${done.length}/${planned.length} · ${done[done.length - 1]?.audio.audioPath ?? ''}`, 'info')
+      }
     } catch (cause) {
       // 已合成的行保留：不要因为第 N 句失败就丢掉前面 N-1 条的成果
-      setError(cause instanceof Error ? cause.message : String(cause))
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+      onNotice?.(message, 'error')
     } finally {
       setSynthing(false)
     }
@@ -180,7 +188,7 @@ export function VoiceCard(props: VoiceCardProps) {
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--primary iv-btn--sm"
+            className="iv-btn iv-btn--acc iv-btn--sm"
             data-voice-generate="true"
             disabled={!available || plan === undefined || plan.lines.length === 0 || synthing}
             title={available ? undefined : (status?.reason ?? t('voiceNotReady'))}

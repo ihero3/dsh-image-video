@@ -26,7 +26,7 @@ export const WORKBENCH_STYLE_ID = 'dsh-image-video-workbench-style'
  * 界面就会出现"新旧混排"（旧规则给新结构定位，标签和控件错行）。
  * 所以注入时不做"已存在就跳过"，而是比对版本戳、不一致就整表覆盖。
  */
-export const WORKBENCH_STYLE_VERSION = '2026-11-26.5'
+export const WORKBENCH_STYLE_VERSION = '2026-11-27.2'
 
 /** 整张工作台样式表（类名统一 `iv-` 前缀，作用域根为 `.iv`）。 */
 export const WORKBENCH_STYLE = `
@@ -65,6 +65,9 @@ export const WORKBENCH_STYLE = `
   --iv-warn-soft:color-mix(in srgb,var(--iv-warn) 11%,transparent);
   --iv-danger-soft:color-mix(in srgb,var(--iv-danger) 10%,transparent);
   --iv-monitor:#0a0b0d;
+  /* 顶栏实际高度（两行：对象行 + 视图标签栏）。浮层要贴在顶栏下方，只能靠这个值定位；
+     改顶栏排版时必须同步，否则窄档浮层会压住顶栏或留空。窄档换行后在容器查询里逐档覆盖。 */
+  --iv-top-h:80px;
   --iv-r:8px;
   --iv-mono:var(--dsh-font-family-code,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);
   /* ---- 间距：2px 偶数节奏，6 档。组件内微间距也用同一套，避免"再来一个 7px" ---- */
@@ -223,8 +226,21 @@ export const WORKBENCH_STYLE = `
   /* 窄档没有常驻列：收起时不留窄条，宽度全给主区（展开仍走顶栏按钮） */
   .iv-body:has(> .iv-dock-col--off){grid-template-columns:minmax(0,1fr)}
   .iv-dock-rail{display:none}
-  .iv-dock-col{position:absolute;right:8px;top:52px;bottom:8px;width:min(360px,calc(100% - 16px));z-index:var(--iv-z-tip);
+  /* 窄档顶栏第一行会换行，高度随宽度变化：按实测值逐档覆盖 --iv-top-h，
+     让浮层始终贴在新顶栏下方（改动顶栏压缩规则后必须重新量）。 */
+  .iv-dock-col{--iv-top-h:114px;position:absolute;right:8px;top:var(--iv-top-h);bottom:8px;width:min(360px,calc(100% - 16px));z-index:var(--iv-z-tip);
     border:1px solid var(--iv-line-2);border-radius:var(--iv-r-xl);box-shadow:var(--iv-shadow-3);overflow:hidden}
+}
+@container iv-panel (max-width:700px){
+  .iv-dock-col{--iv-top-h:124px}
+}
+@container iv-panel (max-width:540px){
+  .iv-dock-col{--iv-top-h:158px}
+}
+/* 更窄时顶栏会折成 4–5 行，任何固定像素都会失准：改成贴底浮层，从下往上占 58%，
+   结构上不可能压到顶栏。 */
+@container iv-panel (max-width:440px){
+  .iv-dock-col{top:auto;height:min(58%,calc(100% - 228px))}
 }
 
 /* ============ 控件 ============ */
@@ -291,7 +307,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-chip--ok{color:var(--iv-ok);border-color:color-mix(in srgb,var(--iv-ok) 35%,transparent);background:var(--iv-ok-soft)}
 .iv-chip--warn{color:var(--iv-warn);border-color:color-mix(in srgb,var(--iv-warn) 35%,transparent);background:var(--iv-warn-soft)}
 .iv-chip--err{color:var(--iv-danger);border-color:color-mix(in srgb,var(--iv-danger) 35%,transparent);background:var(--iv-danger-soft)}
-.iv-chip--run{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 35%,transparent);background:var(--iv-acc-soft)}
+.iv-chip--run{color:var(--iv-info);border-color:color-mix(in srgb,var(--iv-info) 35%,transparent);background:color-mix(in srgb,var(--iv-info) 12%,transparent)}
 .iv-chip--run .iv-dot{animation:iv-pulse 1.2s ease-in-out infinite}
 @keyframes iv-pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:reduce){.iv-chip--run .iv-dot{animation:none}.iv-btn,.iv-row,.iv-clip{transition:none}}
@@ -304,17 +320,39 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-notice--block{border-left:3px solid var(--iv-danger);padding:var(--iv-sp-4) var(--iv-sp-5);font-weight:var(--iv-fw-medium)}
 .iv-notice .iv-ico{margin-top:2px}
 
-/* ============ 默认值摘要条 + 弹层 ============ */
+/* ============ 生效参数摘要条 + 弹层 ============ */
 /* 摘要条同时是弹层的定位容器：这样弹层宽度按**栏宽**算，窄侧栏里也不会溢出/被裁。 */
 .iv-defaults{position:relative;container:iv-defaults/inline-size;
-  display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2) var(--iv-sp-5);padding:5px 10px;flex:none;
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-1) var(--iv-sp-5);padding:6px 10px;flex:none;
   border-bottom:1px solid var(--iv-line);background:var(--iv-panel);font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
+/* 标题自成一块：左边图标 + 名称 + 一句用途，右边竖线隔开参数。
+   原版把「当前生效参数」和六个参数平铺，读起来像第七个参数。 */
+.iv-defaults-head{display:inline-flex;flex:0 0 auto;align-items:center;gap:var(--iv-sp-2);
+  padding-right:var(--iv-sp-5);border-right:1px solid var(--iv-line-2);white-space:nowrap}
+.iv-defaults-head .iv-ico{color:var(--iv-acc)}
+.iv-defaults-title{font-size:var(--iv-fs-meta);font-weight:var(--iv-fw-medium);color:var(--iv-tx);letter-spacing:.02em}
+.iv-defaults-hint{color:var(--iv-tx3)}
+/* 参数按「图像 / 视频 / 文本」分组，与编辑器弹层同构；组之间是间距，组内才用细分隔线。 */
+.iv-defaults-body{display:flex;flex:1 1 420px;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-1) var(--iv-sp-5);min-width:0}
+.iv-def-group{display:inline-flex;align-items:center;gap:var(--iv-sp-3);min-width:0}
+.iv-def-group-label{flex:none;padding:1px 7px;border:1px solid var(--iv-line-2);border-radius:var(--iv-r-pill);
+  background:var(--iv-panel-3);color:var(--iv-tx3);font-size:var(--iv-fs-micro);
+  font-weight:var(--iv-fw-medium);line-height:14px;white-space:nowrap}
+.iv-def-group-items{display:inline-flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-1) var(--iv-sp-3);min-width:0}
+/* 两个入口（设置 / 模型详情）作为一个整体靠右，不再靠单个按钮的 marginLeft 把中间撑空。
+   28px 高 + 12px 内边距：这两个是参数条上唯一的可点区域，24px 时点击目标偏小、
+   和左边的只读文字几乎一样高，看不出可以点。 */
+.iv-defaults-actions{display:inline-flex;flex:0 0 auto;align-items:center;gap:var(--iv-sp-2);margin-left:auto}
+.iv-defaults-actions .iv-btn{height:28px;padding:0 12px;font-size:var(--iv-fs-body);gap:var(--iv-sp-2)}
+.iv-defaults-actions .iv-btn--ghost{color:var(--iv-tx2)}
 .iv-def{display:inline-flex;align-items:baseline;gap:var(--iv-sp-2);white-space:nowrap}
 /* 壳层级展开块（模型能力）：入口在参数条最右侧，内容紧接参数条下方 */
 .iv-shell-details{border-bottom:1px solid var(--iv-line);background:var(--iv-panel);flex:none}
 .iv-shell-details-body{padding:var(--iv-sp-3) var(--iv-sp-5) var(--iv-sp-5);min-width:0}
 .iv-def i{font-style:normal;color:var(--iv-tx3)}
-.iv-def b{font-weight:var(--iv-fw-medium);color:var(--iv-tx);font-variant-numeric:tabular-nums}
+/* 参数值可能很长（服务商 / 模型名）：超长时省略，不把参数条顶出视口 */
+.iv-def b{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;
+  font-weight:var(--iv-fw-medium);color:var(--iv-tx);font-variant-numeric:tabular-nums}
 .iv-row{flex-wrap:wrap}
 .iv-row-detail{order:9;flex-basis:100%;margin-top:var(--iv-sp-1)}
 /* 生成动作行：每页只有一个主按钮并占满整行；生成中就地变「取消生成」 */
@@ -330,12 +368,26 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
 .iv-ref-thumb{width:22px;height:16px;object-fit:cover;border-radius:var(--iv-r-xs);display:block}
 .iv-ref-thumb-btn:hover{border-color:var(--iv-acc)}
-.iv-def-src{font-style:normal;font-size:var(--iv-fs-micro);line-height:13px;padding:0 5px;border-radius:var(--iv-r-pill);
-  border:1px solid var(--iv-line-2);color:var(--iv-tx3);white-space:nowrap}
-/* 工作台/composer 改过的值用动作色点出来，和"设置里的默认"一眼可分 */
+/* 来源徽章只剩「已覆盖」一档（临时改过、重启回退），所以只有强调色这一种形态；
+   底色的中性样式留着给其它 data-default-source-label 取值兜底，不至于没样式。 */
+.iv-def-src{font-style:normal;font-size:var(--iv-fs-micro);line-height:14px;padding:0 6px;border-radius:var(--iv-r-pill);
+  border:1px solid transparent;background:color-mix(in srgb,var(--iv-tx) 5%,transparent);
+  color:var(--iv-tx3);white-space:nowrap}
 .iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
-.iv-def[data-default-source=override] .iv-def-src{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 40%,transparent)}
-.iv-def+.iv-def::before{content:"";width:1px;height:9px;background:var(--iv-line-2);margin-right:10px;align-self:center}
+.iv-def[data-default-source=override] .iv-def-src{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 40%,transparent);background:var(--iv-acc-soft)}
+.iv-def+.iv-def::before{content:"";width:1px;height:10px;background:var(--iv-line-2);margin-right:2px;align-self:center}
+/* 中等宽度：标题与两个入口占首行，参数整组落到第二行，避免组内被拆散后东一块西一块。 */
+@container iv-defaults (max-width:1180px){
+  .iv-defaults-hint{display:none}
+  .iv-defaults-head{order:0;border-right:0;padding-right:0}
+  .iv-defaults-actions{order:1}
+  .iv-defaults-body{order:2;flex-basis:100%}
+}
+/* 窄栏：每组改为「组名一行、参数一行」，组名不再和值挤成一串。 */
+@container iv-defaults (max-width:700px){
+  .iv-def-group{align-items:flex-start;flex-direction:column;gap:var(--iv-sp-1)}
+  .iv-def-group-items{gap:var(--iv-sp-1) var(--iv-sp-3)}
+}
 /* 触发按钮本身不建定位上下文：弹层挂到摘要条上，位置只跟栏宽有关 */
 .iv-pop{display:inline-flex}
 .iv-pop-panel{position:absolute;top:calc(100% + 6px);right:0;left:auto;z-index:var(--iv-z-overlay);
@@ -457,7 +509,10 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 
 /* ============ G2 物料库分栏 ============ */
 .iv-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-2)}
+/* white-space:nowrap —— tab 是胶囊按钮，文字一旦折行会顶出固定高度、图标与文字错位
+   （2026-11-27「剧本分镜 / 素材提取」被挤成两行）。宁可让整组换行，也不让标签内部折行。 */
 .iv-tab{display:inline-flex;align-items:center;gap:var(--iv-sp-2);height:22px;padding:0 9px;border-radius:var(--iv-r);
+  white-space:nowrap;
   border:1px solid var(--iv-line-2);background:var(--iv-panel-2);color:var(--iv-tx2);font-size:var(--iv-fs-meta);cursor:pointer}
 .iv-tab:hover{color:var(--iv-tx);border-color:color-mix(in srgb,currentColor 35%,transparent)}
 .iv-tab .iv-ico{color:var(--iv-tx3)}
@@ -669,27 +724,30 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-tc-total{font-family:var(--iv-mono);font-size:var(--iv-fs-meta);color:var(--iv-tx3);white-space:nowrap}
 .iv-zoom{display:flex;align-items:center;gap:var(--iv-sp-2);margin-left:auto;font-size:var(--iv-fs-meta);color:var(--iv-tx3);white-space:nowrap}
 .iv-zoom .iv-scrub{max-width:64px;flex:none}
-.iv-tl{position:relative;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);overflow:hidden}
-.iv-ruler{position:relative;height:16px;margin-left:46px;border-bottom:1px solid var(--iv-line-2);
+.iv-tl{--iv-tl-head:46px;position:relative;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2);overflow:hidden}
+.iv-ruler{position:relative;height:16px;margin-left:var(--iv-tl-head);border-bottom:1px solid var(--iv-line-2);
   background:var(--iv-panel-3)}
 .iv-ruler i{position:absolute;top:0;bottom:0;width:1px;background:var(--iv-line-2)}
 .iv-ruler b{position:absolute;top:2px;font-family:var(--iv-mono);font-size:var(--iv-fs-tick);font-weight:var(--iv-fw-regular);color:var(--iv-tx3);
   transform:translateX(-50%);font-variant-numeric:tabular-nums}
 .iv-tracks{position:relative}
-.iv-track{display:grid;grid-template-columns:46px minmax(0,1fr);align-items:stretch;border-bottom:1px solid var(--iv-line)}
+.iv-track{display:grid;grid-template-columns:var(--iv-tl-head) minmax(0,1fr);align-items:stretch;border-bottom:1px solid var(--iv-line)}
 .iv-track:last-child{border-bottom:0}
 .iv-t-head{display:flex;flex-direction:column;justify-content:center;gap:0;padding:5px 0 5px 8px;
   border-right:1px solid var(--iv-line);background:var(--iv-panel-3)}
 .iv-t-head .micro{font-size:var(--iv-fs-micro)}
 .iv-t-kind{font-size:var(--iv-fs-micro);color:var(--iv-tx3)}
 .iv-t-lane{position:relative;padding:4px 8px;display:flex;flex-direction:column;gap:var(--iv-sp-2);min-height:40px}
+/* F15：空轨从"一行灰字"改成可点入口（文案 + 从素材添加），窄面板下整体换行不挤出泳道 */
+.iv-t-empty{display:flex;align-items:center;flex-wrap:wrap;gap:var(--iv-sp-2);min-width:0}
+.iv-t-empty .iv-meta{margin:0}
 /* B5：片段按**时间**绝对定位（left=起点比例、width=时长比例），拖拽/手柄才有"落点即时间" */
 .iv-clips{position:relative;display:block;height:58px}
 .iv-clip{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:16px;flex-basis:auto;min-height:34px;
   padding:3px 7px 3px 9px;border-radius:var(--iv-r-xs);border:1px solid var(--iv-line-2);background:var(--iv-panel);
   font-size:var(--iv-fs-meta);position:absolute;top:0;bottom:0;overflow:hidden;cursor:grab}
 .iv-clip:active{cursor:grabbing}
-.iv-clip--sel{border-color:var(--iv-acc);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-acc) 30%,transparent)}
+.iv-clip--sel{border-color:var(--iv-solid);box-shadow:0 0 0 2px color-mix(in srgb,var(--iv-solid) 35%,transparent)}
 /* B5：左右手柄改起点/时长 */
 .iv-clip-h{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:var(--iv-z-sticky);border:0;background:transparent;padding:0}
 .iv-clip-h--l{left:0}
@@ -700,9 +758,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 /* B5：放置落点高亮 */
 .iv-t-lane--drop{background:var(--iv-acc-soft);outline:1px dashed var(--iv-acc);outline-offset:-2px}
 .iv-clip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
-.iv-clip--video{border-color:color-mix(in srgb,var(--iv-acc) 45%,transparent);
-  background:linear-gradient(90deg,var(--iv-acc-soft),transparent 46%),var(--iv-panel)}
-.iv-clip--video::before{background:var(--iv-acc)}
+.iv-clip--video{border-color:color-mix(in srgb,var(--iv-tx2) 45%,transparent);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--iv-tx2) 10%,transparent),transparent 46%),var(--iv-panel)}
+.iv-clip--video::before{background:var(--iv-tx2)}
 .iv-clip--audio{border-color:color-mix(in srgb,var(--iv-ok) 45%,transparent);
   background:linear-gradient(90deg,var(--iv-ok-soft),transparent 46%),var(--iv-panel)}
 .iv-clip--audio::before{background:var(--iv-ok)}
@@ -766,6 +824,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-wf-lib-item-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .iv-wf-lib-item-tag{flex:none;font-size:var(--iv-fs-micro);color:var(--iv-tx3);border:1px dashed var(--iv-line-2);
   border-radius:var(--iv-r-pill);padding:0 4px;line-height:13px}
+.iv-wf-lib-item-tag--noexec{color:var(--iv-warn);border-color:color-mix(in srgb,var(--iv-warn) 38%,transparent)}
 [data-workflow-library-collapsed=true] .iv-wf-lib{width:40px;padding:6px 4px}
 [data-workflow-library-collapsed=true] .iv-wf-lib-search,
 [data-workflow-library-collapsed=true] .iv-wf-lib-title,
@@ -814,7 +873,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   background:color-mix(in srgb,var(--iv-acc) 16%,transparent);pointer-events:none}
 .iv-wf-progress>i{display:block;height:100%;background:var(--iv-acc);transition:width .3s ease}
 /* 参数检视器：浮在右上，不占画布高度（选中才出现） */
-.iv-wf-inspector{position:absolute;top:7px;right:7px;z-index:var(--iv-z-canvas-pop);width:266px;max-height:calc(100% - 14px);
+.iv-wf-inspector{position:absolute;top:7px;right:7px;z-index:var(--iv-z-drawer);width:266px;max-height:calc(100% - 14px);
   overflow:auto;background:var(--iv-surface);box-shadow:var(--iv-shadow-2)}
 .iv-wf-inspector-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:var(--iv-fs-body);font-weight:var(--iv-fw-medium);letter-spacing:0;text-transform:none;color:var(--iv-tx)}
@@ -862,7 +921,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-run-item{border:1px solid var(--iv-line-2);background:var(--iv-panel);color:var(--iv-tx2);border-radius:var(--iv-r-pill);
   font:inherit;font-size:var(--iv-fs-meta);padding:1px 8px;cursor:pointer;white-space:nowrap}
 .iv-run-item:hover{border-color:color-mix(in srgb,currentColor 35%,transparent);color:var(--iv-tx)}
-.iv-run-item[data-active=true]{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
+.iv-run-item[data-workflow-run-item-selected=true]{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
 .iv-run-nodes{display:grid;gap:var(--iv-sp-1)}
 .iv-node-run{display:flex;align-items:center;gap:var(--iv-sp-3);font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
 .iv-node-run .iv-dot{width:5px;height:5px}
@@ -929,6 +988,12 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .iv-node-planned{margin-left:auto;display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);
   color:var(--iv-tx3);white-space:nowrap}
+/* B5：runnable 但本期不执行的节点——planned 是 warn 语义，两者不共用属性，避免污染 T3-2 契约 */
+.iv-node-noexec{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:var(--iv-sp-2);
+  padding:0 4px;border:1px dashed color-mix(in srgb,var(--iv-warn) 38%,transparent);border-radius:var(--iv-r-pill);
+  color:var(--iv-warn);font-size:var(--iv-fs-micro);line-height:13px;white-space:nowrap}
+.iv-node-noexec+.iv-node-run{margin-left:var(--iv-sp-2)}
+.iv-node-cached+.iv-node-noexec{margin-left:var(--iv-sp-2)}
 .iv-node-body{padding:5px 8px;display:grid;gap:var(--iv-sp-1);font-size:var(--iv-fs-meta);color:var(--iv-tx2);overflow:hidden;text-overflow:ellipsis}
 /* B4：节点运行状态徽章（卡片右上角的小圆点） */
 .iv-node-run{margin-left:auto;display:grid;place-items:center;flex:none}
@@ -1074,11 +1139,16 @@ background:var(--iv-panel-3);cursor:pointer}
 .iv-sb-field .iv-input{width:100%}
 .iv-sb-actions{display:flex;gap:var(--iv-sp-2);flex-wrap:wrap;justify-content:flex-end}
 /* 分段卡：标题行动作簇、折叠预览、引用选择面板 */
-.iv-sb-seg-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap}
+.iv-sb-seg-head{display:flex;align-items:center;gap:var(--iv-sp-2);flex-wrap:wrap;min-width:0}
+/* 分段标题按钮必须能收缩：长提示词交给省略号，hover 底色和操作簇不得越出卡片边界 */
+.iv-sb-seg-head-main{display:flex;align-items:center;gap:var(--iv-sp-3);flex:1 1 0;min-width:0;max-width:100%;
+  overflow:hidden;text-align:left;padding:0 var(--iv-sp-2);border:0;background:transparent;color:inherit;font:inherit}
+.iv-sb-seg-head-main>.iv-micro,.iv-sb-seg-head-main>.iv-sc-sum{flex:none}
+.iv-sb-seg-head-main>.iv-sc-sum-text{flex:1 1 auto;min-width:0}
 .iv-sb-seg-head--clickable{cursor:pointer}
 .iv-sb-seg-head--clickable:hover .iv-micro{color:var(--iv-tx)}
 .iv-sb-seg-head--clickable:focus-visible{outline:2px solid var(--iv-acc);outline-offset:2px;border-radius:var(--iv-r-xs)}
-.iv-sb-seg-actions{margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2)}
+.iv-sb-seg-actions{flex:none;margin-left:auto;display:flex;align-items:center;gap:var(--iv-sp-2)}
 /* 镜头标题：秒数标签放到输入框后面，省掉一整行；操作簇贴引用按钮上方 */
 .iv-shot-duration{display:inline-flex;align-items:center;gap:var(--iv-sp-2)}
 .iv-shot-duration .iv-input{width:64px;flex:0 0 64px}

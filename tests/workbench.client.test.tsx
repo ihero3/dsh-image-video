@@ -309,7 +309,7 @@ describe('workbench project and asset flow', () => {
     })
 
     // 字幕样式 + 烧录开关都会落库
-    fireEvent.change(view.container.querySelector('[data-timeline-track="subtitle"] input[type="color"]') as HTMLElement, {
+    fireEvent.change(view.container.querySelector('[data-timeline-clip-inspector] input[type="color"]') as HTMLElement, {
       target: { value: '#ffcc00' },
     })
     fireEvent.click(view.container.querySelector('[data-timeline-burn]') as HTMLElement)
@@ -421,7 +421,7 @@ describe('workbench project and asset flow', () => {
     expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.optStylePhoto)
   })
 
-  it('marks every effective default with where it came from (settings vs overridden)', async () => {
+  it('只给「已覆盖」挂徽章，来自设置/兜底值都不标（T2-11 修订）', async () => {
     const host = fakeApi({
       defaults: {
         // 宿主改造后这 6 项永远有值（没配 = 内置默认），所以这里不再出现 null
@@ -431,7 +431,7 @@ describe('workbench project and asset flow', () => {
         imageStyle: 'photo',
         videoProvider: 'threevideo',
         videoAspectRatio: '16:9',
-        videoDuration: 10,
+        videoDuration: 5,
       },
       defaultsSources: {
         mediaMode: 'none',
@@ -440,26 +440,32 @@ describe('workbench project and asset flow', () => {
         imageStyle: 'none',
         videoProvider: 'none',
         videoAspectRatio: 'override',
-        videoDuration: 'none',
+        videoDuration: 'settings',
       },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
 
-    // settings 里的默认值：标「来自设置」
-    const size = view.container.querySelector('[data-workbench-default="defaultImageSize"]') as HTMLElement
-    expect(size.getAttribute('data-default-source')).toBe('settings')
-    expect(size.textContent).toContain(en.defaultsSourceSettings)
+    // 六个字段里只剩一个徽章：只有"这轮被临时改过"才值得说
+    const badges = [...view.container.querySelectorAll('[data-default-source-label]')]
+      .map(element => element.getAttribute('data-default-source-label'))
+    expect(badges).toEqual(['override'])
 
-    // 工作台/composer 改过的值：标「已覆盖」
+    // 工作台/composer 改过的值：永远标「已覆盖」（重启会回退，必须让人看见）
     const aspect = view.container.querySelector('[data-workbench-default="defaultVideoAspectRatio"]') as HTMLElement
-    expect(aspect.getAttribute('data-default-source')).toBe('override')
-    expect(aspect.textContent).toContain(en.defaultsSourceOverride)
+    expect(aspect.querySelector('[data-default-source-label]')?.textContent).toBe(en.defaultsSourceOverride)
 
-    // 来源 none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
+    // 来自设置：来源仍如实记在 data 属性上（排障口径），但不出徽章——设置是长期状态，
+    // 不会因为这一行字而改变这一轮的判断
+    const duration = view.container.querySelector('[data-workbench-default="defaultVideoDuration"]') as HTMLElement
+    expect(duration.getAttribute('data-default-source')).toBe('settings')
+    expect(duration.querySelector('[data-default-source-label]')).toBeNull()
+    expect(duration.textContent).toContain('5')
+
+    // 来源 none = 都没配 → 值就是兜底值本身，同样不标
     const style = view.container.querySelector('[data-workbench-default="defaultImageStyle"]') as HTMLElement
     expect(style.getAttribute('data-default-source')).toBe('none')
-    expect(style.textContent).toContain(en.defaultsBuiltinSource)
+    expect(style.querySelector('[data-default-source-label]')).toBeNull()
   })
 
   it('reloads the whitelist when the health snapshot carried none (T2-15 现场问题的回归)', async () => {
@@ -680,6 +686,8 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => {
       expect(view.container.querySelector('[data-workflow-run-action="start"]')).toBeTruthy()
     })
+    // F2：画布唯一 CTA 必须落在真实的主按钮类上（`iv-btn--primary` 全仓无定义）
+    expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLElement).classList.contains('iv-btn--acc')).toBe(true)
     // 图不合法（必填提示词为空）时不能起跑
     expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLButtonElement).disabled).toBe(true)
 
@@ -694,6 +702,40 @@ describe('workbench project and asset flow', () => {
       expect(view.container.querySelector('[data-workflow-run]')?.getAttribute('data-workflow-run')).toBe('succeeded')
     })
     expect(view.container.querySelector('[data-workflow-node-run="i"]')?.getAttribute('data-workflow-node-status')).toBe('succeeded')
+  })
+
+  it('sends a canvas artifact thumbnail to the preview pane', async () => {
+    const record: WorkflowRecord = {
+      schemaVersion: 1, id: 'wfl-preview', projectId: 'prj-1', name: '预览回传',
+      nodes: [{ id: 'i', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '一只猫' } }],
+      edges: [], createdAt: '2026-10-15T00:00:00.000Z', updatedAt: '2026-10-15T00:00:00.000Z',
+    }
+    const host = fakeApi({
+      workflows: [record],
+      runs: [{
+        schemaVersion: 1, id: 'run-preview', workflowId: record.id, projectId: 'prj-1', status: 'succeeded',
+        graph: { nodes: [], edges: [] },
+        nodeRuns: [{
+          nodeId: 'i', kind: 'image-generate', status: 'succeeded',
+          startedAt: '2026-10-15T00:00:00.000Z', outputPath: '/tmp/out/shot.png',
+        }],
+        startedAt: '2026-10-15T00:00:00.000Z',
+      }],
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '预览项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    const thumbnail = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-node-media="image"]')
+      if (element === null) throw new Error('缩略图没出来')
+      return element as HTMLElement
+    })
+    fireEvent.click(thumbnail)
+    await waitFor(() => {
+      const preview = view.container.querySelector('[data-dock-preview="true"] img')
+      expect(preview?.getAttribute('src')).toBe('/outputs/shot.png')
+    })
   })
 
   it('auto-saves canvas edits into the stored workflow', async () => {

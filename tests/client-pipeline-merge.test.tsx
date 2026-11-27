@@ -42,7 +42,7 @@ describe('生成剧本 · 文本模型与技能', () => {
     const generateEpisodes = vi.fn(async () => ({ episodes: [{ id: 'ep-1' }] }))
     const suggestEpisodeCounts = vi.fn(async () => ({ episodes: 2, segments: 3, shots: 4 }))
     const api = makeApi({ generateEpisodes, suggestEpisodeCounts } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(scriptInput(container), { target: { value: '雨夜街头。林夏抬头。' } })
     fireEvent.click(generateButton(container))
     await waitFor(() => { expect(generateEpisodes).toHaveBeenCalledTimes(1) })
@@ -56,7 +56,7 @@ describe('生成剧本 · 文本模型与技能', () => {
     const generateEpisodes = vi.fn(async () => ({ episodes: [{ id: 'ep-1' }] }))
     const suggestEpisodeCounts = vi.fn(async () => ({ episodes: 1, segments: 1, shots: 1 }))
     const api = makeApi({ generateEpisodes, suggestEpisodeCounts } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     // 模拟导入整本长剧本（远超 20 万字单集上限）
     const longScript = '这是一句用于模拟整本小说的正文内容。'.repeat(12_000)
     fireEvent.change(scriptInput(container), { target: { value: longScript } })
@@ -74,7 +74,7 @@ describe('生成剧本 · 文本模型与技能', () => {
     const generateEpisodes = vi.fn(async () => ({ episodes: [{ id: 'ep-1' }] }))
     const suggestEpisodeCounts = vi.fn(async () => ({ episodes: 2, segments: 4, shots: 5 }))
     const api = makeApi({ generateEpisodes, suggestEpisodeCounts } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-text-model] option').length).toBe(2) })
     fireEvent.change(container.querySelector('[data-pipeline-text-model]') as HTMLSelectElement, { target: { value: 'deepseek::chat' } })
     fireEvent.change(scriptInput(container), { target: { value: '一句话创意。' } })
@@ -93,7 +93,7 @@ describe('生成剧本 · 文本模型与技能', () => {
     // 模型错误地只推荐 1 集
     const suggestEpisodeCounts = vi.fn(async () => ({ episodes: 1, segments: 1, shots: 1 }))
     const api = makeApi({ generateEpisodes, suggestEpisodeCounts } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     await waitFor(() => { expect(container.querySelectorAll('[data-pipeline-text-model] option').length).toBe(2) })
     fireEvent.change(container.querySelector('[data-pipeline-text-model]') as HTMLSelectElement, { target: { value: 'deepseek::chat' } })
     const longScript = '这是一句用于模拟整本小说的正文内容。'.repeat(12_000)
@@ -113,7 +113,7 @@ describe('生成剧本 · 文本模型与技能', () => {
       generateEpisodes,
       listSkills: vi.fn(async () => skills) as unknown as WorkbenchApi['listSkills'],
     } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     const select = container.querySelector('[data-pipeline-skill]') as HTMLSelectElement
     await waitFor(() => { expect(select.options.length).toBe(3) })
 
@@ -143,7 +143,7 @@ describe('生成剧本 · 文本模型与技能', () => {
       generateEpisodes,
       listSkills: vi.fn(async () => skills) as unknown as WorkbenchApi['listSkills'],
     } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     const select = container.querySelector('[data-pipeline-skill]') as HTMLSelectElement
     await waitFor(() => { expect(select.options.length).toBe(3) })
     fireEvent.change(select, { target: { value: 'skill-a' } })
@@ -159,7 +159,7 @@ describe('生成剧本 · 文本模型与技能', () => {
 describe('生成剧本 · 共享导入', () => {
   it('导入本地文件：原文并入剧本、文件名留在共享列表、展示全文字数', async () => {
     const api = makeApi()
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(container.querySelector('[data-pipeline-import-file]') as HTMLInputElement, {
       target: { files: [new File(['正文'], 'episode.docx')] },
     })
@@ -177,7 +177,7 @@ describe('生成剧本 · 共享导入', () => {
       fileName: input.fileName ?? '', text: `正文-${input.fileName}`, bytes: 8,
     }))
     const api = makeApi({ importScript: importScript as unknown as WorkbenchApi['importScript'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(container.querySelector('[data-pipeline-import-file]') as HTMLInputElement, {
       target: { files: [new File(['a'], 'a.pdf'), new File(['b'], 'b.txt')] },
     })
@@ -195,7 +195,7 @@ describe('生成剧本 · 共享导入', () => {
       return { fileName: input.fileName ?? '', text: '可用正文', bytes: 8 }
     })
     const api = makeApi({ importScript: importScript as unknown as WorkbenchApi['importScript'] })
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(container.querySelector('[data-pipeline-import-file]') as HTMLInputElement, {
       target: { files: [new File(['x'], '扫描件.pdf'), new File(['y'], '可用.txt')] },
     })
@@ -211,7 +211,7 @@ describe('生成剧本 · 共享导入', () => {
     const generateEpisodes = vi.fn(async () => ({ episodes: [{ id: 'ep-1' }] }))
     const suggestEpisodeCounts = vi.fn(async () => ({ episodes: 2, segments: 3, shots: 4 }))
     const api = makeApi({ generateEpisodes, suggestEpisodeCounts } as unknown as Partial<WorkbenchApi>)
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(scriptInput(container), { target: { value: '一句。两句。' } })
     fireEvent.change(container.querySelector('[data-pipeline-plan-episodes]') as HTMLInputElement, { target: { value: '2' } })
     fireEvent.change(container.querySelector('[data-pipeline-plan-segments]') as HTMLInputElement, { target: { value: '6' } })

@@ -100,7 +100,8 @@ describe('VoiceCard', () => {
         }
       }) as unknown as WorkbenchApi['voiceSynthesize'],
     })
-    const { container } = render(<VoiceCard api={api} t={t} timelineId="tml-1" />)
+    const onNotice = vi.fn()
+    const { container } = render(<VoiceCard api={api} t={t} timelineId="tml-1" onNotice={onNotice} />)
     await waitFor(() => { expect(container.querySelector('[data-voice-status="ready"]')).not.toBeNull() })
     fireEvent.change(container.querySelector('[data-voice-select]') as HTMLSelectElement, { target: { value: 'v-female' } })
     fireEvent.click(container.querySelector('[data-voice-plan]') as HTMLButtonElement)
@@ -114,5 +115,8 @@ describe('VoiceCard', () => {
     expect(calls.map(call => call.text)).toEqual(['第一句台词', '第二句很长很长很长很长很长很长的台词'])
     const audio = container.querySelector('[data-voice-audio] audio') as HTMLAudioElement
     expect(audio.getAttribute('src')).toBe('/outputs/1.wav')
+    // 宿主提示出口：全部合成完只提示一次，并带上最后一条产物路径
+    expect(onNotice).toHaveBeenCalledTimes(1)
+    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('/tmp/outputs/2.wav'), 'info')
   })
 })

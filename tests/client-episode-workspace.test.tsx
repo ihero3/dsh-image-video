@@ -304,16 +304,45 @@ describe('本集工作区（剧本 → 分段 → 分镜）', () => {
     })
   })
 
+  it('asks before rebuilding the canvas and offers an undo (2026-11-26)', async () => {
+    const host = fakeApi({
+      episodes: [episode({ storyboards: [storyboard('seg-1', [shot('shot-1', 1)])] })],
+      workflows: [{
+        schemaVersion: 1, id: 'wfl-ep-ep-1', projectId: 'prj-1', name: '旧图',
+        nodes: [], edges: [], createdAt: STAMP, updatedAt: STAMP,
+      }],
+    })
+    host.projects.push(project() as never)
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeScript }))
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-workspace="ep-1"]')).toBeTruthy() })
+
+    fireEvent.click(view.container.querySelector('[data-episode-sync-workflow="true"]') as HTMLElement)
+    expect(view.container.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(host.workflows.find(item => item.id === 'wfl-ep-ep-1')?.nodes).toHaveLength(0)
+    fireEvent.click(view.container.querySelector('[data-episode-sync-cancel="true"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-sync-confirm="true"]')).toBeNull() })
+
+    fireEvent.click(view.container.querySelector('[data-episode-sync-workflow="true"]') as HTMLElement)
+    fireEvent.click(view.container.querySelector('[data-episode-sync-confirm="true"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-episode-sync-undo-notice]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-episode-sync-undo="true"]') as HTMLElement)
+    await waitFor(() => { expect(host.calls).toContain('workflows/save') })
+    expect(host.workflows.find(item => item.id === 'wfl-ep-ep-1')?.nodes).toHaveLength(0)
+  })
+
   it('syncs the storyboard to one workflow and exports only this episode', async () => {
     const { host, view } = await renderWorkspace({
       storyboards: [storyboard('seg-1', [shot('shot-1', 1)])],
     })
     fireEvent.click(view.container.querySelector('[data-episode-sync-workflow="true"]') as HTMLElement)
+    fireEvent.click(view.container.querySelector('[data-episode-sync-confirm="true"]') as HTMLElement)
     await waitFor(() => { expect(host.workflows.some(item => item.id === 'wfl-ep-ep-1')).toBe(true) })
     await waitFor(() => { expect(view.container.textContent).toContain(en.episodeSyncWorkflowDone.replace('{name}', '第1集 分镜')) })
 
     // 再点一次仍是同一份工作流（幂等由宿主保证）
     fireEvent.click(view.container.querySelector('[data-episode-sync-workflow="true"]') as HTMLElement)
+    fireEvent.click(view.container.querySelector('[data-episode-sync-confirm="true"]') as HTMLElement)
     await waitFor(() => { expect(host.workflows.filter(item => item.id === 'wfl-ep-ep-1')).toHaveLength(1) })
 
     fireEvent.click(view.container.querySelector('[data-episode-export="true"]') as HTMLElement)

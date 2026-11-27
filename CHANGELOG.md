@@ -11,10 +11,153 @@
 - **新增 RPC**：`voice/synthesize` 扩参（`model/speed/pitch/volume/instruction/responseFormat/references`）、`voice/clone`、`voice/synthesize-async`、`voice/async-status`；`voice/status` 合并「配置的预设音色 + 已复刻音色」，并回报生效模型、克隆模型与网关地址。
 - **复刻音色不再丢**：新增 `src/workbench/voice-clones.ts`，音色记录落 `<工作台目录>/voice-clones.json`（`mmxvc_…` 这类 id 不记下来就再也找不回）。
 - **凭证与端点多层回落**：`tts.apiKey`/`tts.apiKeyEnv` → 激活服务商凭证 → 服务商默认地址；`tts.baseURL` 可指向另一站点（语音路由未部署在某站点时不必改生成配置）。新增配置项 `tts.responseFormat` / `tts.cloneModel` / `tts.instruction` / `tts.asyncThresholdChars`。
-- **界面**：时间轴「配音卡片」的「生成配音」真正可用（逐行合成、长句自动异步、每行内嵌 `<audio>` 当场试听、失败保留已合成部分）；剧本页「音色」分区新增复刻入口（浏览器选样本 → 宿主上传），音色卡在「没有音色但有参考音频」时**先复刻再试听**并把音色 id 写回卡片。
+- **界面**：时间轴「配音卡片」的「生成配音」真正可用（逐行合成、长句自动异步、每行内嵌 `<audio>` 当场试听、失败保留已合成部分）；剧本页「音色」分区新增复刻入口（浏览器选样本 → 宿主上传），音色卡在「没有音色但有参考音频」时**先复刻再试听**并把音色 id 写回卡片；「模型详情」面板新增**可用语音模型**（合成模型 / 克隆模型 / 音色数 / 就绪状态同屏，未配置凭证时照实给原因），不再只有图/视频卡片与文本模型。
 - **`http-client.ts` 新增** `requestBinary`（响应是音频时不能用 `res.text()`，否则字节被当 UTF-8 解码损坏）与 `requestMultipart`（FormData 上传，不手工设 Content-Type）。
 - 测试：新增 `tests/tts-service.test.ts`（13 例：端点/请求体/四种响应形态/克隆/异步/默认值与时长解析）；`workbench-voice` 与客户端音色测试改为覆盖可用路径与「先克隆再合成」。
-- 体积：总产物 raw 1,573,408 → 1,588,290、gzip 340,475 → 343,673（+0.9%）；按既有口径抬总产物基线到 raw 1,335,000 / gzip 291,000（预算 1,602,000 / 349,200），实测占用 99.3% / 98.8%。入口 `plugin.js` 不变，增长都在首次打开工作台才下载的 chunk 里。
+- 体积：与三 pane 重设计分支合流后实测总产物 1,666,310 / 363,801（语音分支单独 1,588,290 / 343,673、重设计分支 1,599,629 / 348,932）；按既有口径把总产物基线抬到 raw 1,407,000 / gzip 309,700（预算 1,688,400 / 371,640），实测占用 98.7% / 97.9%。入口 `plugin.js` 24,426 B 不变，增长都在首次打开工作台才下载的 chunk 里。
+
+### R7 · 参数条只留「已覆盖」徽章 + 入口按钮加大（2026-11-27）
+
+R5 的等值比较方案整段回滚：`来自设置` 依旧每行出现（视频时长 5s 这类），信息量还是零——用户只想知道"这轮有没有被临时改过"，不关心设置里写过什么。
+
+- 徽章收敛到一档：`label = source === 'override'`。`settings` / `none` 都不渲染徽章，`data-default-source` 仍如实记录来源（排障与测试用）。
+- 宿主整段回滚：删 `health.defaultsBuiltin`、`registerWorkbenchRpc` 的 `defaultBuiltin` 依赖、`src/index.ts` 的注入与 `BUILT_IN_DEFAULTS` 导入。等值比较不再需要兜底层，客户端也不必知道兜底值。
+- locale：`defaultsEdit` 中文「编辑」→「设置」（en `Edit`→`Settings`）；`defaultsSourceSettings` / `defaultsBuiltinSource` 两个键随徽章一起删掉（三处同步）。
+- 入口按钮放大：`.iv-defaults-actions .iv-btn` 两套主题都从 24px/8px 改到 **28px/12px**，字号升到 `--iv-fs-body`；模型详情图标 12→14，与「设置」一致。24px 时按钮与左侧只读文字同高，看不出可点。
+- 测试：参数条夹具断言"只剩 override 一个徽章"；`workbench.client` 重写为「只标已覆盖」；rpc 端点那条 `defaultsBuiltin` 用例删除（字段已不存在）。
+
+### F18 · 节点卡键盘激活（2026-11-27）
+
+节点卡带着 `role="button" tabIndex={0}`，但只有 xyflow 默认 a11y（可聚焦、方向键移动），Enter/Space 不会选中，检视器也就永远出不来。补 `onKeyDown`：Enter/Space 走与点选同一条路——把本地 `nodes` 里该节点置 `selected`，`onSelectionChange` 同步 `selectedIds`，检视器随即打开并由 `useDialogFocus` 接管焦点；同时清掉边的选中，避免"回车开了多选面板"。
+
+### F17 · 模板市场浮层接管焦点（2026-11-27）
+
+模板抽屉原先只处理 Esc 与外部点击，键盘用户 Tab 时焦点仍留在浮层背后的画布上。改为复用 `useDialogFocus`：打开焦点移入第一张模板卡、Tab 在抽屉内首尾循环、Esc 关闭、关闭后焦点归还「模板市场」开关（元素已卸载时按选择器兜底）。外部点击关闭的监听保留，Esc 不再由手写监听重复处理。根节点补 `role="dialog"` 与 `aria-label`。
+
+### F15 · 时间轴空轨给真入口（2026-11-27）
+
+空轨原先只有一行灰字「还没有片段——从右侧素材里加入」，而右侧展示列/素材块都可以收起，等于指了个看不见的地方。视频空轨现在多一个「从素材添加」按钮：一次点击打开展示列、展开素材块，并把素材面板滚进视口（下一帧滚，等面板展开后的高度结算）。文案键 `timelineEmptyAction`，样式 `.iv-t-empty` 走 flex + wrap，窄面板不挤出泳道。
+
+### R6 · 胶囊 tab 文字不再折行（2026-11-27）
+
+剧本页四个 tab 原先用 inline `flex: 1` 均分宽度，窄栏里「剧本分镜 / 素材提取」被压成两行，32px 固定高度装不下、图标与文字错位（截图可见）。口径改为**标签内部永不折行，宽度不够时让整组换行**：
+
+- 基础层 `.iv-tab` 补 `white-space:nowrap`（两套主题共用）；主题层 `.iv .iv-tab` 补 `flex:none`，不再被压到内容宽度以下。
+- 剧本页 JSX 去掉 inline `flex:1`——均分是折行的直接原因；tab 宽度交回内容，`flex-wrap` 由既有的 `.iv-pane-actions` / `.iv-pane-head` 负责。
+- 门禁：`client-design-system` 新增「tab 文字不折行」；`client-script-tabs` 断言四个 tab 不再带 inline flex。
+
+### F14 · 情绪预设走 locale（2026-11-27）
+
+`VoicePanel` 的 7 个情感标签原先是硬编码中文数组，切英文界面后按钮仍是「平静 / 兴奋 / 旁白」。改为 `WorkbenchLocaleKey[]`（`voiceEmotionCalm` … `voiceEmotionNarration`），中英字典各一份，按钮文本与点选填入值都取当前语言。标签仍是自由文本框，存进资源库的就是用户看到的词。
+
+### R5 · 评审清单 F5/F3/F6：监视器真播放 + 模板可撤销 + 输入夹紧（2026-11-27）
+
+三项都改 `Workbench.tsx`，文件级无法拆成三个提交，合成一次（原计划"各自独立提交"如实偏离一次）。
+
+- **F5 监视器真播放**：`<video>` 接 ref，`play()` / `pause()` / `currentTime` / `playbackRate` 与播放头对齐。源内时间 = `入点 + (播放头 − 片段起点) × 速度`；暂停精确 seek，播放中只纠正 >250ms 漂移，换片段后 `onLoadedMetadata` 再对齐。默认出声（被拦自动播放退回静音，下次点播放恢复），并跟随视频轨 `muted` / `volume`。顺带把播放循环的片段边界从 `durationMs` 改成 `effectiveDurationMs`（变速片段以前按源时长播）。监视器加 `data-timeline-monitor-video` / `data-timeline-monitor-media` 供测试与排查。
+- **F3 模板替换可撤销**：根因是模板市场每次 `newWorkbenchId('wfl')` 新建记录，`record.id` 一变画布就重播种并清空撤销栈。改为**复用当前工作流记录**（同 id / 项目 / 名称），画布新增 `replaceRevision`，值变化时把最新图经 `applyGraph` 应用并打 `replace:<rev>` 标签——撤销回到替换前的整图，重做再回来。顺带修掉"每套一次模板就多一条孤儿工作流、重开却只读 `rows[0]`"的隐患。
+- **F6 检查器输入夹紧**：新增 `clampMs` / `clampEven`。空值与非数字**不落库**，越界夹到宿主接受区间（start/duration 0..30min、duration ≥ `MIN_CLIP_MS`、crop 宽高取偶），速度清空不再写 `NaN`。以前清空或多打一位就会让整条时间轴保存态变 `failed`。
+- 测试 +4：画布替换后 Ctrl+Z 回到旧图、再 Shift+Z 回到新图；连套两张模板仍只有 1 条工作流且 id 不变；1 小时/清空/时长 0/速度清空四组夹紧；播放头 1500ms → `currentTime≈1.5`、2× 速度下 1000ms → `≈2.0`。
+- 验证：`typecheck` 通过；全量 19 失败 / 196 通过 / 3 跳过 文件，26 失败 / 1366 通过 / 8 跳过 用例（失败数仍为基线 26）；`tsdown` 通过。
+
+### R5：生效参数条只标「来源改变了值」的字段（2026-11-27）· 已被 R7 覆盖
+
+> 本条引入的 `defaultsBuiltin` 与「settings 值 ≠ 兜底才标」口径已在 R7 整段回滚（徽章只剩 `override`），保留记录备查。
+
+- 问题：6 项里 5 项常驻「内置默认」，同一条信息重复到没有信息量；`图片尺寸 1:1` 标「来自设置」时兜底值本身也是 1:1，两档显示同一个值，只是把疑问从"值是多少"换成"这俩有啥不一样"。真正有差别的（`视频时长 5` vs 兜底 10）反而和噪声长得一样。
+- 宿主：`health` 新增 `defaultsBuiltin`（`BUILT_IN_DEFAULTS` 的只读副本，`defaultBuiltin` 依赖注入，缺省不下发）。只供客户端等值比较，不参与取值；服务商/兜底值仍由宿主下发，客户端不内置这张表。
+- 客户端：`defaultRows` 增加 `label` 判定——`override` 恒标（这轮真的偏离默认）；`settings` 仅当值 ≠ `defaultsBuiltin`；`none` 不标（值就是兜底本身）。`data-default-source` 仍如实记录来源（排障与测试用），只是不再渲染徽章；旧宿主没下发 `defaultsBuiltin` 时退回"见 settings 就标"，不丢信息。
+- 测试：参数条夹具改为断言"只剩 1 个徽章"；`workbench.client` 新增「只标有区分度的来源」「旧宿主退回旧口径」两例；rpc 端点新增「注入/未注入 `defaultsBuiltin`」一例。
+- 验证：`typecheck` 通过；全量 19 失败 / 196 通过 / 3 跳过 文件，26 失败 / 1365 通过 / 8 跳过 用例（失败数为基线 26，通过数 1360→1365）。
+
+### R4：四处单点修复（F2 / F4 / F9 / F11，2026-11-27）
+
+- **F2**：`iv-btn--primary` 全仓没有样式定义，画布「运行」实际是基础灰底、和 14 个工具按钮同级。`WorkflowCanvas` 运行、`VoiceCard` 生成配音、`VoicePanel` 卡片合成三处统一改 `iv-btn--acc`（保留 `--sm` 尺寸），不新增样式；尺寸三套（34/42/26px）仍留作后续打磨。
+- **F4**：时间轴键盘 Delete/Backspace 删除以前不写 `clipUndo`，与检视器垃圾桶的"可撤销"承诺不一致。`removeSelectedClip()` 改为先定位 `trackId/clip/index` 写撤销，再过滤；两条删除路径共用一个撤销条。
+- **F9**：运行历史选中态 JSX 写 `data-workflow-run-item-selected`、CSS 却命中 `[data-active=true]`，选中项没有任何视觉反馈。属性名统一到 JSX 一侧。
+- **F11**：画布状态条文案「工作流暂存在本机」早已过时（改动已去抖 `saveWorkflow` 落宿主）。键名 `canvasTransient` → `canvasAutoSave`，中英文案改为「改动自动保存到本集工作流」/「Edits save automatically to this episode's workflow」。
+- 测试：Delete 删除后必须出现撤销并能恢复；设计系统门禁 +2（选中态选择器与 JSX 同源、状态条不再声称只存本机）；画布起跑按钮断言 `iv-btn--acc`。
+- 验证：`typecheck` 通过；全量 19 失败 / 196 通过 / 3 跳过 文件，26 失败 / 1360 通过 / 8 跳过 用例（失败数仍为基线 26，通过数 1358→1360）；`tsdown` 通过。
+
+### B5：能力边界诚实标注（2026-11-27）
+
+按产品已拍板的 `T3-2` 选方案②：不把 preview / publish-asset / subtitle / render 降为 `planned`（那会让 B1 修好的逐镜同步图整图校验失败），而是保留 `runnable` + 明确标注。
+
+- `src/workbench/workflow.ts` 新增 `NODE_EXECUTORS` / `hasNodeExecutor()`，作为 runner 与画布的共同事实源；`runner.ts` 删掉本地执行器表，改读这张表，避免 UI 徽章与执行能力漂移。
+- 节点库「后期与交付」改名「后期与交付（规划中）」（英文 `Finish & deliver (planned)`），该组四个节点在节点库项、画布卡片、检视器三处标「不执行」并解释"可添加可保存、运行时跳过、不产出结果"。新增 `canvasGroupFinishPlanned` / `canvasNoExecutorTag` / `canvasNoExecutorHint` 中英文案。
+- 新标记用独立 `data-workflow-no-executor*` 属性，不动 `data-workflow-planned-tag`；planned 仍是 3 个、仍可放置（`T3-2` 不变）。徽章用 warn 色，不把预期状态染成错误。
+- 画布测试 +2：组标题与 4 个徽章、可放置且三层提示、生图节点不被误标。
+
+### R3：部分运行生效 + 三处死回调接活（2026-11-27）
+
+- **B3**：宿主 `workflows/run` 现在读取 `only`（非空字符串数组，否则按非法载荷拒绝）并传给 `runner.begin(workflow, {only})`。部分运行 = 指定节点 + 全部下游；上游/旁支在记录里如实标 `skipped / not part of this run`，不伪造成功。新增 rpc 端点用例：三点链只跑中间节点，断言上游无产物、视频节点成功、下游 preview 保留"无执行器"提示。
+- **B4**：`Workbench` 挂载画布时传 `onPreview={previewAsset}`，节点产物缩略图与检视器「产出预览」现在都会把产物送到右侧预览列；删除 `PipelineCard.onStarted` 死字段及工作台里"生成剧本后偷偷跳画布"的调用（生成成功后仍按 §3.3 滚到分段步骤，不打断分步流程）。
+- **F1（用户点名的"时间轴生成配音"）**：`VoiceCard` 的「生成配音」接上 `api.voiceSynthesize`，用配音计划里的逐句台词与宿主默认音色合成；成功路径回传 `onNotice`（工作台全局提示条），卡片内也显示产物路径，失败显示原因。TTS 未接入时按钮仍禁用并说明原因。
+- **溢出修复**：分段标题按钮以前没有收缩约束，长提示词把按钮和操作簇一起顶出卡片，截图里表现为灰底标题条越过右边界、文字被视口截断。现在按钮 `flex:1 1 0; min-width:0; max-width:100%; overflow:hidden`，提示词走省略号，右侧操作簇 `flex:none`；生效参数条的长参数值也加省略号。
+- 验证：`pnpm run typecheck` 通过；新增 rpc 1 例、VoiceCard 1 例、Workbench 预览回传 1 例、样式门禁 1 例；全量数字见评审清单 §四。
+
+### B2 修复：导出条的分辨率/帧率/画幅真正生效（2026-11-27）
+
+三个下拉此前是纯装饰：客户端把 `resolution/fps/aspect` 发出去，宿主 `timelines/render` 不读，`render-registry.start()` 也不接，真正编码只认 `timeline.exportFormat`（默认 720p30）。
+
+- 新增 `src/workbench/export-selection.ts`：`resolveExportFormat(base, selection)` 把档位换算成 `{width,height,frameRate}`，口径与多比例切片一致（**短边不变**、宽高偶数）。`portrait`(3:4) 由横版 `4:3` 转置得到。
+- `render-registry.start()` 增加 `exportFormat?`，用**副本**渲染——存储里的时间轴不被改写；副本同时供排队、完成摘要、耗时样本使用。新增 `exportFormatOf(id)`，`render-retry` 按原规格重跑。
+- `timelines/render` 解析三档并换算；`timelines/estimate` 同口径（显式 `width/height/frameRate` 优先）。未知档位直接报错，不静默降级。
+- 导出条新增实时规格标签 `[data-timeline-export-spec]`（如 `1440×2560 · 60fps`），与宿主共用同一换算函数；文案键 `exportSpecHint` 中英各一份，主题版本 `2026-11-27.4`。
+- 测试：新增 `export-selection`(10) + `render-export-format`(4)，rpc 端点 +3（不依赖 ffmpeg）、导出面板 +1。全量 19 失败 / 196 通过 / 3 跳过 文件，失败集合与 B1 修复后逐条一致。
+
+### B1 修复：剧本同步到画布不再必然校验失败（2026-11-27）
+
+`buildEpisodeWorkflow` 原来把镜头串成 `img1 → vid1 → img2 → vid2 → preview`，其中跨镜的 `video-generate`（output `media`）→ `image-generate`（input `text`）违反端口表，多镜头集同步后整图校验失败、画布运行按钮禁用。
+
+- 改为**每镜独立分支**：每镜只连 `image→video`，各镜 `video` 再汇聚到同一个 `preview`（`media→media`）；边数不变（n 镜 2n 条）、节点 id 与幂等不变，预览节点落在分支纵向中点。
+- `tests/workbench-episode-sync-export.test.ts` 新增两例：逐条断言两镜拓扑且 `validateWorkflow().ok === true`；反向证明旧的 `vid1→img2` 边仍会被判 `port-mismatch`。一镜/三镜规模与 store 存下来的图也都校验通过。
+- 遗留：`preview` 仍无执行器（B5），本次只解决"能不能跑"，不解决"跑完能不能出成片"。
+
+### 生效参数条：标题独立 + 图像/视频/文本分组（2026-11-27）
+
+顶栏下方那条「当前生效参数」原来把标题和六个参数平铺成一行：标题像第七个参数，来源徽章全部长得一样，「编辑」和「模型详情」分落两行且中间空一大片。
+
+- **标题独立**：图标 + 名称 + 一句用途（"生成时自动套用"），右侧竖线与参数隔开；文案键 `defaultsStripHint` 中英各一份。
+- **按模态分组**：图像 / 视频 / 文本三组，与编辑器弹层的 `DEFAULT_GROUPS` 同构；组名做成浅底胶囊，组内才用细分隔线。文本模型下拉保持原 `data-workbench-text-model` 契约。
+- **来源分级**：内置默认最轻、来自设置加边、工作台覆盖用强调色（`data-default-source-label` / `data-default-source` 不变）。
+- **入口成组**：「编辑」和「模型详情」收进 `.iv-defaults-actions` 一起靠右；`data-model-details-toggle` 仍保留 `marginLeft:'auto'` 的既有测试契约。
+- **窄档降级**：≤1180px 标题与入口占首行、参数整组落到第二行；≤700px 每组改成「组名一行、参数一行」，不会被拆成碎片。
+- 新增 `tests/client-defaults-strip.test.tsx`（1 例锁结构）与 `scripts/defaults-strip-preview.mjs`（`MODE=before|after`、`FRAME=xxx` 出真实样式表渲染对比图）。
+- 主题版本 `MODERN_THEME_STYLE` → 2026-11-27.3，`WORKBENCH_STYLE` → 2026-11-27.2。
+
+### 剧本页：三步进度条 + 主按钮跟着「下一步」走（2026-11-27）
+
+剧本页首屏原有三个同级实心主按钮（生成剧本 / 开始分段 / 每段的规划分镜），用户看不出「下一步」该点哪个；生成成功后也没有任何指向下一步的信号。
+
+- **新增步进条**（`data-script-steps`，位于「剧本分镜」分区顶部）：写剧本 → 分段 → 生成分镜。进度只由当前集真实数据判定——剧本正文非空**或**已有分段算第一步完成，`segments.length > 0` 算第二步，任一分镜有镜头算第三步；不记录点击历史。
+- **主按钮收敛**：「下一步」= 第一个未完成的步骤，只有它对应的按钮是 `iv-btn--action--primary`，其余降为 `iv-btn--action--soft`；三步完成后没有实心主按钮，提示改去画布 / 时间轴。任意时刻最多一个实心。
+- **有分段不倒退**：已有分段但剧本正文为空时仍停在第三步（否则会出现「明明分了段却提示去写剧本」）。
+- **点按可跳**：点任意步骤滚到对应区块并闪一下高亮（复用 `scrollToPane` 的 `iv-pane--flash`，同样用 `typeof scrollIntoView === 'function'` 防御 jsdom / 旧 WebView）；分镜锚点在无分段时不存在，退回分段区块，不会点了没反应。
+- **补上「生成后没有下一步」**：生成剧本成功后 `requestAnimationFrame` 一帧，把视口带到「开始分段」。
+- **契约保持**：`PipelineCard` 新增可选 `emphasis`（缺省 `primary`），`EpisodeWorkspace` 新增可选 `activeStep`（缺省时两个按钮仍是 `primary`），单独渲染的行为不变；`data-pipeline-script-generate` / `data-segment-auto` / `data-segment-plan` 均未改动。
+- 新增 `tests/client-script-steps.test.tsx`（7 例）与 `scripts/script-steps-preview.mjs`（真实样式表渲染四种进度，`MODE=before|after` 出前后对比图）。
+
+### 顶栏重排：对象行 + 视图标签栏两层（2026-11-27）
+
+前一版三 pane 改造只做了面板内部，顶栏仍是「一行塞 20 个控件」。实测 1440px 就已经内容溢出、被动换行，模式导航被挤到第二行最左边，而「创建剧集」的黑色主按钮成了整条顶栏最重的元素——用户既看不出「我在哪一页」，也看不出「下一步点哪」。
+
+- **拆成两层**：第一行是对象与状态（品牌 / 剧集 / 集 / 保存态 / 登录·帮助·工作台），第二行是视图标签栏（快速创作 / 剧本生成 / 专业工作流 / 时间轴精剪）。导航贴着内容，选中项用「文字加粗 + 图标实色 + 2px 下划线 + 轻底色」四重标记。
+- **主次收敛**：`创建` 按钮平时是普通描边按钮，输入框有内容才升为主色；剧集/集的重命名与删除降到 72% 不透明度，悬停分组才提亮；`新建集` 与「新建剧集」输入框之间加竖线分组，不再和当前剧集的删除按钮糊成一团。
+- **窄档降级**（按容器查询逐档压缩）：1400 收起品牌副标题 → 1320 收起「剧集/集」小标签 → 1180 收窄下拉与输入框 → 1060「新建集」转图标 → 560 只留品牌标记 → 460 标签栏转纯图标（`title` + `aria-label` 保留可读名）。实测顶栏高度：≥1024 为 80px，960–760 为 109–115px，700–520 为 119px，≤500 折到 149–210px。
+- **展示列浮层改用 `--iv-top-h`**：原先写死 `top:52px`，顶栏一变高就会压住内容。现在按上述实测值逐档覆盖，≤440px 改成贴底浮层（`height:min(58%,100% - 228px)`），结构上不可能压到顶栏。
+- **契约保持**：`.iv-modes` 前仍有 `.iv-top-sep`、`.iv-top-meta` 紧跟 `.iv-top-tools`（新增 `.iv-top-end` 包装但不改变相邻关系），`data-episode-*` / `data-workbench-*-toggle` 一律未动，68 个相关用例通过。
+- 新增 `scripts/topbar-preview.mjs`：用真实样式表渲染顶栏静态页，配合无头浏览器截图核对排版（`FRAME=420` 可固定容器宽度验证窄档，绕开无头视口 504px 下限）。
+
+### 三 pane 重设计收尾：统一底座 + 剧本页 + 时间轴/画布补齐（2026-11-26）
+
+按 `REDESIGN-REVIEW-VERDICT.md` 的六项拍板把三批连续做完（同事先前已提交画布/时间轴主体）：
+
+- **共享底座**：状态色与分类色分离（运行中用显式 `--iv-info`，选中用 `--iv-solid`，视频轨用中性明度）；层级表统一为 `6=抽屉 / 40=非模态 popover / 60=模态`；新增 `.iv-disclosure` 折叠基类并保留既有 `iv-advanced` 字面串契约；chevron 改为收起 0° / 展开 90°。
+- **剧本页**：pane 头 + 四个带图标的 tab（`aria-controls` / roving `tabIndex` / ←→Home/End 焦点跟随）；删除装饰性 module 头但保留 `data-module*` 两层容器；生成设置常驻展开并回显生效值；「⋯」原生折叠菜单常驻 DOM；同步工作流事前确认（`useDialogFocus` + `role=dialog`）与事后撤销；分集剧本折叠，跳转先展开再聚焦；分段头可键盘操作，高级参数进折叠区。
+- **时间轴**：逐段预览收进辅助折叠区，与节目监视器互斥并写明职责；片段可 `Tab/Enter/Space` 选中，fallback 下复制/删除禁用；缩放滑杆接真值（rAF 节流、刻度 6–12 格、播放头与轨道共用 `--iv-tl-head`）；缩略底改为不透明 + 渐变 + 白字；导出中三个 select 与两个 checkbox 语义禁用；矮屏第三档降级。
+- **画布**：检查器抽屉接 `useDialogFocus`（Esc 先关抽屉、再退最大化，焦点归还有 `.iv-flow` 兜底），层级改用 `--iv-z-drawer:6`；模板浮层补 Esc/点外关闭；运行组补状态点/文案与 warn 问题胶囊；窄屏选中右缘节点时条件 `setCenter`。
+- 体积：实测总产物 1,599,629 / 348,932 B。同事按开工前实测已把基线抬到 1,320,000 / 288,000，本轮三批合并落地后按同一口径再抬到 1,350,000 / 297,000（预算 1,620,000 / 356,400），理由同上：功能增长而非打包失控；入口仍 24,231 B 未变。
 
 ### 工作流画布：节点库 / 起步模板 / 运行体验重构（2026-11-26）
 

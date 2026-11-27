@@ -24,7 +24,7 @@ import { useEffect } from 'react'
 export const MODERN_THEME_STYLE_ID = 'dsh-image-video-modern-theme'
 
 /** 样式表版本戳：同 id 但内容不同时整表覆盖，避免热替换后残留旧规则。 */
-export const MODERN_THEME_VERSION = '2026-11-26.6'
+export const MODERN_THEME_VERSION = '2026-11-27.4'
 
 /** 主题层样式表：令牌 + 控件 + 容器 + 引导层，布局规则（grid / flex / 定位）一律不动。 */
 export const MODERN_THEME_STYLE = `
@@ -35,18 +35,44 @@ export const MODERN_THEME_STYLE = `
 --iv-sp-1:3px;--iv-sp-2:6px;--iv-sp-3:8px;--iv-sp-4:10px;--iv-sp-5:14px;--iv-sp-6:18px;
 --iv-acc:var(--iv-solid);--iv-acc-deep:var(--iv-solid-hover);--iv-on-acc:var(--iv-on-solid);
 --iv-acc-soft:color-mix(in srgb,var(--iv-tx) 6%,transparent);
+--iv-info:var(--dsw-alias-button-info-fill,#4176e6);
 --iv-shadow-2:0 8px 24px color-mix(in srgb,#0b0d12 14%,transparent);
 --iv-shadow-3:0 18px 46px color-mix(in srgb,#0b0d12 18%,transparent),0 2px 8px color-mix(in srgb,#0b0d12 8%,transparent);
 font-size:var(--iv-fs-root);line-height:1.55;
 }
-.iv .iv-top{padding:10px 14px;gap:8px 14px}
-.iv .iv-brand-name{font-size:15px;font-weight:650;letter-spacing:0}
-.iv .iv-brand-sub{font-size:10px;letter-spacing:.08em}
-.iv .iv-modes{gap:3px;padding:3px;border-radius:11px;background:color-mix(in srgb,var(--iv-tx) 5%,transparent)}
-.iv .iv-modes-btn{height:30px;padding:0 12px;border-radius:8px;font-size:12.5px;font-weight:500;color:var(--iv-tx2)}
-.iv .iv-modes-btn.on{background:var(--iv-panel);color:var(--iv-tx);font-weight:600;box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 12%,transparent)}
+.iv .iv-top{padding:8px 14px 0;gap:4px 10px;align-items:center}
+.iv .iv-brand{gap:9px}
+.iv .iv-brand-name{font-size:14px;font-weight:650;letter-spacing:0}
+.iv .iv-brand-sub{font-size:10px;letter-spacing:.06em;color:var(--iv-tx3)}
+.iv .iv-top-sep{height:16px}
+.iv .iv-top-sep--stacked{display:none}
+.iv .iv-proj,.iv .iv-episode{gap:5px}
+.iv .iv-proj>.iv-micro,.iv .iv-episode>.iv-micro{font-size:11px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--iv-tx3)}
+.iv .iv-top .iv-select{height:30px;padding:0 26px 0 9px;border-color:transparent;background-color:transparent;font-size:12.5px;font-weight:500;color:var(--iv-tx2)}
+.iv .iv-top .iv-select:hover{border-color:var(--iv-line-2);background-color:var(--iv-panel-2);color:var(--iv-tx)}
+.iv .iv-top .iv-select:focus{border-color:var(--iv-solid);background-color:var(--iv-panel);color:var(--iv-tx)}
+.iv .iv-top .iv-input{height:30px;font-size:12.5px}
+.iv .iv-newform .iv-input{width:104px}
+.iv .iv-newform{margin-left:3px;padding-left:9px;border-left:1px solid var(--iv-line)}
+.iv .iv-newform .iv-btn{height:30px}
+.iv .iv-proj>.iv-btn--icon:not(.iv-btn--danger),.iv .iv-episode>.iv-btn--icon:not(.iv-btn--danger){color:var(--iv-tx3);opacity:.72}
+.iv .iv-proj:hover>.iv-btn--icon:not(.iv-btn--danger),.iv .iv-episode:hover>.iv-btn--icon:not(.iv-btn--danger){opacity:1;color:var(--iv-tx2)}
+.iv .iv-top-end{display:flex;align-items:center;gap:2px;margin-left:auto;flex:none}
+.iv .iv-top-tools{border-left:1px solid var(--iv-line);padding-left:8px;margin-left:2px}
+.iv .iv-modes{flex:1 0 100%;justify-content:flex-start;gap:2px;margin-top:4px;padding:0;border-radius:0;border-top:1px solid var(--iv-line);background:transparent}
+.iv .iv-modes-btn{position:relative;height:32px;padding:0 12px;gap:6px;border-radius:8px 8px 0 0;font-size:13px;font-weight:500;color:var(--iv-tx3);background:transparent}
+.iv .iv-modes-btn:hover{color:var(--iv-tx);background:color-mix(in srgb,var(--iv-tx) 4%,transparent)}
+.iv .iv-modes-btn.on{background:color-mix(in srgb,var(--iv-tx) 5%,transparent);color:var(--iv-tx);font-weight:650;box-shadow:none}
+.iv .iv-modes-btn.on .iv-ico{color:var(--iv-acc)}
+.iv .iv-modes-btn.on::after{content:'';position:absolute;left:10px;right:10px;bottom:-1px;height:2px;border-radius:2px 2px 0 0;background:var(--iv-acc)}
+@container iv-panel (max-width:1400px){.iv .iv-brand-sub{display:none}}
+@container iv-panel (max-width:1320px){.iv .iv-proj>.iv-micro,.iv .iv-episode>.iv-micro{display:none}}
+@container iv-panel (max-width:1180px){.iv .iv-top .iv-select{max-width:128px!important}.iv .iv-newform .iv-input{width:82px}}
+@container iv-panel (max-width:1060px){.iv .iv-episode .iv-btn-txt{display:none}}
+@container iv-panel (max-width:560px){.iv .iv-brand-text{display:none}.iv .iv-top .iv-select{max-width:104px!important}}
+@container iv-panel (max-width:460px){.iv .iv-modes-txt{display:none}.iv .iv-tools-txt{display:none}.iv .iv-modes-btn{padding:0 11px}}
 .iv .iv-tabs,.iv .iv-quick-tabs,.iv .iv-skill-tabs,.iv .iv-health-tabs{gap:3px;padding:3px;border:0;border-radius:11px;background:color-mix(in srgb,var(--iv-tx) 5%,transparent)}
-.iv .iv-tab{height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:500}
+.iv .iv-tab{flex:none;height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--iv-tx2);font-size:12.5px;font-weight:500}
 .iv .iv-tab:hover{border-color:transparent;color:var(--iv-tx)}
 .iv .iv-tab.on,.iv .iv-tab[aria-selected="true"]{border:.5px solid var(--iv-line);background:var(--iv-panel);color:var(--iv-tx);font-weight:600;box-shadow:0 1px 3px color-mix(in srgb,#0b0d12 12%,transparent)}
 .iv .iv-tab.on .iv-ico,.iv .iv-tab[aria-selected="true"] .iv-ico{color:var(--iv-tx)}
@@ -114,6 +140,11 @@ font-size:var(--iv-fs-root);line-height:1.55;
 @media (prefers-reduced-motion:reduce){.iv .iv-btn--action{transition:none}.iv .iv-btn--action:hover:not(:disabled),.iv .iv-btn--action:active:not(:disabled){transform:none}}
 .iv .iv-def--select{gap:6px}
 .iv .iv-def--select select{height:28px;max-width:190px}
+/* 生效参数条是信息条，不是表单：入口按钮给到 28px（唯一可点区域，不能和只读文字同高），
+   文本模型下拉仍压到 24px，三页顶栏才不会被它撑高 */
+.iv .iv-defaults-actions .iv-btn{height:28px;padding:0 12px;font-size:var(--iv-fs-body);gap:6px}
+.iv .iv-defaults-actions .iv-btn--ghost{color:var(--iv-tx2)}
+.iv .iv-defaults .iv-def--select select{height:24px;max-width:160px}
 .iv .iv-ref-chip{display:flex;align-items:center;gap:6px}
 .iv .iv-ref-thumb-button{display:inline-flex;padding:0;border:1px solid var(--iv-line);border-radius:var(--iv-r-xs);background:var(--iv-panel-3);cursor:zoom-in;overflow:hidden;flex:none}
 .iv .iv-ref-thumb-button .iv-ref-picker-thumb{width:34px;height:24px;border-radius:0}
@@ -199,7 +230,14 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-advanced-title{flex:none;color:var(--iv-tx)}
 .iv .iv-advanced-defaults{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);color:var(--iv-tx3)}
 .iv .iv-advanced-caret{flex:none;margin-left:auto;transition:transform var(--iv-dur-2) ease}
-.iv details.iv-advanced[open] .iv-advanced-caret{transform:rotate(180deg)}
+.iv details.iv-advanced[open] .iv-advanced-caret{transform:rotate(90deg)}
+.iv .iv-disclosure{border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);overflow:hidden}
+.iv .iv-disclosure>summary{display:flex;align-items:center;gap:var(--iv-sp-2);padding:var(--iv-sp-3) var(--iv-sp-4);cursor:pointer;list-style:none;font-size:12.5px;font-weight:var(--iv-fw-medium);color:var(--iv-tx2)}
+.iv .iv-disclosure>summary::-webkit-details-marker{display:none}
+.iv .iv-disclosure>summary:hover{color:var(--iv-tx);background:color-mix(in srgb,var(--iv-tx) 4%,transparent)}
+.iv .iv-disclosure-body{padding:var(--iv-sp-3) var(--iv-sp-4);border-top:1px solid var(--iv-line)}
+.iv .iv-disclosure .iv-caret{flex:none;margin-left:auto;transition:transform var(--iv-dur-2) ease}
+.iv details.iv-disclosure[open]>.iv-disclosure-head .iv-caret,.iv details.iv-disclosure[open]>.iv-disclosure-summary .iv-caret{transform:rotate(90deg)}
 .iv .iv-advanced-body{padding:var(--iv-sp-3) var(--iv-sp-4) var(--iv-sp-4);border-top:1px solid var(--iv-line)}
 .iv .iv-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--iv-sp-3)}
 .iv .iv-qc-field--wide{grid-column:1/-1}
@@ -226,7 +264,7 @@ font-size:var(--iv-fs-root);line-height:1.55;
 .iv .iv-slot-row .iv-ref-thumb{width:64px;height:40px;flex:none;border-radius:var(--iv-r-xs);object-fit:contain;background:var(--iv-monitor)}
 .iv .iv-slot-row .iv-ellipsis{max-width:220px;font-size:var(--iv-fs-meta)}
 @media (max-width:768px){.iv .iv-advanced-grid{grid-template-columns:minmax(0,1fr)}}
-@media (prefers-reduced-motion:reduce){.iv .iv-ref-cell,.iv .iv-ref-remove,.iv .iv-advanced-caret{transition:none}}
+@media (prefers-reduced-motion:reduce){.iv .iv-ref-cell,.iv .iv-ref-remove,.iv .iv-advanced-caret,.iv .iv-disclosure .iv-caret{transition:none}}
 .ivg-mask{
 --ivg-acc:var(--iv-solid,var(--dsw-alias-label-primary,currentColor));
 --ivg-on-acc:var(--iv-on-solid,var(--dsw-alias-label-primary-foreground,#fff));
@@ -247,14 +285,23 @@ font-size:13px;line-height:1.55;
 .ivg-mask .ivg-step-t{font-size:13.5px;font-weight:600}
 .ivg-mask .ivg-step-d,.ivg-mask .ivg-note{font-size:12px;line-height:1.6}
 /* 模板市场浮层（D2）：挂在 pane 头下方、覆盖画布右上，打开时画布高度不变 */
+.iv .iv-wf-runstate{display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);color:var(--iv-tx2);white-space:nowrap}
+.iv .iv-wf-runstate[data-workflow-run-status="running"] .iv-dot{color:var(--iv-info)}
+.iv .iv-wf-runstate[data-workflow-run-status="succeeded"] .iv-dot{color:var(--iv-ok)}
+.iv .iv-wf-runstate[data-workflow-run-status="failed"] .iv-dot{color:var(--iv-danger)}
+.iv .iv-flow-hint,.iv .iv-wf-onboard-hint{color:var(--iv-tx2)}
+.iv .iv-wf-onboard .iv-btn--sm{border-color:var(--iv-solid);color:var(--iv-tx)}
 .iv .iv-pane--canvas>.iv-pane-head{position:relative}
 .iv .iv-tpl.iv-wf-drawer{position:absolute;top:calc(100% + 6px);right:0;z-index:var(--iv-z-tip);width:min(560px,92%);max-height:60vh;overflow:auto;padding:var(--iv-sp-4);border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);box-shadow:var(--iv-shadow-3)}
 
 /* 片段条瘦身：只留「在哪 / 多长 / 是什么 / 手柄」，参数全部移到检查器 */
 .iv .iv-pane[data-workbench-pane="paneTimeline"] .iv-clip{padding:2px 20px 2px 8px;justify-content:center;overflow:hidden}
-.iv .iv-clip-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.5;pointer-events:none}
-.iv .iv-clip-top{position:relative;z-index:1}
-.iv .iv-clip:focus-visible{outline:2px solid var(--iv-acc);outline-offset:1px}
+.iv .iv-clip-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:1;pointer-events:none}
+.iv .iv-clip-thumb-wrap{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.iv .iv-clip-thumb-wrap::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,color-mix(in srgb,#000 62%,transparent),color-mix(in srgb,#000 18%,transparent))}
+.iv .iv-clip-top{position:relative;z-index:1;color:#fff;text-shadow:0 1px 3px color-mix(in srgb,#000 90%,transparent)}
+.iv .iv-clip-dur,.iv .iv-clip-top .iv-ico{color:#fff}
+.iv .iv-clip:focus-visible{outline:2px solid var(--iv-solid);outline-offset:1px}
 /* 分割按钮：默认半透明可见（触屏无 hover，不能靠碰运气发现） */
 .iv .iv-clip-split{position:absolute;right:2px;bottom:2px;z-index:2;display:inline-flex;align-items:center;justify-content:center;
   width:22px;height:22px;padding:0;border:0;border-radius:var(--iv-r-xs);
@@ -299,10 +346,92 @@ font-size:13px;line-height:1.55;
 .iv .iv-pane[data-workbench-pane="paneTimeline"] .iv-monitor{flex:1 1 auto;min-height:140px;max-height:clamp(160px,calc(100dvh - 520px),420px)}
 .iv .iv-monitor img,.iv .iv-monitor video{max-height:100%;width:auto;object-fit:contain}
 /* 导出条：常驻轨道下方；参数与开关同一行，导出中参数语义禁用（不只透明） */
+.iv .iv-tl{overflow-x:auto;overflow-y:hidden}
+.iv .iv-ruler,.iv .iv-tracks{width:calc(100% * var(--iv-tl-zoom,1));min-width:100%}
 .iv .iv-tl-export{border-top:1px solid var(--iv-line);padding-top:var(--iv-sp-3);align-items:center}
 .iv .iv-tl-export .iv-tl-params{display:flex;align-items:center;gap:var(--iv-sp-3);flex-wrap:wrap;min-width:0}
 .iv .iv-tl-export[data-timeline-export-busy="true"] .iv-tl-params{opacity:.6}
-
+/* 导出规格预览（B2）：档位换算结果的当场凭证，只读、等宽数字、不抢主按钮 */
+.iv .iv-tl-spec{display:inline-flex;align-items:baseline;gap:6px;padding:3px 9px;flex:none;
+  border:1px solid var(--iv-line);border-radius:var(--iv-r-pill);background:var(--iv-panel-3);
+  color:var(--iv-tx2);font-size:var(--iv-fs-micro);font-variant-numeric:tabular-nums;white-space:nowrap}
+.iv .iv-tl-spec b{font-weight:650;color:var(--iv-tx)}
+.iv .iv-tl-spec i{font-style:normal;opacity:.8}
+/* 辅助工具：逐段预览 / 配音 / 多比例，默认收起；展开不改主区高度预算 */
+.iv .iv-tl-aux{border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);overflow:hidden}
+.iv .iv-tl-aux>summary{display:flex;align-items:center;gap:var(--iv-sp-2);padding:var(--iv-sp-3) var(--iv-sp-4);cursor:pointer;list-style:none;font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
+.iv .iv-tl-aux>summary::-webkit-details-marker{display:none}
+.iv .iv-tl-aux>summary .iv-caret{margin-left:auto;transition:transform var(--iv-dur-2) ease}
+.iv .iv-tl-aux[open]>summary .iv-caret{transform:rotate(90deg)}
+.iv .iv-tl-aux-body{display:flex;flex-direction:column;gap:var(--iv-sp-3);padding:var(--iv-sp-3) var(--iv-sp-4);border-top:1px solid var(--iv-line)}
+.iv .iv-tl-aux-role{color:var(--iv-tx2);font-size:var(--iv-fs-micro)}
+.iv .iv-seg-preview{background:var(--iv-panel-2)}
+.iv .iv-clip-ins-more{border:0;border-top:1px solid var(--iv-line);border-radius:0;background:transparent;margin-top:var(--iv-sp-2)}
+.iv .iv-clip-ins-more>summary{padding:var(--iv-sp-2) 0;font-size:var(--iv-fs-micro)}
+.iv .iv-monitor .iv-meta{color:var(--iv-tx2)}
+.iv .iv-ruler b:last-child{transform:translateX(-100%)}
+/* 剧本生成页：分区头、设置摘要、溢出菜单与折叠区（复用 iv-disclosure 基类） */
+.iv .iv-pane[data-workbench-pane="paneScript"] .iv-pane-head .iv-quick-tabs{margin-left:auto}
+.iv .iv-sc-io{display:flex;flex-direction:column;gap:var(--iv-sp-3)}
+.iv .iv-sc-io .iv-textarea{resize:vertical;min-height:96px}
+.iv .iv-sc-settings{border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-surface);overflow:hidden}
+.iv .iv-sc-settings-head{display:flex;align-items:center;gap:var(--iv-sp-2);padding:var(--iv-sp-3) var(--iv-sp-4);font-size:12.5px;font-weight:var(--iv-fw-medium);color:var(--iv-tx2)}
+.iv .iv-sc-settings-head .iv-advanced-defaults{color:var(--iv-tx2)}
+.iv .iv-sc-settings .iv-plan-row{padding:var(--iv-sp-3) var(--iv-sp-4);border-top:1px solid var(--iv-line)}
+.iv .iv-sc-num{width:80px}
+.iv .iv-sc-generate{min-width:132px}
+/* 剧本页步进条：三步（写剧本 → 分段 → 分镜）的真实进度。
+   它同时负责**收敛主按钮**——只有轮到的那一步是实心主色，另外两个降为柔色。 */
+.iv .iv-steps{display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:6px;margin-bottom:var(--iv-sp-3);
+  border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel-2)}
+.iv .iv-steps-item{display:inline-flex;align-items:center;gap:2px}
+.iv .iv-step-sep{padding:0 2px;color:var(--iv-tx3);font-size:12px}
+.iv .iv-step{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 5px;border:1px solid transparent;
+  border-radius:999px;background:transparent;color:var(--iv-tx2);font-size:12px;font-weight:500;cursor:pointer;
+  transition:background .15s ease,color .15s ease,border-color .15s ease}
+.iv .iv-step:hover{background:color-mix(in srgb,var(--iv-tx) 6%,transparent);color:var(--iv-tx)}
+.iv .iv-step-idx{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;
+  background:color-mix(in srgb,var(--iv-tx) 9%,transparent);color:var(--iv-tx2);
+  font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+.iv .iv-step--done .iv-step-idx{background:color-mix(in srgb,var(--iv-ok) 20%,transparent);color:var(--iv-ok)}
+.iv .iv-step--now{border-color:color-mix(in srgb,var(--iv-acc) 36%,transparent);background:var(--iv-acc-soft);
+  color:var(--iv-acc);font-weight:600}
+.iv .iv-step--now:hover{background:color-mix(in srgb,var(--iv-acc) 17%,transparent);color:var(--iv-acc)}
+.iv .iv-step--now .iv-step-idx{background:var(--iv-acc);color:var(--iv-on-acc)}
+.iv .iv-step-tag{padding:0 5px;border-radius:4px;background:var(--iv-acc);color:var(--iv-on-acc);
+  font-size:9.5px;font-weight:700;line-height:14px;letter-spacing:.02em}
+.iv .iv-steps-hint{margin-left:auto;min-width:0;padding:0 6px 0 10px;color:var(--iv-tx2);font-size:11.5px;line-height:1.4}
+/* 点按步进条滚动到这里时留一点余量，别贴住上一条边界 */
+.iv #script-step-pipeline,.iv #script-step-segments,.iv #script-step-storyboard{scroll-margin-top:8px}
+@container iv-panel (max-width:780px){.iv .iv-steps-hint{margin-left:0;flex-basis:100%;padding:3px 6px 1px}}
+@media (prefers-reduced-motion:reduce){.iv .iv-step{transition:none}}
+.iv .iv-sc-divider{display:flex;align-items:center;gap:var(--iv-sp-3);margin:var(--iv-sp-4) 0 var(--iv-sp-3);color:var(--iv-tx2);font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-medium)}
+.iv .iv-sc-divider::after{content:"";flex:1;height:1px;background:var(--iv-line)}
+.iv .iv-sc-more{position:relative;display:inline-flex}
+.iv .iv-sc-more>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:var(--iv-r-sm);border:1px solid var(--iv-line-2);color:var(--iv-tx2)}
+.iv .iv-sc-more>summary::-webkit-details-marker{display:none}
+.iv .iv-sc-more[open]>summary{border-color:var(--iv-line);background:var(--iv-panel-2)}
+.iv .iv-sc-more-body{position:absolute;right:0;top:calc(100% + 6px);z-index:var(--iv-z-tip);display:flex;flex-direction:column;gap:2px;min-width:132px;padding:4px;border:1px solid var(--iv-line);border-radius:var(--iv-r);background:var(--iv-panel);box-shadow:var(--iv-shadow-2)}
+.iv .iv-sc-more-body .iv-btn{justify-content:flex-start;width:100%}
+.iv .iv-sc-script .iv-sc-adv-body,.iv .iv-sc-script>.iv-disclosure-body{max-height:40vh;overflow:auto}
+.iv .iv-sc-sum{font-size:var(--iv-fs-micro);color:var(--iv-tx2);white-space:nowrap}
+.iv .iv-sc-sum-text{flex:1;min-width:0;font-size:var(--iv-fs-meta);color:var(--iv-tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iv .iv-sc-caret{flex:none;transition:transform var(--iv-dur-2) ease}
+.iv .iv-sb-seg-head--clickable{min-height:32px}
+.iv .iv-sb-seg-head--clickable:hover{background:color-mix(in srgb,var(--iv-tx) 4%,transparent)}
+@container iv-panel (max-width:560px){
+.iv .iv-pane[data-workbench-pane="paneScript"] .iv-pane-head{flex-wrap:wrap}
+.iv .iv-pane[data-workbench-pane="paneScript"] .iv-pane-head .iv-tab{padding:0 8px}
+}
+@media (pointer:coarse){
+.iv .iv-sc-more>summary,.iv .iv-sc-more-body .iv-btn{min-width:44px;min-height:44px}
+.iv .iv-sb-seg-head--clickable{min-height:44px}
+}
+@media (prefers-reduced-motion:reduce){.iv .iv-sc-caret{transition:none}}
+@media (max-height:640px){
+.iv .iv-pane[data-workbench-pane="paneTimeline"] .iv-monitor{min-height:96px;max-height:160px}
+.iv .iv-clips{height:38px}
+}
 @media (max-width:520px){
 .iv .iv-pane{padding:14px;border-radius:14px}
 .iv .iv-btn{height:30px}

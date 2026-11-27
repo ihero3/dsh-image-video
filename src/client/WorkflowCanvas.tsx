@@ -25,7 +25,7 @@ import {
   type Connection, type Edge, type IsValidConnection, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, nodeSpec,
+  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, hasNodeExecutor, nodeSpec,
   portsCompatible, validateWorkflow,
   type NodeGroup, type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord,
   type WorkflowRunRecord,
@@ -87,6 +87,12 @@ export interface WorkflowCanvasProps {
    * 不传时该字段退回纯文本输入——画布不该因为拿不到目录就整块不可用。
    */
   readonly api?: WorkbenchApi
+  /**
+   * 外部整图替换信号（`F3` 模板市场）：值变化时把 `record` 的最新图**经 applyGraph 应用**，
+   * 而不是重新播种——这样替换会进撤销栈，确认弹窗承诺的 Ctrl/Cmd+Z 才成立。
+   * 只比较值，不比较图；调用方每次替换自增即可。
+   */
+  readonly replaceRevision?: number
   /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
@@ -97,7 +103,7 @@ export interface WorkflowCanvasProps {
     readonly onStart: () => void
     readonly onCancel: () => void
     readonly onRetry: () => void
-    /** `B4`：只跑这一个节点（含下游）。宿主端点认领中，调用即下发 `only`。 */
+    /** `B4`：只跑这一个节点（含下游），宿主 `workflows/run` 已支持 `only`。 */
     readonly onRunNode?: (nodeId: string) => void
     readonly onSelectRun: (runId: string) => void
   }
@@ -149,7 +155,7 @@ const LIBRARY_GROUPS: readonly { readonly id: NodeGroup; readonly labelKey: Work
   { id: 'input', labelKey: 'canvasGroupInput' },
   { id: 'story', labelKey: 'canvasGroupStory' },
   { id: 'generate', labelKey: 'canvasGroupGenerate' },
-  { id: 'finish', labelKey: 'canvasGroupFinish' },
+  { id: 'finish', labelKey: 'canvasGroupFinishPlanned' },
   { id: 'planned', labelKey: 'canvasGroupPlanned' },
 ]
 
@@ -257,15 +263,20 @@ function nextNodeId(kind: WorkflowNodeKind): string {
  * 不被 `merge` 持久化——运行记录是宿主侧的事实，卡片只是它的镜子。
  */
 function WorkflowNodeCard({
-  data, selected, t, onPreview,
+  id, data, selected, t, onPreview, onActivate,
 }: NodeProps<CanvasNode> & {
   t: (key: WorkbenchLocaleKey) => string
   onPreview?: (path: string, kind: 'image' | 'video') => void
+  /** `F18`：键盘 Enter/Space 激活 = 单选该节点（与点选同一路，检视器由此出现）。 */
+  onActivate?: (nodeId: string) => void
 }): JSX.Element {
   const [bubbleOpen, setBubbleOpen] = useState(false)
   const spec = nodeSpec(data.kind)
   const planned = spec.availability !== 'runnable'
   const external = spec.availability === 'external'
+  // `B5`：只给「后期与交付」这一组标不执行——它们承诺产出成片，却没有执行器。
+  // 输入/分镜类节点虽也走不到生成工具，但只作为提示词数据上游，不在此处制造噪音。
+  const noExecutor = !planned && spec.group === 'finish' && !hasNodeExecutor(data.kind)
   const summary = spec.params
     .filter(field => data.params[field.id] !== '' && data.params[field.id] !== false && data.params[field.id] !== undefined)
     .slice(0, 2)
@@ -281,11 +292,20 @@ function WorkflowNodeCard({
       data-workflow-node={data.kind}
       data-workflow-node-selected={selected ? 'true' : 'false'}
       data-workflow-node-availability={spec.availability}
+      data-workflow-node-no-executor={noExecutor ? 'true' : undefined}
       data-workflow-node-group={spec.group}
       data-workflow-node-invalid={data.invalid === true ? 'true' : 'false'}
       data-workflow-node-run-status={runStatus ?? 'none'}
       role="button"
       tabIndex={0}
+      onKeyDown={event => {
+        // 卡片自称 button，就得像 button 一样能被键盘激活。
+        // 以前只靠 xyflow 默认 a11y（可聚焦、方向键移动），Enter/Space 什么都不发生。
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        onActivate?.(id)
+      }}
       aria-label={`${t(spec.labelKey as WorkbenchLocaleKey)}${runStatus === undefined ? '' : ` · ${t(nodeStatusKey(runStatus))}`}`}
     >
       <Handle
@@ -305,6 +325,11 @@ function WorkflowNodeCard({
         {planned
           ? <span className="iv-node-planned" data-workflow-planned-tag="true">
             <Icon name="sparkles" size={9} />{t(external ? 'canvasExternalTag' : 'canvasPlannedTag')}
+          </span>
+          : null}
+        {noExecutor
+          ? <span className="iv-node-noexec" data-workflow-no-executor-tag="true" title={t('canvasNoExecutorHint')}>
+            <Icon name="alert" size={9} />{t('canvasNoExecutorTag')}
           </span>
           : null}
         {runStatus === undefined ? null : (
@@ -413,7 +438,7 @@ function CanvasOnboarding({
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, replaceRevision }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -443,7 +468,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
   const [pendingReplace, setPendingReplace] = useState<{ label: string; run: () => void } | undefined>(undefined)
   const replacePanelRef = useRef<HTMLDivElement | null>(null)
   useDialogFocus(pendingReplace !== undefined, replacePanelRef, () => { setPendingReplace(undefined) })
-  const { fitView, screenToFlowPosition } = useReactFlow<CanvasNode, Edge>()
+  const { fitView, screenToFlowPosition, setCenter } = useReactFlow<CanvasNode, Edge>()
   const { zoom } = useViewport()
   const flowRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -468,6 +493,43 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     () => nodes.filter(node => selectedIds.includes(node.id)),
     [nodes, selectedIds],
   )
+  /**
+   * `F18`：节点卡的键盘激活（Enter/Space）。
+   * 走与点选同一条路——改本地 `nodes` 的 `selected`，再由 `onSelectionChange`
+   * 同步 `selectedIds`，检视器因此和鼠标点选一样打开。多选被收成单选：键盘激活
+   * 一次只认一个节点，避免"按了回车却开了多选面板"。
+   */
+  const activateNode = useCallback((nodeId: string) => {
+    setNodes(current => current.map(node => ({ ...node, selected: node.id === nodeId })))
+    setEdges(current => current.map(edge => (edge.selected === true ? { ...edge, selected: false } : edge)))
+  }, [setNodes, setEdges])
+  /** 关抽屉 = 清空选中（与点画布空白同语义），焦点管理由此统一入口驱动。 */
+  const closeInspector = useCallback(() => {
+    setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
+    setSelectedIds([])
+  }, [setNodes])
+  const inspectorRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(selectedNodes.length > 0, inspectorRef, closeInspector, '.iv-flow')
+
+  // 窄屏抽屉会盖住右缘节点：仅在选中节点确实落入覆盖区时把视口左移一次。
+  useEffect(() => {
+    if (selectedNodes.length === 0) return
+    const flow = flowRef.current
+    if (flow === undefined || flow === null || window.innerWidth >= 900) return
+    const drawerWidth = Math.min(300, flow.clientWidth * 0.86)
+    const trigger = selectedNodes[0]!
+    const x = trigger.position.x + (trigger.measured?.width ?? 180) / 2
+    const y = trigger.position.y + (trigger.measured?.height ?? 60) / 2
+    const project = flow.querySelector<HTMLElement>('.react-flow__viewport')
+    const matrix = project?.style.transform ?? ''
+    const scale = Number(/scale\(([\d.]+)\)/.exec(matrix)?.[1] ?? '1')
+    const translate = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(matrix)
+    const screenX = (translate !== null ? Number(translate[1]) : 0) + x * scale
+    const screenY = (translate !== null ? Number(translate[2]) : 0) + y * scale
+    if (screenX > flow.clientWidth - drawerWidth && screenY >= 0 && screenY <= flow.clientHeight) {
+      void setCenter(x - drawerWidth / (2 * scale), y, { zoom: scale, duration: 180 })
+    }
+  }, [selectedIds.join(','), setCenter])
 
   // 全屏浮层盖住整个工作台：锁住页面滚动，退出时恢复原值
   useEffect(() => {
@@ -562,8 +624,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
   }, [run?.latest?.status])
 
   const nodeTypes = useMemo(() => ({
-    workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} onPreview={onPreview} />,
-  }), [t, onPreview])
+    workbench: (nodeProps: NodeProps<CanvasNode>) => (
+      <WorkflowNodeCard {...nodeProps} t={t} onPreview={onPreview} onActivate={activateNode} />
+    ),
+  }), [t, onPreview, activateNode])
 
   /**
    * 应用一张新图：改本地状态 + 推历史 + 回写事实源（回写由上面的 effect 完成）。
@@ -575,6 +639,26 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     setEdges(next.edges)
     commitHistory(next, tag)
   }, [commitHistory, setNodes, setEdges])
+
+  /**
+   * `F3`：外部整图替换（模板市场）走历史提交，而不是重播种。
+   *
+   * 以前模板市场会新建一条工作流记录，`record.id` 一变画布就 `resetHistory`，
+   * 确认弹窗里「可用 Ctrl/Cmd+Z 撤销」当场变成假话。现在替换复用同一条记录，
+   * 这里按 `replaceRevision` 把最新图推入撤销栈——撤销回到替换前的整图。
+   * 首次渲染时 ref 已等于当前值，不会把挂载当成替换。
+   */
+  const appliedReplaceRevision = useRef(replaceRevision ?? 0)
+  useEffect(() => {
+    if (replaceRevision === undefined || replaceRevision === appliedReplaceRevision.current) return
+    appliedReplaceRevision.current = replaceRevision
+    const nextNodes = toCanvasNodes(record)
+    const nextEdges = toCanvasEdges(record)
+    setSelectedIds([])
+    setOnboardingDismissed(false)
+    applyGraph({ nodes: nextNodes, edges: nextEdges }, `replace:${replaceRevision}`)
+    window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
+  }, [replaceRevision, record, applyGraph, fitView])
 
   /** 视口中心对应的画布坐标（点击节点库/快捷键加节点时用，避免全叠在左上角）。 */
   const viewportCenter = useCallback((): { x: number, y: number } => {
@@ -1021,7 +1105,19 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             ? null
             : (
               <div className="iv-run-actions" data-workflow-toolbar-run="true">
-                <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
+                {validation.issues.length === 0
+                  ? null
+                  : (
+                    <button type="button" className="iv-chip iv-chip--warn" data-workflow-log-issue-count="true"
+                      title={t('validationTitle')} onClick={() => { setLogOpen(true) }}>
+                      <Icon name="alert" size={11} />{validation.issues.length}
+                    </button>
+                  )}
+                <span className="iv-wf-runstate" data-workflow-run-status={run.latest?.status ?? 'none'}>
+                  <i className="iv-dot" aria-hidden="true" />
+                  {run.latest === undefined ? t('runNone') : t(runStatusKey(run.latest.status))}
+                </span>
+                <button type="button" className="iv-btn iv-btn--acc iv-btn--sm" data-workflow-run-action="start"
                   disabled={runBusy || !validation.ok || nodes.length === 0} onClick={run.onStart}>
                   <Icon name="play" size={12} />
                   {run.latest?.status === 'running'
@@ -1050,10 +1146,6 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
             aria-controls="iv-workflow-log" aria-label={t('canvasLogs')} title={t('canvasLogs')}
             onClick={() => { setLogOpen(open => !open) }}>
             <Icon name="script" size={13} />
-            {validation.issues.length > 0
-              /* planned 节点是「预期状态」而非错误，用 warn 不用 danger */
-              ? <span className="iv-chip iv-chip--warn" data-workflow-log-issue-count="true">{validation.issues.length}</span>
-              : null}
           </button>
           <button type="button" className="iv-btn iv-btn--sm iv-btn--icon" data-workflow-action="maximize"
             aria-pressed={maximized} aria-label={maximized ? t('canvasRestore') : t('canvasMaximize')}
@@ -1109,7 +1201,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                         data-workflow-availability={entry.spec.availability}
                         draggable
                         aria-label={`${t('canvasAdd')} ${entry.kind}`}
-                        title={entry.spec.reasonKey === undefined ? t('canvasDragHint') : t(entry.spec.reasonKey as WorkbenchLocaleKey)}
+                        data-workflow-no-executor={entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind) ? 'true' : undefined}
+                        title={entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind)
+                          ? t('canvasNoExecutorHint')
+                          : entry.spec.reasonKey === undefined ? t('canvasDragHint') : t(entry.spec.reasonKey as WorkbenchLocaleKey)}
                         onDragStart={event => {
                           event.dataTransfer.setData(NODE_DND_TYPE, entry.kind)
                           event.dataTransfer.effectAllowed = 'copy'
@@ -1120,7 +1215,11 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                         <span className="iv-wf-lib-item-name">{entry.label}</span>
                         {entry.spec.availability === 'planned'
                           ? <span className="iv-wf-lib-item-tag">{t('canvasPlannedTag')}</span>
-                          : null}
+                          : entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind)
+                            ? <span className="iv-wf-lib-item-tag iv-wf-lib-item-tag--noexec" data-workflow-no-executor-tag="true">
+                              {t('canvasNoExecutorTag')}
+                            </span>
+                            : null}
                       </button>
                     ))}
                   </div>
@@ -1132,7 +1231,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
         <div
           ref={flowRef}
           className="iv-flow" data-workflow-flow="true"
-          data-workflow-drop-import="true"
+          data-workflow-drop-import="true" tabIndex={-1}
           onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
           onDrop={event => { importDroppedFile(event); dropNode(event) }}
           onDoubleClick={onCanvasDoubleClick}
@@ -1236,7 +1335,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
           {selectedNodes.length === 0
             ? null
             : (
-              <div className="iv-inspector iv-wf-inspector" data-workflow-inspector={selectedNodes[0]!.id}>
+              <aside className="iv-inspector iv-wf-inspector" ref={inspectorRef} tabIndex={-1}
+                role="complementary" aria-label={t('canvasParams')}
+                data-workflow-inspector={selectedNodes[0]!.id} data-workflow-inspector-open="true">
                 <div className="iv-inspector-head">
                   <Icon name={NODE_ICONS[selectedNodes[0]!.data.kind]} size={13} />
                   <span className="iv-wf-inspector-title">{t(nodeSpec(selectedNodes[0]!.data.kind).labelKey as WorkbenchLocaleKey)}</span>
@@ -1244,11 +1345,9 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                     ? <span className="iv-meta">{t('canvasSelected')} · {selectedNodes.length}</span>
                     : null}
                   <button type="button" className="iv-wf-inspector-close"
+                    data-workflow-inspector-close="true"
                     aria-label={t('canvasCloseInspector')} title={t('canvasCloseInspector')}
-                    onClick={() => {
-                      setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
-                      setSelectedIds([])
-                    }}>
+                    onClick={closeInspector}>
                     <Icon name="x" size={11} />
                   </button>
                 </div>
@@ -1258,7 +1357,13 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                       <Icon name="sparkles" size={12} /> {t(nodeSpec(selectedNodes[0]!.data.kind).reasonKey as WorkbenchLocaleKey)}
                     </span>
                   )
-                  : null}
+                  : nodeSpec(selectedNodes[0]!.data.kind).group === 'finish' && !hasNodeExecutor(selectedNodes[0]!.data.kind)
+                    ? (
+                      <span className="iv-meta" data-workflow-no-executor-note="true" style={{ color: 'var(--iv-warn)' }}>
+                        <Icon name="alert" size={12} /> {t('canvasNoExecutorHint')}
+                      </span>
+                    )
+                    : null}
                 {selectedNodes[0]!.data.outputPath === undefined
                   ? null
                   : (
@@ -1332,7 +1437,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                             )}
                     </label>
                   ))}
-              </div>
+              </aside>
             )}
 
           {/* 双击空白处的快速添加：输入名字回车即落在光标位置 */}
@@ -1417,7 +1522,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
               {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
             </span>
           )}
-        <span className="iv-wf-status-note" title={t('canvasTransient')}>{t('canvasTransient')}</span>
+        <span className="iv-wf-status-note" title={t('canvasAutoSave')}>{t('canvasAutoSave')}</span>
       </div>
 
       {/* 整图替换确认：图非空时先问一次，避免「点一下画了半小时的图就没了」 */}

@@ -29,14 +29,15 @@ export interface PipelineCardProps {
   readonly t: (key: WorkbenchLocaleKey) => string
   /** 当前项目；未选项目时按钮禁用并给提示。 */
   readonly projectId?: string
-  /**
-   * 兼容既有调用方：本卡片已不再起跑 / 切画布，字段保留但不会触发。
-   */
-  readonly onStarted?: (workflowId: string) => void
   /** 外部注入的剧本（来自其它模块时覆盖卡片内剧本，用户随后可继续编辑）。 */
   readonly injectScript?: string
   /** 生成时把第一集写进这一集；缺省时整批新建。 */
   readonly episodeId?: string
+  /**
+   * 视觉权重。剧本页三个动作（写剧本 / 分段 / 分镜）里同时只有一个该是主按钮：
+   * 外层按「下一步」传 `primary`，其余传 `soft`。缺省 `primary`（单独渲染时保持原样）。
+   */
+  readonly emphasis?: 'primary' | 'soft'
   /** 生成后把受影响的集交回外层：刷新集列表并选中最先新建的一集。 */
   readonly onEpisodesGenerated?: (episodes: readonly EpisodeRecord[]) => void | Promise<void>
 }
@@ -45,7 +46,7 @@ export interface PipelineCardProps {
 type PlanCount = number | 'auto'
 
 export function PipelineCard(props: PipelineCardProps) {
-  const { api, t, projectId, injectScript } = props
+  const { api, t, projectId, injectScript, emphasis = 'primary' } = props
   const [script, setScript] = useWorkbenchField(api, 'pipelineScript')
   // 外部注入的剧本变化时覆盖（空串不覆盖，避免把用户正在写的内容清掉）
   useEffect(() => {
@@ -199,53 +200,62 @@ export function PipelineCard(props: PipelineCardProps) {
     }
   }
 
+  /** M6：生成设置常驻展开；摘要回显当前真正生效的数量与模型，不写"自动·自动·自动"。 */
+  const draftCounts = autoCountsForScript(cleanScript)
+  const settingsSummary = [
+    `${planEpisodes === 'auto' ? draftCounts.episodes : planEpisodes}${t('planEpisodeUnit')}`,
+    `${planSegments === 'auto' ? draftCounts.segments : planSegments}${t('planSegmentUnit')}`,
+    `${planShots === 'auto' ? draftCounts.shots : planShots}${t('segmentShotUnit')}`,
+    selectedModel?.model ?? t('pipelineTextModelRules'),
+  ].join(' · ')
+
   return (
     <div className="iv-card" data-pipeline-card="true">
       <div className="iv-card-body" style={{ display: 'grid', gap: 'var(--iv-sp-4)' }}>
         <SharedScriptInput api={api} t={t} disabled={generatingScript} />
+        {/* M6：主路径参数常驻展开，摘要给出生效值 */}
+        <div className="iv-sc-settings">
+        <div className="iv-sc-settings-head">
+          <Icon name="sliders" size={12} />{t('scriptSettings')}
+          <span className="iv-advanced-defaults" data-pipeline-settings-summary="true">{settingsSummary}</span>
+        </div>
         {/* 输入属性：三级数量 / 文本模型 / 技能并列摆放；技能走统一 token，可多次选择 */}
         <div className="iv-plan-row">
           <label className="iv-plan-field" title={t('pipelineAutoCountsHint')}>
             {t('pipelinePlanEpisodes')}
             <input
-              className="iv-input"
+              className="iv-input iv-sc-num"
               data-pipeline-plan-episodes="true"
               type="text"
               inputMode="numeric"
               value={planEpisodes === 'auto' ? '' : String(planEpisodes)}
               placeholder={t('pipelineAuto')}
               disabled={generatingScript}
-              onChange={event => setPlanEpisodes(parseCount(event.target.value, MAX_PLAN_EPISODES))}
-              style={{ width: '80px' }}
-            />
+              onChange={event => setPlanEpisodes(parseCount(event.target.value, MAX_PLAN_EPISODES))}            />
           </label>
           <label className="iv-plan-field" title={t('pipelineAutoCountsHint')}>
             {t('pipelinePlanSegments')}
             <input
-              className="iv-input"
+              className="iv-input iv-sc-num"
               data-pipeline-plan-segments="true"
               type="text"
               inputMode="numeric"
               value={planSegments === 'auto' ? '' : String(planSegments)}
               placeholder={t('pipelineAuto')}
               disabled={generatingScript}
-              onChange={event => setPlanSegments(parseCount(event.target.value, MAX_PLAN_SEGMENTS))}
-              style={{ width: '80px' }}
-            />
+              onChange={event => setPlanSegments(parseCount(event.target.value, MAX_PLAN_SEGMENTS))}            />
           </label>
           <label className="iv-plan-field" title={t('pipelineAutoCountsHint')}>
             {t('pipelinePlanShots')}
             <input
-              className="iv-input"
+              className="iv-input iv-sc-num"
               data-pipeline-plan-shots="true"
               type="text"
               inputMode="numeric"
               value={planShots === 'auto' ? '' : String(planShots)}
               placeholder={t('pipelineAuto')}
               disabled={generatingScript}
-              onChange={event => setPlanShots(parseCount(event.target.value, MAX_PLAN_SHOTS))}
-              style={{ width: '80px' }}
-            />
+              onChange={event => setPlanShots(parseCount(event.target.value, MAX_PLAN_SHOTS))}            />
           </label>
           <label className="iv-plan-field" title={textModels.length === 0 ? t('pipelineTextModelMissing') : t('pipelineTextModelHint')}>
             {t('pipelineTextModel')}
@@ -278,13 +288,13 @@ export function PipelineCard(props: PipelineCardProps) {
             />
           </label>
         </div>
+        </div>
         {/* 唯一动作：主按钮独占一行，和整块输入的视觉层级分开 */}
-        <div className="iv-plan-row" data-pipeline-generate="true" style={{ justifyContent: 'flex-end' }}>
+        <div className="iv-plan-row" data-pipeline-generate="true">
           <button
             type="button"
-            className="iv-btn iv-btn--action iv-btn--action--primary"
+            className={`iv-btn iv-btn--action iv-btn--action--${emphasis} iv-sc-generate`}
             data-pipeline-script-generate="true"
-            style={{ minWidth: '132px' }}
             disabled={!canGenerate}
             onClick={() => { void generateScript() }}
           >

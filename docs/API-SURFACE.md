@@ -7,7 +7,7 @@
 
 | 端点 | 入参 | 出参 | 备注 |
 | --- | --- | --- | --- |
-| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`options` 是编辑器白名单 |
+| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有），界面只在 `override` 时挂「已覆盖」徽章；`options` 是编辑器白名单 |
 | `auth/health` | — | `{ready,credentials,signedIn,email?,username?,balance?,hasKey,keyLast4?,provider,providerLabel?,providers[{id,label,settable,testable,endpointEditable?}],providerStates?,lastProvider?,local?,registerUrl?,inviteUrl?}` | 登录闭环的宿主状态；`providerStates` 供界面逐行展示「{服务商} 连接正常 / Key 已配置 / 未配置」，其中 `verified` 来自长期配置，关闭弹层或重启后仍在；`registerUrl` 是上游首页（注册按钮直接跳转），`inviteUrl` 是带邀请码的注册页；**App 明文永不下发** |
 | `auth/login` | `{email,password,turnstileToken?}` | `{success,email,username,balance,hasKey,keyLast4?,credentialsWritten,affCode?}` | 账号登录 → 自动创建/复用 Key → 写凭证缝；同一条通道按 `auth/` 前缀分流 |
 | `auth/logout` | — | `{success}` | 清本插件的会话记录（`image-video/auth`）、撤销本插件写入的 Key，并把默认服务商移出「已验证」列表 |
@@ -95,7 +95,7 @@
 | | | | |
 
 **当前待认领：0 条**（2026-10-26 全部认领：`media/generate` 转发 `media[]`/`realPerson`；A-4 `media/compose`（含 B-3 姿态/镜头/裁剪）；A-5 提示词库；B-18 `pipelines/*` 的 `resourceIds` + `matchedResources`）。
-已就绪、无需申请的新契约（直接接）：`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
+已就绪、无需申请的新契约（直接接）：`workflows/run.only`（部分运行，2026-11-27）、`track.fadeMs`、`timeline.normalizeLoudness`、`clip.speed/fade/crop/transition/transitionDurationMs`、
 `timelines/save.exportFormat`、`maintenance/retention`、`diagnostics.outputs`、`diagnostics.renders.stats`、`workflow templates/from-template`、`timeline add-subtitles`。
  |
 
@@ -141,7 +141,7 @@
 | `workflows/list` | `{projectId}` | `{workflows}` |
 | `workflows/save` | `{projectId,id?,name,nodes,edges}` | `{workflow}` |
 | `workflows/remove` | `{workflowId}` | `{removed}` |
-| `workflows/run` | `{workflowId,refresh?}` | `{run}` |
+| `workflows/run` | `{workflowId,only?:string[]}`（`only` 非空字符串数组；部分运行 = 这些节点 + 全部下游，未选中节点在记录里标 `skipped / not part of this run`） | `{run}` |
 | `workflows/runs` | `{projectId,workflowId?}` | `{runs}` |
 | `workflows/run-cancel` | `{runId}` | `{cancelled}` |
 | `workflows/run-retry` | `{runId}` | `{run}`（复用上次产物的成功节点） |
@@ -169,10 +169,10 @@
 | `timelines/duplicate` | `{timelineId,name?}` | `{timeline}`（`A86` 整条复制为副本：片段 id 重新生成、素材共享、名字自动去重）|
 | `timelines/remove` | `{timelineId}` | `{removed}` |
 | `timelines/validate` | `{timelineId?}` 或 `{document?}`（inline ≤2MB / 片段 ≤400 / 轨道 ≤50） | `{ok,issues}` |
-| `timelines/render` | `{timelineId,priority?}` | `{render}` |
+| `timelines/render` | `{timelineId,priority?,resolution?,fps?,aspect?,retryTransient?,thumbnailAtMs?,subtitleFormat?}` | `{render}`（`resolution`/`fps`/`aspect` 是导出条档位：`480`/`768`/`2k`/`default`、`24`/`25`/`30`/`60`、`landscape`/`portrait`/`square`/`vertical`；宿主换算成 `exportFormat` **只作用于本次导出**，不改时间轴；未知档位直接报错，`B2`）|
 | `timelines/preflight` | `{timelineId}` | `{ok,issues,estimate,usage,summaryLine}`（`A84` 导出前体检：问题+体积+素材浪费一次给全）|
-| `timelines/estimate` | `{timelineId,width?,height?,frameRate?,bitrateKbps?}` | `{estimate}`（时长/规格/比例/预估体积；覆盖分辨率时码率自动重估，`A80`）|
-| `timelines/render-retry` | `{renderId}` | `{render,retriedFrom}`（复用原时间轴与优先级） |
+| `timelines/estimate` | `{timelineId,width?,height?,frameRate?,bitrateKbps?,resolution?,fps?,aspect?}` | `{estimate}`（时长/规格/比例/预估体积；覆盖分辨率时码率自动重估，`A80`；档位与 `timelines/render` 同口径，显式 `width/height/frameRate` 优先，`B2`）|
+| `timelines/render-retry` | `{renderId}` | `{render,retriedFrom}`（复用原时间轴、优先级与**原导出规格**，`B2`） |
 | `timelines/renders` | `{projectId?}` | `{renders,sets}`（`sets` 为成片集聚合） |
 | `renders/overview` | — | `{overview}`（`A90` 队列全景：running/queued/recent/throughput + 诊断失败数 + `recentItems`（`A128` 最近成片：视频/封面/字幕路径））|
 | `timelines/render-cancel` | `{renderId}` | `{cancelled}` |

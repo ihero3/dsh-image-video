@@ -220,14 +220,17 @@ describe('待启用契约（由对应批次改为 it）', () => {
     // 配音卡与多比例导出必须落在 pane 内、且位于 pane-head 之后
     const pane = view.container.querySelector('[data-workbench-pane="paneTimeline"]') as HTMLElement
     expect(pane).toBeTruthy()
-    const children = [...pane.children]
-    const headIndex = children.findIndex(el => el.classList.contains('iv-pane-head'))
-    // 配音卡（.iv-card）与多比例（.iv-sub）都是子区块，必须落在 pane-head 之后
-    const blocks = children.filter(el => el.classList.contains('iv-sub') || el.classList.contains('iv-card'))
-    expect(blocks.length, 'paneTimeline 应有两个子区块（配音卡 / 多比例）').toBeGreaterThanOrEqual(2)
+    const head = pane.querySelector('.iv-pane-head') as HTMLElement
+    const aux = pane.querySelector('[data-timeline-aux="true"]') as HTMLElement
+    expect(aux, '配音卡 / 多比例应收进辅助折叠区').toBeTruthy()
+    // 2026-11-26：两块辅助工具移到 details 里（不再都是 pane 直接子节点），
+    // 但仍必须在 pane-head 之后，且默认收起。
+    const blocks = [...aux.querySelectorAll('.iv-sub, .iv-card')]
+    expect(blocks.length, '辅助区应有配音卡 / 多比例两个子区块').toBeGreaterThanOrEqual(2)
     for (const block of blocks) {
-      expect(children.indexOf(block)).toBeGreaterThan(headIndex)
+      expect(head.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
+    expect(aux.hasAttribute('open')).toBe(false)
   })
 })
 
@@ -353,6 +356,15 @@ describe('视觉层级契约（R7）', () => {
     expect(WORKBENCH_STYLE).not.toContain('.iv-sb-list{display:flex;flex-direction:row;flex-wrap:wrap')
   })
 
+  it('分段标题按钮能收缩到卡片内，长提示词省略而不是顶出边界', () => {
+    // 起因（2026-11-27）：标题按钮没有 min-width:0，长 nowrap 提示词把按钮和右侧
+    // 操作簇一起撑出分段卡片，截图里表现为文字被视口右侧截断。
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-head-main{display:flex;align-items:center;gap:var(--iv-sp-3);flex:1 1 0;min-width:0;max-width:100%')
+    expect(WORKBENCH_STYLE).toContain('overflow:hidden;text-align:left;padding:0 var(--iv-sp-2)')
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-head-main>.iv-sc-sum-text{flex:1 1 auto;min-width:0}')
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-actions{flex:none;margin-left:auto;display:flex')
+  })
+
   it('本集已选每行不折行，删除按钮 × 始终和缩略图/名称/分类框同一行', () => {
     // 起因（2026-11-25）：基础 .iv-row{flex-wrap:wrap} 在窄面板里把 × 挤到第二行。
     // 主题层后注入且选择器更具体，必须显式把本集已选行改回 nowrap、固定分类框与操作区宽度。
@@ -360,5 +372,27 @@ describe('视觉层级契约（R7）', () => {
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-main{flex:1 1 auto;min-width:0}')
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-select{flex:none;width:76px;min-width:76px}')
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-actions{flex:none}')
+  })
+
+  it('胶囊 tab 的文字不折行，剧本页四个 tab 按内容宽度排（2026-11-27 截图缺陷）', () => {
+    // 起因：`.iv-tab` 没写 white-space，脚本页四个 tab 又用 inline `flex:1` 均分宽度，
+    // 窄栏里「剧本分镜 / 素材提取」被压成两行，固定 32px 高度装不下、图标与文字错位。
+    // 口径：标签内部永不折行；宽度不够时让整组换行。
+    expect(WORKBENCH_STYLE).toContain('white-space:nowrap')
+    expect(MODERN_THEME_STYLE).toContain('.iv .iv-tab{flex:none;height:32px')
+  })
+
+  it('运行历史选中态命中真实存在的属性（2026-11-27 修复 F9）', () => {
+    // 起因：JSX 写 data-workflow-run-item-selected，CSS 命的却是 [data-active]，
+    // 选中项有属性没样式；属性名统一到 JSX 一侧（测试也按它断言）。
+    expect(WORKBENCH_STYLE).toContain('.iv-run-item[data-workflow-run-item-selected=true]')
+    expect(WORKBENCH_STYLE).not.toContain('.iv-run-item[data-active=true]')
+  })
+
+  it('画布状态条不再声称工作流只存在本机（2026-11-27 修复 F11）', () => {
+    // 起因：文案写着"暂存在本机"，实际画布改动已去抖 saveWorkflow 落宿主，
+    // 提示与事实相反。改成自动保存口径。
+    expect(en.canvasAutoSave.toLowerCase()).toContain('automatic')
+    expect(en.canvasAutoSave.toLowerCase()).not.toContain('this machine')
   })
 })

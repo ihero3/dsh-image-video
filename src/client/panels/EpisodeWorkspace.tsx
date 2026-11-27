@@ -6,6 +6,7 @@
  * 引用只存 `{kind,id}`，顺序号即正文 `[@n]`。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { ReactNode } from 'react'
 import { Icon } from '../icons.tsx'
 import { useDialogFocus } from '../use-dialog-focus.ts'
@@ -13,6 +14,7 @@ import { SkillTokenSelect, activeSkillId, stripSkillTokens } from '../skill-toke
 import { bytesToBase64 } from '../script-import-shared.ts'
 import type { WorkbenchApi } from '../api.ts'
 import type { TextModelOption } from '../api.ts'
+import type { WorkflowRecord } from '../../workbench/workflow.ts'
 import type { WorkbenchLocaleKey } from '../locales.ts'
 import type { AssetRecord, ResourceRecord } from '../../workbench/records.ts'
 import { newWorkbenchId } from '../../workbench/records.ts'
@@ -47,6 +49,11 @@ export interface EpisodeWorkspaceProps {
   readonly textModelKey: string
   /** 当前选中的文本模型（规则模式为 undefined）。 */
   readonly textModel: { readonly provider: string; readonly model: string } | undefined
+  /**
+   * 剧本页「下一步」的步骤号（1 写剧本 / 2 分段 / 3 分镜 / 0 全部完成）。
+   * 只影响主按钮权重：轮到的步骤是主按钮，其余降为柔色。缺省保持原有主按钮。
+   */
+  readonly activeStep?: 0 | 1 | 2 | 3
   /** 新分段继承的默认值（仅保留导演 Skill；图像 / 视频模型由段级自己选）。 */
   readonly defaults: {
     readonly skillId?: string
@@ -357,7 +364,7 @@ function RefPicker(props: RefPickerProps) {
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, episodePicker, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, episodePicker, options, skills, textModels, textModelKey, textModel, defaults, activeStep, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
 
   // 目录由宿主过滤成纯文本模型；旧持久化值不在目录里时一律按「默认规则」处理
   const activeTextModelKey = textModels.some(model => `${model.provider}::${model.id}` === textModelKey) ? textModelKey : 'rules'
@@ -371,6 +378,13 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   const [scriptState, setScriptState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [segments, setSegments] = useState<readonly SegmentRecord[]>(episode.segments)
   const [storyboards, setStoryboards] = useState<readonly StoryboardRecord[]>(episode.storyboards)
+  /**
+   * 主按钮权重：外层按剧本页三步进度传 `activeStep`。
+   * 分段 = 第 2 步、分镜 = 第 3 步，只有轮到的那一步是实心主色，避免三个同级主按钮。
+   * 不传时（单独渲染本组件）保持原来的 `primary`，不影响既有用法。
+   */
+  const splitEmphasis = activeStep === undefined || activeStep === 2 ? 'primary' : 'soft'
+  const planEmphasis = activeStep === undefined || activeStep === 3 ? 'primary' : 'soft'
   const [busy, setBusy] = useState(false)
   /** 自动拆段进行中：与单段保存互斥，避免模型跑着时用户又新建分段。 */
   const [splitting, setSplitting] = useState(false)
@@ -380,6 +394,14 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   const [generatingAll, setGeneratingAll] = useState<{ segmentId: string; mode: 'image' | 'video' } | undefined>(undefined)
   /** 折叠的分段 id：收起后只留标题行 + 提示词预览。 */
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
+  /** 分集剧本默认折叠；分段为空（只有长剧本这一处编辑面）时自动展开。 */
+  const [scriptOpen, setScriptOpen] = useState(() => episode.segments.length === 0)
+  const scriptDetailsRef = useRef<HTMLDetailsElement | null>(null)
+  /** 同步会重建目标工作流：事前确认 + 事后可撤销（撤销写回同步前的整图）。 */
+  const [syncConfirm, setSyncConfirm] = useState(false)
+  const [syncUndo, setSyncUndo] = useState<WorkflowRecord | undefined>(undefined)
+  const syncConfirmRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(syncConfirm, syncConfirmRef, () => { setSyncConfirm(false) })
   /** 切换一条分段的折叠态（整条标题行与折叠按钮共用）。 */
   const toggleCollapsed = (id: string): void => {
     setCollapsedIds(current => {
@@ -473,6 +495,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     const switched = episodeIdRef.current !== episode.id
     episodeIdRef.current = episode.id
     pendingNewSegments.current.clear()
+    if (switched) setCollapsedIds(new Set())
+    setScriptOpen(episode.segments.length === 0)
     setSegments(episode.segments)
     setStoryboards(episode.storyboards)
     savedSegments.current = new Map(episode.segments.map(segment => [segment.id, segment]))
@@ -1000,16 +1024,24 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     const cleanPrompt = stripSkillTokens(segment.promptText, skills)
     return (
       <div className="iv-sb-shot-body">
-        <div
-          className="iv-sb-seg-head iv-sb-seg-head--clickable"
+        <div className="iv-sb-seg-head">
+        <button
+          type="button"
+          className="iv-sb-seg-head-main iv-sb-seg-head--clickable"
           data-segment-head={segment.id}
+          aria-expanded={!collapsed}
+          aria-controls={`segment-body-${segment.id}`}
           title={collapsed ? t('segmentExpand') : t('segmentCollapse')}
           onClick={() => { toggleCollapsed(segment.id) }}
         >
           <span className="iv-micro" data-segment-name={segment.id}>
             {t('segmentName').replace('{n}', String(segment.order))}
           </span>
-          <span className="iv-sb-seg-actions">
+          <span className="iv-sc-sum">{segment.durationSec}s · {storyboard?.shots.length ?? 0} {t('segmentShotUnit')}</span>
+          <span className="iv-ellipsis iv-sc-sum-text">{segment.promptText || t('segmentPromptPlaceholder')}</span>
+          <Icon name="chevron" size={11} className={`iv-sc-caret${collapsed ? '' : ' iv-sc-caret--on'}`} />
+        </button>
+          <span className="iv-sb-seg-actions" onClick={() => { toggleCollapsed(segment.id) }}>
             <button
               type="button"
               className="iv-btn iv-btn--ghost iv-btn--sm"
@@ -1057,7 +1089,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         {collapsed
           ? <div className="iv-seg-peek" data-segment-preview={segment.id}>{segment.promptText || t('segmentPromptPlaceholder')}</div>
           : (
-          <>
+          <div id={`segment-body-${segment.id}`} className="iv-sb-shot-body">
         <div className={`iv-seg-prompt-row${segment.refs.length > 0 ? ' iv-seg-prompt-row--with-refs' : ''}`}>
           <label className="iv-sb-field iv-seg-prompt-field">
             <span className="iv-meta">{t('segmentPromptLabel')}</span>
@@ -1112,6 +1144,13 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               : null}
           </div>
         </div>
+        <details className="iv-disclosure iv-sc-adv" data-segment-advanced={segment.id}>
+          <summary className="iv-disclosure-head">
+            <Icon name="sliders" size={12} />{t('segmentAdvanced')}
+            <span className="iv-advanced-defaults">{segment.durationSec}s · {segment.imageModel || t('generateParamAuto')} · {segment.videoModel || t('generateParamAuto')}</span>
+            <Icon name="chevron" size={10} className="iv-caret" />
+          </summary>
+          <div className="iv-disclosure-body">
         <div className="iv-sb-row iv-sb-seg-meta">
           <label className="iv-sb-field">
             <span className="iv-meta">{t('segmentDurationLabel')}</span>
@@ -1215,10 +1254,12 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
             />
           </label>
         </div>
+          </div>
+        </details>
         <div className="iv-sb-actions">
           <button
             type="button"
-            className={`iv-btn iv-btn--action iv-btn--action--primary${planningId === segment.id ? ' iv-btn--busy' : ''}`}
+            className={`iv-btn iv-btn--action iv-btn--action--${planEmphasis}${planningId === segment.id ? ' iv-btn--busy' : ''}`}
             data-segment-plan={segment.id}
             aria-busy={planningId === segment.id ? 'true' : undefined}
             disabled={planningId === segment.id || busy || cleanPrompt.trim() === ''}
@@ -1513,7 +1554,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               </div>
             </div>
           )}
-          </>
+          </div>
           )}
       </div>
     )
@@ -1530,8 +1571,50 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
     const end = start + (jumpParts[index]?.length ?? 0)
     const textarea = scriptRef.current
     if (textarea === null) return
+    // 折叠态里 focus() 会静默失败：先同步展开 <details>，再聚焦选段文本。
+    flushSync(() => {
+      if (scriptDetailsRef.current !== null) scriptDetailsRef.current.open = true
+      setScriptOpen(true)
+    })
     textarea.focus()
     textarea.setSelectionRange(start, end)
+  }
+
+  /** 确认后同步：先记下目标工作流的旧整图，成功后给一次可撤销入口。 */
+  const confirmSync = (): void => {
+    setSyncConfirm(false)
+    void (async () => {
+      setBusy(true)
+      try {
+        const previous = (await api.listWorkflows(projectId))
+          .find(candidate => candidate.id === `wfl-ep-${episode.id}`)
+        const workflow = await api.syncEpisodeWorkflow(episode.id)
+        setSyncUndo(previous)
+        onNotice(t('episodeSyncWorkflowDone').replace('{name}', workflow.name), 'info')
+      } catch (error) {
+        onNotice(`${t('episodeSyncWorkflowFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
+
+  /** 撤销同步：写回旧整图（只改目标工作流，不碰别的文档）。 */
+  const undoSync = (): void => {
+    const previous = syncUndo
+    setSyncUndo(undefined)
+    if (previous === undefined) return
+    void (async () => {
+      try {
+        await api.saveWorkflow({
+          id: previous.id, projectId, name: previous.name,
+          nodes: previous.nodes, edges: previous.edges,
+        })
+        onNotice(t('episodeSyncUndo'), 'info')
+      } catch (error) {
+        onNotice(`${t('episodeSyncUndo')}：${error instanceof Error ? error.message : String(error)}`, 'error')
+      }
+    })()
   }
 
   return (
@@ -1543,24 +1626,16 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         </span>
         {/* 同步 / 导出 / 导入：从底栏搬到头部，按钮与块的样式保持原样 */}
         <div className="iv-row iv-sb-head-actions" data-episode-actions="true">
+          {/* 原生 details：三个次级动作恒在 DOM（测试契约），只在需要时展开 */}
+          <details className="iv-sc-more">
+            <summary aria-label={t('episodeMore')} title={t('episodeMore')}><Icon name="sliders" size={12} /></summary>
+            <div className="iv-sc-more-body">
           <button
             type="button"
             className="iv-btn iv-btn--ghost iv-btn--sm"
             data-episode-sync-workflow="true"
             disabled={busy || storyboards.length === 0}
-            onClick={() => {
-              void (async () => {
-                setBusy(true)
-                try {
-                  const workflow = await api.syncEpisodeWorkflow(episode.id)
-                  onNotice(t('episodeSyncWorkflowDone').replace('{name}', workflow.name), 'info')
-                } catch (error) {
-                  onNotice(`${t('episodeSyncWorkflowFailed')}：${error instanceof Error ? error.message : String(error)}`, 'error')
-                } finally {
-                  setBusy(false)
-                }
-              })()
-            }}
+            onClick={() => { setSyncConfirm(true) }}
           >
             <Icon name="flow" size={11} />{t('episodeSyncWorkflow')}
           </button>
@@ -1626,6 +1701,8 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           >
             <Icon name="upload" size={11} />{t('episodeImport')}
           </button>
+            </div>
+          </details>
         </div>
         <span className={`${saveChipClass(scriptState)} iv-sb-head-save`} data-episode-script-state={scriptState}>
           {t(scriptState === 'saved'
@@ -1635,7 +1712,14 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               : scriptState === 'failed' ? 'episodeScriptFailed' : 'episodeScriptDirty')}
         </span>
       </div>
-      <div className="iv-episode-script" data-episode-script-block="true">
+      <details className="iv-disclosure iv-sc-script" data-episode-script-block="true"
+        ref={scriptDetailsRef} open={scriptOpen}
+        onToggle={event => { setScriptOpen(event.currentTarget.open) }}>
+        <summary className="iv-disclosure-head">
+          <Icon name="script" size={12} />{t('pipelineScriptLabel')}
+          <Icon name="chevron" size={10} className="iv-caret" />
+        </summary>
+        <div className="iv-disclosure-body">
         <div className="iv-episode-script-head">
           <span className="iv-meta">{t('episodeScriptJump')}</span>
           <select
@@ -1666,9 +1750,10 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
           onChange={event => { updateScriptDraft(event.target.value) }}
           onBlur={() => { aggregateFocused.current = false; flushScript() }}
         />
-      </div>
+        </div>
+      </details>
       {/* 分段模型与 Skill 都是分段设置：默认规则不调 AI，其余值走对应文本模型。 */}
-      <div className="iv-sb-row iv-sb-selector-row" data-script-selectors="true">
+      <div className="iv-sb-row iv-sb-selector-row" data-script-selectors="true" id="script-step-segments">
         <label className="iv-sb-field">
           <span className="iv-meta">{t('scriptTextModel')}</span>
           <select
@@ -1704,7 +1789,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         <span className="iv-sb-count iv-sb-selector-actions">
           <button
             type="button"
-            className="iv-btn iv-btn--action iv-btn--action--primary"
+            className={`iv-btn iv-btn--action iv-btn--action--${splitEmphasis}`}
             data-segment-auto="true"
             disabled={busy || splitting || cleanScript.trim() === '' || (modelMode && activeTextModel === undefined)}
             title={modelMode && activeTextModel === undefined ? t('scriptSplitNeedsModel') : t('scriptSplitHint')}
@@ -1729,7 +1814,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
       {segments.length === 0
         ? <div className="iv-empty" data-segment-empty="true">{t('segmentEmpty')}</div>
         : (
-          <div className="iv-sb-list" data-segment-list="true">
+          <div className="iv-sb-list" data-segment-list="true" id="script-step-storyboard">
             {segments.map(segment => (
               <div className="iv-sb-shot" key={segment.id} data-segment={segment.id}>
                 <span className="iv-sb-shot-index">{segment.order}</span>
@@ -1737,6 +1822,37 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
               </div>
             ))}
           </div>
+        )}
+      {syncConfirm
+        ? (
+          <div className="iv-help-mask" data-episode-sync-confirm-mask="true">
+            <div className="iv-help" ref={syncConfirmRef} tabIndex={-1} role="dialog" aria-modal="true"
+              aria-label={t('episodeSyncConfirmTitle')}>
+              <h3 className="iv-help-title">{t('episodeSyncConfirmTitle')}</h3>
+              <p className="iv-help-body">{t('episodeSyncConfirmBody')}</p>
+              <div className="iv-row" style={{ justifyContent: 'flex-end' }}>
+                <button type="button" className="iv-btn iv-btn--ghost"
+                  data-episode-sync-cancel="true" onClick={() => { setSyncConfirm(false) }}>
+                  {t('cancel')}
+                </button>
+                <button type="button" className="iv-btn iv-btn--acc"
+                  data-episode-sync-confirm="true" onClick={confirmSync}>
+                  {t('episodeSyncWorkflow')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+        : null}
+      {syncUndo === undefined
+        ? null
+        : (
+          <p className="iv-notice" role="status" data-episode-sync-undo-notice="true">
+            {t('episodeSyncDone')}
+            <button type="button" className="iv-btn iv-btn--sm" data-episode-sync-undo="true" onClick={undoSync}>
+              {t('episodeSyncUndo')}
+            </button>
+          </p>
         )}
     </section>
   )
