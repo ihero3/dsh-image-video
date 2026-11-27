@@ -124,6 +124,8 @@ type HealthState =
     defaults?: Record<string, string | number | null>
     /** 每个默认值字段的来源：区分"我改过的"与"设置里的默认"（宿主未下发时不标注）。 */
     defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
+    /** 内置兜底层：设置值与它相同时不标来源徽章（值一样，标了只是噪声）。 */
+    defaultsBuiltin?: Record<string, string | number | null>
     options?: WorkbenchOptions
   }
   | { status: 'failed'; message: string }
@@ -2326,6 +2328,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           status: 'ok', version: facts.version, provider: facts.provider,
           ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
           ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
+          ...facts.defaultsBuiltin === undefined ? {} : { defaultsBuiltin: facts.defaultsBuiltin },
           ...facts.options === undefined ? {} : { options: facts.options },
         })
 
@@ -2426,7 +2429,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
   // 生效默认值（7 字段）只读展示：界面上看得出这一轮按什么参数生成（`T2-11`）
   // `field` 是接口字段名（imageSize…），`key` 是界面文案键：下发 patch 必须用前者
-  const defaultRows: Array<{ key: WorkbenchLocaleKey; field: string; value: string; display: string; source?: 'override' | 'settings' | 'none' }> = health.status === 'ok' && health.defaults !== undefined
+  // `label` 是这一项该不该标来源徽章：只标「来源改变了值」的字段（`T2-11` 修订）
+  const defaultRows: Array<{
+    key: WorkbenchLocaleKey
+    field: string
+    value: string
+    display: string
+    source?: 'override' | 'settings' | 'none'
+    label: boolean
+  }> = health.status === 'ok' && health.defaults !== undefined
     ? ([
       ['defaultImageProvider', health.defaults.imageProvider],
       ['defaultImageSize', health.defaults.imageSize],
@@ -2440,9 +2451,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         const empty = value === null || value === undefined || value === ''
         // 来源徽章：none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
         const source = health.status === 'ok' ? health.defaultsSources?.[field] : undefined
+        const builtin = health.status === 'ok' ? health.defaultsBuiltin?.[field] : undefined
         const raw = empty ? '' : String(value)
         // `value` 是下发口径（1024*1024 / photo），`display` 才是给人看的（1:1 / 摄影）
-        return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source }
+        // 徽章只在有区分度时出现：`override` 永远标（这轮真的偏离了默认）；`settings` 仅当
+        // 值跟内置兜底不同才标——1:1 明明就是兜底值，标「来自设置」只会让人多问一句"这俩
+        // 有啥不一样"；`none` 本身就是兜底值，不标。宿主没下发 `defaultsBuiltin`（旧宿主）
+        // 时无从比较，退回"见 settings 就标"。
+        const label = source === 'override'
+          || (source === 'settings' && (builtin === undefined || String(builtin) !== raw))
+        return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source, label }
       })
     : []
 
@@ -2986,15 +3004,17 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       {rows.map(row => (
                         <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
                           <i>{t(row.key)}</i><b>{row.display}</b>
-                          {row.source === undefined
-                            ? null
-                            : (
+                          {row.label && row.source !== undefined
+                            ? (
+                              // 三档文案保持穷举：`none` 目前走不到（兜底值本身不标），留着是为了
+                              // 以后改判定时只动 `label`、不用回来补文案。
                               <em className="iv-def-src" data-default-source-label={row.source}>
                                 {t(row.source === 'override'
                                   ? 'defaultsSourceOverride'
                                   : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
                               </em>
-                            )}
+                            )
+                            : null}
                         </span>
                       ))}
                     </div>
@@ -3151,6 +3171,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             status: 'ok', version: facts.version, provider: facts.provider,
                             ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
                             ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
+                            ...facts.defaultsBuiltin === undefined ? {} : { defaultsBuiltin: facts.defaultsBuiltin },
                           })
                           setNotice({ text: t('defaultsSaved'), tone: 'info' })
                         })

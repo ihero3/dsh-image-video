@@ -7,7 +7,7 @@
 
 | 端点 | 入参 | 出参 | 备注 |
 | --- | --- | --- | --- |
-| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`options` 是编辑器白名单 |
+| `health` | — | `{plugin,version,channel,provider,outputsDir,at,defaults?,defaultsSources?,defaultsBuiltin?,options?}` | `defaults` 为 7 字段生效默认值；`defaultsSources` 逐字段标注来源（`override` 工作台/composer 改过 / `settings` 来自 settings 持久默认 / `none` 都没有）；`defaultsBuiltin` 是内置兜底层（只供界面等值比较：设置值与它相同时不标徽章，不参与取值）；`options` 是编辑器白名单 |
 | `auth/health` | — | `{ready,credentials,signedIn,email?,username?,balance?,hasKey,keyLast4?,provider,providerLabel?,providers[{id,label,settable,testable,endpointEditable?}],providerStates?,lastProvider?,local?,registerUrl?,inviteUrl?}` | 登录闭环的宿主状态；`providerStates` 供界面逐行展示「{服务商} 连接正常 / Key 已配置 / 未配置」，其中 `verified` 来自长期配置，关闭弹层或重启后仍在；`registerUrl` 是上游首页（注册按钮直接跳转），`inviteUrl` 是带邀请码的注册页；**App 明文永不下发** |
 | `auth/login` | `{email,password,turnstileToken?}` | `{success,email,username,balance,hasKey,keyLast4?,credentialsWritten,affCode?}` | 账号登录 → 自动创建/复用 Key → 写凭证缝；同一条通道按 `auth/` 前缀分流 |
 | `auth/logout` | — | `{success}` | 清本插件的会话记录（`image-video/auth`）、撤销本插件写入的 Key，并把默认服务商移出「已验证」列表 |

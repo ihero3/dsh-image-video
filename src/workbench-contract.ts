@@ -64,6 +64,13 @@ export interface WorkbenchHealth {
    * 界面据此在值后面标「已覆盖 / 默认」，解决"看不出这个 1024*1024 是谁设的"。
    */
   defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
+  /**
+   * 内置兜底层（宿主 `BUILT_IN_DEFAULTS`，只给判断用，不参与取值）。
+   * 界面只标「来源改变了值」的字段：`settings` 的值与这一层相同时不标徽章——
+   * 同一个值叫「来自设置」还是「内置默认」对用户没有区分度（`T2-11` 修订）。
+   * 客户端不内置这张表（服务商/默认值由宿主下发），缺省时退回"见 source 就标"。
+   */
+  defaultsBuiltin?: Record<string, string | number | null>
   /** 默认值编辑器的可选项（与宿主白名单同源）；缺省时编辑器只给「未设置」。 */
   options?: WorkbenchOptions
 }

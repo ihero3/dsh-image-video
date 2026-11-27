@@ -23,6 +23,10 @@ describe('生效参数条 · 排版结构', () => {
         imageProvider: 'none', imageSize: 'settings', imageStyle: 'none',
         videoProvider: 'none', videoAspectRatio: 'none', videoDuration: 'settings',
       },
+      defaultsBuiltin: {
+        imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
+        videoProvider: 'threevideo', videoAspectRatio: '9:16', videoDuration: 10,
+      },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
     const strip = await waitFor(() => {
@@ -52,10 +56,9 @@ describe('生效参数条 · 排版结构', () => {
     expect(toggle.style.marginLeft).toBe('auto')
     expect(body.contains(toggle)).toBe(false)
 
-    // 来源徽章仍然逐项标注，样式差异靠 data 属性区分
-    const sources = [...strip.querySelectorAll('[data-default-source-label]')]
-      .map(element => element.getAttribute('data-default-source-label'))
-    expect(sources.length).toBeGreaterThan(0)
-    expect(new Set(sources).size).toBeGreaterThan(1)
+    // 来源徽章只在"来源改变了值"时出现：尺寸 1:1 与兜底同值不标，时长 5s ≠ 兜底 10s 才标
+    const badges = [...strip.querySelectorAll('[data-default-source-label]')]
+    expect(badges).toHaveLength(1)
+    expect(badges[0].getAttribute('data-default-source-label')).toBe('settings')
   })
 })

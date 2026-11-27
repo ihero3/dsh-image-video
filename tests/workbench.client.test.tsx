@@ -421,7 +421,7 @@ describe('workbench project and asset flow', () => {
     expect(view.container.querySelector('[data-workbench-default="defaultImageStyle"]')?.textContent).toContain(en.optStylePhoto)
   })
 
-  it('marks every effective default with where it came from (settings vs overridden)', async () => {
+  it('只标「来源改变了值」的字段，兜底值不再逐项刷屏（T2-11 修订）', async () => {
     const host = fakeApi({
       defaults: {
         // 宿主改造后这 6 项永远有值（没配 = 内置默认），所以这里不再出现 null
@@ -431,7 +431,7 @@ describe('workbench project and asset flow', () => {
         imageStyle: 'photo',
         videoProvider: 'threevideo',
         videoAspectRatio: '16:9',
-        videoDuration: 10,
+        videoDuration: 5,
       },
       defaultsSources: {
         mediaMode: 'none',
@@ -440,26 +440,62 @@ describe('workbench project and asset flow', () => {
         imageStyle: 'none',
         videoProvider: 'none',
         videoAspectRatio: 'override',
-        videoDuration: 'none',
+        videoDuration: 'settings',
+      },
+      // 兜底层：尺寸 1:1、时长 10s。设置里的尺寸与兜底同值（标了也没区分度），时长 5s 才是真的改过
+      defaultsBuiltin: {
+        imageProvider: 'threevideo',
+        imageSize: '1024*1024',
+        imageStyle: 'photo',
+        videoProvider: 'threevideo',
+        videoAspectRatio: '9:16',
+        videoDuration: 10,
       },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
     await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
 
-    // settings 里的默认值：标「来自设置」
+    // 六个字段里只剩两个徽章：真正偏离默认的那一个 + 真的和兜底不同的那一个
+    const badges = [...view.container.querySelectorAll('[data-default-source-label]')]
+      .map(element => element.getAttribute('data-default-source-label'))
+    expect(badges).toEqual(['override', 'settings'])
+
+    // 设置值与兜底同值（1:1）：来源仍如实记在 data 属性上，但不出徽章
     const size = view.container.querySelector('[data-workbench-default="defaultImageSize"]') as HTMLElement
     expect(size.getAttribute('data-default-source')).toBe('settings')
-    expect(size.textContent).toContain(en.defaultsSourceSettings)
+    expect(size.querySelector('[data-default-source-label]')).toBeNull()
+    expect(size.textContent).not.toContain(en.defaultsSourceSettings)
 
-    // 工作台/composer 改过的值：标「已覆盖」
+    // 工作台/composer 改过的值：永远标「已覆盖」
     const aspect = view.container.querySelector('[data-workbench-default="defaultVideoAspectRatio"]') as HTMLElement
-    expect(aspect.getAttribute('data-default-source')).toBe('override')
-    expect(aspect.textContent).toContain(en.defaultsSourceOverride)
+    expect(aspect.querySelector('[data-default-source-label]')?.textContent).toBe(en.defaultsSourceOverride)
 
-    // 来源 none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
+    // 设置值与兜底不同（5s ≠ 10s）：这才是需要让用户看见的「来自设置」
+    const duration = view.container.querySelector('[data-workbench-default="defaultVideoDuration"]') as HTMLElement
+    expect(duration.querySelector('[data-default-source-label]')?.textContent).toBe(en.defaultsSourceSettings)
+
+    // 来源 none = 都没配 → 值就是兜底值本身，不标（原来这里会印一个「内置默认」）
     const style = view.container.querySelector('[data-workbench-default="defaultImageStyle"]') as HTMLElement
     expect(style.getAttribute('data-default-source')).toBe('none')
-    expect(style.textContent).toContain(en.defaultsBuiltinSource)
+    expect(style.querySelector('[data-default-source-label]')).toBeNull()
+  })
+
+  it('旧宿主没下发兜底层时退回"见 settings 就标"（不会因此丢徽章）', async () => {
+    const host = fakeApi({
+      defaults: {
+        mediaMode: null, imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
+        videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 10,
+      },
+      defaultsSources: {
+        imageProvider: 'none', imageSize: 'settings', imageStyle: 'none',
+        videoProvider: 'none', videoAspectRatio: 'none', videoDuration: 'settings',
+      },
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await waitFor(() => { expect(view.container.querySelector('[data-workbench-defaults]')).toBeTruthy() })
+
+    const size = view.container.querySelector('[data-workbench-default="defaultImageSize"]') as HTMLElement
+    expect(size.querySelector('[data-default-source-label]')?.textContent).toBe(en.defaultsSourceSettings)
   })
 
   it('reloads the whitelist when the health snapshot carried none (T2-15 现场问题的回归)', async () => {

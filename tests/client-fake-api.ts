@@ -63,6 +63,8 @@ export function fakeApi(options: {
   defaults?: Record<string, string | number | null>
   /** 默认值逐字段来源（`T2-15` 之后新增；未给时界面不标来源）。 */
   defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
+  /** 内置兜底层（界面拿它判断"设置值是否等于兜底"，相等则不标来源徽章）。 */
+  defaultsBuiltin?: Record<string, string | number | null>
   /** 让 health 不下发 `options`（模拟"编辑器拿不到白名单"的现场问题）。 */
   omitHealthOptions?: boolean
   /** `B-6`：`modelsCatalog` 返回的实时段（测试替身；给了就带上，用于断言"刷新真的重探"）。 */
@@ -315,6 +317,7 @@ export function fakeApi(options: {
         ...options.omitHealthOptions === true ? {} : { options: healthOptions },
         ...options.defaults === undefined ? {} : { defaults: options.defaults },
         ...options.defaultsSources === undefined ? {} : { defaultsSources: options.defaultsSources },
+        ...options.defaultsBuiltin === undefined ? {} : { defaultsBuiltin: options.defaultsBuiltin },
       }
     },
     // auth/*：默认是「未登录、凭证缝可用、一个服务商」。连接弹层的用例按需覆盖。
