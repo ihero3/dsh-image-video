@@ -681,16 +681,15 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [subtitleDraft, setSubtitleDraft] = useState('')
   const [subtitleBatchDraft, setSubtitleBatchDraft] = useState('')
   const [templateOpen, setTemplateOpen] = useState(false)
-  /** 模板浮层：Esc / 点外部关闭；不能借用模态的 useDialogFocus（它是非模态 popover）。 */
+  /**
+   * 模板浮层：非模态抽屉，但焦点行为要和模态一致（`F17`）——打开移入、Tab 在抽屉内循环、
+   * Esc 关闭、关闭后焦点还给开关按钮。以前只有 Esc/外部点击，键盘用户 Tab 进来后
+   * 焦点还在浮层背后的画布上，等于"看不见的抽屉"。
+   */
   const templateRef = useRef<HTMLDivElement | null>(null)
+  useDialogFocus(templateOpen, templateRef, () => { setTemplateOpen(false) }, '[data-workflow-template-toggle="true"]')
   useEffect(() => {
     if (!templateOpen) return
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setTemplateOpen(false)
-    }
     const onPointerDown = (event: MouseEvent): void => {
       const target = event.target
       if (!(target instanceof Node)) return
@@ -698,10 +697,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       if (target instanceof Element && target.closest('[data-workflow-template-toggle]') !== null) return
       setTemplateOpen(false)
     }
-    document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('mousedown', onPointerDown)
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true)
       document.removeEventListener('mousedown', onPointerDown)
     }
   }, [templateOpen])
@@ -4240,7 +4237,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   {/* 模板市场：浮层抽屉挂在 pane 头下方，覆盖画布右上，不再把画布高度顶走 */}
                   {templateOpen
                     ? (
-                      <div className="iv-tpl iv-wf-drawer" ref={templateRef} data-workflow-template-market="true">
+                      <div className="iv-tpl iv-wf-drawer" ref={templateRef} role="dialog" aria-label={t('templateMarket')} data-workflow-template-market="true">
                         {([
                           { group: 'templateQuickGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => QUICK_TEMPLATE_IDS.includes(template.id)) },
                           { group: 'templateFullGroup', templates: [...WORKFLOW_TEMPLATES, ...DRAMA_TEMPLATES].filter(template => !QUICK_TEMPLATE_IDS.includes(template.id)) },
