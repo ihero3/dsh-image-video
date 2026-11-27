@@ -341,6 +341,25 @@ describe('B5 timeline interaction', () => {
     await waitFor(() => { expect(monitorVideo().currentTime).toBeCloseTo(2, 2) })
   })
 
+  it('空轨给「从素材添加」真入口，点了会展开并滚到素材面板（F15）', async () => {
+    const { view } = await renderTimeline()
+    const pane = (): HTMLElement => view.container.querySelector('[data-workbench-pane="paneAssets"]') as HTMLElement
+
+    // 先收起素材块：这正是评审指出的场景——灰字说「从右侧素材里加入」，右侧却看不到
+    fireEvent.click(view.container.querySelector('[data-dock-fold="assets"]') as HTMLElement)
+    expect(pane().className).toContain('iv-pane--folded')
+
+    const action = view.container.querySelector('[data-timeline-empty-action="assets"]') as HTMLButtonElement
+    expect(action.textContent).toContain(en.timelineEmptyAction)
+
+    // jsdom 没有 scrollIntoView，打桩才能断言"确实滚过去了"
+    const scrolled: string[] = []
+    pane().scrollIntoView = () => { scrolled.push('paneAssets') }
+    fireEvent.click(action)
+    await waitFor(() => { expect(pane().className).not.toContain('iv-pane--folded') })
+    await waitFor(() => { expect(scrolled).toHaveLength(1) })
+  })
+
   it('supports keyboard clip selection and a real zoom slider (2026-11-26)', async () => {    const { view } = await renderTimeline()
     await addClipViaPicker(view)
 

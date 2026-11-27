@@ -271,6 +271,7 @@ export type WorkbenchLocaleKey =
   | 'clipDuration'
   | 'clipStart'
   | 'timelineEmpty'
+  | 'timelineEmptyAction'
   | 'addSubtitle'
   | 'addClip'
   | 'trackSubtitle'
@@ -1432,6 +1433,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   clipDuration: 'Duration (ms)',
   clipStart: 'Start (ms)',
   timelineEmpty: 'No clips yet — add from the assets on the right',
+  timelineEmptyAction: 'Add from assets',
   addSubtitle: 'Add subtitle',
   addClip: 'Add to track',
   trackSubtitle: 'Subtitle track',
@@ -2649,6 +2651,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   clipDuration: '时长(ms)',
   clipStart: '起点(ms)',
   timelineEmpty: '还没有片段——从右侧素材里加入',
+  timelineEmptyAction: '从素材添加',
   addSubtitle: '加入字幕',
   addClip: '加入轨道',
   trackSubtitle: '字幕轨',

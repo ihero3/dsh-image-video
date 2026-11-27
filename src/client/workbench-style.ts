@@ -733,6 +733,9 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-t-head .micro{font-size:var(--iv-fs-micro)}
 .iv-t-kind{font-size:var(--iv-fs-micro);color:var(--iv-tx3)}
 .iv-t-lane{position:relative;padding:4px 8px;display:flex;flex-direction:column;gap:var(--iv-sp-2);min-height:40px}
+/* F15：空轨从"一行灰字"改成可点入口（文案 + 从素材添加），窄面板下整体换行不挤出泳道 */
+.iv-t-empty{display:flex;align-items:center;flex-wrap:wrap;gap:var(--iv-sp-2);min-width:0}
+.iv-t-empty .iv-meta{margin:0}
 /* B5：片段按**时间**绝对定位（left=起点比例、width=时长比例），拖拽/手柄才有"落点即时间" */
 .iv-clips{position:relative;display:block;height:58px}
 .iv-clip{display:flex;flex-direction:column;gap:var(--iv-sp-2);min-width:16px;flex-basis:auto;min-height:34px;

@@ -4558,7 +4558,32 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             onDrop={event => { onLaneDrop(event, track) }}
                           >
                             {track.clips.length === 0
-                              ? <p className="iv-meta">{t('timelineEmpty')}</p>
+                              ? (
+                                <div className="iv-t-empty" data-timeline-empty={track.kind}>
+                                  <span className="iv-meta">{t('timelineEmpty')}</span>
+                                  {/* `F15`：空轨只有一行灰字，而右侧素材面板可能被收起——
+                                      给一个真入口：打开展示列 + 展开素材块，并滚到它 */}
+                                  {track.kind === 'video'
+                                    ? (
+                                      <button
+                                        type="button"
+                                        className="iv-btn iv-btn--ghost iv-btn--sm"
+                                        data-timeline-empty-action="assets"
+                                        onClick={() => {
+                                          setDockOpen(true)
+                                          setDockFolded(current => ({ ...current, assets: false }))
+                                          // 面板刚展开时高度还没结算，等下一帧再滚
+                                          requestAnimationFrame(() => {
+                                            document.querySelector('[data-workbench-pane="paneAssets"]')?.scrollIntoView({ block: 'nearest' })
+                                          })
+                                        }}
+                                      >
+                                        <Icon name="plus" size={11} />{t('timelineEmptyAction')}
+                                      </button>
+                                    )
+                                    : null}
+                                </div>
+                              )
                               : (
                                 <div className="iv-clips">
                                   {track.clips.map(clip => {

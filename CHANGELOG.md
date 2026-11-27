@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### F15 · 时间轴空轨给真入口（2026-11-27）
+
+空轨原先只有一行灰字「还没有片段——从右侧素材里加入」，而右侧展示列/素材块都可以收起，等于指了个看不见的地方。视频空轨现在多一个「从素材添加」按钮：一次点击打开展示列、展开素材块，并把素材面板滚进视口（下一帧滚，等面板展开后的高度结算）。文案键 `timelineEmptyAction`，样式 `.iv-t-empty` 走 flex + wrap，窄面板不挤出泳道。
+
+### R6 · 胶囊 tab 文字不再折行（2026-11-27）
+
+剧本页四个 tab 原先用 inline `flex: 1` 均分宽度，窄栏里「剧本分镜 / 素材提取」被压成两行，32px 固定高度装不下、图标与文字错位（截图可见）。口径改为**标签内部永不折行，宽度不够时让整组换行**：
+
+- 基础层 `.iv-tab` 补 `white-space:nowrap`（两套主题共用）；主题层 `.iv .iv-tab` 补 `flex:none`，不再被压到内容宽度以下。
+- 剧本页 JSX 去掉 inline `flex:1`——均分是折行的直接原因；tab 宽度交回内容，`flex-wrap` 由既有的 `.iv-pane-actions` / `.iv-pane-head` 负责。
+- 门禁：`client-design-system` 新增「tab 文字不折行」；`client-script-tabs` 断言四个 tab 不再带 inline flex。
+
 ### F14 · 情绪预设走 locale（2026-11-27）
 
 `VoicePanel` 的 7 个情感标签原先是硬编码中文数组，切英文界面后按钮仍是「平静 / 兴奋 / 旁白」。改为 `WorkbenchLocaleKey[]`（`voiceEmotionCalm` … `voiceEmotionNarration`），中英字典各一份，按钮文本与点选填入值都取当前语言。标签仍是自由文本框，存进资源库的就是用户看到的词。
