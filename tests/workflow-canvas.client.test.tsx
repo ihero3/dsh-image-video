@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { WorkflowCanvas } from '../src/client/WorkflowCanvas.tsx'
 import { en, type WorkbenchLocaleKey } from '../src/client/locales.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
+import { defaultParams } from '../src/workbench/workflow.ts'
 
 // 每个用例互不干扰：上一次挂载的画布必须卸载，否则 screen 会查到重复元素
 afterEach(() => { cleanup() })
@@ -108,6 +109,31 @@ describe('workflow canvas', () => {
       expect(view.container.querySelector('[data-workflow-node="image-generate"]')?.getAttribute('data-workflow-node-no-executor'))
         .toBeNull()
     })
+  })
+
+  it('applies an external replacement through history so Cmd/Ctrl+Z restores the old graph (F3)', async () => {
+    // 模板市场承诺"整图替换后可撤销"。替换必须复用同一条工作流记录（同 id），
+    // 让画布走 applyGraph 而不是重播种——否则 resetHistory 会把撤销栈清空。
+    const base = makeRecord()
+    const view = render(<WorkflowCanvas record={base} onChange={() => {}} t={t} replaceRevision={0} />)
+    expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0')
+
+    const replaced: WorkflowRecord = {
+      ...base,
+      nodes: [{
+        id: 'wfl-1-0-x', kind: 'image-generate',
+        position: { x: 0, y: 0 }, params: defaultParams('image-generate'),
+      }],
+    }
+    view.rerender(<WorkflowCanvas record={replaced} onChange={() => {}} t={t} replaceRevision={1} />)
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
+
+    // 撤销 → 回到替换前的空图（承诺成立）
+    fireEvent.keyDown(window, { key: 'z', metaKey: true })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('0') })
+    // 重做 → 替换后的图（替换是一条历史，不是一次性状态）
+    fireEvent.keyDown(window, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
   })
 
   it('lets a planned node be placed but marks it as not runnable', async () => {

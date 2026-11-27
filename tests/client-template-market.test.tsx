@@ -82,4 +82,24 @@ describe('B-6 template market cards (F4)', () => {
       expect(host.calls.filter(call => call === 'workflows/save').length).toBeGreaterThan(saved)
     })
   })
+
+  it('replaces this project\u2019s workflow instead of stacking orphan records (F3)', async () => {
+    const { host, view } = await openTemplateMarket()
+
+    // 空画布 → 直接套用：应只有一条工作流
+    fireEvent.click(view.container.querySelector('[data-workflow-template="quick-image"]') as HTMLElement)
+    await waitFor(() => { expect(host.workflows).toHaveLength(1) })
+    const workflowId = host.workflows[0]!.id
+    expect(host.workflows[0]!.nodes).toHaveLength(2)
+
+    // 再套一张 → 整图替换，复用同一条记录（同 id、不新建）
+    fireEvent.click(view.container.querySelector('[data-workflow-template-toggle="true"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-workflow-template-market="true"]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-workflow-template="quick-video"]') as HTMLElement)
+    fireEvent.click(await screen.findByRole('button', { name: en.canvasReplaceConfirm }))
+
+    await waitFor(() => { expect(host.workflows).toHaveLength(1) })
+    expect(host.workflows[0]!.id).toBe(workflowId)
+    await waitFor(() => { expect(host.workflows[0]!.nodes).toHaveLength(3) })
+  })
 })

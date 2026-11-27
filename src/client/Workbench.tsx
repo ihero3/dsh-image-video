@@ -327,6 +327,29 @@ function nextClipId(): string {
   return `clip-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+/**
+ * 检查器数字输入的统一夹紧（`F6`）。
+ *
+ * 宿主校验对片段字段是**硬拒**：start / duration 必须在 `0..MAX_CLIP_DURATION_MS`、
+ * duration ≥ `MIN_CLIP_MS`、crop 宽高必须偶数。以前输入框把 `Number(value)` 原样写库，
+ * 一个手滑（清空输入 → 0、多打一位 → 越界）就让整个时间轴保存态变 `failed`。
+ * 现在的口径：空值/非数字**不落库**（保留上一次合法值），越界夹到边界。
+ */
+function clampMs(raw: string, min: number, max: number): number | undefined {
+  if (raw.trim() === '') return undefined
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return undefined
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+/** 裁剪宽高夹紧：先夹到区间，再向下取偶（ffmpeg yuv420p 只吃偶数尺寸）。 */
+function clampEven(raw: string, min: number, max: number): number | undefined {
+  const value = clampMs(raw, min, max)
+  if (value === undefined) return undefined
+  const even = value - (value % 2)
+  return even < min ? min : even
+}
+
 /** Localized label for one timeline track kind. */
 function trackKindKey(kind: TrackKind): WorkbenchLocaleKey {
   switch (kind) {
@@ -686,6 +709,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [pendingTemplate, setPendingTemplate] = useState<{ label: string; run: () => void } | undefined>(undefined)
   const pendingTemplateRef = useRef<HTMLDivElement>(null)
   useDialogFocus(pendingTemplate !== undefined, pendingTemplateRef, () => { setPendingTemplate(undefined) })
+  /**
+   * 模板整图替换信号（`F3`）：自增一次，画布就把 `workflow` 的最新图作为**一次可撤销的替换**
+   * 应用（而不是重播种清空撤销栈）。确认弹窗承诺的 Ctrl/Cmd+Z 靠它成立。
+   */
+  const [templateRevision, setTemplateRevision] = useState(0)
   const [diagnostics, setDiagnostics] = useState<WorkbenchDiagnostics | undefined>(undefined)
   const [previewMs, setPreviewMs] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -1400,6 +1428,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   // 与导出共用同一边界判断（`R-TML-3`）
   const activeVideo = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'video', playheadMs)
   const activeSubtitle = timeline === undefined ? undefined : activeClipAt(timeline.tracks, 'subtitle', playheadMs)
+  /**
+   * 监视器要显示的**源内时间**（`F5`）：入点 + （播放头 − 片段起点）× 速度。
+   * 变速片段的 `durationMs` 是源时长，时间轴上占用的是 `effectiveDurationMs`，
+   * 所以按播放头线性换算是 `× speed`；结果夹在 [入点, 入点 + 源时长] 内。
+   */
+  const monitorMediaMs = activeVideo === undefined
+    ? 0
+    : (() => {
+      const inMs = activeVideo.inMs ?? 0
+      const elapsed = (playheadMs - activeVideo.startMs) * (activeVideo.speed ?? 1)
+      return Math.max(inMs, Math.min(inMs + activeVideo.durationMs, inMs + elapsed))
+    })()
+  /** 节目监视器跟着视频轨的音量/静音走（导出按同一字段应用，预览不该是另一套）。 */
+  const programVideoTrack = timeline?.tracks.find(track => track.kind === 'video')
 
   /** 时间轴通用改法：换掉某条轨道。 */
   const patchTrack = (trackId: string, update: (track: TimelineTrack) => TimelineTrack): void => {
@@ -1500,26 +1542,38 @@ export function Workbench(props: WorkbenchProps): ReactNode {
    * 把内置模板实例化成工作流记录（`B15` 模板市场）。
    * 两类模板（`WORKFLOW_TEMPLATES` 的 `WorkflowTemplate` 与 `DRAMA_TEMPLATES` 的 `DramaTemplate`）
    * 结构一致：节点 `kind + params?`（缺省参数用 `defaultParams` 补）＋ 下标连线。
+   *
+   * `reuse` 传入当前记录时**复用同一条工作流**（id / 项目 / 名称 / 创建时间不变）：
+   * 模板市场是"替换本项目的图"，不是新建一条工作流——否则每个项目会攒下一串孤儿记录，
+   * 而且 `record.id` 一变画布会重置撤销栈，确认弹窗承诺的 Ctrl/Cmd+Z 就失效了（`F3`）。
    */
   const instantiateAnyTemplate = (
     template: { id: string; labelKey: string; describe?: string; nodes: readonly { kind: WorkflowRecord['nodes'][number]['kind']; params?: Record<string, NodeParamValue> }[]; edges: readonly (readonly [number, number])[] },
+    reuse?: WorkflowRecord,
   ): WorkflowRecord => {
     const stamp = new Date().toISOString()
     const title = template.describe?.split('：')[0] ?? template.id
-    const id = newWorkbenchId('wfl')
+    const id = reuse?.id ?? newWorkbenchId('wfl')
+    // 同一条工作流可反复套模板：给节点 id 加一次性后缀，避免上一张图的节点 id 撞上
+    // （撤销栈里两张图各自完整，撞 id 会让 xyflow 复用旧节点实例）。
+    const seq = Date.now().toString(36)
     return {
       schemaVersion: 1,
       id,
-      projectId: activeProject?.id ?? '',
-      name: title,
+      projectId: reuse?.projectId ?? activeProject?.id ?? '',
+      name: reuse?.name ?? title,
       nodes: template.nodes.map((node, index) => ({
-        id: `${id}-${index}`,
+        id: `${id}-${index}-${seq}`,
         kind: node.kind,
         position: { x: (index % 4) * 220, y: Math.floor(index / 4) * 160 },
         params: node.params ?? defaultParams(node.kind),
       })),
-      edges: template.edges.map(([from, to]) => ({ id: `${id}-${from}-${to}`, source: `${id}-${from}`, target: `${id}-${to}` })),
-      createdAt: stamp,
+      edges: template.edges.map(([from, to]) => ({
+        id: `${id}-${from}-${to}-${seq}`,
+        source: `${id}-${from}-${seq}`,
+        target: `${id}-${to}-${seq}`,
+      })),
+      createdAt: reuse?.createdAt ?? stamp,
       updatedAt: stamp,
     }
   }
@@ -1553,6 +1607,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const laneRefs = useRef(new Map<string, HTMLElement>())
   /** 顺序播放开关（节目监视器）。 */
   const [playing, setPlaying] = useState(false)
+  /**
+   * 节目监视器里的 `<video>`（`F5`）。以前只是"换 src 的静态画面"，
+   * 播放靠定时器推播放头，片段内不 seek、不出声；现在 play/pause/currentTime
+   * 与播放头双向对齐，声音也放出来（被拦自动播放时退回静音）。
+   */
+  const monitorVideoRef = useRef<HTMLVideoElement | null>(null)
   /** 逐段预览播放开关：与监视器互斥，同一时刻只有一个在播。 */
   const [segPlaying, setSegPlaying] = useState(false)
   /** 辅助工具折叠区：外部触发逐段预览时先展开，避免"点了没反应"。 */
@@ -1801,9 +1861,53 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     if (playing) { setPlaying(false); return }
     // 两个播放器互斥：启动监视器前先停下逐段预览
     if (segPlaying) setSegPlaying(false)
+    // 上次可能因浏览器拦自动播放退回了静音；这次是用户手势，先恢复出声再试
+    const video = monitorVideoRef.current
+    if (video !== null) video.muted = false
     if (playheadMs >= timelineTotal || activeVideo === undefined) setPreviewMs(0)
     setPlaying(true)
   }
+
+  /**
+   * 把监视器 `<video>` 定位到当前播放头（`F5`）。
+   * @param force - `true` = 精确 seek（暂停、元数据到达）；`false` = 播放中只纠正 >250ms 的漂移，
+   *   避免每个 tick 都打断解码。
+   */
+  const seekMonitor = useCallback((force: boolean): void => {
+    const video = monitorVideoRef.current
+    if (video === null) return
+    const target = monitorMediaMs / 1000
+    if (!Number.isFinite(target)) return
+    if (!force && Math.abs(video.currentTime - target) <= 0.25) return
+    video.currentTime = target
+  }, [monitorMediaMs])
+
+  /** 播放状态 / 片段 → 监视器：play/pause + 速度对齐；位置由 `seekMonitor` 负责。 */
+  useEffect(() => {
+    const video = monitorVideoRef.current
+    if (video === null) return
+    video.playbackRate = Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, activeVideo?.speed ?? 1))
+    video.muted = programVideoTrack?.muted === true
+    video.volume = Math.min(1, Math.max(0, programVideoTrack?.volume ?? 1))
+    if (!playing) {
+      // 已经是暂停态就别再调（避免每次重渲染都触发一次无意义的 pause）
+      if (!video.paused) video.pause()
+      return
+    }
+    const started = video.play()
+    if (started === undefined) return
+    // 没有用户手势时浏览器会拦带声音的自动播放：退回静音，至少画面不冻住
+    void started.catch(() => {
+      video.muted = true
+      const retry = video.play()
+      if (retry !== undefined) void retry.catch(() => {})
+    })
+  }, [playing, activeVideo?.id, activeVideo?.speed, programVideoTrack?.muted, programVideoTrack?.volume])
+
+  /** 播放头 → 监视器：暂停时精确对齐，播放中按阈值纠偏。 */
+  useEffect(() => {
+    seekMonitor(!playing)
+  }, [seekMonitor, playing])
 
   // 顺序播放：每 100ms 按真实流逝推进播放头；过了当前视频片段的结尾就跳到
   // 下一个视频片段（跳过空隙）；没有下一个就停在尽头并暂停。
@@ -1819,8 +1923,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
       const current = previewMsRef.current
       const active = activeClipAt(timeline.tracks, 'video', current)
       let next = current + delta
-      if (active !== undefined && next >= active.startMs + active.durationMs) {
-        const following = nextVideoClipStart(timeline.tracks, active.startMs + active.durationMs)
+      // 片段在时间轴上占用 `effectiveDurationMs`（变速折算后），不是源时长 `durationMs`
+      if (active !== undefined && next >= active.startMs + effectiveDurationMs(active)) {
+        const following = nextVideoClipStart(timeline.tracks, active.startMs + effectiveDurationMs(active))
         if (following === undefined) {
           setPlaying(false)
           previewMsRef.current = timelineTotal
@@ -4159,8 +4264,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   onClick={() => {
                                     if (activeProject === undefined) return
                                     const apply = () => {
-                                      setWorkflow(instantiateAnyTemplate(template))
+                                      // 复用当前记录：模板是"替换本项目这张图"，不是新建工作流；
+                                      // 同 id 才不会让画布重置撤销栈（`F3`）
+                                      setWorkflow(current => instantiateAnyTemplate(template, current))
                                       setWorkflowState('dirty')
+                                      setTemplateRevision(revision => revision + 1)
                                       setTemplateOpen(false)
                                     }
                                     // 图里有节点时先确认：模板会整图替换
@@ -4222,6 +4330,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     onChange={next => { setWorkflow(next); setWorkflowState('dirty') }}
                     t={t}
                     api={apiRef.current}
+                    replaceRevision={templateRevision}
                     onNotice={(text, tone) => { setNotice({ text, tone }) }}
                     // 节点产物缩略图 / 检视器「产出预览」统一送右侧预览列
                     onPreview={previewAsset}
@@ -4339,12 +4448,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
 
                   {/* 节目监视器（恒深，媒体惯例） */}
                   <div className="iv-monitor" data-timeline-preview="true" data-timeline-active-clip={activeVideo?.id ?? ''}
-                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}>
+                    data-timeline-active-subtitle={activeSubtitle?.id ?? ''}
+                    data-timeline-monitor-media={Math.round(monitorMediaMs)}>
                     {activeVideo?.assetPath === undefined
                       ? <span className="iv-meta">{t('previewIdle')}</span>
                       : /\.(png|jpe?g|webp|gif)$/i.test(activeVideo.assetPath)
                         ? <img src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} alt="" />
-                        : <video src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`} muted />}
+                        : (
+                          <video
+                            ref={monitorVideoRef}
+                            src={`/outputs/${encodeURIComponent(baseName(activeVideo.assetPath))}`}
+                            preload="auto"
+                            playsInline
+                            data-timeline-monitor-video="true"
+                            // 换片段后元数据才到，之前设的 currentTime 会被丢掉：到齐后再对齐一次
+                            onLoadedMetadata={() => { seekMonitor(true) }} />
+                        )}
                     <span className="iv-mon-tc">{timecode(playheadMs)} / {timecode(timelineTotal)}</span>
                     <span className="iv-mon-badge">{t('monitorProgram')}</span>
                     {activeSubtitle?.text === undefined ? null : (
@@ -4636,10 +4755,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <label className="iv-clip-ins-field">
                             <span>{t('clipStart')}</span>
                             <input type="number" className="iv-input" data-timeline-insp-field="start"
+                              min={0} max={MAX_CLIP_DURATION_MS}
                               value={inspClip.startMs} aria-label={`${t('clipStart')} ${inspClip.id}`}
                               onChange={event => {
                                 claim()
-                                const startMs = Number(event.target.value)
+                                const startMs = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                if (startMs === undefined) return
                                 patchTrack(inspTrack.id, current => ({
                                   ...current,
                                   clips: current.clips.map(item => (item.id === inspClip.id ? { ...item, startMs } : item)),
@@ -4649,10 +4770,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <label className="iv-clip-ins-field">
                             <span>{t('clipDuration')}</span>
                             <input type="number" className="iv-input" data-timeline-insp-field="duration"
+                              min={MIN_CLIP_MS} max={MAX_CLIP_DURATION_MS}
                               value={inspClip.durationMs} aria-label={`${t('clipDuration')} ${inspClip.id}`}
                               onChange={event => {
                                 claim()
-                                const durationMs = Number(event.target.value)
+                                const durationMs = clampMs(event.target.value, MIN_CLIP_MS, MAX_CLIP_DURATION_MS)
+                                if (durationMs === undefined) return
                                 patchClip(inspTrack.id, inspClip.id, item => ({ ...item, durationMs }))
                               }} />
                           </label>
@@ -4666,9 +4789,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                     min={CLIP_SPEED_RANGE.min} max={CLIP_SPEED_RANGE.max} step={0.25}
                                     value={inspClip.speed ?? 1} aria-label={`${t('clipSpeed')} ${inspClip.id}`}
                                     onChange={event => {
+                                      const parsed = Number(event.target.value)
+                                      if (event.target.value.trim() === '' || !Number.isFinite(parsed)) return
                                       claim()
-                                      const speed = Number(event.target.value)
-                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, speed: Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, speed)) }))
+                                      const speed = Math.min(CLIP_SPEED_RANGE.max, Math.max(CLIP_SPEED_RANGE.min, parsed))
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, speed }))
                                     }} />
                                 </label>
                                 <label className="iv-clip-ins-field">
@@ -4676,9 +4801,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                   <input type="number" className="iv-input" min={0} max={MAX_CLIP_FADE_MS} step={50}
                                     value={inspClip.fade ?? 0} aria-label={`${t('clipFade')} ${inspClip.id}`}
                                     onChange={event => {
+                                      const fade = clampMs(event.target.value, 0, MAX_CLIP_FADE_MS)
+                                      if (fade === undefined) return
                                       claim()
-                                      const fade = Number(event.target.value)
-                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, fade: Math.max(0, Math.min(MAX_CLIP_FADE_MS, fade)) }))
+                                      patchClip(inspTrack.id, inspClip.id, item => ({ ...item, fade }))
                                     }} />
                                 </label>
                                 <details className="iv-disclosure iv-clip-ins-more" data-timeline-insp-advanced="true">
@@ -4735,27 +4861,47 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                                           <>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropX')}</span>
-                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.x}
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_DURATION_MS} value={inspClip.crop.x}
                                                 aria-label={`${t('clipCropX')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x: Math.max(0, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const x = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                                  if (x === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, x } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropY')}</span>
-                                              <input type="number" className="iv-input" min={0} value={inspClip.crop.y}
+                                              <input type="number" className="iv-input" min={0} max={MAX_CLIP_DURATION_MS} value={inspClip.crop.y}
                                                 aria-label={`${t('clipCropY')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y: Math.max(0, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const y = clampMs(event.target.value, 0, MAX_CLIP_DURATION_MS)
+                                                  if (y === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, y } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropW')}</span>
-                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.width}
+                                              <input type="number" className="iv-input" min={2} max={MAX_CLIP_DURATION_MS} step={2} value={inspClip.crop.width}
                                                 aria-label={`${t('clipCropW')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width: Math.max(2, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const width = clampEven(event.target.value, 2, MAX_CLIP_DURATION_MS)
+                                                  if (width === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, width } }))
+                                                }} />
                                             </label>
                                             <label className="iv-clip-ins-field iv-clip-ins-field--tight">
                                               <span>{t('clipCropH')}</span>
-                                              <input type="number" className="iv-input" min={2} step={2} value={inspClip.crop.height}
+                                              <input type="number" className="iv-input" min={2} max={MAX_CLIP_DURATION_MS} step={2} value={inspClip.crop.height}
                                                 aria-label={`${t('clipCropH')} ${inspClip.id}`}
-                                                onChange={event => { claim(); patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height: Math.max(2, Number(event.target.value)) } })) }} />
+                                                onChange={event => {
+                                                  const height = clampEven(event.target.value, 2, MAX_CLIP_DURATION_MS)
+                                                  if (height === undefined) return
+                                                  claim()
+                                                  patchClip(inspTrack.id, inspClip.id, item => item.crop === undefined ? item : ({ ...item, crop: { ...item.crop, height } }))
+                                                }} />
                                             </label>
                                             <button type="button" className="iv-btn iv-btn--sm" data-timeline-insp-crop-remove={inspClip.id}
                                               aria-label={`${t('clipCropRemove')} ${inspClip.id}`} title={t('clipCropRemove')}

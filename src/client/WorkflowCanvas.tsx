@@ -87,6 +87,12 @@ export interface WorkflowCanvasProps {
    * 不传时该字段退回纯文本输入——画布不该因为拿不到目录就整块不可用。
    */
   readonly api?: WorkbenchApi
+  /**
+   * 外部整图替换信号（`F3` 模板市场）：值变化时把 `record` 的最新图**经 applyGraph 应用**，
+   * 而不是重新播种——这样替换会进撤销栈，确认弹窗承诺的 Ctrl/Cmd+Z 才成立。
+   * 只比较值，不比较图；调用方每次替换自增即可。
+   */
+  readonly replaceRevision?: number
   /** 运行控制（`T4-4` + `B4` 单节点运行）：状态展示 + 起跑/取消/重试。 */
   readonly run?: {
     readonly latest?: WorkflowRunRecord
@@ -422,7 +428,7 @@ function CanvasOnboarding({
 }
 
 /** 画布内部实现（需要 `ReactFlowProvider` 才能调用 `fitView`）。 */
-function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: WorkflowCanvasProps): JSX.Element {
+function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, replaceRevision }: WorkflowCanvasProps): JSX.Element {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(toCanvasNodes(record))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toCanvasEdges(record))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -611,6 +617,26 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
     setEdges(next.edges)
     commitHistory(next, tag)
   }, [commitHistory, setNodes, setEdges])
+
+  /**
+   * `F3`：外部整图替换（模板市场）走历史提交，而不是重播种。
+   *
+   * 以前模板市场会新建一条工作流记录，`record.id` 一变画布就 `resetHistory`，
+   * 确认弹窗里「可用 Ctrl/Cmd+Z 撤销」当场变成假话。现在替换复用同一条记录，
+   * 这里按 `replaceRevision` 把最新图推入撤销栈——撤销回到替换前的整图。
+   * 首次渲染时 ref 已等于当前值，不会把挂载当成替换。
+   */
+  const appliedReplaceRevision = useRef(replaceRevision ?? 0)
+  useEffect(() => {
+    if (replaceRevision === undefined || replaceRevision === appliedReplaceRevision.current) return
+    appliedReplaceRevision.current = replaceRevision
+    const nextNodes = toCanvasNodes(record)
+    const nextEdges = toCanvasEdges(record)
+    setSelectedIds([])
+    setOnboardingDismissed(false)
+    applyGraph({ nodes: nextNodes, edges: nextEdges }, `replace:${replaceRevision}`)
+    window.setTimeout(() => { void fitView({ padding: 0.12 }) }, 0)
+  }, [replaceRevision, record, applyGraph, fitView])
 
   /** 视口中心对应的画布坐标（点击节点库/快捷键加节点时用，避免全叠在左上角）。 */
   const viewportCenter = useCallback((): { x: number, y: number } => {
