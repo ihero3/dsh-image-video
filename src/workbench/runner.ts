@@ -13,15 +13,13 @@ import { extractOutcome } from './ledger.ts'
 import { nodeCacheKey } from './node-cache.ts'
 import { stat } from 'node:fs/promises'
 import {
+  NODE_EXECUTORS,
   validateWorkflow,
   type WorkflowNodeKind,
   type WorkflowEdge, type WorkflowNode, type WorkflowRecord,
   type WorkflowRunNodeRecord, type WorkflowRunRecord,
 } from './workflow.ts'
 import type { WorkbenchStore } from './store.ts'
-
-/** 真正会调用外部生成的节点种类 -> 用哪个工具。 */
-const EXECUTORS = { 'image-generate': 'image', 'video-generate': 'video' } as const
 
 /** 产文本的节点：它们的文字会并入下游生成节点的提示词。 */
 const TEXT_KINDS = new Set(['creative-input', 'script', 'subtitle'])
@@ -293,7 +291,8 @@ export class WorkflowRunner {
     options: RunOptions,
   ): Promise<WorkflowRunNodeRecord> {
     const startedAt = (this.deps.now?.() ?? new Date()).toISOString()
-    const executor = EXECUTORS[node.kind as keyof typeof EXECUTORS]
+    // 能力事实取自 workflow.ts 的单一事实源（B5），画布用同一张表标「不执行」
+    const executor = NODE_EXECUTORS[node.kind as keyof typeof NODE_EXECUTORS]
     if (executor === undefined) {
       // 本期只有生成节点有执行器：其余如实记 skipped，不伪造成功
       return {

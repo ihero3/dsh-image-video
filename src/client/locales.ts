@@ -323,7 +323,9 @@ export type WorkbenchLocaleKey =
   | 'canvasGroupInput'
   | 'canvasGroupStory'
   | 'canvasGroupGenerate'
-  | 'canvasGroupFinish'
+  | 'canvasGroupFinishPlanned'
+  | 'canvasNoExecutorTag'
+  | 'canvasNoExecutorHint'
   | 'canvasGroupPlanned'
   | 'canvasOnboardingTitle'
   | 'canvasOnboardingHint'
@@ -1475,7 +1477,9 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasGroupInput: 'Input & copy',
   canvasGroupStory: 'Storyboard & assets',
   canvasGroupGenerate: 'Generate',
-  canvasGroupFinish: 'Finish & deliver',
+  canvasGroupFinishPlanned: 'Finish & deliver (planned)',
+  canvasNoExecutorTag: 'no executor',
+  canvasNoExecutorHint: 'This node can be added and saved, but this version has no executor — runs skip it and produce no result.',
   canvasGroupPlanned: 'Reserved',
   canvasOnboardingTitle: 'Start from a template, run a whole chain',
   canvasOnboardingHint: 'Templates carry example copy and parameters — tweak a few words, then run.',
@@ -2683,7 +2687,9 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasGroupInput: '输入与文案',
   canvasGroupStory: '分镜与素材',
   canvasGroupGenerate: '生成',
-  canvasGroupFinish: '后期与交付',
+  canvasGroupFinishPlanned: '后期与交付（规划中）',
+  canvasNoExecutorTag: '不执行',
+  canvasNoExecutorHint: '该节点可加入画布并保存，但本版本没有执行器；运行时会跳过，不产出结果。',
   canvasGroupPlanned: '预留能力',
   canvasOnboardingTitle: '选一个模板，立刻跑通整条链路',
   canvasOnboardingHint: '模板自带示例文案与参数，改几个字就能跑。',

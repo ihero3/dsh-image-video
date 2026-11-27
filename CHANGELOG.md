@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### B5：能力边界诚实标注（2026-11-27）
+
+按产品已拍板的 `T3-2` 选方案②：不把 preview / publish-asset / subtitle / render 降为 `planned`（那会让 B1 修好的逐镜同步图整图校验失败），而是保留 `runnable` + 明确标注。
+
+- `src/workbench/workflow.ts` 新增 `NODE_EXECUTORS` / `hasNodeExecutor()`，作为 runner 与画布的共同事实源；`runner.ts` 删掉本地执行器表，改读这张表，避免 UI 徽章与执行能力漂移。
+- 节点库「后期与交付」改名「后期与交付（规划中）」（英文 `Finish & deliver (planned)`），该组四个节点在节点库项、画布卡片、检视器三处标「不执行」并解释"可添加可保存、运行时跳过、不产出结果"。新增 `canvasGroupFinishPlanned` / `canvasNoExecutorTag` / `canvasNoExecutorHint` 中英文案。
+- 新标记用独立 `data-workflow-no-executor*` 属性，不动 `data-workflow-planned-tag`；planned 仍是 3 个、仍可放置（`T3-2` 不变）。徽章用 warn 色，不把预期状态染成错误。
+- 画布测试 +2：组标题与 4 个徽章、可放置且三层提示、生图节点不被误标。
+
 ### R3：部分运行生效 + 三处死回调接活（2026-11-27）
 
 - **B3**：宿主 `workflows/run` 现在读取 `only`（非空字符串数组，否则按非法载荷拒绝）并传给 `runner.begin(workflow, {only})`。部分运行 = 指定节点 + 全部下游；上游/旁支在记录里如实标 `skipped / not part of this run`，不伪造成功。新增 rpc 端点用例：三点链只跑中间节点，断言上游无产物、视频节点成功、下游 preview 保留"无执行器"提示。

@@ -72,6 +72,44 @@ describe('workflow canvas', () => {
     expect(view.container.querySelectorAll('[data-workflow-availability="runnable"]')).toHaveLength(12)
   })
 
+  it('B5：后期与交付组标「规划中」，四个无执行器节点在节点库里带提示', () => {
+    const { view } = renderCanvas()
+    const finish = view.container.querySelector('[data-workflow-library-group="finish"]') as HTMLElement
+    expect(finish.querySelector('.iv-wf-lib-group-title')?.textContent).toBe(en.canvasGroupFinishPlanned)
+
+    const noExec = view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-no-executor="true"]')
+    expect(noExec).toHaveLength(4)
+    for (const item of noExec) {
+      expect(item.getAttribute('data-workflow-availability')).toBe('runnable')
+      expect(item.querySelector('[data-workflow-no-executor-tag]')?.textContent).toContain(en.canvasNoExecutorTag)
+      expect((item as HTMLButtonElement).disabled).toBe(false)
+    }
+    // T3-2 不受影响：planned 仍是 3 个、仍可放置，且不带「不执行」标记
+    expect(view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-availability="planned"]')).toHaveLength(3)
+    expect(view.container.querySelectorAll('[data-workflow-palette-item][data-workflow-no-executor="true"][data-workflow-availability="planned"]')).toHaveLength(0)
+  })
+
+  it('B5：无执行器节点可加入画布，但卡片和检视器如实标「不执行」', async () => {
+    const { view } = renderCanvas()
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} preview` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="preview"]')?.getAttribute('data-workflow-node-no-executor'))
+        .toBe('true')
+    })
+    const card = view.container.querySelector('[data-workflow-node="preview"]') as HTMLElement
+    expect(card.getAttribute('data-workflow-node-availability')).toBe('runnable')
+    expect(card.querySelector('[data-workflow-no-executor-tag]')?.textContent).toContain(en.canvasNoExecutorTag)
+    expect(card.querySelector('[data-workflow-planned-tag]')).toBeNull()
+    expect(view.container.querySelector('[data-workflow-no-executor-note]')?.textContent).toContain(en.canvasNoExecutorHint)
+
+    // 真正有执行器的节点不该被误标
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} image-generate` }))
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-node="image-generate"]')?.getAttribute('data-workflow-node-no-executor'))
+        .toBeNull()
+    })
+  })
+
   it('lets a planned node be placed but marks it as not runnable', async () => {
     const { view, current } = renderCanvas()
     fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))

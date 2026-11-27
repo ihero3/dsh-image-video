@@ -25,7 +25,7 @@ import {
   type Connection, type Edge, type IsValidConnection, type Node, type NodeProps,
 } from '@xyflow/react'
 import {
-  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, nodeSpec,
+  NODE_CATALOG, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE, WORKFLOW_TEMPLATES, defaultParams, hasNodeExecutor, nodeSpec,
   portsCompatible, validateWorkflow,
   type NodeGroup, type NodeParamValue, type WorkflowIssue, type WorkflowNodeKind, type WorkflowRecord,
   type WorkflowRunRecord,
@@ -149,7 +149,7 @@ const LIBRARY_GROUPS: readonly { readonly id: NodeGroup; readonly labelKey: Work
   { id: 'input', labelKey: 'canvasGroupInput' },
   { id: 'story', labelKey: 'canvasGroupStory' },
   { id: 'generate', labelKey: 'canvasGroupGenerate' },
-  { id: 'finish', labelKey: 'canvasGroupFinish' },
+  { id: 'finish', labelKey: 'canvasGroupFinishPlanned' },
   { id: 'planned', labelKey: 'canvasGroupPlanned' },
 ]
 
@@ -266,6 +266,9 @@ function WorkflowNodeCard({
   const spec = nodeSpec(data.kind)
   const planned = spec.availability !== 'runnable'
   const external = spec.availability === 'external'
+  // `B5`：只给「后期与交付」这一组标不执行——它们承诺产出成片，却没有执行器。
+  // 输入/分镜类节点虽也走不到生成工具，但只作为提示词数据上游，不在此处制造噪音。
+  const noExecutor = !planned && spec.group === 'finish' && !hasNodeExecutor(data.kind)
   const summary = spec.params
     .filter(field => data.params[field.id] !== '' && data.params[field.id] !== false && data.params[field.id] !== undefined)
     .slice(0, 2)
@@ -281,6 +284,7 @@ function WorkflowNodeCard({
       data-workflow-node={data.kind}
       data-workflow-node-selected={selected ? 'true' : 'false'}
       data-workflow-node-availability={spec.availability}
+      data-workflow-node-no-executor={noExecutor ? 'true' : undefined}
       data-workflow-node-group={spec.group}
       data-workflow-node-invalid={data.invalid === true ? 'true' : 'false'}
       data-workflow-node-run-status={runStatus ?? 'none'}
@@ -305,6 +309,11 @@ function WorkflowNodeCard({
         {planned
           ? <span className="iv-node-planned" data-workflow-planned-tag="true">
             <Icon name="sparkles" size={9} />{t(external ? 'canvasExternalTag' : 'canvasPlannedTag')}
+          </span>
+          : null}
+        {noExecutor
+          ? <span className="iv-node-noexec" data-workflow-no-executor-tag="true" title={t('canvasNoExecutorHint')}>
+            <Icon name="alert" size={9} />{t('canvasNoExecutorTag')}
           </span>
           : null}
         {runStatus === undefined ? null : (
@@ -1144,7 +1153,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                         data-workflow-availability={entry.spec.availability}
                         draggable
                         aria-label={`${t('canvasAdd')} ${entry.kind}`}
-                        title={entry.spec.reasonKey === undefined ? t('canvasDragHint') : t(entry.spec.reasonKey as WorkbenchLocaleKey)}
+                        data-workflow-no-executor={entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind) ? 'true' : undefined}
+                        title={entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind)
+                          ? t('canvasNoExecutorHint')
+                          : entry.spec.reasonKey === undefined ? t('canvasDragHint') : t(entry.spec.reasonKey as WorkbenchLocaleKey)}
                         onDragStart={event => {
                           event.dataTransfer.setData(NODE_DND_TYPE, entry.kind)
                           event.dataTransfer.effectAllowed = 'copy'
@@ -1155,7 +1167,11 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                         <span className="iv-wf-lib-item-name">{entry.label}</span>
                         {entry.spec.availability === 'planned'
                           ? <span className="iv-wf-lib-item-tag">{t('canvasPlannedTag')}</span>
-                          : null}
+                          : entry.spec.availability === 'runnable' && entry.spec.group === 'finish' && !hasNodeExecutor(entry.kind)
+                            ? <span className="iv-wf-lib-item-tag iv-wf-lib-item-tag--noexec" data-workflow-no-executor-tag="true">
+                              {t('canvasNoExecutorTag')}
+                            </span>
+                            : null}
                       </button>
                     ))}
                   </div>
@@ -1293,7 +1309,13 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                       <Icon name="sparkles" size={12} /> {t(nodeSpec(selectedNodes[0]!.data.kind).reasonKey as WorkbenchLocaleKey)}
                     </span>
                   )
-                  : null}
+                  : nodeSpec(selectedNodes[0]!.data.kind).group === 'finish' && !hasNodeExecutor(selectedNodes[0]!.data.kind)
+                    ? (
+                      <span className="iv-meta" data-workflow-no-executor-note="true" style={{ color: 'var(--iv-warn)' }}>
+                        <Icon name="alert" size={12} /> {t('canvasNoExecutorHint')}
+                      </span>
+                    )
+                    : null}
                 {selectedNodes[0]!.data.outputPath === undefined
                   ? null
                   : (

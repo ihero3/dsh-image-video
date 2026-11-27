@@ -236,6 +236,24 @@ export const NODE_CATALOG: readonly NodeKindSpec[] = [
   },
 ]
 
+/**
+ * 本期真正有执行器的节点种类 → 用哪类生成工具。
+ *
+ * 这是**执行能力与画布展示的共同事实源**（`B5`）：`runner` 用它跑节点，
+ * 画布「后期与交付」组用它标「不执行」，避免以后加了执行器却忘了摘掉徽章（或反过来假装能跑）。
+ * `runnable` 但不在表里的节点（preview / publish-asset / subtitle / render）
+ * 可放置、可保存、能过校验，但运行时如实记 `skipped / no executor`。
+ */
+export const NODE_EXECUTORS = {
+  'image-generate': 'image',
+  'video-generate': 'video',
+} as const
+
+/** 节点在本期有没有执行器；与 `availability` 正交，不改动 `T3-2` 的 planned 决策。 */
+export function hasNodeExecutor(kind: WorkflowNodeKind): boolean {
+  return Object.prototype.hasOwnProperty.call(NODE_EXECUTORS, kind)
+}
+
 const BY_KIND = new Map(NODE_CATALOG.map(spec => [spec.kind, spec]))
 
 /** 画布规模上限：挡住畸形载荷，也给前端一个明确的边界。 */

@@ -816,6 +816,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-wf-lib-item-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .iv-wf-lib-item-tag{flex:none;font-size:var(--iv-fs-micro);color:var(--iv-tx3);border:1px dashed var(--iv-line-2);
   border-radius:var(--iv-r-pill);padding:0 4px;line-height:13px}
+.iv-wf-lib-item-tag--noexec{color:var(--iv-warn);border-color:color-mix(in srgb,var(--iv-warn) 38%,transparent)}
 [data-workflow-library-collapsed=true] .iv-wf-lib{width:40px;padding:6px 4px}
 [data-workflow-library-collapsed=true] .iv-wf-lib-search,
 [data-workflow-library-collapsed=true] .iv-wf-lib-title,
@@ -979,6 +980,12 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .iv-node-planned{margin-left:auto;display:inline-flex;align-items:center;gap:var(--iv-sp-2);font-size:var(--iv-fs-micro);font-weight:var(--iv-fw-regular);
   color:var(--iv-tx3);white-space:nowrap}
+/* B5：runnable 但本期不执行的节点——planned 是 warn 语义，两者不共用属性，避免污染 T3-2 契约 */
+.iv-node-noexec{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:var(--iv-sp-2);
+  padding:0 4px;border:1px dashed color-mix(in srgb,var(--iv-warn) 38%,transparent);border-radius:var(--iv-r-pill);
+  color:var(--iv-warn);font-size:var(--iv-fs-micro);line-height:13px;white-space:nowrap}
+.iv-node-noexec+.iv-node-run{margin-left:var(--iv-sp-2)}
+.iv-node-cached+.iv-node-noexec{margin-left:var(--iv-sp-2)}
 .iv-node-body{padding:5px 8px;display:grid;gap:var(--iv-sp-1);font-size:var(--iv-fs-meta);color:var(--iv-tx2);overflow:hidden;text-overflow:ellipsis}
 /* B4：节点运行状态徽章（卡片右上角的小圆点） */
 .iv-node-run{margin-left:auto;display:grid;place-items:center;flex:none}
