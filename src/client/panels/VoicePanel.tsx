@@ -25,8 +25,15 @@ const SPEED_MAX = 2
 const PITCH_MIN = 0.7
 const PITCH_MAX = 1.4
 
-/** 常用情感标签（点选填入，也可手改）。 */
-const EMOTIONS: readonly string[] = ['平静', '兴奋', '悲伤', '愤怒', '温柔', '紧张', '旁白']
+/**
+ * 常用情感标签（点选填入，也可手改）。
+ * 走 locale 键而不是硬编码中文：界面切英文时按钮不能还是「平静 / 兴奋」。
+ * 填入的是**当前语言**的标签文本——这是自由文本框，存下来的就是用户看到的词。
+ */
+const EMOTIONS: readonly WorkbenchLocaleKey[] = [
+  'voiceEmotionCalm', 'voiceEmotionExcited', 'voiceEmotionSad', 'voiceEmotionAngry',
+  'voiceEmotionGentle', 'voiceEmotionTense', 'voiceEmotionNarration',
+]
 
 /** 下拉值 `provider::model` → 请求入参；空值与未知值都当作没选。 */
 function parseModelKey(key: string): { readonly provider: string, readonly model: string } | undefined {
@@ -354,9 +361,10 @@ export function VoicePanel(props: VoicePanelProps) {
                       onChange={event => { patch(card.id, { emotion: event.target.value }) }} />
                   </label>
                   <div className="iv-plan-row" data-voice-card-emotions={card.id}>
-                    {EMOTIONS.map(label => (
-                      <button key={label} type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
-                        onClick={() => { patch(card.id, { emotion: label }) }}>{label}</button>
+                    {EMOTIONS.map(key => (
+                      <button key={key} type="button" className="iv-btn iv-btn--ghost iv-btn--sm"
+                        data-voice-emotion={key}
+                        onClick={() => { patch(card.id, { emotion: t(key) }) }}>{t(key)}</button>
                     ))}
                   </div>
                   <label className="iv-sb-field">

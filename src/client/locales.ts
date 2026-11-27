@@ -79,6 +79,13 @@ export type WorkbenchLocaleKey =
   | 'voiceCardPitch'
   | 'voiceCardEmotion'
   | 'voiceCardEmotionPlaceholder'
+  | 'voiceEmotionCalm'
+  | 'voiceEmotionExcited'
+  | 'voiceEmotionSad'
+  | 'voiceEmotionAngry'
+  | 'voiceEmotionGentle'
+  | 'voiceEmotionTense'
+  | 'voiceEmotionNarration'
   | 'voiceCardRefAudio'
   | 'voiceCardRefAudioPlaceholder'
   | 'voiceCardSave'
@@ -1165,6 +1172,13 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   voiceCardPitch: 'Pitch',
   voiceCardEmotion: 'Emotion',
   voiceCardEmotionPlaceholder: 'e.g. calm / excited / narration',
+  voiceEmotionCalm: 'calm',
+  voiceEmotionExcited: 'excited',
+  voiceEmotionSad: 'sad',
+  voiceEmotionAngry: 'angry',
+  voiceEmotionGentle: 'gentle',
+  voiceEmotionTense: 'tense',
+  voiceEmotionNarration: 'narration',
   voiceCardRefAudio: 'Reference audio',
   voiceCardRefAudioPlaceholder: 'Optional path under outputs, e.g. outputs/voice-ref.wav',
   voiceCardSave: 'Save to library',
@@ -2375,6 +2389,13 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   voiceCardPitch: '音调',
   voiceCardEmotion: '情绪',
   voiceCardEmotionPlaceholder: '如 平静 / 兴奋 / 旁白',
+  voiceEmotionCalm: '平静',
+  voiceEmotionExcited: '兴奋',
+  voiceEmotionSad: '悲伤',
+  voiceEmotionAngry: '愤怒',
+  voiceEmotionGentle: '温柔',
+  voiceEmotionTense: '紧张',
+  voiceEmotionNarration: '旁白',
   voiceCardRefAudio: '参考音频',
   voiceCardRefAudioPlaceholder: 'outputs 下的路径，如 outputs/voice-ref.wav',
   voiceCardSave: '存入资源库',

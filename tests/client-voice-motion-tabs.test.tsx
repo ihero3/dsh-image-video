@@ -78,7 +78,8 @@ describe('音色 tab', () => {
     const saved = host.resources.find(resource => resource.kind === 'voice' && resource.name === '林夏')!
     expect(saved.note).toContain('v-female')
     expect(saved.note).toContain('1.20')
-    expect(saved.note).toContain('平静')
+    // 情绪标签随语言切换（`F14`）：英文界面下点第一个预设应填入 'calm'，不是硬编码的「平静」
+    expect(saved.note).toContain(en.voiceEmotionCalm)
     expect(host.episodes[0]?.resourceRefs.some(ref => ref.resourceId === saved.id)).toBe(true)
 
     const creates = host.calls.filter(call => call === 'resources/create').length
