@@ -140,8 +140,9 @@ font-size:var(--iv-fs-root);line-height:1.55;
 @media (prefers-reduced-motion:reduce){.iv .iv-btn--action{transition:none}.iv .iv-btn--action:hover:not(:disabled),.iv .iv-btn--action:active:not(:disabled){transform:none}}
 .iv .iv-def--select{gap:6px}
 .iv .iv-def--select select{height:28px;max-width:190px}
-/* 生效参数条是信息条，不是表单：入口与文本模型下拉都压到 24px，三页顶栏才不会被它撑高 */
-.iv .iv-defaults-actions .iv-btn{height:24px;padding:0 8px;font-size:var(--iv-fs-meta)}
+/* 生效参数条是信息条，不是表单：入口按钮给到 28px（唯一可点区域，不能和只读文字同高），
+   文本模型下拉仍压到 24px，三页顶栏才不会被它撑高 */
+.iv .iv-defaults-actions .iv-btn{height:28px;padding:0 12px;font-size:var(--iv-fs-body);gap:6px}
 .iv .iv-defaults-actions .iv-btn--ghost{color:var(--iv-tx2)}
 .iv .iv-defaults .iv-def--select select{height:24px;max-width:160px}
 .iv .iv-ref-chip{display:flex;align-items:center;gap:6px}

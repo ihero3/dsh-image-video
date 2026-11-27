@@ -339,9 +339,11 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   background:var(--iv-panel-3);color:var(--iv-tx3);font-size:var(--iv-fs-micro);
   font-weight:var(--iv-fw-medium);line-height:14px;white-space:nowrap}
 .iv-def-group-items{display:inline-flex;flex-wrap:wrap;align-items:center;gap:var(--iv-sp-1) var(--iv-sp-3);min-width:0}
-/* 两个入口（编辑 / 模型详情）作为一个整体靠右，不再靠单个按钮的 marginLeft 把中间撑空。 */
+/* 两个入口（设置 / 模型详情）作为一个整体靠右，不再靠单个按钮的 marginLeft 把中间撑空。
+   28px 高 + 12px 内边距：这两个是参数条上唯一的可点区域，24px 时点击目标偏小、
+   和左边的只读文字几乎一样高，看不出可以点。 */
 .iv-defaults-actions{display:inline-flex;flex:0 0 auto;align-items:center;gap:var(--iv-sp-2);margin-left:auto}
-.iv-defaults-actions .iv-btn{height:24px;padding:0 8px;font-size:var(--iv-fs-meta)}
+.iv-defaults-actions .iv-btn{height:28px;padding:0 12px;font-size:var(--iv-fs-body);gap:var(--iv-sp-2)}
 .iv-defaults-actions .iv-btn--ghost{color:var(--iv-tx2)}
 .iv-def{display:inline-flex;align-items:baseline;gap:var(--iv-sp-2);white-space:nowrap}
 /* 壳层级展开块（模型能力）：入口在参数条最右侧，内容紧接参数条下方 */
@@ -366,11 +368,11 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
   border-radius:var(--iv-r-xs);background:var(--iv-monitor);cursor:pointer;flex:none}
 .iv-ref-thumb{width:22px;height:16px;object-fit:cover;border-radius:var(--iv-r-xs);display:block}
 .iv-ref-thumb-btn:hover{border-color:var(--iv-acc)}
-/* 来源徽章：内置默认最轻，来自设置加边，工作台覆盖用强调色。三者不再长得一样。 */
+/* 来源徽章只剩「已覆盖」一档（临时改过、重启回退），所以只有强调色这一种形态；
+   底色的中性样式留着给其它 data-default-source-label 取值兜底，不至于没样式。 */
 .iv-def-src{font-style:normal;font-size:var(--iv-fs-micro);line-height:14px;padding:0 6px;border-radius:var(--iv-r-pill);
   border:1px solid transparent;background:color-mix(in srgb,var(--iv-tx) 5%,transparent);
   color:var(--iv-tx3);white-space:nowrap}
-.iv-def-src[data-default-source-label=settings]{border-color:var(--iv-line-2);background:var(--iv-panel-3);color:var(--iv-tx2)}
 .iv-def[data-default-source=override] .iv-row{flex-wrap:wrap}
 .iv-def[data-default-source=override] .iv-def-src{color:var(--iv-acc);border-color:color-mix(in srgb,var(--iv-acc) 40%,transparent);background:var(--iv-acc-soft)}
 .iv-def+.iv-def::before{content:"";width:1px;height:10px;background:var(--iv-line-2);margin-right:2px;align-self:center}

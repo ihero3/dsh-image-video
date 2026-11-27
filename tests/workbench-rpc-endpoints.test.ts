@@ -25,7 +25,7 @@ function findFfmpeg(): string | null {
 const FFMPEG = findFfmpeg()
 
 /** Handler over throwaway directories, plus a helper that unwraps the envelope. */
-async function makeHandler(options: { render?: RenderService; defaultBuiltin?: Record<string, string | number | null> } = {}) {
+async function makeHandler(options: { render?: RenderService } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-rpc-'))
   const outputsDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-out-'))
   await writeFile(join(outputsDir, 'shot.png'), 'png')
@@ -53,7 +53,6 @@ async function makeHandler(options: { render?: RenderService; defaultBuiltin?: R
       mediaMode: 'image', imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: null,
       videoProvider: 'threevideo', videoAspectRatio: '16:9', videoDuration: 5,
     }),
-    ...options.defaultBuiltin === undefined ? {} : { defaultBuiltin: () => options.defaultBuiltin as Record<string, string | number | null> },
   })
   /** Call one endpoint and fail the test on a refused envelope. */
   async function ok<T>(endpoint: string, payload?: unknown): Promise<T> {
@@ -386,20 +385,6 @@ describe('workbench channel endpoints', () => {
     expect(Object.keys(health.defaults ?? {})).toEqual(
       expect.arrayContaining(['mediaMode', 'imageProvider', 'imageSize', 'imageStyle', 'videoProvider', 'videoAspectRatio', 'videoDuration']),
     )
-  })
-
-  it('carries the built-in fallback layer so the client can drop no-op source badges (T2-11 修订)', async () => {
-    // 未注入：字段不下发，界面因此退回"见 settings 就标"（旧宿主兼容）
-    const without = await makeHandler().then(({ ok }) => ok<{ defaultsBuiltin?: unknown }>('health', {}))
-    expect(without.defaultsBuiltin).toBeUndefined()
-
-    const { ok } = await makeHandler({
-      defaultBuiltin: { imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo', videoProvider: 'threevideo', videoAspectRatio: '9:16', videoDuration: 10 },
-    })
-    const health = await ok<{ defaultsBuiltin?: Record<string, string | number | null> }>('health', {})
-    // 只给客户端做等值比较用：值应与 BUILT_IN_DEFAULTS 同口径（尺寸 1024*1024、时长 10）
-    expect(health.defaultsBuiltin?.imageSize).toBe('1024*1024')
-    expect(health.defaultsBuiltin?.videoDuration).toBe(10)
   })
 
   it('reports ffmpeg capability through the channel (T5-4)', async () => {

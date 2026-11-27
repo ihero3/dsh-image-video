@@ -230,7 +230,6 @@ export type WorkbenchLocaleKey =
   | 'defaultsSave'
   | 'defaultsEdit'
   | 'defaultsSourceOverride'
-  | 'defaultsSourceSettings'
   | 'resourceUseUnit'
   | 'resourceUsedBy'
   | 'resourceUnused'
@@ -715,7 +714,6 @@ export type WorkbenchLocaleKey =
   | 'pipelineShotDuration'
   | 'pipelineShotEditable'
   | 'modelDetails'
-  | 'defaultsBuiltinSource'
   | 'defaultsFollow'
   | 'defaultSeriesName'
   | 'generateRefsHint'
@@ -1385,9 +1383,8 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   defaultsSaved: 'Defaults saved',
   defaultsCancel: 'Cancel',
   defaultsSave: 'Save defaults',
-  defaultsEdit: 'Edit',
+  defaultsEdit: 'Settings',
   defaultsSourceOverride: 'overridden',
-  defaultsSourceSettings: 'from settings',
   resourceUseUnit: 'artifacts',
   resourceUsedBy: 'Used by',
   resourceDetails: 'Details',
@@ -1881,7 +1878,6 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: 'Shot seconds',
   pipelineShotEditable: 'Each shot text and seconds can be edited before generating',
   modelDetails: 'Model details',
-  defaultsBuiltinSource: 'Built-in',
   defaultsFollow: 'Follow default',
   defaultSeriesName: 'First series',
   generateRefsHint: 'First image is the base, the rest are style references. Drag a thumbnail to reorder.',
@@ -2603,9 +2599,8 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   defaultsSaved: '默认值已保存',
   defaultsCancel: '取消',
   defaultsSave: '保存默认值',
-  defaultsEdit: '编辑',
+  defaultsEdit: '设置',
   defaultsSourceOverride: '已覆盖',
-  defaultsSourceSettings: '来自设置',
   resourceUseUnit: '次产物',
   resourceUsedBy: '被用到',
   resourceDetails: '详情',
@@ -3087,7 +3082,6 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineShotDuration: '本镜时长(秒)',
   pipelineShotEditable: '分镜可以逐条改内容与时长',
   modelDetails: '模型详情',
-  defaultsBuiltinSource: '内置默认',
   defaultsFollow: '跟随默认',
   defaultSeriesName: '三视剧集',
   generateRefsHint: '首图为底图，其余作风格参考；拖拽缩略图可调整顺序',

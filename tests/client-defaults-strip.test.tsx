@@ -21,11 +21,7 @@ describe('生效参数条 · 排版结构', () => {
       },
       defaultsSources: {
         imageProvider: 'none', imageSize: 'settings', imageStyle: 'none',
-        videoProvider: 'none', videoAspectRatio: 'none', videoDuration: 'settings',
-      },
-      defaultsBuiltin: {
-        imageProvider: 'threevideo', imageSize: '1024*1024', imageStyle: 'photo',
-        videoProvider: 'threevideo', videoAspectRatio: '9:16', videoDuration: 10,
+        videoProvider: 'none', videoAspectRatio: 'override', videoDuration: 'settings',
       },
     })
     const view = render(<Workbench {...clientProps({ api: host.api })} />)
@@ -56,9 +52,9 @@ describe('生效参数条 · 排版结构', () => {
     expect(toggle.style.marginLeft).toBe('auto')
     expect(body.contains(toggle)).toBe(false)
 
-    // 来源徽章只在"来源改变了值"时出现：尺寸 1:1 与兜底同值不标，时长 5s ≠ 兜底 10s 才标
+    // 来源徽章只剩「已覆盖」一档：来自设置（尺寸/时长）与兜底值都不标，不让每行都挂标签
     const badges = [...strip.querySelectorAll('[data-default-source-label]')]
     expect(badges).toHaveLength(1)
-    expect(badges[0].getAttribute('data-default-source-label')).toBe('settings')
+    expect(badges[0].getAttribute('data-default-source-label')).toBe('override')
   })
 })

@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### R7 · 参数条只留「已覆盖」徽章 + 入口按钮加大（2026-11-27）
+
+R5 的等值比较方案整段回滚：`来自设置` 依旧每行出现（视频时长 5s 这类），信息量还是零——用户只想知道"这轮有没有被临时改过"，不关心设置里写过什么。
+
+- 徽章收敛到一档：`label = source === 'override'`。`settings` / `none` 都不渲染徽章，`data-default-source` 仍如实记录来源（排障与测试用）。
+- 宿主整段回滚：删 `health.defaultsBuiltin`、`registerWorkbenchRpc` 的 `defaultBuiltin` 依赖、`src/index.ts` 的注入与 `BUILT_IN_DEFAULTS` 导入。等值比较不再需要兜底层，客户端也不必知道兜底值。
+- locale：`defaultsEdit` 中文「编辑」→「设置」（en `Edit`→`Settings`）；`defaultsSourceSettings` / `defaultsBuiltinSource` 两个键随徽章一起删掉（三处同步）。
+- 入口按钮放大：`.iv-defaults-actions .iv-btn` 两套主题都从 24px/8px 改到 **28px/12px**，字号升到 `--iv-fs-body`；模型详情图标 12→14，与「设置」一致。24px 时按钮与左侧只读文字同高，看不出可点。
+- 测试：参数条夹具断言"只剩 override 一个徽章"；`workbench.client` 重写为「只标已覆盖」；rpc 端点那条 `defaultsBuiltin` 用例删除（字段已不存在）。
+
 ### F18 · 节点卡键盘激活（2026-11-27）
 
 节点卡带着 `role="button" tabIndex={0}`，但只有 xyflow 默认 a11y（可聚焦、方向键移动），Enter/Space 不会选中，检视器也就永远出不来。补 `onKeyDown`：Enter/Space 走与点选同一条路——把本地 `nodes` 里该节点置 `selected`，`onSelectionChange` 同步 `selectedIds`，检视器随即打开并由 `useDialogFocus` 接管焦点；同时清掉边的选中，避免"回车开了多选面板"。
@@ -34,7 +44,9 @@
 - 测试 +4：画布替换后 Ctrl+Z 回到旧图、再 Shift+Z 回到新图；连套两张模板仍只有 1 条工作流且 id 不变；1 小时/清空/时长 0/速度清空四组夹紧；播放头 1500ms → `currentTime≈1.5`、2× 速度下 1000ms → `≈2.0`。
 - 验证：`typecheck` 通过；全量 19 失败 / 196 通过 / 3 跳过 文件，26 失败 / 1366 通过 / 8 跳过 用例（失败数仍为基线 26）；`tsdown` 通过。
 
-### R5：生效参数条只标「来源改变了值」的字段（2026-11-27）
+### R5：生效参数条只标「来源改变了值」的字段（2026-11-27）· 已被 R7 覆盖
+
+> 本条引入的 `defaultsBuiltin` 与「settings 值 ≠ 兜底才标」口径已在 R7 整段回滚（徽章只剩 `override`），保留记录备查。
 
 - 问题：6 项里 5 项常驻「内置默认」，同一条信息重复到没有信息量；`图片尺寸 1:1` 标「来自设置」时兜底值本身也是 1:1，两档显示同一个值，只是把疑问从"值是多少"换成"这俩有啥不一样"。真正有差别的（`视频时长 5` vs 兜底 10）反而和噪声长得一样。
 - 宿主：`health` 新增 `defaultsBuiltin`（`BUILT_IN_DEFAULTS` 的只读副本，`defaultBuiltin` 依赖注入，缺省不下发）。只供客户端等值比较，不参与取值；服务商/兜底值仍由宿主下发，客户端不内置这张表。

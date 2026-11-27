@@ -44,7 +44,7 @@ import type { Provider } from './config.ts'
 import { registerOutputsRoute, type MediaWebServer } from './media-route.ts'
 import { resolveOutputsDir } from './media.ts'
 import { extractPersistedDefaults, registerDefaultsRoute } from './runtime-defaults.ts'
-import { BUILT_IN_DEFAULTS, createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
+import { createRuntimeDefaultsStore, resolveDefaultsSources, resolveDefaultsView } from './runtime-defaults.ts'
 import { registerMediaModeInjection } from './media-mode-injection.ts'
 import { registerWorkbenchRpc, workbenchOptions } from './host/rpc.ts'
 import { resolveEffectiveModel } from './media/builtin-models.ts'
@@ -403,11 +403,8 @@ export function apply(ctx: Context, rawConfig: Config): void {
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,
-      // 每个字段的来源（override / settings / none）：界面据此区分"我改过的"与"设置里的默认"
+      // 每个字段的来源（override / settings / none）：界面只在「已覆盖」时挂徽章
       defaultSources: () => resolveDefaultsSources(runtimeDefaults, persistedDefaults),
-      // 内置兜底层：界面拿它判断"设置值跟兜底是不是同一个值"，相同就不标来源徽章（值一样，
-      // 标「来自设置」只是噪声）。只做比较，不参与取值——取值口径仍是 defaults 那条链。
-      defaultBuiltin: () => ({ ...BUILT_IN_DEFAULTS }),
       // 生效默认模型：配置显式值 → 服务商内置默认（界面显示"默认：xxx"而不是空白）
       defaultModels: () => {
         const view = resolveDefaultsView(runtimeDefaults, persistedDefaults)

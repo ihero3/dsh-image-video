@@ -122,10 +122,8 @@ type HealthState =
     version: string
     provider: string
     defaults?: Record<string, string | number | null>
-    /** 每个默认值字段的来源：区分"我改过的"与"设置里的默认"（宿主未下发时不标注）。 */
+    /** 每个默认值字段的来源：只有「已覆盖」会挂徽章（宿主未下发时不标注）。 */
     defaultsSources?: Record<string, 'override' | 'settings' | 'none'>
-    /** 内置兜底层：设置值与它相同时不标来源徽章（值一样，标了只是噪声）。 */
-    defaultsBuiltin?: Record<string, string | number | null>
     options?: WorkbenchOptions
   }
   | { status: 'failed'; message: string }
@@ -2430,7 +2428,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
           status: 'ok', version: facts.version, provider: facts.provider,
           ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
           ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
-          ...facts.defaultsBuiltin === undefined ? {} : { defaultsBuiltin: facts.defaultsBuiltin },
           ...facts.options === undefined ? {} : { options: facts.options },
         })
 
@@ -2553,15 +2550,12 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         const empty = value === null || value === undefined || value === ''
         // 来源徽章：none = 都没配 → 用的是**内置默认**（不是"未设置"，六项永远有值）
         const source = health.status === 'ok' ? health.defaultsSources?.[field] : undefined
-        const builtin = health.status === 'ok' ? health.defaultsBuiltin?.[field] : undefined
         const raw = empty ? '' : String(value)
         // `value` 是下发口径（1024*1024 / photo），`display` 才是给人看的（1:1 / 摄影）
-        // 徽章只在有区分度时出现：`override` 永远标（这轮真的偏离了默认）；`settings` 仅当
-        // 值跟内置兜底不同才标——1:1 明明就是兜底值，标「来自设置」只会让人多问一句"这俩
-        // 有啥不一样"；`none` 本身就是兜底值，不标。宿主没下发 `defaultsBuiltin`（旧宿主）
-        // 时无从比较，退回"见 settings 就标"。
+        // 徽章只标「这一轮真的偏离了默认」：`override` 是用户在工作台/composer 临时改的，
+        // 重启就回退，必须让人看见。`settings` 与 `none` 都不标——设置项是长期状态、兜底值
+        // 是插件自带，两者都改不动这一轮的判断，标出来只是给每行加噪声（`T2-11` 修订二）。
         const label = source === 'override'
-          || (source === 'settings' && (builtin === undefined || String(builtin) !== raw))
         return { key, field, value: raw, display: raw === '' ? t('none') : displayDefaultValue(field, raw), source, label }
       })
     : []
@@ -3108,12 +3102,10 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           <i>{t(row.key)}</i><b>{row.display}</b>
                           {row.label && row.source !== undefined
                             ? (
-                              // 三档文案保持穷举：`none` 目前走不到（兜底值本身不标），留着是为了
-                              // 以后改判定时只动 `label`、不用回来补文案。
+                              // 只有「已覆盖」还会渲染：设置里的默认与兜底值都不标（见 `defaultRows`
+                              // 的 `label` 判定），徽章存在的唯一理由是提示"这轮参数被临时改过"。
                               <em className="iv-def-src" data-default-source-label={row.source}>
-                                {t(row.source === 'override'
-                                  ? 'defaultsSourceOverride'
-                                  : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
+                                {t('defaultsSourceOverride')}
                               </em>
                             )
                             : null}
@@ -3273,7 +3265,6 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             status: 'ok', version: facts.version, provider: facts.provider,
                             ...facts.defaults === undefined ? {} : { defaults: facts.defaults },
                             ...facts.defaultsSources === undefined ? {} : { defaultsSources: facts.defaultsSources },
-                            ...facts.defaultsBuiltin === undefined ? {} : { defaultsBuiltin: facts.defaultsBuiltin },
                           })
                           setNotice({ text: t('defaultsSaved'), tone: 'info' })
                         })
@@ -3303,7 +3294,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               style={{ marginLeft: 'auto' }}
               onClick={() => { setModelDetailsOpen(value => !value) }}
             >
-              <Icon name="sliders" size={12} />{t('modelDetails')}
+              <Icon name="sliders" size={14} />{t('modelDetails')}
               <span aria-hidden="true" style={{ fontSize: 10 }}>{modelDetailsOpen ? '▴' : '▾'}</span>
             </button>
             </div>
