@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { expect } from 'vitest'
 import type { WorkbenchProps } from '../src/client/Workbench.tsx'
 import { en } from '../src/client/locales.ts'
-import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, ExportRecord, PromptRecord, RunningGeneration, WorkbenchApi } from '../src/client/api.ts'
+import type { AssetDuplicatesReport, AssetProjectStats, AssetSizeReport, ExportRecord, PromptRecord, RunningGeneration, SpeechAudioView, VoiceCloneView, VoiceStatus, VoiceSynthesizeInput, WorkbenchApi } from '../src/client/api.ts'
 import type { AssetRecord, ProjectRecord, ResourceRecord, TaskRecord } from '../src/workbench/records.ts'
 import type { WorkflowRecord, WorkflowRunRecord } from '../src/workbench/workflow.ts'
 import type { TimelineRecord, TimelineTrack } from '../src/workbench/timeline.ts'
@@ -77,6 +77,12 @@ export function fakeApi(options: {
   revealResult?: { ok: boolean; path: string; reason?: string }
   duplicates?: AssetDuplicatesReport
   projectStats?: AssetProjectStats
+  /** 语音可用性（测试替身）：不给时返回「未配置凭证」的可用性；可传函数以模拟克隆后音色变多。 */
+  voiceStatus?: VoiceStatus | (() => VoiceStatus | Promise<VoiceStatus>)
+  /** 合成替身：默认抛错（未配置凭证的宿主就长这样）。 */
+  voiceSynthesize?: (input: VoiceSynthesizeInput) => Promise<{ audio: SpeechAudioView }>
+  /** 克隆替身：默认抛错。 */
+  voiceClone?: (input: { audioPath?: string; audioBase64?: string; filename?: string; voiceId?: string; name?: string; text?: string }) => Promise<{ clone: VoiceCloneView }>
   /** `B-16`：导出历史初始内容（测试替身）。 */
   exports?: ExportRecord[]
   /** 集（剧集四层结构）初始内容（测试替身）。 */
@@ -620,17 +626,19 @@ export function fakeApi(options: {
       models: [{ provider: 'fake', providerName: 'Fake', id: 'fake-text', name: 'Fake text' }],
       failures: [],
     }),
-    // 音色状态夹具：默认未接入（TTS 真实实现仍待联调），带两个预设音色供下拉选择。
-    voiceStatus: async () => ({
+    // 音色状态夹具：默认未配置凭证；给了 voiceStatus 就用调用方的（可用性/克隆音色测试用）。
+    voiceStatus: async () => (typeof options.voiceStatus === 'function' ? await options.voiceStatus() : options.voiceStatus) ?? {
       available: false,
       provider: 'threevideo',
-      reason: 'TTS 接口未接入：音色卡与配音计划可用，合成暂不可用',
+      reason: '语音服务未配置 API Key：音色卡与配音计划可用，合成暂不可用',
       voices: [
         { id: 'v-male', name: '低沉男声', gender: 'male' as const, languages: ['zh'] },
         { id: 'v-female', name: '清亮女声', gender: 'female' as const, languages: ['zh'] },
       ],
       defaultVoice: 'v-male',
-    }),
+    },
+    voiceSynthesize: options.voiceSynthesize ?? (async () => { throw new Error('语音服务未配置 API Key') }),
+    voiceClone: options.voiceClone ?? (async () => { throw new Error('语音服务未配置 API Key') }),
     // 拆段夹具：按空行切分剧本，逐段建记录（真实拆段由宿主调模型完成）。
     splitEpisode: async input => {
       const chunks = (input.script ?? '').split(/\n{2,}/).map(part => part.trim()).filter(part => part !== '')

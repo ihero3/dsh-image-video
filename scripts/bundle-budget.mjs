@@ -77,7 +77,12 @@ export const BUNDLE_BASELINE = Object.freeze({ raw: 23_000, gzip: 7_800 })
 // 属可解释的功能增长而非打包失控。本轮还要落地剧本页/时间轴两批重设计（预估 +18 KB raw / +3.5 KB gzip），
 // 故按「实测 + 预留」抬到 1_320_000 / 288_000（预算 1_584_000 / 345_600，当前占用约 97%）。
 // 单批增量另设硬上限：raw ≤6 KB、gzip ≤1.2 KB，超了先瘦身再合并。
-export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_320_000, gzip: 288_000 })
+// 2026-11-27 抬总产物基线（raw 1_320_000 → 1_335_000，gzip 288_000 → 291_000）：
+// 语音能力（TTS / 语音克隆 / 长文本异步）进界面——时间轴「配音卡片」可逐行合成并当场
+// 试听、剧本页「音色」分区新增复刻入口、音色下拉合并「预设 + 已复刻」音色，另加 19 条
+// 双语文案。实测 raw 1,588,290 / 343,673（上一版 1,573,408 / 340,475），按新基线占用
+// 99.3% / 98.8%，与历次抬基线的余量口径一致；增长全在「首次打开工作台才下载」的 chunk 里。
+export const BUNDLE_TOTAL_BASELINE = Object.freeze({ raw: 1_335_000, gzip: 291_000 })
 export const BUNDLE_BUDGET = Object.freeze({
   raw: Math.round(BUNDLE_BASELINE.raw * 1.2),
   gzip: Math.round(BUNDLE_BASELINE.gzip * 1.2),

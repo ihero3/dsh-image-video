@@ -37,7 +37,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-tools'
-import { Config, hasConfiguredCredentials, normalizeConfig, resolveActiveProvider } from './config.ts'
+import { Config, hasConfiguredCredentials, normalizeConfig, resolveActiveProvider, resolveTtsCredentials } from './config.ts'
 import type { ApiKeyResolver } from './config.ts'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Provider } from './config.ts'
@@ -60,11 +60,13 @@ import { RenderRegistry } from './media/render-registry.ts'
 import { planRetention } from './media/retention.ts'
 import { listOutputs } from './workbench/outputs.ts'
 import { RenderService } from './media/render.ts'
-import { createTtsProvider, ttsAvailability } from './media/tts.ts'
+import { createTtsService } from './media/tts.ts'
+import { VoiceCloneLibrary } from './workbench/voice-clones.ts'
 import { TaskManager } from './task-manager.ts'
 import { createGenerateImageTool } from './tools/generate-image.ts'
 import { createGenerateVideoTool } from './tools/generate-video.ts'
 import { createWorkbenchTools } from './tools/workbench.ts'
+import { createCloneVoiceTool, createGenerateSpeechTool } from './tools/speech.ts'
 
 export { Config } from './config.ts'
 export type { Config as ConfigType, Provider, ProviderCredentials, WatermarkConfig, WatermarkPosition } from './config.ts'
@@ -220,6 +222,27 @@ export function apply(ctx: Context, rawConfig: Config): void {
     return (await credentials.resolve(validated))?.value
   }
 
+  // 语音（TTS）服务：同步合成 / 语音克隆 / 长文本异步。
+  // 凭证与端点默认**回落激活的生成服务商**（语音与生图/生视频同一个网关账号），
+  // 因此默认配置在已登录的机器上开箱可用；克隆音色（mmxvc_…）落库到工作台数据目录，
+  // 否则用户复刻完就再也找不回自己的音色。
+  const voiceCloneLibrary = new VoiceCloneLibrary({ directory: workbenchStore.directory })
+  const ttsService = createTtsService({
+    settings: config.tts,
+    outputsDir,
+    timeoutMs: config.timeoutMs,
+    retryTimes: config.retryTimes,
+    resolveCredentials: () => resolveTtsCredentials(config, resolveApiKey),
+    clones: () => voiceCloneLibrary.list(),
+    saveClone: async voice => { await voiceCloneLibrary.save(voice) },
+    // 真实时长优先：ffprobe 可用时就不用「按字数估算」
+    probeDurationMs: async file => {
+      const available = await probeFfmpeg()
+      if (!available.available) return undefined
+      return (await probeMediaSpec(available.path ?? 'ffmpeg', file))?.durationMs
+    },
+  })
+
   // 运行时生成默认值：桌面 composer 热更新覆盖值的内存态存储（不落盘，
   // 重载后回落 settings 持久值，避免任何配置写入触发宿主重启）。
   const runtimeDefaults = createRuntimeDefaultsStore()
@@ -288,6 +311,12 @@ export function apply(ctx: Context, rawConfig: Config): void {
   )
   ctx.tools.register(videoTool)
   generationTools.video = videoTool as unknown as GenerationTool
+
+  // 语音工具：generate_speech（TTS）/ clone_voice（语音克隆）。
+  // 与工作台「合成试听」共用同一个 ttsService，参数语义、落盘目录与错误口径完全一致。
+  const speechDeps = { tts: ttsService, settings: config.tts, outputsDir, timeoutMs: 600_000 }
+  ctx.tools.register(createGenerateSpeechTool(speechDeps))
+  ctx.tools.register(createCloneVoiceTool(speechDeps))
 
   // outputs 媒体路由：webServer 服务可用时把 outputs/ 目录以只读方式暴露给
   // 渲染进程（/outputs/<文件名>），桌面客户端 toolview 据此内嵌加载生成的
@@ -398,8 +427,8 @@ export function apply(ctx: Context, rawConfig: Config): void {
       // 提示词提取：文本模型 + 附件服务（未装配时端点如实报错）
       get llm() { return extractServices.llm },
       get attachments() { return extractServices.attachments },
-      // `P0-1`：配音应用层（计划可用；合成等 TTS 接口联调，未接入时端点明确拒绝）
-      voice: { availability: () => ttsAvailability(config.tts), provider: createTtsProvider(config.tts) },
+      // 语音：同步合成 / 语音克隆 / 长文本异步（端点见 docs/API-SURFACE.md 的 voice/*）
+      voice: ttsService,
       probeCache,
       // 生效默认值：与 composer 注入用同一口径（运行时覆盖 ?? settings 持久默认）
       defaults: () => resolveDefaultsView(runtimeDefaults, persistedDefaults) as Record<string, string | number | null>,

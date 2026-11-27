@@ -148,9 +148,12 @@
 | `workflows/sync-episode` | `{episodeId}` | `{workflow}`（分镜逐镜映射成 `image-generate → video-generate`，末尾 `preview`；工作流 id 按集固定 `wfl-ep-<id>`，重复同步幂等） |
 | `pipelines/compose` | `{projectId, script, mode?, shots?, shotDurations?, duration?, imageModel?, videoModel?, ratio?, strictResources?, styleNote?, resourceIds?, provider?, model?, skillId?}` | `{pipeline: {workflowId, name, mode, shots, nodes, warnings, missingResources, matchedResources}}` —— **只编排不跑**（零花费；`P0-2`） |
 | `pipelines/run` | 同上 | `{pipeline, run}` —— 编排并立刻起跑（剧本 → 分镜 →（生图）→ 生视频） |
-| `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?}}` —— 配音可用性（TTS 未接入时 `available:false` + 原因；`P0-1`） |
+| `voice/status` | `{}` | `{voice: {available, provider, reason?, voices, defaultVoice?, model?, cloneModel?, baseURL?, asyncThresholdChars?}}` —— 语音可用性：`voices` 合并「配置的预设音色 + 已复刻音色」（复刻音色 `kind:'clone'`，id 形如 `mmxvc_…`）；未配置凭证时 `available:false` + 可操作原因 |
 | `voice/plan` | `{timelineId}` | `{plan: {lines:[{clipId,text,chars,slotMs,estimatedMs,warning?}], totalChars, estimatedMs, warnings}, voice}` —— 字幕→配音计划（零花费、只读） |
-| `voice/synthesize` | `{text, voiceId?}` | `{audio:{audioPath,bytes,durationMs}}` —— TTS 未接入时**明确拒绝**（`tts/not-ready` + 可操作原因） |
+| `voice/synthesize` | `{text, voiceId?, model?, speed?, pitch?, volume?, instruction?, responseFormat?, references?: Array<{audioUrl}|string>}` | `{audio: {audioPath, bytes, durationMs, durationEstimated, contentType, format, model, voiceId, notes?}}` —— 同步合成（`POST /audio/speech`），音频落 `outputs/`；凭证缺失时**明确拒绝**（`tts/not-ready` + 可操作原因）。`references` 用于多人对话/音效参考 |
+| `voice/clone` | `{audioPath? \| audioBase64?, filename?, voiceId?, name?, text?, model?}` | `{clone: {voiceId, name, model, fileId, voice}}` —— 语音克隆：样本走 `audioPath`（outputs 内或已登记素材）或 `audioBase64`（浏览器上传，宿主写临时文件后即删）；内部先 `POST /files/upload`（`purpose=voice_clone`）再 `POST /voice_clone`，返回的 `voiceId` 可直接作为 `voice/synthesize` 的 `voiceId` |
+| `voice/synthesize-async` | 同 `voice/synthesize` | `{task: {taskId, status:'submitted', model}}` —— 长文本异步合成（`POST /t2a_async_v2`）；**不自动重提** |
+| `voice/async-status` | `{taskId, text?}` | `{task: {taskId, status:'running'\|'succeeded'\|'failed', model, audio?, error?}}` —— 轮询 `GET /query/t2a_async_query_v2?task_id=…`；`succeeded` 时音频已落盘（`audio` 结构同 `voice/synthesize`）。`text` 仅用于拿不到真实时长时按字数估算 |
 
 ### 时间轴与导出
 

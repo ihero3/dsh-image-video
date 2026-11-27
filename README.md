@@ -1,14 +1,15 @@
 # 🎨 dsh-image-video — AI 文生图 / 文生视频插件 for DeepSeek Harness
 
-**为 DeepSeek Harness 对话模型注册 `generate_image` / `generate_video` 两个工具。模型在对话中自主决策调用，生成结果自动下载到本地 `outputs/`，图片经 attachment 服务内嵌渲染——对话即创作，无需离开终端。**
+**为 DeepSeek Harness 对话模型注册 `generate_image` / `generate_video` / `generate_speech` / `clone_voice` 四个工具：文生图、文生视频、语音合成（TTS）与语音克隆。模型在对话中自主决策调用，生成结果自动下载到本地 `outputs/`，图片经 attachment 服务内嵌渲染——对话即创作，无需离开终端。**
 
-> DSH 生态有丰富的工具插件，但缺少一个轻量、即装即用的文生图/文生视频入口。dsh-image-video 填补这个空白：两个工具、四家服务商、零外部依赖，热插拔即用。
+> DSH 生态有丰富的工具插件，但缺少一个轻量、即装即用的图/视频/语音创作入口。dsh-image-video 填补这个空白：四个工具、四家图像视频服务商 + 一个语音网关、零外部依赖，热插拔即用。
 
 ## 核心特性
 
 - **图片单次提交与幂等找回** — `imageTransport: auto` 优先使用异步任务；提交超时/5xx 时只按 `request_id` 反查原任务，默认不盲目重提、不换模型、不生成候选，异步端点未启用时安全降级同步单次提交
 - **统一品牌水印后处理** — 图片在写入 `outputsDir` 和附件前以内存方式叠加可配置水印，桌面交互流直接展示最终水印图，并透出传输方式、提交次数与后处理元数据
-- **两个工具，自然语言触发** — 模型在对话中自主决策何时调用 `generate_image` / `generate_video`，无需手动指令
+- **四个工具，自然语言触发** — 模型在对话中自主决策何时调用 `generate_image` / `generate_video` / `generate_speech` / `clone_voice`，无需手动指令
+- **语音三件套：合成 / 克隆 / 长文本异步** — `generate_speech` 走网关 `/audio/speech`（OpenAI 兼容 + 语气指令 + 多人对话参考音频），`clone_voice` 上传样本走 `/files/upload` + `/voice_clone` 得到可复用音色，长文本自动切 `/t2a_async_v2` 异步任务；克隆音色持久化在工作台数据目录，界面下拉即可选
 - **四家服务商 + 按模型家族自动路由** — Threevideo（聚合器，默认）、万象 wanx（阿里云百炼）、MiniMax 官方平台、Seedance2.5（火山引擎）；显式指定模型时按家族关键词自动选择直连商，Threevideo 永远兜底，回退链透明写入 notes
 - **异步任务不阻塞对话** — `TaskManager` 基于 `ctx.effect()` 托管轮询生命周期，插件卸载时自动取消排队任务、清理定时器，杜绝内存泄漏
 - **图片内嵌渲染** — 图片字节经 attachment 服务持久化，附件引用走 `presentationMeta` UI-only 通道，模型只见文本摘要，纯文本模型照常工作
@@ -24,6 +25,8 @@
 |---|---|---|---|---|
 | `generate_image` | 文生图 + **图生图**（可选 `image` 参考图入参） | **Threevideo**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 同步或异步（自动适配） | 图片经 `presentationMeta` 内嵌渲染；模型只见文本摘要 |
 | `generate_video` | 文生短视频 + 图生视频（首帧驱动，上限 30s）+ **视频编辑**（`media[].video` 参考视频 + 编辑意图提示词，保留原片动作换主体） | **Threevideo**（默认）/ 万象 wanx / MiniMax 官方 / Seedance2.5 | 始终异步轮询，不阻塞对话 | 本地文件路径 + 源地址 |
+| `generate_speech` | 文本转语音（TTS）：音色、语气指令、语速/音调/音量、多人对话参考音频；长文本自动异步 | **Threevideo / Threerouter** 网关（`qwen-audio-3.1-tts-flash` / `speech-2.8-hd` / `deepseek-tts` …） | 短文本同步；超阈值自动走 `/t2a_async_v2` 轮询 | 音频落 `outputs/`，结果含路径/时长/实际模型/音色 |
+| `clone_voice` | 语音克隆：上传 10s–2min 人声样本复刻音色，返回 `mmxvc_…` 音色 id 供 `generate_speech` 复用 | **Threevideo / Threerouter** 网关（`/files/upload` + `/voice_clone`） | 同步（上传 + 建音色） | 音色 id + 展示名，持久化到工作台音色库 |
 
 ## Provider 矩阵
 
@@ -234,6 +237,69 @@ dsh --profile <profile>
 
 **原片 / 复刻对比片（缺省自动生成）**：存在参考视频时，`generate_video` 缺省（`compare: true`）额外产出一条对比片，把原片与复刻结果并进同一画布直接对照，路径同时出现在结果文本与 `output.comparePath`。
 
+**语音合成（TTS）：**
+
+```
+用户：把这段旁白念出来，用温柔一点的语气：雨夜街头，林夏撑伞走来。
+
+模型（调用 generate_speech）：
+  text: "雨夜街头，林夏撑伞走来。"
+  voice: "longanhuan_v3.1"
+  instruction: "用温柔的语气，语速稍慢"
+  format: "wav"
+
+→ 同步调用网关 POST /audio/speech，响应体直接是音频字节
+→ 保存到 outputs/<时间戳>-<随机>.wav；时长优先 ffprobe 实测，其次 WAV 头解析，
+   都拿不到时才按字数估算并在结果里标注「估算」
+→ 结果固定回报：本地路径、时长、实际模型、实际音色、封装与透明告知
+```
+
+长文本（`mode: auto` 且字数超过 `tts.asyncThresholdChars`，默认 800）自动改走异步：`POST /t2a_async_v2` 拿 `task_id` → 轮询 `GET /query/t2a_async_query_v2?task_id=…` → 成功后按 `download_url`（或 `file_id` → `/files/retrieve`）下载落盘。任务超时只报告 `task_id`，**绝不重新提交**。
+
+**语音克隆（复刻音色）：**
+
+```
+用户：用这段录音 /path/sample.wav 复刻一个音色，叫「林夏」
+
+模型（调用 clone_voice）：
+  audio: "/path/sample.wav"
+  voiceId: "linxia001"
+  name: "林夏"
+
+→ POST /files/upload（multipart，purpose=voice_clone、model=speech-2.8-hd）
+→ POST /voice_clone（file_id + voice_id + 试听文本）→ 返回 mmxvc_… 音色 id
+→ 音色写入工作台数据目录的 voice-clones.json，界面下拉与 generate_speech 都能直接用
+
+用户：用林夏的音色念这句：欢迎来到雨夜街头。
+
+模型（调用 generate_speech）：
+  text: "欢迎来到雨夜街头。"
+  voice: "mmxvc_…"     # 上一步克隆出来的 id
+```
+
+**语音配置（`tts` 段，全部可留空）：**
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `tts.apiKey` / `tts.apiKeyEnv` | 空 | 留空时**回落激活服务商的凭证**（语音与生图/生视频同一网关账号） |
+| `tts.baseURL` | 空 | 留空跟随激活服务商的 `baseURL`；语音路由未部署在某站点时可指到另一站点 |
+| `tts.model` | 空（内置 `qwen-audio-3.1-tts-flash`） | 同步合成模型 |
+| `tts.cloneModel` | 空（内置 `speech-2.8-hd`） | 语音克隆模型 |
+| `tts.defaultVoice` | 空 | 默认音色；留空按模型兜底（`deepseek-tts`→`stella`、`speech-2.8-hd`→`male-qn-qingse`） |
+| `tts.responseFormat` | `mp3` | `mp3/wav/pcm/flac/ogg/aac` |
+| `tts.instruction` | 空 | 默认语气指令（如「用温柔的语气，语速稍慢」） |
+| `tts.asyncThresholdChars` | `800` | 超过该字数时工具自动改走异步（0 = 从不自动切换） |
+| `tts.voices` | `[]` | 预设音色清单（复刻音色由宿主另行持久化） |
+
+> **部署差异（2026-11-27 实测）**：语音路由（`/v1/files/upload`、`/v1/voice_clone`、`/v1/t2a_async_v2`）在
+> `www.threerouter.com` / `api.threerouter.com` 已部署，在 `www.threevideo.com` 仍返回 404；两站的
+> `/v1/audio/speech` 目前都返回 `502 Audio speech request failed`（网关到上游的 TTS 通道未通）。
+> 因此语音能力可先用 `tts.baseURL` 指到已部署语音路由的站点，并关注服务端上游通道恢复；
+> 客户端侧的错误会如实带出网关原文（如 `MiniMax upstream request failed（base_resp 1000）`），
+> 不会伪装成「合成成功」。
+
+工作台 RPC 侧同一能力以 `voice/*` 端点暴露（`voice/status`、`voice/plan`、`voice/synthesize`、`voice/clone`、`voice/synthesize-async`、`voice/async-status`，见 `docs/API-SURFACE.md`），时间轴「配音卡片」与剧本页「音色」分区直接消费它们。
+
 **拼接方向按原片画幅自动选择**：竖屏（3:4、9:16，即 `height ≥ width`）**左右并排**，横屏（4:3、16:9，即 `width > height`）**上下堆叠**——竖屏再上下堆叠会得到极端细长的画面、横屏再左右并排会得到极端宽扁的画面，两者都难以观看。判据见 `src/compare.ts` 的 `resolveCompareLayout`。
 
 对比片两侧等比缩放放进同一格（单格高度取 720 与原片高度的较小值）、统一 30fps、按较短者截断；命中常见系统字体时叠加 `ORIGINAL` / `AI RECREATED` 角标（字体全部未命中则不加，合成照常完成）。合成失败**只写进 `notes`**，不影响已经下载完成的复刻结果。
@@ -262,15 +328,20 @@ dsh-image-video/
     ├── http-client.ts        # 统一 HTTP 客户端 + 异常分类 + 可配置重试
     ├── task-manager.ts       # 异步任务管理器（ctx.effect 托管轮询生命周期）
     ├── media.ts              # 媒体下载 / 落地 / 摘要文本 / presentationMeta
+    ├── media/
+    │   └── tts.ts            # 语音服务：/audio/speech、/files/upload、/voice_clone、/t2a_async_v2
     ├── providers/
     │   ├── types.ts          # ProviderAdapter 接口 + 通用类型
     │   ├── threevideo.ts    # Threevideo API 适配器（默认服务商，聚合器：图片+视频）
     │   ├── wanx.ts           # 万象（wanx）API 适配器
     │   ├── minimax.ts        # MiniMax 官方平台适配器（video-generation v2 + image_generation）
     │   └── seedance.ts       # Seedance2.5 API 适配器
+    ├── workbench/
+    │   └── voice-clones.ts   # 复刻音色库（voice-clones.json，克隆 id 不丢）
     └── tools/
         ├── generate-image.ts # generate_image 工具注册
-        └── generate-video.ts # generate_video 工具注册
+        ├── generate-video.ts # generate_video 工具注册
+        └── speech.ts         # generate_speech / clone_voice 工具注册
 ```
 
 ## 配置

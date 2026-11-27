@@ -125,8 +125,8 @@ export interface Config {
   /** 图片最终结果的品牌水印后处理。 */
   watermark: WatermarkConfig
   /**
-   * TTS 配音（`P0-1` 应用层）：**空配置表示"没接 TTS"**（schema 会给一份空默认值，
-   * 所以这里不是 optional）。接口联调通过前，填音色/模型可先让计划与音色列表可读；合成仍会明确拒绝。
+   * 语音（TTS）：同步合成 / 语音克隆 / 长文本异步。凭证与端点留空时**回落激活的
+   * 生成服务商**——语音与生图/生视频走同一个网关账号，用户不必配两遍 Key。
    */
   tts: TtsSettings
 }
@@ -183,22 +183,27 @@ export const Config: z<Config> = z.object({
     glowBlurRatio: 0.18,
   }).description('图片最终结果的品牌水印后处理（内存内合成，只落盘最终图）'),
   tts: z.object({
-    provider: z.union(['threevideo']).default('threevideo').description('TTS 服务商（当前仅 threevideo，接口待联调）'),
-    apiKey: z.string().default('').description('TTS 服务的 API Key；留空走凭证引用或环境变量'),
-    apiKeyEnv: z.string().role('credential-ref').default('THREEVIDEO_TTS_API_KEY').description('TTS API Key 的凭证引用名'),
-    baseURL: z.string().default('').description('TTS 接口地址，留空使用服务商默认'),
-    model: z.string().default('').description('TTS 模型名，留空使用服务商默认'),
-    defaultVoice: z.string().default('').description('默认音色 id'),
+    provider: z.union(['threevideo']).default('threevideo').description('语音服务通道（与生成同一网关）'),
+    apiKey: z.string().default('').description('语音服务的 API Key；留空走凭证引用，再留空回落激活服务商的凭证'),
+    apiKeyEnv: z.string().role('credential-ref').default('THREEVIDEO_TTS_API_KEY').description('TTS API Key 的凭证引用名；解析不到时回落激活服务商的 Key'),
+    baseURL: z.string().default('').description('语音接口地址，留空跟随激活服务商的 baseURL（形如 https://www.threerouter.com/v1）'),
+    model: z.string().default('').description('同步合成模型，留空使用内置默认（qwen-audio-3.1-tts-flash）'),
+    defaultVoice: z.string().default('').description('默认音色 id（网关预设音色或复刻音色 mmxvc_…），留空按模型内置默认'),
     voices: z.array(z.object({
       id: z.string(),
       name: z.string(),
       languages: z.array(z.string()).default([]),
       gender: z.union(['female', 'male', 'neutral']).default('neutral'),
-    })).default([]).description('可选音色清单（接口上线前由配置提供）'),
+    })).default([]).description('可选预设音色清单（复刻出来的音色由宿主另行持久化）'),
+    responseFormat: z.union(['mp3', 'wav', 'pcm', 'flac', 'ogg', 'aac']).default('mp3').description('默认音频封装（同步合成的 response_format）'),
+    cloneModel: z.string().default('').description('语音克隆模型，留空使用内置默认（speech-2.8-hd）'),
+    instruction: z.string().default('').description('默认语气指令（如「用温柔的语气，语速稍慢」），留空不发送该字段'),
+    asyncThresholdChars: z.number().default(800).min(0).description('超过该字数时工具自动改走长文本异步端点（0 = 从不自动切换）'),
   }).default({
     provider: 'threevideo', apiKey: '', apiKeyEnv: 'THREEVIDEO_TTS_API_KEY',
-    baseURL: '', model: '', defaultVoice: '', voices: [],
-  }).description('TTS 配音（P0-1）：空配置表示未接入；填入音色/模型后可预览配音计划'),
+    baseURL: '', model: '', defaultVoice: '', voices: [], responseFormat: 'mp3',
+    cloneModel: '', instruction: '', asyncThresholdChars: 800,
+  }).description('语音（TTS）：同步合成 / 语音克隆 / 长文本异步；空凭证回落激活服务商的 Key'),
 })
 
 /**
@@ -329,5 +334,59 @@ function defaultBaseURL(provider: Provider): string {
     case 'wanx': return 'https://dashscope.aliyuncs.com/api/v1'
     case 'minimax': return 'https://api.minimaxi.com/v1'
     case 'seedance': return 'https://ark.cn-beijing.volces.com/api/v3'
+  }
+}
+
+/**
+ * 解析语音（TTS）凭证与端点。
+ *
+ * 取值优先级（每一项都留空时回落下一层）：
+ * 1. `tts.apiKey` 明文 → `tts.apiKeyEnv` 引用；
+ * 2. 都不行时回落**激活的生成服务商**凭证（语音与生图/生视频同一网关账号，
+ *    用户通常只有一把 Key）；
+ * 3. `baseURL`：`tts.baseURL` > 回落凭证的 baseURL > 服务商默认地址。
+ *
+ * 这样默认配置（tts 段全空）在已登录网关的机器上开箱可用；而把 `tts.baseURL`
+ * 指到另一台站点时，Key 仍可复用。
+ * @param config - 已校验的插件配置。
+ * @param resolveApiKey - 按引用名解析凭证值的回调。
+ * @returns 语音服务凭证、端点与来源（`tts` 段 / 回落激活服务商）。
+ * @throws 当 tts 段与激活服务商都拿不到非空 API Key 时。
+ */
+export async function resolveTtsCredentials(
+  config: Config,
+  resolveApiKey: ApiKeyResolver,
+): Promise<{ provider: 'threevideo'; apiKey: string; baseURL: string; source: 'tts' | 'provider' }> {
+  const tts = config.tts
+  const literal = tts.apiKey.trim()
+  const ref = (tts.apiKeyEnv ?? '').trim()
+  let apiKey = literal !== '' ? literal : undefined
+  if (apiKey === undefined && ref !== '') {
+    apiKey = (await resolveApiKey(ref))?.trim() || undefined
+  }
+  if (apiKey !== undefined) {
+    return {
+      provider: 'threevideo',
+      apiKey,
+      baseURL: tts.baseURL.trim() || defaultBaseURL('threevideo'),
+      source: 'tts',
+    }
+  }
+  // 回落激活服务商：同一把 Key 也覆盖语音端点（网关按 Key 分组路由）
+  const active = normalizeProviderName(config.provider)
+  let fallback: { apiKey: string; baseURL: string }
+  try {
+    fallback = await resolveProviderCredentials(config, active, resolveApiKey)
+  } catch {
+    throw new Error(
+      '语音服务未配置 API Key：请在工作台「连接服务」里登录网关，'
+      + '或为 tts.apiKey / threevideo.apiKey 配置 Key',
+    )
+  }
+  return {
+    provider: 'threevideo',
+    apiKey: fallback.apiKey,
+    baseURL: tts.baseURL.trim() || fallback.baseURL || defaultBaseURL('threevideo'),
+    source: 'provider',
   }
 }

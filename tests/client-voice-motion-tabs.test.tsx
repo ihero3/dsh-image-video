@@ -2,13 +2,15 @@
 /**
  * 剧本生成页新增的「音色」与「轨迹」两个 tab。
  *
- * 音色参考 ComfyUI 零样本克隆节点：说话人卡 + 预设音色 + 语速/音调/情绪 + 参考音频，
- * 能存进资源库与本集引用；TTS 未接入时合成按钮禁用且显示原因，不假装成功。
+ * 音色参考 ComfyUI 零样本克隆节点：说话人卡 + 预设/复刻音色 + 语速/音调/情绪 + 参考音频，
+ * 能存进资源库与本集引用；语音不可用时合成按钮禁用且显示原因，可用时按当前参数合成
+ * （没有音色但有样本时先复刻再试听），绝不假装成功。
  * 轨迹参考 OmniCam / Camera H3：运镜预设一键生成关键帧、逐帧编辑、编译提示词、入库。
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Workbench } from '../src/client/Workbench.tsx'
+import type { SpeechAudioView, VoiceCloneView, VoiceStatus, VoiceSynthesizeInput } from '../src/client/api.ts'
 import { en } from '../src/client/locales.ts'
 import { switchPipelineEpisode } from '../src/client/workbench-store.ts'
 import { clientProps, cleanup, fakeApi, render } from './client-fake-api.ts'
@@ -17,8 +19,16 @@ afterEach(cleanup)
 
 const stamp = '2026-11-25T00:00:00.000Z'
 
-async function renderScript() {
+/** 语音相关测试替身（可用性 / 合成 / 克隆）。 */
+interface VoiceStub {
+  voiceStatus?: VoiceStatus | (() => VoiceStatus | Promise<VoiceStatus>)
+  voiceSynthesize?: (input: VoiceSynthesizeInput) => Promise<{ audio: SpeechAudioView }>
+  voiceClone?: (input: { audioPath?: string; audioBase64?: string; filename?: string; voiceId?: string; name?: string; text?: string }) => Promise<{ clone: VoiceCloneView }>
+}
+
+async function renderScript(voice: VoiceStub = {}) {
   const host = fakeApi({
+    ...voice,
     episodes: [{
       schemaVersion: 1, id: 'ep-1', projectId: 'prj-1', no: 0, title: '第0集',
       script: { text: '雨夜街头，林夏撑伞走来。镜头缓缓推进。', updatedAt: stamp },
@@ -35,7 +45,7 @@ async function renderScript() {
 }
 
 describe('音色 tab', () => {
-  it('从剧本提取说话人生成音色卡；TTS 未接入时合成禁用并说明原因', async () => {
+  it('从剧本提取说话人生成音色卡；语音不可用时合成禁用并说明原因', async () => {
     const { view } = await renderScript()
     fireEvent.click(view.container.querySelector('[data-script-tab="voice"]') as HTMLElement)
     await waitFor(() => { expect(view.container.querySelector('[data-voice-panel]')).toBeTruthy() })
@@ -43,7 +53,7 @@ describe('音色 tab', () => {
     // 共享剧本输入在这里同样可见；音色状态来自 voice/status（夹具为未接入）
     expect(view.container.querySelector('[data-voice-panel] [data-pipeline-script]')).toBeTruthy()
     expect(view.container.querySelector('[data-voice-status="unavailable"]')).toBeTruthy()
-    expect((view.container.querySelector('[data-voice-reason]')?.textContent ?? '')).toContain('TTS')
+    expect((view.container.querySelector('[data-voice-reason]')?.textContent ?? '')).toContain('语音')
 
     fireEvent.click(view.container.querySelector('[data-voice-extract-run]') as HTMLButtonElement)
     await waitFor(() => { expect(view.container.querySelectorAll('[data-voice-card-item]').length).toBeGreaterThan(0) })
@@ -58,7 +68,7 @@ describe('音色 tab', () => {
 
     const synth = view.container.querySelector(`[data-voice-card-synthesize="${cardId}"]`) as HTMLButtonElement
     expect(synth.disabled).toBe(true)
-    expect(synth.title).toContain('TTS')
+    expect(synth.title).toContain('语音')
   })
 
   it('音色卡可编辑参数、存入资源库并加入本集引用；重复保存走更新', async () => {
@@ -97,6 +107,86 @@ describe('音色 tab', () => {
     await waitFor(() => { expect(view.container.querySelectorAll('[data-voice-card-item]').length).toBe(0) })
     act(() => { switchPipelineEpisode(host.api, 'ep-1') })
     await waitFor(() => { expect(view.container.querySelectorAll('[data-voice-card-item]').length).toBeGreaterThan(0) })
+  })
+  it('语音可用时「合成试听」把语速/音调/情绪指令一起传给宿主', async () => {
+    const calls: VoiceSynthesizeInput[] = []
+    const { view } = await renderScript({
+      voiceStatus: {
+        available: true, provider: 'threevideo', defaultVoice: 'v-female',
+        voices: [{ id: 'v-male', name: '低沉男声' }, { id: 'v-female', name: '清亮女声' }],
+      },
+      voiceSynthesize: async input => {
+        calls.push(input)
+        return {
+          audio: {
+            audioPath: '/tmp/outputs/dub.wav', bytes: 2048, durationMs: 1300, durationEstimated: false,
+            contentType: 'audio/wav', format: 'wav', model: 'qwen-audio-3.1-tts-flash', voiceId: 'v-female',
+          },
+        }
+      },
+    })
+    fireEvent.click(view.container.querySelector('[data-script-tab="voice"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-voice-panel]')).toBeTruthy() })
+    await waitFor(() => { expect(view.container.querySelector('[data-voice-status="ready"]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-voice-extract-run]') as HTMLButtonElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-voice-card-item]').length).toBeGreaterThan(0) })
+    const cardId = view.container.querySelector('[data-voice-card-item]')!.getAttribute('data-voice-card-item')!
+
+    fireEvent.change(view.container.querySelector(`[data-voice-card-speed="${cardId}"]`) as HTMLInputElement, { target: { value: '1.2' } })
+    fireEvent.change(view.container.querySelector(`[data-voice-card-pitch="${cardId}"]`) as HTMLInputElement, { target: { value: '1.1' } })
+    fireEvent.click(view.container.querySelector(`[data-voice-card-emotions="${cardId}"] button`) as HTMLElement)
+    fireEvent.click(view.container.querySelector(`[data-voice-card-synthesize="${cardId}"]`) as HTMLButtonElement)
+
+    await waitFor(() => { expect(calls).toHaveLength(1) })
+    expect(calls[0]).toMatchObject({ voiceId: 'v-female', speed: 1.2, pitch: 1.1, instruction: '平静' })
+  })
+
+  it('没有音色但有参考音频时：先复刻、把音色 id 写回卡片，再用它试听', async () => {
+    const cloned: Array<{ audioPath?: string; voiceId?: string }> = []
+    const synthesized: VoiceSynthesizeInput[] = []
+    const { view } = await renderScript({
+      voiceStatus: {
+        available: true, provider: 'threevideo', defaultVoice: '',
+        voices: [{ id: 'v-male', name: '低沉男声' }],
+      },
+      voiceClone: async input => {
+        cloned.push(input)
+        return {
+          clone: {
+            voiceId: 'mmxvc_xyz', name: '林夏', model: 'speech-2.8-hd', fileId: 7,
+            voice: { id: 'mmxvc_xyz', name: '林夏', kind: 'clone' },
+          },
+        }
+      },
+      voiceSynthesize: async input => {
+        synthesized.push(input)
+        return {
+          audio: {
+            audioPath: '/tmp/outputs/clone.wav', bytes: 1024, durationMs: 900, durationEstimated: false,
+            contentType: 'audio/wav', format: 'wav', model: 'speech-2.8-hd', voiceId: input.voiceId ?? '',
+          },
+        }
+      },
+    })
+    fireEvent.click(view.container.querySelector('[data-script-tab="voice"]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelector('[data-voice-panel]')).toBeTruthy() })
+    await waitFor(() => { expect(view.container.querySelector('[data-voice-status="ready"]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-voice-extract-run]') as HTMLButtonElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-voice-card-item]').length).toBeGreaterThan(0) })
+    const cardId = view.container.querySelector('[data-voice-card-item]')!.getAttribute('data-voice-card-item')!
+    fireEvent.change(view.container.querySelector(`[data-voice-card-ref-audio="${cardId}"]`) as HTMLInputElement, { target: { value: 'outputs/sample.wav' } })
+
+    const synth = view.container.querySelector(`[data-voice-card-synthesize="${cardId}"]`) as HTMLButtonElement
+    fireEvent.click(synth)
+    await waitFor(() => { expect(synthesized).toHaveLength(1) })
+    expect(cloned[0]).toMatchObject({ audioPath: 'outputs/sample.wav' })
+    expect(synthesized[0]!.voiceId).toBe('mmxvc_xyz')
+
+    // 音色写回卡片：第二次试听不再重复复刻
+    fireEvent.click(synth)
+    await waitFor(() => { expect(synthesized).toHaveLength(2) })
+    expect(cloned).toHaveLength(1)
+    expect(synthesized[1]!.voiceId).toBe('mmxvc_xyz')
   })
 })
 

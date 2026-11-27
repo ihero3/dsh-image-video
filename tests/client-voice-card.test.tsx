@@ -2,10 +2,11 @@
 /**
  * 配音卡片（`P0-1` 应用层）渲染契约。
  *
- * 钉三件事：
- * 1. TTS 未接入时显示**原因**，且「生成配音」是**禁用**的（绝不假装可用）；
+ * 钉四件事：
+ * 1. 语音不可用时显示**原因**，且「生成配音」是**禁用**的（绝不假装可用）；
  * 2. 「生成配音计划」零花费可用，渲染句数/字数/估算时长与逐句提醒；
- * 3. 计划失败（如时间轴不存在）时显示可读错误，而不是静默。
+ * 3. 计划失败（如时间轴不存在）时显示可读错误，而不是静默；
+ * 4. 可用时逐行合成，每行渲染可试听的音频并把请求参数（音色）传对。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
@@ -68,5 +69,50 @@ describe('VoiceCard', () => {
     fireEvent.click(container.querySelector('[data-voice-plan]') as HTMLButtonElement)
     await waitFor(() => { expect(container.querySelector('[data-voice-error]')).not.toBeNull() })
     expect((container.querySelector('[data-voice-error]') as HTMLElement).textContent).toContain('unknown timeline')
+  })
+
+  it('可用时逐行合成：每行一次请求、传对音色、渲染可试听音频', async () => {
+    const calls: Array<{ text: string; voiceId?: string }> = []
+    const READY = {
+      available: true, provider: 'threevideo', voices: [{ id: 'v-female', name: '清亮女声' }],
+    } as const
+    const api = makeApi({
+      voiceStatus: vi.fn(async () => READY) as unknown as WorkbenchApi['voiceStatus'],
+      // voice/plan 会连带返回最新可用性：宿主用它覆盖卡片状态
+      voicePlan: vi.fn(async () => ({
+        plan: {
+          lines: [
+            { clipId: 'c1', text: '第一句台词', chars: 5, slotMs: 2000, estimatedMs: 1111 },
+            { clipId: 'c2', text: '第二句很长很长很长很长很长很长的台词', chars: 17, slotMs: 3000, estimatedMs: 3778 },
+          ],
+          totalChars: 22, estimatedMs: 4889, warnings: [],
+        },
+        voice: READY,
+      })) as unknown as WorkbenchApi['voicePlan'],
+      voiceSynthesize: vi.fn(async (input: { text: string; voiceId?: string }) => {
+        calls.push(input)
+        return {
+          audio: {
+            audioPath: `/tmp/outputs/${calls.length}.wav`, bytes: 1024, durationMs: 1200,
+            durationEstimated: false, contentType: 'audio/wav', format: 'wav', model: 'qwen-audio-3.1-tts-flash',
+            voiceId: input.voiceId ?? '(默认)',
+          },
+        }
+      }) as unknown as WorkbenchApi['voiceSynthesize'],
+    })
+    const { container } = render(<VoiceCard api={api} t={t} timelineId="tml-1" />)
+    await waitFor(() => { expect(container.querySelector('[data-voice-status="ready"]')).not.toBeNull() })
+    fireEvent.change(container.querySelector('[data-voice-select]') as HTMLSelectElement, { target: { value: 'v-female' } })
+    fireEvent.click(container.querySelector('[data-voice-plan]') as HTMLButtonElement)
+    await waitFor(() => { expect(container.querySelector('[data-voice-plan-result]')).not.toBeNull() })
+    const generate = container.querySelector('[data-voice-generate]') as HTMLButtonElement
+    expect(generate.disabled).toBe(false)
+    fireEvent.click(generate)
+    await waitFor(() => { expect(container.querySelectorAll('[data-voice-audio]').length).toBe(2) })
+    expect(calls).toHaveLength(2)
+    expect(calls.every(call => call.voiceId === 'v-female')).toBe(true)
+    expect(calls.map(call => call.text)).toEqual(['第一句台词', '第二句很长很长很长很长很长很长的台词'])
+    const audio = container.querySelector('[data-voice-audio] audio') as HTMLAudioElement
+    expect(audio.getAttribute('src')).toBe('/outputs/1.wav')
   })
 })

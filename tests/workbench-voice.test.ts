@@ -1,8 +1,9 @@
 /**
- * 配音应用层（`P0-1`）：计划（字幕 → 台词/时长/提醒）、可用性视图、端点的诚实拒绝。
+ * 配音应用层：计划（字幕 → 台词/时长/提醒）、可用性视图、端点的诚实拒绝。
  *
- * 口径：TTS 接口还没联调通过，所以这里**不测"能合成"**，只测"该说的都说到位"——
- * 计划可读、时长估算合理、未接入时 give 可操作原因，接入后只换 provider 实现。
+ * 口径：计划与时长估算零花费可测；语音服务本身（HTTP 契约）在
+ * `tts-service.test.ts` 里用 fetch 桩覆盖，这里只钉宿主 RPC 的行为——
+ * 未配置凭证时 `voice/status` 说明原因、`voice/synthesize` 给机器码而不是假装成功。
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,7 +12,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { createWorkbenchHandler } from '../src/host/rpc.ts'
 import { estimateSpeechMs, planDub } from '../src/workbench/voice.ts'
 import { WorkbenchStore } from '../src/workbench/store.ts'
-import { ttsAvailability } from '../src/media/tts.ts'
+import { createTtsService, TtsNotReadyError, type TtsService } from '../src/media/tts.ts'
 
 const dirs: string[] = []
 afterAll(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))) })
@@ -24,7 +25,19 @@ async function temp(prefix: string): Promise<string> {
 
 const EMPTY_TTS = {
   provider: 'threevideo' as const, apiKey: '', apiKeyEnv: 'THREEVIDEO_TTS_API_KEY',
-  baseURL: '', model: '', defaultVoice: '', voices: [],
+  baseURL: '', model: '', defaultVoice: '', voices: [], responseFormat: 'mp3' as const,
+  cloneModel: '', instruction: '', asyncThresholdChars: 0,
+}
+
+/** 没凭证的真实语音服务：可用性为 false，合成抛可操作错误。 */
+function unavailableService(): TtsService {
+  return createTtsService({
+    settings: EMPTY_TTS,
+    outputsDir: '/tmp/outputs',
+    timeoutMs: 1_000,
+    retryTimes: 0,
+    resolveCredentials: async () => { throw new Error('服务商 threevideo 未配置 API Key') },
+  })
 }
 
 describe('时长估算', () => {
@@ -75,26 +88,38 @@ describe('planDub', () => {
   })
 })
 
-describe('ttsAvailability', () => {
-  it('空配置 = 未接入，并给出下一步该做什么', () => {
-    const voice = ttsAvailability(EMPTY_TTS)
+describe('语音可用性（status）', () => {
+  it('没有凭证 = 不可用，并给出下一步该做什么', async () => {
+    const voice = await unavailableService().status()
     expect(voice.available).toBe(false)
-    expect(voice.reason).toContain('未配置 TTS')
+    expect(voice.reason).toContain('语音还不可用')
+    expect(voice.reason).toContain('API Key')
     expect(voice.voices).toEqual([])
   })
 
-  it('配了音色也仍然"未接入"（接口没上线就绝不假装可用），但能列出音色', () => {
-    const voice = ttsAvailability({
-      ...EMPTY_TTS, apiKey: 'k', voices: [{ id: 'v1', name: '晓晓', languages: ['zh-CN'], gender: 'female' }],
+  it('有凭证即可用，且把配置的预设音色与复刻音色合并列出', async () => {
+    const service = createTtsService({
+      settings: { ...EMPTY_TTS, apiKey: 'k', voices: [{ id: 'v1', name: '晓晓', languages: ['zh-CN'], gender: 'female' }] },
+      outputsDir: '/tmp/outputs',
+      timeoutMs: 1_000,
+      retryTimes: 0,
+      resolveCredentials: async () => ({ apiKey: 'k', baseURL: 'https://gw.example/v1' }),
+      clones: async () => [{ id: 'mmxvc_abc', name: '我的声音', kind: 'clone', model: 'speech-2.8-hd' }],
     })
-    expect(voice.available).toBe(false)
-    expect(voice.reason).toContain('接口尚未接入')
-    expect(voice.voices).toHaveLength(1)
+    const voice = await service.status()
+    expect(voice.available).toBe(true)
+    expect(voice.baseURL).toBe('https://gw.example/v1')
+    expect(voice.voices.map(entry => entry.id)).toEqual(['v1', 'mmxvc_abc'])
+    expect(voice.model).toBe('qwen-audio-3.1-tts-flash')
+  })
+
+  it('合成时凭证缺失 → 机器码 tts/not-ready（不是静默失败）', async () => {
+    await expect(unavailableService().synthesize({ text: '你好' })).rejects.toBeInstanceOf(TtsNotReadyError)
   })
 })
 
 describe('voice 端点', () => {
-  function handler(store: WorkbenchStore, tts = EMPTY_TTS) {
+  function handler(store: WorkbenchStore, voice: TtsService = unavailableService()) {
     const deps = {
       provider: 'threevideo',
       outputsDir: '/tmp/outputs',
@@ -102,7 +127,7 @@ describe('voice 端点', () => {
       registry: {} as never,
       runner: {} as never,
       renders: {} as never,
-      voice: { availability: () => ttsAvailability(tts), provider: { name: 'threevideo', listVoices: async () => [], synthesize: async () => { throw new Error('should not be called') } } },
+      voice,
     }
     return createWorkbenchHandler(deps as never)
   }
@@ -133,12 +158,46 @@ describe('voice 端点', () => {
     }
   })
 
-  it('voice/synthesize 未接入时明确拒绝（机器码 + 可操作原因），不是静默失败', async () => {
+  it('voice/synthesize 未配置凭证时明确拒绝（机器码 + 可操作原因），不是静默失败', async () => {
     const store = new WorkbenchStore({ directory: await temp('dsh-voice-') })
     const result = await handler(store)('voice/synthesize', { text: '试一下' }, new AbortController().signal, {} as never)
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.error.message).toContain('配音还不可用')
-    expect(result.error.message).toContain('TTS')
+    expect(result.error.message).toContain('语音还不可用')
+    expect(result.error.message).toContain('API Key')
+  })
+
+  it('voice/clone 未配置凭证时明确拒绝，且不写任何文件', async () => {
+    const store = new WorkbenchStore({ directory: await temp('dsh-voice-') })
+    const result = await handler(store)('voice/clone', { audioBase64: 'AAAA' }, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('语音还不可用')
+  })
+
+  it('voice/synthesize 可用时把请求透传给语音服务并回传落盘结果', async () => {
+    const store = new WorkbenchStore({ directory: await temp('dsh-voice-') })
+    const seen: unknown[] = []
+    const voice: TtsService = {
+      status: async () => ({ available: true, provider: 'threevideo', voices: [] }),
+      synthesize: async (input) => {
+        seen.push(input)
+        return {
+          audioPath: '/tmp/outputs/speech.mp3', bytes: 12, durationMs: 900, durationEstimated: false,
+          contentType: 'audio/mpeg', format: 'mp3', model: input.model ?? 'm', voiceId: input.voiceId ?? 'v',
+        }
+      },
+      clone: async () => { throw new Error('unused') },
+      submitAsync: async () => ({ taskId: 't', status: 'submitted', model: 'm' }),
+      queryAsync: async () => ({ taskId: 't', status: 'running', model: 'm' }),
+      synthesizeAsync: async () => ({ taskId: 't', status: 'running', model: 'm' }),
+    }
+    const result = await handler(store, voice)('voice/synthesize', {
+      text: '你好', voiceId: 'stella', speed: 0.9, instruction: '温柔', format: 'wav',
+    }, new AbortController().signal, {} as never)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect((result.value as { audio: { audioPath: string } }).audio.audioPath).toBe('/tmp/outputs/speech.mp3')
+    expect(seen[0]).toMatchObject({ text: '你好', voiceId: 'stella', speed: 0.9, instruction: '温柔', responseFormat: 'wav' })
   })
 })

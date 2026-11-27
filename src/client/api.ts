@@ -259,15 +259,22 @@ export interface AssetProjectStats {
   readonly topShare: number
 }
 
-/** 音色（`P0-1`）：接口上线前来自配置，上线后来自服务商。 */
+/** 音色：网关预设音色，或本机复刻（克隆）出来的音色。 */
 export interface VoiceProfile {
   readonly id: string
   readonly name: string
   readonly languages?: string[]
   readonly gender?: 'female' | 'male' | 'neutral'
+  /** `system` = 网关预设；`clone` = 本机复刻（id 形如 `mmxvc_…`）。 */
+  readonly kind?: 'system' | 'clone'
+  /** 复刻音色使用的 TTS 模型。 */
+  readonly model?: string
+  /** 复刻样本来源名。 */
+  readonly source?: string
+  readonly createdAt?: string
 }
 
-/** 配音可用性（`voice/status`）。 */
+/** 语音可用性（`voice/status`）。 */
 export interface VoiceStatus {
   readonly available: boolean
   readonly provider: string
@@ -275,6 +282,63 @@ export interface VoiceStatus {
   readonly voices: readonly VoiceProfile[]
   readonly defaultVoice?: string
   readonly model?: string
+  /** 克隆使用的模型（`speech-2.8-hd` 等）。 */
+  readonly cloneModel?: string
+  /** 生效的网关基地址（排查「端点没部署」用）。 */
+  readonly baseURL?: string
+  /** 超过该字数建议改走异步端点（0 = 不自动切换）。 */
+  readonly asyncThresholdChars?: number
+}
+
+/** 一次合成结果（`voice/synthesize`）。 */
+export interface SpeechAudioView {
+  readonly audioPath: string
+  readonly bytes: number
+  readonly durationMs: number
+  /** true = 时长按字数估算（没探测到真实时长）。 */
+  readonly durationEstimated: boolean
+  readonly contentType: string
+  readonly format: string
+  readonly model: string
+  readonly voiceId: string
+  readonly notes?: readonly string[]
+}
+
+/** 合成请求（同步与异步共用）。 */
+export interface VoiceSynthesizeInput {
+  readonly text: string
+  readonly voiceId?: string
+  readonly model?: string
+  /** 语速倍数 0.5–2。 */
+  readonly speed?: number
+  /** 音调倍数 0.5–2（仅 MiniMax 系模型生效）。 */
+  readonly pitch?: number
+  /** 音量 0–2（仅 MiniMax 系模型生效）。 */
+  readonly volume?: number
+  /** 语气指令，如「用温柔的语气，语速稍慢」。 */
+  readonly instruction?: string
+  readonly responseFormat?: 'mp3' | 'wav' | 'pcm' | 'flac' | 'ogg' | 'aac'
+  /** 多人对话/音效参考音频地址。 */
+  readonly references?: ReadonlyArray<{ readonly audioUrl: string }>
+}
+
+/** 语音克隆结果（`voice/clone`）。 */
+export interface VoiceCloneView {
+  readonly voiceId: string
+  readonly name: string
+  readonly model: string
+  readonly fileId: string | number
+  readonly voice: VoiceProfile
+}
+
+/** 长文本异步任务（`voice/synthesize-async` / `voice/async-status`）。 */
+export interface VoiceTaskView {
+  readonly taskId: string
+  readonly status: 'submitted' | 'running' | 'succeeded' | 'failed'
+  readonly model: string
+  readonly audio?: SpeechAudioView
+  readonly error?: string
+  readonly notes?: readonly string[]
 }
 
 /** 一条配音行（与字幕片段一一对应）。 */
@@ -920,12 +984,29 @@ export interface WorkbenchApi {
   /** 一键流水线：把剧本编排成工作流（只落库、不起跑）。`signal` 取消后宿主会中断模型调用。 */
   composePipeline: (input: PipelineRunInput, signal?: AbortSignal) => Promise<PipelineResult>
   /** 一键流水线：编排并立刻起跑（剧本 → 分镜 → 生图 → 生视频）。 */
-  /** 配音可用性：未接入 TTS 时 `available: false` + 可读原因。 */
+  /** 语音可用性：未配置凭证时 `available: false` + 可读原因。 */
   voiceStatus: () => Promise<VoiceStatus>
   /** 从时间轴字幕生成配音计划（零花费；只读）。 */
   voicePlan: (timelineId: string) => Promise<{ plan: DubPlanView; voice: VoiceStatus }>
-  /** 合成一句配音（接口未接入时抛可操作错误）。 */
-  voiceSynthesize: (input: { text: string; voiceId?: string }) => Promise<{ audio: { audioPath: string; bytes: number; durationMs: number } }>
+  /** 同步合成一段语音（落盘到 outputs/）。 */
+  voiceSynthesize: (input: VoiceSynthesizeInput) => Promise<{ audio: SpeechAudioView }>
+  /**
+   * 语音克隆：上传样本（`audioPath` 宿主路径或 `audioBase64` 浏览器上传）复刻成音色。
+   * @param input - 样本与可选的音色名/试听文本。
+   */
+  voiceClone: (input: {
+    readonly audioPath?: string
+    readonly audioBase64?: string
+    readonly filename?: string
+    readonly voiceId?: string
+    readonly name?: string
+    readonly text?: string
+    readonly model?: string
+  }) => Promise<{ clone: VoiceCloneView }>
+  /** 提交长文本异步合成任务。 */
+  voiceSubmitAsync: (input: VoiceSynthesizeInput) => Promise<{ task: VoiceTaskView }>
+  /** 查询长文本异步任务（成功时音频已落盘）。 */
+  voiceAsyncStatus: (input: { taskId: string; text?: string }) => Promise<{ task: VoiceTaskView }>
   runPipeline: (input: PipelineRunInput) => Promise<{ pipeline: PipelineResult; run: WorkflowRunRecord }>
   /** Run records for a project (optionally one workflow), newest first. */
   listRuns: (projectId: string, workflowId?: string) => Promise<WorkflowRunRecord[]>
@@ -1095,7 +1176,10 @@ export function createWorkbenchApi(connection: ConnectionHandle): WorkbenchApi {
     runPipeline: input => call<{ pipeline: PipelineResult; run: WorkflowRunRecord }>('pipelines/run', input),
     voiceStatus: async () => (await call<{ voice: VoiceStatus }>('voice/status', {})).voice,
     voicePlan: input => call<{ plan: DubPlanView; voice: VoiceStatus }>('voice/plan', { timelineId: input }),
-    voiceSynthesize: input => call<{ audio: { audioPath: string; bytes: number; durationMs: number } }>('voice/synthesize', input),
+    voiceSynthesize: input => call<{ audio: SpeechAudioView }>('voice/synthesize', input),
+    voiceClone: input => call<{ clone: VoiceCloneView }>('voice/clone', input),
+    voiceSubmitAsync: input => call<{ task: VoiceTaskView }>('voice/synthesize-async', input),
+    voiceAsyncStatus: input => call<{ task: VoiceTaskView }>('voice/async-status', input),
     listRuns: async (projectId, workflowId) =>
       (await call<{ runs: WorkflowRunRecord[] }>('workflows/runs', { projectId, workflowId })).runs,
     cancelRun: async runId => (await call<{ cancelled: boolean }>('workflows/run-cancel', { runId })).cancelled,

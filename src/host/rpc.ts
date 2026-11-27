@@ -18,7 +18,7 @@ import { planRatioSlices } from '../workbench/derive-ratios.ts'
 import { catalogConsistencyIssues, isTextModelEntry, modelCards } from '../media/model-catalog.ts'
 import { compareCardsAgainstRegistry, type ModelCatalogLive, type ModelRegistryProbe } from '../media/model-health.ts'
 import { assertPromptAllowed, scanPrompt } from '../media/prompt-safety.ts'
-import { TtsNotReadyError, ttsAvailability, type TtsAvailability, type TtsProvider } from '../media/tts.ts'
+import { TtsNotReadyError, type TtsAudioFormat, type TtsAvailability, type TtsRequest, type TtsService } from '../media/tts.ts'
 import { ExportHistory } from '../workbench/exports.ts'
 import { PromptLibrary } from '../workbench/prompts.ts'
 import { SkillLibrary } from '../workbench/skills.ts'
@@ -58,7 +58,7 @@ import {
 import type { WorkbenchStore } from '../workbench/store.ts'
 import { listOutputs, renameGeneratedOutput, type OutputFile } from '../workbench/outputs.ts'
 import { dirname, join, resolve, sep } from 'node:path'
-import { stat, unlink, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { stat, unlink, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { probeFfmpeg } from '../media/ffmpeg.ts'
@@ -174,10 +174,10 @@ export interface WorkbenchRpcDeps {
   /** 诊断收集器（`A9`）；缺省时端点返回空错误列表。 */
   readonly diagnostics?: { snapshot: () => { errors: readonly unknown[]; errorCount: number } }
   /**
-   * TTS 配音（`P0-1` 应用层）：缺省表示宿主没装配 TTS（`voice/status` 会说明原因）。
-   * 接口联调通过后只需换掉 `provider` 的实现，端点与界面不变。
+   * 语音服务（TTS / 语音克隆 / 长文本异步）：缺省表示宿主没装配语音
+   * （`voice/status` 会如实说明原因，不会假装可用）。
    */
-  readonly voice?: { readonly availability: () => TtsAvailability; readonly provider: TtsProvider }
+  readonly voice?: TtsService
   /** 生效默认值视图（`T2-11`）；缺省时不带该字段。 */
   defaults?: () => Record<string, string | number | null>
   /**
@@ -1456,9 +1456,9 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (workflow === undefined) throw new Error(`unknown workflow: ${pipeline.workflowId}`)
       return { pipeline, run: await deps.runner.begin(workflow) }
     }
-    // ---- 配音（`P0-1` 应用层）：计划/时长估算现在可用，合成等 TTS 接口联调 ----------
+    // ---- 语音（TTS）：计划 / 同步合成 / 语音克隆 / 长文本异步 ----------
     case 'voice/status': {
-      return { voice: deps.voice?.availability() ?? ttsAvailability(undefined) }
+      return { voice: await voiceStatus(deps) }
     }
     case 'voice/plan': {
       const timelineId = text(payload, 'timelineId')
@@ -1466,23 +1466,49 @@ async function answer(deps: WorkbenchRpcDeps, endpoint: string, payload: unknown
       if (timeline === undefined) throw new Error(`unknown timeline: ${timelineId}`)
       return {
         plan: planDub(timeline),
-        voice: deps.voice?.availability() ?? ttsAvailability(undefined),
+        voice: await voiceStatus(deps),
       }
     }
     case 'voice/synthesize': {
-      // 未接入时**绝不假装成功**：给机器码 + 可操作原因（界面直接展示）
-      const voice = deps.voice
-      const availability = voice?.availability() ?? ttsAvailability(undefined)
-      if (voice === undefined || !availability.available) {
-        throw new TtsNotReadyError(availability.reason ?? 'TTS 服务未配置')
-      }
-      const spoken = text(payload, 'text')
-      const voiceId = optionalText(payload, 'voiceId')
-      const audio = await voice.provider.synthesize({
-        text: spoken,
-        ...voiceId === undefined ? {} : { voiceId },
-      })
+      // 未配置时**绝不假装成功**：给机器码 + 可操作原因（界面直接展示）
+      const service = requireTts(deps)
+      const audio = await service.synthesize(ttsRequest(payload), signal)
       return { audio }
+    }
+    case 'voice/clone': {
+      const service = requireTts(deps)
+      const sample = await cloneSample(deps, payload)
+      try {
+        const voiceId = optionalText(payload, 'voiceId')
+        const name = optionalText(payload, 'name')
+        const previewText = optionalText(payload, 'text')
+        const model = optionalText(payload, 'model')
+        const clone = await service.clone({
+          audioPath: sample.path,
+          ...voiceId === undefined || voiceId.trim() === '' ? {} : { voiceId: voiceId.trim() },
+          ...name === undefined || name.trim() === '' ? {} : { name: name.trim() },
+          ...previewText === undefined || previewText.trim() === '' ? {} : { previewText: previewText.trim() },
+          ...model === undefined || model.trim() === '' ? {} : { model: model.trim() },
+        }, signal)
+        return { clone }
+      } finally {
+        await sample.cleanup()
+      }
+    }
+    case 'voice/synthesize-async': {
+      const service = requireTts(deps)
+      const task = await service.submitAsync(ttsRequest(payload), signal)
+      return { task }
+    }
+    case 'voice/async-status': {
+      const service = requireTts(deps)
+      const taskId = text(payload, 'taskId')
+      const spoken = optionalText(payload, 'text')
+      const task = await service.queryAsync(taskId, {
+        signal,
+        ...spoken === undefined || spoken.trim() === '' ? {} : { text: spoken },
+      })
+      return { task }
     }
     // 时间轴一致性校验（`A34`）：可传 timelineId，也可直接传一份未保存的 document 做保存前预检
     case 'timelines/validate': {
@@ -2543,6 +2569,120 @@ function segmentInput(payload: unknown): SegmentInput {
     if (value !== undefined) input[key] = value
   }
   return input
+}
+
+/** 克隆样本体积上限（与语音服务内部口径一致，在这里先拦掉明显的错误）。 */
+const MAX_CLONE_UPLOAD_BYTES = 20 * 1024 * 1024
+
+/** 语音可用性：宿主没装配语音服务时如实说明（不抛错，界面据此禁用按钮）。 */
+async function voiceStatus(deps: WorkbenchRpcDeps): Promise<TtsAvailability> {
+  if (deps.voice === undefined) {
+    return {
+      available: false,
+      provider: 'threevideo',
+      reason: '当前宿主没有装配语音服务（voice 依赖缺失）：升级到带语音能力的宿主版本',
+      voices: [],
+    }
+  }
+  return await deps.voice.status()
+}
+
+/** 取语音服务；缺失时抛可操作错误（机器码 `tts/not-ready`）。 */
+function requireTts(deps: WorkbenchRpcDeps): TtsService {
+  if (deps.voice === undefined) {
+    throw new TtsNotReadyError('当前宿主没有装配语音服务（voice 依赖缺失）：升级到带语音能力的宿主版本')
+  }
+  return deps.voice
+}
+
+/** 读可选的音频封装字段。 */
+function audioFormat(payload: unknown): TtsAudioFormat | undefined {
+  const value = optionalText(payload, 'responseFormat') ?? optionalText(payload, 'format')
+  if (value === undefined || value.trim() === '') return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'mp3' || normalized === 'wav' || normalized === 'pcm'
+    || normalized === 'flac' || normalized === 'ogg' || normalized === 'aac') {
+    return normalized
+  }
+  throw new Error(`invalid workbench payload: responseFormat 必须是 mp3/wav/pcm/flac/ogg/aac 之一，收到 ${value}`)
+}
+
+/** 读多人对话/音效参考音频（接受 `[{audioUrl}]`、`[{audio_url}]`、`['url']` 三种形态）。 */
+function ttsReferences(payload: unknown): Array<{ audioUrl: string }> | undefined {
+  const value = field(payload, 'references')
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value)) throw new Error('invalid workbench payload: references must be an array')
+  const references = value.map((entry, index) => {
+    if (typeof entry === 'string' && entry.trim() !== '') return { audioUrl: entry.trim() }
+    if (typeof entry === 'object' && entry !== null) {
+      const record = entry as Record<string, unknown>
+      const url = record.audioUrl ?? record.audio_url ?? record.url
+      if (typeof url === 'string' && url.trim() !== '') return { audioUrl: url.trim() }
+    }
+    throw new Error(`invalid workbench payload: references[${index}] 需要 audioUrl / audio_url / url`)
+  })
+  return references.length === 0 ? undefined : references
+}
+
+/** 读一次合成请求（`text` 必填，其余可选且只在有值时下发）。 */
+function ttsRequest(payload: unknown): TtsRequest {
+  const spoken = text(payload, 'text')
+  const voiceId = optionalText(payload, 'voiceId') ?? optionalText(payload, 'voice')
+  const model = optionalText(payload, 'model')
+  const speed = optionalNumber(payload, 'speed')
+  const pitch = optionalNumber(payload, 'pitch')
+  const volume = optionalNumber(payload, 'volume')
+  const instruction = optionalText(payload, 'instruction')
+  const responseFormat = audioFormat(payload)
+  const references = ttsReferences(payload)
+  return {
+    text: spoken,
+    ...voiceId === undefined || voiceId.trim() === '' ? {} : { voiceId: voiceId.trim() },
+    ...model === undefined || model.trim() === '' ? {} : { model: model.trim() },
+    ...speed === undefined ? {} : { speed },
+    ...pitch === undefined ? {} : { pitch },
+    ...volume === undefined ? {} : { volume },
+    ...instruction === undefined || instruction.trim() === '' ? {} : { instruction: instruction.trim() },
+    ...responseFormat === undefined ? {} : { responseFormat },
+    ...references === undefined ? {} : { references },
+  }
+}
+
+/**
+ * 定位克隆样本：`audioPath`（outputs 内或已登记素材）或 `audioBase64`（浏览器上传）。
+ * 上传的字节写到临时目录，调用方用完即删（不污染 outputs）。
+ */
+async function cloneSample(
+  deps: WorkbenchRpcDeps,
+  payload: unknown,
+): Promise<{ path: string; cleanup: () => Promise<void> }> {
+  const base64 = optionalText(payload, 'audioBase64')
+  if (base64 !== undefined && base64.trim() !== '') {
+    const cleaned = base64.trim().replace(/^data:audio\/[a-z0-9.+-]+;base64,/i, '')
+    const bytes = Buffer.from(cleaned, 'base64')
+    if (bytes.byteLength === 0) throw new Error('voice/clone: audioBase64 解码为空')
+    if (bytes.byteLength > MAX_CLONE_UPLOAD_BYTES) {
+      throw new Error(`voice/clone: 样本 ${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB 超过 20MB 上限`)
+    }
+    const rawName = (optionalText(payload, 'filename') ?? 'clone-sample').replace(/[^\w.-]/gu, '_')
+    const extension = extname(rawName) === '' ? '.wav' : extname(rawName)
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-voice-clone-'))
+    const path = join(directory, `${basename(rawName, extname(rawName)) || 'sample'}${extension}`)
+    await writeFile(path, bytes)
+    return { path, cleanup: async () => { await rm(directory, { recursive: true, force: true }) } }
+  }
+  const relative = optionalText(payload, 'audioPath') ?? optionalText(payload, 'path')
+  if (relative === undefined || relative.trim() === '') {
+    throw new Error('voice/clone 需要 audioPath（宿主路径）或 audioBase64（浏览器上传的样本）')
+  }
+  const value = relative.trim()
+  const absolute = resolve(deps.outputsDir, value)
+  const inside = absolute === deps.outputsDir || absolute.startsWith(`${deps.outputsDir}${sep}`)
+  const known = new Set(await deps.store.referencedAssetPaths())
+  if (!inside && !known.has(value)) {
+    throw new Error(`克隆样本必须在 outputs 目录内或已登记素材中：${value}`)
+  }
+  return { path: absolute, cleanup: async () => {} }
 }
 
 /** Read one field out of an untyped payload. */

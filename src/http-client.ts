@@ -234,7 +234,7 @@ function classifyHttpError(status: number, data: unknown, url: string, retryAfte
     return new GenerationError('task', `幂等冲突（HTTP 409）：${errMsg || '同一幂等键的请求已存在'}`, false, status, retryAfterMs, code)
   }
   if (status >= 500) {
-    return new GenerationError('network', `服务端错误（HTTP ${status}），将重试。${errMsg}`, true, status, undefined, code)
+    return new GenerationError('network', `服务端错误（HTTP ${status}）。${errMsg}`, true, status, undefined, code)
   }
   if (isModelUnavailableMessage(errMsg)) {
     return new GenerationError(
@@ -280,13 +280,33 @@ function extractErrorCode(data: unknown): string | undefined {
     const errObj = error as Record<string, unknown>
     return pick(errObj.code) ?? pick(errObj.type)
   }
+  const baseResp = obj.base_resp
+  if (baseResp !== null && typeof baseResp === 'object') {
+    const statusCode = (baseResp as Record<string, unknown>).status_code
+    if (typeof statusCode === 'number' && statusCode !== 0) return String(statusCode)
+  }
   return pick(obj.code) ?? pick(obj.type)
 }
 
-/** 从服务商响应体提取错误消息，兼容常见结构。 */
+/**
+ * 从服务商响应体提取错误消息，兼容常见结构。
+ *
+ * 除 OpenAI 系 `{error:{message}}` 外，还要认 MiniMax 系的
+ * `{base_resp:{status_code,status_msg}}`——语音端点（`/files/upload`、`/voice_clone`、
+ * `/t2a_async_v2`）失败时就是这形态，不认它的话用户只能看到「HTTP 502」而看不到
+ * 「MiniMax upstream request failed」这句真正有用的原因。
+ */
 function extractErrorMessage(data: unknown): string {
   if (data === null || typeof data !== 'object') return ''
   const obj = data as Record<string, unknown>
+  const baseResp = obj.base_resp
+  if (baseResp !== null && typeof baseResp === 'object') {
+    const record = baseResp as Record<string, unknown>
+    const statusMessage = typeof record.status_msg === 'string' ? record.status_msg : ''
+    if (statusMessage !== '') {
+      return typeof record.status_code === 'number' ? `${statusMessage}（base_resp ${record.status_code}）` : statusMessage
+    }
+  }
   // 阿里云 DashScope / 火山引擎 Ark 常见错误字段
   const message = obj.message ?? obj.error_message ?? obj.msg
   if (typeof message === 'string') return message
@@ -355,6 +375,137 @@ export async function requestFull(opts: RequestOptions): Promise<RequestResult> 
     }
   }
   throw lastError ?? new GenerationError('network', '请求失败且未捕获具体错误', true)
+}
+
+/** 二进制响应（音频、图片等非 JSON 载荷）。 */
+export interface BinaryResult {
+  data: Uint8Array
+  contentType: string
+  status: number
+  headers: Headers
+}
+
+/** 把非 2xx 响应体解析成可用于错误分类的值（JSON 优先，其次纯文本）。 */
+function parseErrorBody(text: string): unknown {
+  if (text.length === 0) return null
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
+/**
+ * 执行「请求体是 JSON、响应体是二进制」的调用（TTS `/audio/speech` 这类端点）。
+ *
+ * 为什么不能用 {@link request}：那条路径用 `res.text()` 读响应体，二进制音频会被
+ * 当作 UTF-8 文本解码而损坏。这里用 `arrayBuffer()` 原样收字节，失败时才按
+ * JSON/文本解析错误体并交给同一套错误分类。
+ * @param opts - 请求选项（重试语义同 {@link request}）。
+ * @returns 原始字节、Content-Type、状态码与响应头。
+ * @throws {GenerationError} 分类后的生成错误。
+ */
+export async function requestBinary(opts: RequestOptions): Promise<BinaryResult> {
+  let lastError: GenerationError | undefined
+  for (let attempt = 0; attempt <= opts.retryTimes; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new GenerationError('timeout', '任务已被取消', false)
+    }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs)
+    const onExternalAbort = (): void => controller.abort()
+    opts.signal?.addEventListener('abort', onExternalAbort)
+    try {
+      const init: RequestInit = { method: opts.method, headers: opts.headers, signal: controller.signal }
+      if (opts.method === 'POST' && opts.body !== undefined) init.body = JSON.stringify(opts.body)
+      const res = await fetch(opts.url, init)
+      if (!res.ok) {
+        const failure = await res.text()
+        throw classifyHttpError(res.status, parseErrorBody(failure), opts.url, res.headers.get('retry-after'))
+      }
+      const buffer = await res.arrayBuffer()
+      return {
+        data: new Uint8Array(buffer),
+        contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+        status: res.status,
+        headers: res.headers,
+      }
+    } catch (err) {
+      if (err instanceof GenerationError) {
+        if (!err.retryable) throw err
+        lastError = err
+      } else if (controller.signal.aborted && !opts.signal?.aborted) {
+        lastError = new GenerationError('timeout', `请求超时（${opts.timeoutMs}ms），URL: ${opts.url}`, true)
+      } else if (opts.signal?.aborted) {
+        throw new GenerationError('timeout', '任务已被取消', false)
+      } else {
+        lastError = new GenerationError('network', `网络请求失败：${err instanceof Error ? err.message : String(err)}`, true)
+      }
+      if (attempt < opts.retryTimes) {
+        await sleep(lastError.retryAfterMs ?? RETRY_BACKOFF_MS * Math.pow(2, attempt), opts.signal)
+      }
+    } finally {
+      clearTimeout(timeoutId)
+      opts.signal?.removeEventListener('abort', onExternalAbort)
+    }
+  }
+  throw lastError ?? new GenerationError('network', '请求失败且未捕获具体错误', true)
+}
+
+/**
+ * 执行 multipart/form-data 上传（`POST /files/upload`），响应按 JSON 解析。
+ *
+ * 不能复用 {@link request}：那条路径会把请求体 `JSON.stringify`，而这里必须让
+ * fetch 自己按 boundary 编码 FormData（因此**不要**手工设 Content-Type）。
+ * 上传是「可能留下服务端文件」的写操作，默认由调用方传 `retryTimes: 0`。
+ * @param opts - URL、鉴权头（不含 Content-Type）、表单、超时/重试/取消。
+ * @returns 解析后的响应体（JSON 或纯文本）。
+ * @throws {GenerationError} 分类后的生成错误。
+ */
+export async function requestMultipart(opts: {
+  url: string
+  headers: Record<string, string>
+  form: FormData
+  timeoutMs: number
+  retryTimes: number
+  signal?: AbortSignal
+}): Promise<{ data: unknown; status: number }> {
+  let lastError: GenerationError | undefined
+  for (let attempt = 0; attempt <= opts.retryTimes; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new GenerationError('timeout', '任务已被取消', false)
+    }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), opts.timeoutMs)
+    const onExternalAbort = (): void => controller.abort()
+    opts.signal?.addEventListener('abort', onExternalAbort)
+    try {
+      const res = await fetch(opts.url, { method: 'POST', headers: opts.headers, body: opts.form, signal: controller.signal })
+      const text = await res.text()
+      if (!res.ok) {
+        throw classifyHttpError(res.status, parseErrorBody(text), opts.url, res.headers.get('retry-after'))
+      }
+      return { data: parseErrorBody(text), status: res.status }
+    } catch (err) {
+      if (err instanceof GenerationError) {
+        if (!err.retryable) throw err
+        lastError = err
+      } else if (controller.signal.aborted && !opts.signal?.aborted) {
+        lastError = new GenerationError('timeout', `上传超时（${opts.timeoutMs}ms），URL: ${opts.url}`, true)
+      } else if (opts.signal?.aborted) {
+        throw new GenerationError('timeout', '任务已被取消', false)
+      } else {
+        lastError = new GenerationError('network', `上传失败：${err instanceof Error ? err.message : String(err)}`, true)
+      }
+      if (attempt < opts.retryTimes) {
+        await sleep(lastError.retryAfterMs ?? RETRY_BACKOFF_MS * Math.pow(2, attempt), opts.signal)
+      }
+    } finally {
+      clearTimeout(timeoutId)
+      opts.signal?.removeEventListener('abort', onExternalAbort)
+    }
+  }
+  throw lastError ?? new GenerationError('network', '上传失败且未捕获具体错误', true)
 }
 
 /**

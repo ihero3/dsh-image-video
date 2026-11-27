@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### 语音（TTS / 语音克隆 / 长文本异步）接入网关（2026-11-27）
+
+服务端语音能力已上线，客户端插件从「只做配音计划、合成明确拒绝」改为**真调用**，并把能力开放给模型工具、工作台界面与 RPC 三处（同一份服务实现，行为一致）：
+
+- **`src/media/tts.ts` 重写为真实网关客户端**：`POST /audio/speech`（OpenAI 兼容 `model/input/voice/response_format/speed` + 网关扩展 `instruction`/`references`；MiniMax 系额外支持 `voice_setting` 的音高/音量）、`POST /files/upload`（multipart，`purpose=voice_clone`）+ `POST /voice_clone`（返回 `mmxvc_…` 音色 id）、`POST /t2a_async_v2` + `GET /query/t2a_async_query_v2`（成功后可经 `download_url` 或 `file_id` → `/files/retrieve` 取音频）。响应解析同时兼容「直接是音频字节」「JSON 包 hex/base64 音频」「JSON 包地址」「MiniMax `base_resp` 报错」四种形态；**拿不到音频就响亮失败**，不落假文件。
+- **同步合成永不自动重试**（与同步生图同口径：请求可能已计费）；异步任务超时只报 `task_id`，不重新提交；上传失败不自动重试，避免在服务端堆垃圾文件。
+- **时长可信**：优先 ffprobe 实测，其次解析 WAV 头，最后才按字数估算，并用 `durationEstimated` 如实标注（mp3 + 无 ffprobe 时不会假装知道时长）。
+- **新增工具** `generate_speech`（对话里直接念文本：音色/语气指令/语速音调音量/多人对话参考音频；超过 `tts.asyncThresholdChars` 自动切异步）与 `clone_voice`（本地或远程样本 → 复刻音色 → 返回 id 供后续合成复用）。
+- **新增 RPC**：`voice/synthesize` 扩参（`model/speed/pitch/volume/instruction/responseFormat/references`）、`voice/clone`、`voice/synthesize-async`、`voice/async-status`；`voice/status` 合并「配置的预设音色 + 已复刻音色」，并回报生效模型、克隆模型与网关地址。
+- **复刻音色不再丢**：新增 `src/workbench/voice-clones.ts`，音色记录落 `<工作台目录>/voice-clones.json`（`mmxvc_…` 这类 id 不记下来就再也找不回）。
+- **凭证与端点多层回落**：`tts.apiKey`/`tts.apiKeyEnv` → 激活服务商凭证 → 服务商默认地址；`tts.baseURL` 可指向另一站点（语音路由未部署在某站点时不必改生成配置）。新增配置项 `tts.responseFormat` / `tts.cloneModel` / `tts.instruction` / `tts.asyncThresholdChars`。
+- **界面**：时间轴「配音卡片」的「生成配音」真正可用（逐行合成、长句自动异步、每行内嵌 `<audio>` 当场试听、失败保留已合成部分）；剧本页「音色」分区新增复刻入口（浏览器选样本 → 宿主上传），音色卡在「没有音色但有参考音频」时**先复刻再试听**并把音色 id 写回卡片。
+- **`http-client.ts` 新增** `requestBinary`（响应是音频时不能用 `res.text()`，否则字节被当 UTF-8 解码损坏）与 `requestMultipart`（FormData 上传，不手工设 Content-Type）。
+- 测试：新增 `tests/tts-service.test.ts`（13 例：端点/请求体/四种响应形态/克隆/异步/默认值与时长解析）；`workbench-voice` 与客户端音色测试改为覆盖可用路径与「先克隆再合成」。
+- 体积：总产物 raw 1,573,408 → 1,588,290、gzip 340,475 → 343,673（+0.9%）；按既有口径抬总产物基线到 raw 1,335,000 / gzip 291,000（预算 1,602,000 / 349,200），实测占用 99.3% / 98.8%。入口 `plugin.js` 不变，增长都在首次打开工作台才下载的 chunk 里。
+
 ### 工作流画布：节点库 / 起步模板 / 运行体验重构（2026-11-26）
 
 参考 ComfyUI / ComfyUI_frontend、LiblibAI 工作流页与 InvokeAI 的编辑器实现，把画布从"一排节点 chip + 一排工具栏"改成节点式工作区（调研与出处在 `docs/research/workflow-editor-references.md`）：

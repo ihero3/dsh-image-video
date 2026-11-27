@@ -830,6 +830,23 @@ export type WorkbenchLocaleKey =
   | 'voiceEstimate'
   | 'voiceGenerate'
   | 'voiceNotReady'
+  | 'voiceVoice'
+  | 'voiceDefaultVoice'
+  | 'voiceSynthesizing'
+  | 'voiceSynthesized'
+  | 'voiceSynthesizePartial'
+  | 'voiceDurationHint'
+  | 'voiceCloneTag'
+  | 'voiceCloneTitle'
+  | 'voiceCloneSampleLabel'
+  | 'voiceCloneSamplePlaceholder'
+  | 'voiceCloneNameLabel'
+  | 'voiceCloneNamePlaceholder'
+  | 'voiceCloneRun'
+  | 'voiceCloning'
+  | 'voiceCloneDone'
+  | 'voiceClonePickFile'
+  | 'voiceCloneFilePicked'
   | 'storyboardTitle'
   | 'storyboardHint'
   | 'storyboardScriptLabel'
@@ -1088,7 +1105,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   pipelineRegisterScene: 'As scene',
   pipelineRegisterProp: 'As prop',
   voiceTitle: 'Dub (voice-over)',
-  voiceHint: 'Turn the subtitle track into a dub plan: lines, characters and estimated duration. Synthesis turns on once the TTS API is live.',
+  voiceHint: 'Turn the subtitle track into a dub plan — lines, characters and estimated duration — then synthesize it to audio files under outputs/.',
   voicePlan: 'Build dub plan',
   voicePlanning: 'Planning…',
   voiceLines: 'lines',
@@ -1096,6 +1113,23 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   voiceEstimate: 'estimated',
   voiceGenerate: 'Synthesize',
   voiceNotReady: 'Not available yet',
+  voiceVoice: 'Voice',
+  voiceDefaultVoice: 'Default voice',
+  voiceSynthesizing: 'Synthesizing…',
+  voiceSynthesized: 'Speech saved',
+  voiceSynthesizePartial: 'Synthesized {done}/{total} lines',
+  voiceDurationHint: 'Duration',
+  voiceCloneTag: 'cloned',
+  voiceCloneTitle: 'Clone a voice',
+  voiceCloneSampleLabel: 'Sample audio',
+  voiceCloneSamplePlaceholder: 'Path under outputs, e.g. outputs/sample.wav',
+  voiceCloneNameLabel: 'Voice name',
+  voiceCloneNamePlaceholder: 'e.g. MyVoice001',
+  voiceCloneRun: 'Clone voice',
+  voiceCloning: 'Cloning…',
+  voiceCloneDone: 'Voice cloned: {id}',
+  voiceClonePickFile: 'Choose sample file…',
+  voiceCloneFilePicked: 'Picked: {name}',
   projectNone: 'No series yet',
   saveSaved: 'Saved',
   saveSaving: 'Saving…',
@@ -1121,7 +1155,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   voiceExtractPromptPlaceholder: 'Extra requirements, e.g. only roles with dialogue. Output must stay a JSON array.',
   voiceExtractRun: 'Extract voices',
   voiceCardsTitle: 'Voice profiles',
-  voiceCardsDesc: 'One card per speaker. Save to the library; synthesis stays disabled until TTS is connected.',
+  voiceCardsDesc: 'One card per speaker: preset or cloned voice, speed, pitch and emotion. Save to the library and audition in place.',
   voiceCardsEmpty: 'Extract voices or add a card manually to configure a speaker.',
   voiceCardAdd: 'Add voice',
   voiceCardUntitled: 'Untitled voice',
@@ -1421,7 +1455,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   nodeVoiceSynthesize: 'Voice synthesize',
   plannedLipSync: 'Host does not expose lip-sync yet',
   plannedFaceSwap: 'Host does not expose face swap yet',
-  plannedVoice: 'Per D6 this release keeps voice metadata only; no TTS yet',
+  plannedVoice: 'Voice metadata (synthesis is available from the audio tools)',
   nodeExternal: 'External node',
   paramExternalClass: 'Original type',
   paramExternalConfig: 'Original config (JSON)',
@@ -2267,7 +2301,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   pipelineRegisterScene: '登记为场景',
   pipelineRegisterProp: '登记为物品',
   voiceTitle: '配音（旁白）',
-  voiceHint: '把字幕轨变成配音计划：台词、字数、估算时长一目了然。TTS 接口联调通过后即可一键生成。',
+  voiceHint: '把字幕轨变成配音计划：台词、字数、估算时长一目了然；确认后一键合成为 outputs/ 下的音频文件。',
   voicePlan: '生成配音计划',
   voicePlanning: '计算中…',
   voiceLines: '句',
@@ -2275,6 +2309,23 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   voiceEstimate: '预计',
   voiceGenerate: '生成配音',
   voiceNotReady: '暂不可用',
+  voiceVoice: '音色',
+  voiceDefaultVoice: '默认音色',
+  voiceSynthesizing: '合成中…',
+  voiceSynthesized: '配音已生成',
+  voiceSynthesizePartial: '已合成 {done}/{total} 句',
+  voiceDurationHint: '时长',
+  voiceCloneTag: '复刻',
+  voiceCloneTitle: '复刻音色',
+  voiceCloneSampleLabel: '样本音频',
+  voiceCloneSamplePlaceholder: 'outputs 下的路径，如 outputs/sample.wav',
+  voiceCloneNameLabel: '音色名',
+  voiceCloneNamePlaceholder: '如 MyVoice001',
+  voiceCloneRun: '复刻音色',
+  voiceCloning: '复刻中…',
+  voiceCloneDone: '音色已复刻：{id}',
+  voiceClonePickFile: '选择样本文件…',
+  voiceCloneFilePicked: '已选：{name}',
   projectNone: '还没有剧集',
   saveSaved: '已保存',
   saveSaving: '保存中…',
@@ -2300,7 +2351,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   voiceExtractPromptPlaceholder: '补充要求，例如只要有台词的角色。输出必须保持为 JSON 数组。',
   voiceExtractRun: '提取音色',
   voiceCardsTitle: '音色卡',
-  voiceCardsDesc: '一个说话人一张卡；可存进资源库。TTS 接入前「合成试听」保持禁用。',
+  voiceCardsDesc: '一个说话人一张卡：预设或复刻音色、语速、音调与情绪；可存进资源库并就地试听。',
   voiceCardsEmpty: '先提取音色或手动添加一张卡，再配置说话人。',
   voiceCardAdd: '添加音色',
   voiceCardUntitled: '未命名音色',
@@ -2600,7 +2651,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   nodeVoiceSynthesize: '语音合成',
   plannedLipSync: '宿主尚未提供口型/唇形能力',
   plannedFaceSwap: '宿主尚未提供换脸能力',
-  plannedVoice: 'D6 本期只做音色元数据，未接 TTS',
+  plannedVoice: '音色元数据（合成请用语音工具）',
   nodeExternal: '外部节点',
   paramExternalClass: '原始类型',
   paramExternalConfig: '原始配置（JSON）',

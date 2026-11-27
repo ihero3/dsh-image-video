@@ -59,6 +59,29 @@
         imageUnknownStatePolicy: fail
         # 生成媒体落地目录（相对路径基于进程 cwd 解析）
         outputsDir: './outputs'
+        # 语音（TTS）：同步合成 / 语音克隆 / 长文本异步。
+        # apiKey/apiKeyEnv/baseURL 全空时**回落上面 threevideo 的凭证与端点**
+        # （语音与生图/生视频同一个网关账号，用户不必配两遍 Key）。
+        tts:
+          provider: threevideo
+          apiKey: ''
+          apiKeyEnv: THREEVIDEO_TTS_API_KEY
+          # 留空跟随激活服务商的 baseURL；语音路由只在另一站点部署时可单独指过去
+          baseURL: ''
+          # 同步合成模型，留空用内置默认（qwen-audio-3.1-tts-flash）
+          model: ''
+          # 默认音色，留空按模型兜底；可填预设音色或复刻音色（mmxvc_…）
+          defaultVoice: ''
+          # 预设音色清单（复刻音色由宿主持久化到工作台数据目录）
+          voices: []
+          # 同步合成的音频封装
+          responseFormat: mp3
+          # 语音克隆模型，留空用内置默认（speech-2.8-hd）
+          cloneModel: ''
+          # 默认语气指令，如「用温柔的语气，语速稍慢」
+          instruction: ''
+          # 超过该字数时工具自动改走长文本异步端点（0 = 从不自动切换）
+          asyncThresholdChars: 800
         # 最终图片水印：与模型结果使用同一 outputsDir 和 attachment 流程
         watermark:
           enabled: true

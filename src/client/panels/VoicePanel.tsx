@@ -2,8 +2,9 @@
  * 剧本生成页的「音色」分区：从剧本提取说话人，配成可复用的音色卡。
  *
  * 参考 ComfyUI 的 Zero-Shot Clone / CosyVoice 节点：一张音色卡 = 一个说话人 +
- * 可选参考音频 + 预设音色 + 语速/音调/情感。宿主 TTS 合成未接入时，
- * 「合成试听」保持禁用并展示原因；卡片、参数与入库照常可用，不假装合成成功。
+ * 可选参考音频 + 预设/复刻音色 + 语速/音调/情感。卡片填了就「合成试听」当前参数；
+ * 没有音色但有样本时会**先复刻再试听**（复刻出的音色 id 写回卡片，后续复用之）。
+ * 语音服务不可用时按钮禁用并展示原因，绝不假装合成成功。
  *
  * @module dsh-image-video/client/panels/VoicePanel
  */
@@ -35,6 +36,30 @@ function parseModelKey(key: string): { readonly provider: string, readonly model
   const provider = key.slice(0, separator)
   const model = key.slice(separator + 2)
   return provider === '' || model === '' ? undefined : { provider, model }
+}
+
+/** 音色名 → 网关 voice_id（只留安全字符；空串表示让宿主自动生成）。 */
+function sanitizeVoiceId(name: string): string | undefined {
+  const cleaned = name.trim().replace(/[^A-Za-z0-9_-]/gu, '')
+  return cleaned === '' ? undefined : cleaned.slice(0, 64)
+}
+
+/** 浏览器文件 → base64（去掉 data URL 前缀），供宿主上传后克隆。 */
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        resolve('')
+        return
+      }
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.onerror = () => { reject(reader.error ?? new Error('读取样本文件失败')) }
+    reader.readAsDataURL(file)
+  })
 }
 
 /** 一张音色卡入库时的备注：参数写成可读文本，宿主 resources 表可直接检索。 */
@@ -77,6 +102,9 @@ export function VoicePanel(props: VoicePanelProps) {
   const [status, setStatus] = useState<VoiceStatus | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [synthesizing, setSynthesizing] = useState('')
+  const [cloning, setCloning] = useState(false)
+  const [cloneSample, setCloneSample] = useState<{ name: string; base64: string }>()
+  const [cloneName, setCloneName] = useState('')
   const [error, setError] = useState<string>()
   const [importedFiles] = useWorkbenchField(api, 'pipelineImportedFiles')
   const [pipelineScript] = useWorkbenchField(api, 'pipelineScript')
@@ -173,13 +201,86 @@ export function VoicePanel(props: VoicePanelProps) {
     }
   }
 
+  /** 重新拉一次可用性（克隆出新音色后，下拉框要能立刻选到它）。 */
+  const refreshStatus = async (): Promise<void> => {
+    if (typeof api.voiceStatus !== 'function') return
+    try {
+      setStatus(await api.voiceStatus())
+    } catch { /* 拉不到不影响已完成的合成 */ }
+  }
+
+  /** 选一份样本文件（浏览器读成 base64，宿主负责上传）。 */
+  const pickSample = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return
+    setError(undefined)
+    try {
+      const base64 = await readFileAsBase64(file)
+      if (base64 === '') throw new Error(t('voiceClonePickFile'))
+      setCloneSample({ name: file.name, base64 })
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : String(cause), 'error')
+    }
+  }
+
+  /** 独立复刻：用面板里选的样本文件建一个音色，成功后刷新下拉框。 */
+  const cloneVoice = async (): Promise<void> => {
+    if (cloneSample === undefined || typeof api.voiceClone !== 'function') return
+    setCloning(true); setError(undefined)
+    try {
+      const result = await api.voiceClone({
+        audioBase64: cloneSample.base64,
+        filename: cloneSample.name,
+        ...sanitizeVoiceId(cloneName) === undefined ? {} : { voiceId: sanitizeVoiceId(cloneName) },
+        ...cloneName.trim() === '' ? {} : { name: cloneName.trim() },
+      })
+      onNotice(t('voiceCloneDone').replace('{id}', result.clone.voiceId), 'info')
+      setCloneName('')
+      setCloneSample(undefined)
+      await refreshStatus()
+      await onCreated()
+    } catch (cause) {
+      onNotice(cause instanceof Error ? cause.message : String(cause), 'error')
+    } finally {
+      setCloning(false)
+    }
+  }
+
+  /**
+   * 这张卡现在该用哪个音色：卡上已选则直接用；否则用参考音频（宿主路径或面板选的
+   * 文件）**先复刻**，把得到的 id 写回卡片再合成——一次点击完成「零样本克隆 + 试听」。
+   */
+  const ensureVoiceId = async (card: VoiceCard): Promise<string | undefined> => {
+    if (card.voiceId.trim() !== '') return card.voiceId.trim()
+    if (typeof api.voiceClone !== 'function') return undefined
+    const refPath = (card.refAudioPath ?? '').trim()
+    if (refPath === '' && cloneSample === undefined) return undefined
+    const cloneNameValue = card.name.trim() === '' ? undefined : card.name.trim()
+    const result = await api.voiceClone({
+      ...refPath !== '' ? { audioPath: refPath } : {},
+      ...refPath === '' && cloneSample !== undefined
+        ? { audioBase64: cloneSample.base64, filename: cloneSample.name }
+        : {},
+      ...sanitizeVoiceId(card.name) === undefined ? {} : { voiceId: sanitizeVoiceId(card.name) },
+      ...cloneNameValue === undefined ? {} : { name: cloneNameValue },
+      ...card.prompt.trim() === '' ? {} : { text: card.prompt.trim() },
+    })
+    patch(card.id, { voiceId: result.clone.voiceId })
+    onNotice(t('voiceCloneDone').replace('{id}', result.clone.voiceId), 'info')
+    await refreshStatus()
+    return result.clone.voiceId
+  }
+
   const synthesize = async (card: VoiceCard): Promise<void> => {
     if (!available || typeof api.voiceSynthesize !== 'function') return
     setSynthesizing(card.id); setError(undefined)
     try {
+      const voiceId = await ensureVoiceId(card)
       const result = await api.voiceSynthesize({
         text: card.prompt.trim() === '' ? card.name : card.prompt.trim(),
-        ...card.voiceId === '' ? {} : { voiceId: card.voiceId },
+        ...voiceId === undefined || voiceId === '' ? {} : { voiceId },
+        speed: card.speed,
+        pitch: card.pitch,
+        ...card.emotion.trim() === '' ? {} : { instruction: card.emotion.trim() },
       })
       onNotice(`${t('voiceCardSynthesized')} · ${result.audio.audioPath}`, 'info')
     } catch (cause) {
@@ -290,6 +391,51 @@ export function VoicePanel(props: VoicePanelProps) {
         </div>
       )}
 
+      <div className="iv-sub" data-voice-clone="true">
+        <div className="iv-plan-row">
+          <span className="iv-sub-title">{t('voiceCloneTitle')}</span>
+          <span className="iv-meta">{t('voiceCardsDesc')}</span>
+        </div>
+        <div className="iv-plan-row">
+          <label className="iv-sb-field">
+            <span className="iv-meta">{t('voiceCloneSampleLabel')}</span>
+            <input
+              className="iv-input"
+              type="file"
+              accept="audio/*"
+              data-voice-clone-file="true"
+              onChange={event => { void pickSample(event.target.files?.[0]) }}
+            />
+          </label>
+          <label className="iv-sb-field">
+            <span className="iv-meta">{t('voiceCloneNameLabel')}</span>
+            <input
+              className="iv-input"
+              data-voice-clone-name="true"
+              placeholder={t('voiceCloneNamePlaceholder')}
+              value={cloneName}
+              onChange={event => { setCloneName(event.target.value) }}
+            />
+          </label>
+        </div>
+        {cloneSample === undefined
+          ? <span className="iv-meta">{t('voiceCloneSamplePlaceholder')}</span>
+          : <span className="iv-meta" data-voice-clone-picked="true">{t('voiceCloneFilePicked').replace('{name}', cloneSample.name)}</span>}
+        <div className="iv-plan-row">
+          <button
+            type="button"
+            className="iv-btn iv-btn--sm"
+            data-voice-clone-run="true"
+            disabled={!available || cloning || cloneSample === undefined || typeof api.voiceClone !== 'function'}
+            title={available ? undefined : (status?.reason ?? t('voiceNotReady'))}
+            onClick={() => { void cloneVoice() }}
+          >
+            <Icon name="music" size={12} />
+            {cloning ? t('voiceCloning') : t('voiceCloneRun')}
+          </button>
+        </div>
+      </div>
+
       <div className="iv-sub" data-voice-cards="true">
         <div className="iv-plan-row">
           <span className="iv-sub-title">{t('voiceCardsTitle')}</span>
@@ -330,7 +476,9 @@ export function VoicePanel(props: VoicePanelProps) {
                         onChange={event => { patch(card.id, { voiceId: event.target.value }) }}>
                         <option value="">{t('voiceCardDefaultVoice')}</option>
                         {(status?.voices ?? []).map(voice => (
-                          <option key={voice.id} value={voice.id}>{voice.name}</option>
+                          <option key={voice.id} value={voice.id}>
+                            {voice.name}{voice.kind === 'clone' ? ` · ${t('voiceCloneTag')}` : ''}
+                          </option>
                         ))}
                       </select>
                     </label>
