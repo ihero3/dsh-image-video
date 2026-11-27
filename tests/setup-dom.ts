@@ -43,4 +43,24 @@ if (typeof globalThis.window !== 'undefined') {
    * 慢机器留余量，业务逻辑错了照样失败。
    */
   configure({ asyncUtilTimeout: 2000 })
+
+  /**
+   * Node 22+ 自带 `localStorage` 全局（没给 `--localstorage-file` 有效路径时就是个空对象，
+   * 启动时会告警「--localstorage-file was provided without a valid path」）。
+   * vitest 的 populateGlobal 只覆盖"全局里还没有"的键，于是 jsdom 的 web storage
+   * 被 Node 这份空壳顶掉：`typeof localStorage.setItem !== 'function'`，
+   * 依赖草稿持久化的用例在 `localStorage.clear()` 直接炸。
+   *
+   * 这里只做**重绑定**，不造假实现：把 jsdom 那份真 Storage 挂回全局，
+   * `Storage.prototype` 上的补丁（配额超限用例）照旧生效。
+   */
+  const jsdomWindow = (globalThis as unknown as { jsdom?: { window?: Window } }).jsdom?.window
+  const globalStorage = (globalThis as unknown as { localStorage?: Storage }).localStorage
+  if (jsdomWindow !== undefined && typeof globalStorage?.setItem !== 'function') {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: jsdomWindow.localStorage,
+    })
+  }
 }

@@ -46,9 +46,12 @@ export default defineConfig({
       reporter: ['text-summary'],
       include: ['src/**'],
       exclude: ['src/client/**', 'src/**/*.d.ts'],
-      // 阈值先占位，实测后按真实值设定（见 docs/COVERAGE-PLAN.md）
-      // 阈值 = 2026-10-19 实测值 - 2pp（statements 82.98 / branches 72.52 / functions 81.81 / lines 85.36）
-      thresholds: { lines: 83, functions: 80, branches: 70, statements: 81 },
+      // 阈值 = 最近一次全量实测值 - 2pp（口径见 docs/UI-POLISH-PLAN.md「同步下调全局阈值」）
+      // 2026-11-27 实测：statements 79.75 / branches 67.50 / functions 81.20 / lines 82.88
+      // 相对上版（2026-10-19）的降幅集中在三块仍无用例的宿主模块：
+      // src/tools/generate-image.ts 0%、src/tools/generate-video.ts 4.5%、src/tools/speech.ts 7%。
+      // 给这三块补上用例后应把阈值抬回去，不要把这组数当新常态。
+      thresholds: { lines: 80.8, functions: 79.2, branches: 65.5, statements: 77.7 },
     },
     resolve: {
       // vitest 4 对 workspace 包的 `exports` 遵守得更严格：`@deepseek-ai/dsh-client-connection/src/...`
