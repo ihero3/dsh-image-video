@@ -25,6 +25,8 @@ import {
   timelineDurationMs, type ClipTransition, type TimelineClip, type TimelineRecord, type TimelineTrack, type TrackKind,
 } from '../workbench/timeline.ts'
 import { duplicateClip as duplicateClipInTracks, splitClipAt } from '../workbench/edits.ts'
+// `B2`：导出规格预览与宿主共用同一套档位换算，避免"显示 2K、实际 720p"
+import { resolveExportFormat } from '../workbench/export-selection.ts'
 import { DRAMA_TEMPLATES } from '../workbench/drama.ts'
 import { planSubtitleClips } from '../workbench/subtitles.ts'
 import type { FfmpegProbe } from '../media/ffmpeg.ts'
@@ -152,6 +154,20 @@ const SCRIPT_TAB_ICONS: Record<WorkbenchScriptTab, IconName> = {
   split: 'storyboard', extract: 'box', voice: 'music', motion: 'motion',
 }
 
+/** 剧本页第几步：1 写剧本 → 2 分段 → 3 分镜；0 表示三步都已完成。 */
+type ScriptStepNo = 0 | 1 | 2 | 3
+/** 步进条的三步定义：序号即步骤号，锚点用于点按后滚动到对应区块。 */
+const SCRIPT_STEPS: ReadonlyArray<{
+  readonly no: 1 | 2 | 3
+  readonly label: WorkbenchLocaleKey
+  readonly hint: WorkbenchLocaleKey
+  readonly anchor: string
+}> = [
+  { no: 1, label: 'scriptStepScript', hint: 'scriptStepHintScript', anchor: 'script-step-pipeline' },
+  { no: 2, label: 'scriptStepSplit', hint: 'scriptStepHintSplit', anchor: 'script-step-segments' },
+  { no: 3, label: 'scriptStepStoryboard', hint: 'scriptStepHintStoryboard', anchor: 'script-step-storyboard' },
+]
+
 /** Resource kind → icon (resource library rows). */
 const RESOURCE_ICONS: Record<ResourceKind, IconName> = {
   'role': 'user', 'costume': 'shirt', 'scene': 'image', 'prop': 'box', 'brand': 'tag',
@@ -197,6 +213,24 @@ function scrollToPane(pane: string): void {
   // jsdom / 旧 WebView 没有 scrollIntoView：定位失败不该把流程打断（`T9` 同款防御）
   if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   // 重启动画：先摘掉类，强制一次重排，再挂回去
+  target.classList.remove('iv-pane--flash')
+  void target.offsetWidth
+  target.classList.add('iv-pane--flash')
+  target.addEventListener('animationend', () => { target.classList.remove('iv-pane--flash') }, { once: true })
+}
+
+/**
+ * 跳到剧本页的某一步（步进条点按、以及生成剧本后自动指向下一步）。
+ *
+ * 与 `scrollToPane` 同一套防御：目标不存在直接返回，没有 `scrollIntoView`
+ * （jsdom / 旧 WebView）就只给高亮——跳转失败不该打断流程。
+ *
+ * @param anchor - 步骤区块的 DOM id（`script-step-pipeline` / `-segments` / `-storyboard`）。
+ */
+function jumpToScriptStep(anchor: string): void {
+  const target = document.getElementById(anchor)
+  if (target === null) return
+  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'start' })
   target.classList.remove('iv-pane--flash')
   void target.offsetWidth
   target.classList.add('iv-pane--flash')
@@ -666,6 +700,22 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   const [exportResolution, setExportResolution] = useState('default')
   const [exportFps, setExportFps] = useState(30)
   const [exportAspect, setExportAspect] = useState('landscape')
+  /**
+   * 导出条的实时规格预览（`B2`）。
+   *
+   * 与宿主 `timelines/render` 调**同一个** `resolveExportFormat`，所以下拉上显示的尺寸
+   * 就是 ffmpeg 真正会输出的尺寸——不是前端另算一份"大概是这样"。
+   * 档位非法时返回 undefined（下拉值都是白名单，理论上不会走到）。
+   */
+  const exportPreviewFormat = (() => {
+    try {
+      return resolveExportFormat(timeline?.exportFormat, {
+        resolution: exportResolution, fps: exportFps, aspect: exportAspect,
+      })
+    } catch {
+      return undefined
+    }
+  })()
   // B6 导出成功后「登记到素材库」的反馈。
   const [assetRegistered, setAssetRegistered] = useState(false)
   const [projects, setProjects] = useState<readonly ProjectRecord[]>([])
@@ -1908,6 +1958,27 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     ref,
     asset: assets.find(asset => asset.id === ref.assetId),
   }))
+  /**
+   * 剧本页三步进度（写剧本 → 分段 → 分镜）。
+   *
+   * 判定只用当前集的**真实数据**，不看按钮点过没有：剧本非空 = 第一步完成；
+   * 有分段 = 第二步完成；任一段有镜头 = 第三步完成。
+   * 有分段就认为第一步也过了（用户可能只手动加了段、没落剧本正文），
+   * 否则会出现「明明有分段，却提示去写剧本」的倒退。
+   *
+   * 「下一步」取第一个未完成的步骤，用来**收敛主按钮**：三个按钮不再同时实心主色，
+   * 只有对应下一步的那个是主色（`--action--primary`），其余降为柔色（`--action--soft`）。
+   * 未选集 / 未选剧本时停在第一步，此时「生成剧本」仍是唯一主按钮。
+   */
+  const scriptStep = (() => {
+    const hasScript = (activeEpisode?.script?.text ?? '').trim() !== ''
+    const hasSegments = (activeEpisode?.segments?.length ?? 0) > 0
+    const hasStoryboard = (activeEpisode?.storyboards ?? [])
+      .some(storyboard => (storyboard.shots?.length ?? 0) > 0)
+    const step1Done = hasScript || hasSegments
+    const next: ScriptStepNo = !step1Done ? 1 : !hasSegments ? 2 : !hasStoryboard ? 3 : 0
+    return { next, hasScript, hasSegments, hasStoryboard }
+  })()
   // 搜索框跟着当前 tab 走：本集已选只在本集已选里匹配，剧集全部仍走 visibleResources。
   // 用单独的列表做展示过滤，原始 rows 继续给「加入本集」等判断用，避免误判成未引用。
   const filteredEpisodeResourceRows = episodeResourceRows.filter(({ resource }) =>
@@ -2482,8 +2553,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         data-workbench-header="true"
         onDoubleClick={onWindowStripDoubleClick}
       >
-        <div className="iv-brand">
-          <BrandMark size={22} />
+        <div className="iv-brand" title={t('brandTagline')}>
+          <BrandMark size={20} />
           <span className="iv-brand-text">
             <span className="iv-brand-name">{t('brandName')}</span>
             <span className="iv-brand-sub">{t('brandTagline')}</span>
@@ -2559,7 +2630,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             />
             <button
               type="button"
-              className="iv-btn iv-btn--acc iv-btn--sm"
+              className={`iv-btn iv-btn--sm${name.trim().length > 0 ? ' iv-btn--acc' : ''}`}
               disabled={busy || name.trim().length === 0}
               onClick={() => {
                 void run(async () => {
@@ -2680,7 +2751,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                 title={t('episodeNew')}
                 onClick={createEpisode}
               >
-                <Icon name="plus" size={11} />{t('episodeNew')}
+                <Icon name="plus" size={11} /><span className="iv-btn-txt">{t('episodeNew')}</span>
               </button>
               {forceTarget === activeEpisodeId && activeEpisode !== undefined
                 ? (
@@ -2698,7 +2769,83 @@ export function Workbench(props: WorkbenchProps): ReactNode {
             </div>
           </>
         )}
-        <span className="iv-top-sep" aria-hidden="true" />
+        {/* 保存状态与右侧工具合成一个整体：窄档换行时一起下去靠右，
+            不会出现「工具被甩到下一行最左边」的错位。 */}
+        <div className="iv-top-end">
+          <div className="iv-top-meta">
+            <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
+              <i className="iv-dot" aria-hidden="true" />
+              {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
+            </span>
+            {/* 健康状态只在异常 / 检测中时提示：正常的版本号收进帮助浮层（2026-11-20） */}
+            {health.status === 'ok' ? null : (
+              <span
+                className={`iv-chip${health.status === 'checking' ? '' : ' iv-chip--err'}`}
+                title={health.status === 'failed' ? health.message : undefined}
+              >
+                <i className="iv-dot" aria-hidden="true" />
+                {healthText}
+              </span>
+            )}
+            <button
+              type="button"
+              className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
+              aria-label={t('refresh')}
+              title={t('refresh')}
+              disabled={busy}
+              onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
+            >
+              <Icon name="refresh" />
+            </button>
+          </div>
+
+          {/* 登录 / 帮助 / 工作台：吸附在最右侧，替换掉原「输出产物 / 素材 / 任务」三个统计块的位置。 */}
+          <div className="iv-top-tools">
+            <button
+              type="button"
+              className={`iv-btn iv-btn--sm iv-btn--ghost${connectOpen ? ' iv-btn--on' : ''}`}
+              aria-label={authT('dialogTitle')}
+              aria-expanded={connectOpen}
+              data-workbench-connect-toggle="true"
+              data-connect-signed-in={authLabel?.signedIn === true ? 'true' : 'false'}
+              title={authT('dialogTitle')}
+              onClick={() => { setConnectOpen(open => !open) }}
+            >
+              <Icon name="link" size={12} />
+              <span className="iv-tools-txt">
+                {authLabel?.signedIn === true && authLabel.label !== undefined && authLabel.label !== ''
+                  ? authLabel.label
+                  : t('loginThreeView')}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${helpOpen ? ' iv-btn--on' : ''}`}
+              aria-label={t('railHelp')}
+              aria-expanded={helpOpen}
+              data-workbench-help-toggle="true"
+              title={t('railHelp')}
+              onClick={() => { setHelpOpen(open => !open) }}
+            >
+              <Icon name="help" />
+            </button>
+            <button
+              type="button"
+              className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
+              aria-label={t('tabTitle')}
+              aria-pressed={dockOpen}
+              title={t('tabTitle')}
+              data-workbench-dock-toggle="true"
+              onClick={() => { setDockOpen(open => !open) }}
+            >
+              <Icon name="layers" />
+            </button>
+          </div>
+        </div>
+
+        {/* 视图导航独占一行：四个模式是全产品的主动脉，压进上下文行会被剧集/集控件淹没。
+            分隔线在换行后没有意义，视觉上隐藏，但保留节点（顶栏契约要求它存在）。 */}
+        <span className="iv-top-sep iv-top-sep--stacked" aria-hidden="true" />
         <nav className="iv-modes" aria-label={t('tabTitle')}>
           {MODES.map(candidate => (
             <button
@@ -2707,81 +2854,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               className={`iv-modes-btn${candidate === mode ? ' on' : ''}`}
               aria-label={t(MODE_KEYS[candidate])}
               aria-pressed={candidate === mode}
+              title={t(MODE_KEYS[candidate])}
               onClick={() => { setMode(candidate) }}
             >
-              <Icon name={MODE_ICONS[candidate]} size={12} />
-              {t(MODE_KEYS[candidate])}
+              <Icon name={MODE_ICONS[candidate]} size={14} />
+              <span className="iv-modes-txt">{t(MODE_KEYS[candidate])}</span>
             </button>
           ))}
         </nav>
-
-        <div className="iv-top-meta">
-          <span className={saveChipClass(saveState)} title={saveState === 'failed' ? t('saveFailed') : undefined}>
-            <i className="iv-dot" aria-hidden="true" />
-            {t(saveState === 'dirty' ? 'saveDirty' : saveState === 'saving' ? 'saveSaving' : saveState === 'failed' ? 'saveFailed' : 'saveSaved')}
-          </span>
-          {/* 健康状态只在异常 / 检测中时提示：正常的版本号收进帮助浮层（2026-11-20） */}
-          {health.status === 'ok' ? null : (
-            <span
-              className={`iv-chip${health.status === 'checking' ? '' : ' iv-chip--err'}`}
-              title={health.status === 'failed' ? health.message : undefined}
-            >
-              <i className="iv-dot" aria-hidden="true" />
-              {healthText}
-            </span>
-          )}
-          <button
-            type="button"
-            className="iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm"
-            aria-label={t('refresh')}
-            title={t('refresh')}
-            disabled={busy}
-            onClick={() => { void run(async () => { await loadProjects(); await loadOutputs(); await loadTasks() }) }}
-          >
-            <Icon name="refresh" />
-          </button>
-        </div>
-
-        {/* 登录 / 帮助 / 工作台：吸附在最右侧，替换掉原「输出产物 / 素材 / 任务」三个统计块的位置。 */}
-        <div className="iv-top-tools">
-          <button
-            type="button"
-            className={`iv-btn iv-btn--sm iv-btn--ghost${connectOpen ? ' iv-btn--on' : ''}`}
-            aria-label={authT('dialogTitle')}
-            aria-expanded={connectOpen}
-            data-workbench-connect-toggle="true"
-            data-connect-signed-in={authLabel?.signedIn === true ? 'true' : 'false'}
-            title={authT('dialogTitle')}
-            onClick={() => { setConnectOpen(open => !open) }}
-          >
-            <Icon name="link" size={12} />
-            {authLabel?.signedIn === true && authLabel.label !== undefined && authLabel.label !== ''
-              ? authLabel.label
-              : t('loginThreeView')}
-          </button>
-          <button
-            type="button"
-            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${helpOpen ? ' iv-btn--on' : ''}`}
-            aria-label={t('railHelp')}
-            aria-expanded={helpOpen}
-            data-workbench-help-toggle="true"
-            title={t('railHelp')}
-            onClick={() => { setHelpOpen(open => !open) }}
-          >
-            <Icon name="help" />
-          </button>
-          <button
-            type="button"
-            className={`iv-btn iv-btn--icon iv-btn--ghost iv-btn--sm${dockOpen ? ' iv-btn--on' : ''}`}
-            aria-label={t('tabTitle')}
-            aria-pressed={dockOpen}
-            title={t('tabTitle')}
-            data-workbench-dock-toggle="true"
-            onClick={() => { setDockOpen(open => !open) }}
-          >
-            <Icon name="layers" />
-          </button>
-        </div>
       </header>
 
       {/* ============ 改名行 ============ */}
@@ -2879,42 +2959,67 @@ export function Workbench(props: WorkbenchProps): ReactNode {
         ? null
         : (
           <div className="iv-defaults" data-workbench-defaults="true" onDoubleClick={onWindowStripDoubleClick}>
-            <span className="iv-micro">{t('defaultsTitle')}</span>
-            {defaultRows.map(row => (
-              <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
-                <i>{t(row.key)}</i><b>{row.display}</b>
-                {row.source === undefined
-                  ? null
-                  : (
-                    <em className="iv-def-src" data-default-source-label={row.source}>
-                      {t(row.source === 'override'
-                        ? 'defaultsSourceOverride'
-                        : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
-                    </em>
-                  )}
-              </span>
-            ))}
-            {scriptModels.length === 0
-              ? null
-              : (
-                <span className="iv-def iv-def--select" data-workbench-text-model-row="true" data-default-source="none">
-                  <i>{t('defaultTextModel')}</i>
-                  <select
-                    className="iv-select iv-select--sm"
-                    aria-label={t('defaultTextModel')}
-                    data-workbench-text-model="true"
-                    value={scriptTextModel}
-                    onChange={event => { setScriptTextModel(event.target.value) }}
-                  >
-                    <option value="rules">{t('scriptSplitModeRule')}</option>
-                    {scriptModels.map(model => (
-                      <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
-                        {model.providerName} · {model.name}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              )}
+            {/* 标题与参数之间留一道竖线："当前生效参数"是名词，不是第一个参数。
+                参数按模态分组（图像/视频/文本），与编辑器弹层的分组保持一致。 */}
+            <div className="iv-defaults-head">
+              <Icon name="sliders" size={12} />
+              <span className="iv-defaults-title">{t('defaultsTitle')}</span>
+              <span className="iv-defaults-hint">{t('defaultsStripHint')}</span>
+            </div>
+            <div className="iv-defaults-body">
+              {DEFAULT_GROUPS.map(group => {
+                const rows = defaultRows.filter(row => group.fields.includes(row.field))
+                if (rows.length === 0) return null
+                return (
+                  <div key={group.key} className="iv-def-group" data-defaults-group={group.key}>
+                    <span className="iv-def-group-label">{t(group.key)}</span>
+                    <div className="iv-def-group-items">
+                      {rows.map(row => (
+                        <span key={row.key} className="iv-def" data-workbench-default={row.key} data-default-source={row.source ?? 'none'}>
+                          <i>{t(row.key)}</i><b>{row.display}</b>
+                          {row.source === undefined
+                            ? null
+                            : (
+                              <em className="iv-def-src" data-default-source-label={row.source}>
+                                {t(row.source === 'override'
+                                  ? 'defaultsSourceOverride'
+                                  : row.source === 'settings' ? 'defaultsSourceSettings' : 'defaultsBuiltinSource')}
+                              </em>
+                            )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {scriptModels.length === 0
+                ? null
+                : (
+                  <div className="iv-def-group" data-defaults-group="text">
+                    <span className="iv-def-group-label">{t('defaultsGroupText')}</span>
+                    <div className="iv-def-group-items">
+                      <span className="iv-def iv-def--select" data-workbench-text-model-row="true" data-default-source="none">
+                        <i>{t('defaultTextModel')}</i>
+                        <select
+                          className="iv-select iv-select--sm"
+                          aria-label={t('defaultTextModel')}
+                          data-workbench-text-model="true"
+                          value={scriptTextModel}
+                          onChange={event => { setScriptTextModel(event.target.value) }}
+                        >
+                          <option value="rules">{t('scriptSplitModeRule')}</option>
+                          {scriptModels.map(model => (
+                            <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                              {model.providerName} · {model.name}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </div>
+                  </div>
+                )}
+            </div>
+            <div className="iv-defaults-actions">
             <span className="iv-pop">
               <button
                 type="button"
@@ -3069,6 +3174,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
               <Icon name="sliders" size={12} />{t('modelDetails')}
               <span aria-hidden="true" style={{ fontSize: 10 }}>{modelDetailsOpen ? '▴' : '▾'}</span>
             </button>
+            </div>
           </div>
         )}
 
@@ -3778,16 +3884,58 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   <div role="tabpanel" id="script-panel" aria-labelledby={`script-tab-${scriptTab}`}>
                   {scriptTab === 'split'
                     ? (
+                  <>
+                  {/* 步进条：进度来自当前集真实数据（剧本/分段/分镜），点按可跳到对应区块。
+                      它的第二个作用是**收敛主按钮**——只有「下一步」的那个按钮是实心主色。 */}
+                  <div className="iv-steps" role="group" aria-label={t('scriptStepPlan')} data-script-steps="true">
+                    {SCRIPT_STEPS.map((step, index) => {
+                      const done = scriptStep.next === 0 || step.no < scriptStep.next
+                      const now = scriptStep.next === step.no
+                      const state = now ? 'now' : done ? 'done' : 'todo'
+                      return (
+                        <span className="iv-steps-item" key={step.no}>
+                          {index === 0 ? null : <span className="iv-step-sep" aria-hidden="true">›</span>}
+                          <button
+                            type="button"
+                            className={`iv-step iv-step--${state}`}
+                            data-script-step={step.no}
+                            data-script-step-state={state}
+                            aria-current={now ? 'step' : undefined}
+                            aria-label={state === 'todo'
+                              ? t(step.label)
+                              : `${t(step.label)}, ${t(state === 'now' ? 'scriptStepNow' : 'scriptStepDone')}`}
+                            title={t('scriptStepJump')}
+                            onClick={() => {
+                              // 分镜锚点在分段为空时不存在，退回分段区块，避免点了没反应
+                              jumpToScriptStep(document.getElementById(step.anchor) === null
+                                ? 'script-step-segments'
+                                : step.anchor)
+                            }}
+                          >
+                            <span className="iv-step-idx" aria-hidden="true">{done ? '✓' : step.no}</span>
+                            <span className="iv-step-txt">{t(step.label)}</span>
+                            {now ? <span className="iv-step-tag">{t('scriptStepNow')}</span> : null}
+                          </button>
+                        </span>
+                      )
+                    })}
+                    <span className="iv-steps-hint" data-script-step-hint={scriptStep.next}>
+                      {scriptStep.next === 0
+                        ? t('scriptStepAllDone')
+                        : t(SCRIPT_STEPS[scriptStep.next - 1].hint)}
+                    </span>
+                  </div>
                   <div className="iv-modules">
                   {/* 剧本生成：剧本 → 集 → 分段 → 分镜（原「剧本 · 分段」已并入，2026-11-20 独立成页） */}
-                  <section className="iv-module" data-module="pipeline">
+                  <section className="iv-module" data-module="pipeline" id="script-step-pipeline">
                     <span className="iv-module-title" data-module-title="pipeline" hidden>{t('modulePipeline')}</span>
                     <div className="iv-module-body" data-module-body="pipeline">
                   <PipelineCard
                     api={apiRef.current}
                     t={t}
                     projectId={activeProject?.id}
-                    onStarted={() => { setMode('workflow') }}
+                    // 只有「下一步 = 写剧本」时它才是主按钮；已有剧本时降为柔色，让位给分段
+                    emphasis={scriptStep.next === 1 ? 'primary' : 'soft'}
                     // `B-20`：分镜卡片自带剧本导入/编辑/落库，不再需要外部注入剧本
                     episodeId={activeEpisodeId}
                     // `B-22`：生成剧本会新建 / 更新集记录，刷新后选中第一集，用户接着逐级增删
@@ -3795,6 +3943,11 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       if (activeId !== undefined) await loadEpisodes(activeId)
                       const first = created[0]
                       if (first !== undefined) setActiveEpisodeId(first.id)
+                      // 生成完视口还停在按钮上，看不到下面新集的「开始分段」：
+                      // 等这一帧渲染完直接把视口带到下一步（异步，避免和 setState 同帧冲突）
+                      if (typeof requestAnimationFrame === 'function') {
+                        requestAnimationFrame(() => { jumpToScriptStep('script-step-segments') })
+                      }
                     }}
                   />
                     </div>
@@ -3813,6 +3966,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                             t={t}
                             projectId={activeProject.id}
                             episode={activeEpisode}
+                            // 分段 = 第 2 步、分镜 = 第 3 步；两者都按它决定谁是主按钮
+                            activeStep={scriptStep.next}
                             resources={resources}
                             assets={assets}
                             options={options}
@@ -3858,6 +4013,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                   </section>
 
                   </div>
+                  </>
                     )
                     : scriptTab === 'extract'
                       ? (
@@ -4037,6 +4193,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     t={t}
                     api={apiRef.current}
                     onNotice={(text, tone) => { setNotice({ text, tone }) }}
+                    // 节点产物缩略图 / 检视器「产出预览」统一送右侧预览列
+                    onPreview={previewAsset}
                     run={{
                       ...(runs.find(run => run.id === selectedRunId) ?? runs[0]) === undefined
                         ? {}
@@ -4085,8 +4243,7 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                           }
                         })
                       },
-                      // B4 单节点运行：只跑选中节点及其下游（宿主 `workflows/run` 的 `only`，
-                      // 认领状态见 docs/API-SURFACE.md「B 申请」）
+                      // B4 单节点运行：只跑选中节点及其下游（宿主 `workflows/run` 的 `only` 已认领）
                       onRunNode: nodeId => {
                         void run(async () => {
                           setRunBusy(true)
@@ -4705,6 +4862,16 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       {t('normalizeLoudness')}
                     </label>
                     </div>
+                    {/* `B2`：把档位换算结果直接摆出来。选完参数就能看见会导出多大，
+                        不用等成片、也不用信下拉文案——这是"规格控件到底生效没有"的当场凭证。 */}
+                    {exportPreviewFormat === undefined
+                      ? null
+                      : (
+                        <span className="iv-tl-spec" data-timeline-export-spec="true" title={t('exportSpecHint')}>
+                          <b>{exportPreviewFormat.width}×{exportPreviewFormat.height}</b>
+                          <i>{exportPreviewFormat.frameRate}fps</i>
+                        </span>
+                      )}
 
                     <button type="button" className={`iv-btn iv-btn--acc iv-btn--lg${renderRunning ? ' iv-btn--busy' : ''}`} data-timeline-export="true"
                       aria-busy={renderRunning ? 'true' : undefined}
@@ -4808,7 +4975,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                       <span className="iv-tl-aux-role">{t('segPreviewRole')}</span>
                       <TimelineSegmentPreview timeline={timeline} t={(key) => t(key as WorkbenchLocaleKey)}
                         programPlaying={playing} onPlayChange={setSegPlaying} />
-                      <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id} />
+                      <VoiceCard api={apiRef.current} t={t} timelineId={timeline?.id}
+                        onNotice={(text, tone) => { setNotice({ text, tone }) }} />
                       <RatioSlicesPanel api={apiRef.current} t={t} timelineId={timeline?.id} projectId={activeId} />
                     </div>
                   </details>

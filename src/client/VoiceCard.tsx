@@ -17,6 +17,8 @@ export interface VoiceCardProps {
   readonly t: (key: WorkbenchLocaleKey) => string
   /** 当前时间轴 id；没有时间轴时只显示状态与提示。 */
   readonly timelineId?: string
+  /** 合成成功后的提示出口；不传时卡片内就地显示产物路径。 */
+  readonly onNotice?: (text: string, tone: 'info' | 'error') => void
 }
 
 /** 计划里最多直接列出多少句（其余折叠成计数，避免顶掉时间轴）。 */
@@ -28,10 +30,12 @@ const MAX_PREVIEW_LINES = 6
  * @returns 状态行 + 「生成配音计划」按钮 + 计划摘要。
  */
 export function VoiceCard(props: VoiceCardProps) {
-  const { api, t, timelineId } = props
+  const { api, t, timelineId, onNotice } = props
   const [status, setStatus] = useState<VoiceStatus | undefined>(undefined)
   const [plan, setPlan] = useState<DubPlanView | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [synthesizing, setSynthesizing] = useState(false)
+  const [generated, setGenerated] = useState<string | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
@@ -63,6 +67,32 @@ export function VoiceCard(props: VoiceCardProps) {
     }
   }
 
+  /** 用当前配音计划生成音频：文案取逐句台词，音色取宿主默认音色。 */
+  async function synthesize(): Promise<void> {
+    if (plan === undefined || !available || typeof api.voiceSynthesize !== 'function') return
+    const spoken = plan.lines.map(line => line.text.trim()).filter(text => text !== '').join('\n')
+    if (spoken === '') return
+    setSynthesizing(true)
+    setError(undefined)
+    setGenerated(undefined)
+    try {
+      const result = await api.voiceSynthesize({
+        text: spoken,
+        ...status?.defaultVoice === undefined || status.defaultVoice === ''
+          ? {} : { voiceId: status.defaultVoice },
+      })
+      const message = `${t('voiceCardSynthesized')} · ${result.audio.audioPath}`
+      setGenerated(message)
+      onNotice?.(message, 'info')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+      onNotice?.(message, 'error')
+    } finally {
+      setSynthesizing(false)
+    }
+  }
+
   const available = status?.available === true
 
   return (
@@ -91,14 +121,16 @@ export function VoiceCard(props: VoiceCardProps) {
             type="button"
             className="iv-btn iv-btn--primary iv-btn--sm"
             data-voice-generate="true"
-            disabled={!available || plan === undefined}
+            disabled={!available || plan === undefined || synthesizing || busy}
             title={available ? undefined : (status?.reason ?? t('voiceNotReady'))}
+            onClick={() => { void synthesize() }}
           >
-            {t('voiceGenerate')}
+            {synthesizing ? t('voiceCardSynthesizing') : t('voiceGenerate')}
           </button>
         </div>
 
         {error === undefined ? null : <p className="iv-err" data-voice-error="true">{error}</p>}
+        {generated === undefined ? null : <p className="iv-meta" data-voice-generated="true">{generated}</p>}
 
         {plan === undefined
           ? null

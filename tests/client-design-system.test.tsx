@@ -356,6 +356,15 @@ describe('视觉层级契约（R7）', () => {
     expect(WORKBENCH_STYLE).not.toContain('.iv-sb-list{display:flex;flex-direction:row;flex-wrap:wrap')
   })
 
+  it('分段标题按钮能收缩到卡片内，长提示词省略而不是顶出边界', () => {
+    // 起因（2026-11-27）：标题按钮没有 min-width:0，长 nowrap 提示词把按钮和右侧
+    // 操作簇一起撑出分段卡片，截图里表现为文字被视口右侧截断。
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-head-main{display:flex;align-items:center;gap:var(--iv-sp-3);flex:1 1 0;min-width:0;max-width:100%')
+    expect(WORKBENCH_STYLE).toContain('overflow:hidden;text-align:left;padding:0 var(--iv-sp-2)')
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-head-main>.iv-sc-sum-text{flex:1 1 auto;min-width:0}')
+    expect(WORKBENCH_STYLE).toContain('.iv-sb-seg-actions{flex:none;margin-left:auto;display:flex')
+  })
+
   it('本集已选每行不折行，删除按钮 × 始终和缩略图/名称/分类框同一行', () => {
     // 起因（2026-11-25）：基础 .iv-row{flex-wrap:wrap} 在窄面板里把 × 挤到第二行。
     // 主题层后注入且选择器更具体，必须显式把本集已选行改回 nowrap、固定分类框与操作区宽度。

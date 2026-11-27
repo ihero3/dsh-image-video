@@ -97,7 +97,7 @@ export interface WorkflowCanvasProps {
     readonly onStart: () => void
     readonly onCancel: () => void
     readonly onRetry: () => void
-    /** `B4`：只跑这一个节点（含下游）。宿主端点认领中，调用即下发 `only`。 */
+    /** `B4`：只跑这一个节点（含下游），宿主 `workflows/run` 已支持 `only`。 */
     readonly onRunNode?: (nodeId: string) => void
     readonly onSelectRun: (runId: string) => void
   }

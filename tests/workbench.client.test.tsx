@@ -696,6 +696,40 @@ describe('workbench project and asset flow', () => {
     expect(view.container.querySelector('[data-workflow-node-run="i"]')?.getAttribute('data-workflow-node-status')).toBe('succeeded')
   })
 
+  it('sends a canvas artifact thumbnail to the preview pane', async () => {
+    const record: WorkflowRecord = {
+      schemaVersion: 1, id: 'wfl-preview', projectId: 'prj-1', name: '预览回传',
+      nodes: [{ id: 'i', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '一只猫' } }],
+      edges: [], createdAt: '2026-10-15T00:00:00.000Z', updatedAt: '2026-10-15T00:00:00.000Z',
+    }
+    const host = fakeApi({
+      workflows: [record],
+      runs: [{
+        schemaVersion: 1, id: 'run-preview', workflowId: record.id, projectId: 'prj-1', status: 'succeeded',
+        graph: { nodes: [], edges: [] },
+        nodeRuns: [{
+          nodeId: 'i', kind: 'image-generate', status: 'succeeded',
+          startedAt: '2026-10-15T00:00:00.000Z', outputPath: '/tmp/out/shot.png',
+        }],
+        startedAt: '2026-10-15T00:00:00.000Z',
+      }],
+    })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    await screen.findByText(en.projectNone)
+    await createProject(host, '预览项目')
+    fireEvent.click(await screen.findByRole('button', { name: en.modeWorkflow }))
+    const thumbnail = await waitFor(() => {
+      const element = view.container.querySelector('[data-workflow-node-media="image"]')
+      if (element === null) throw new Error('缩略图没出来')
+      return element as HTMLElement
+    })
+    fireEvent.click(thumbnail)
+    await waitFor(() => {
+      const preview = view.container.querySelector('[data-dock-preview="true"] img')
+      expect(preview?.getAttribute('src')).toBe('/outputs/shot.png')
+    })
+  })
+
   it('auto-saves canvas edits into the stored workflow', async () => {
     const host = fakeApi()
     const view = render(<Workbench {...clientProps({ api: host.api })} />)

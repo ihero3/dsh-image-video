@@ -25,7 +25,7 @@ describe('PipelineCard · 手动挑料已移出', () => {
   it('项目里有资源也不出现挑料列表、排序条与匹配回显', () => {
     const host = fakeApi()
     host.resources.push(resource('res-1', 'role', '林萧'), resource('res-2', 'scene', '雨夜街道'))
-    const { container } = renderHost(<PipelineCard api={host.api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = renderHost(<PipelineCard api={host.api} t={t} projectId="prj-1" />)
     for (const attr of [
       'data-pipeline-pick', 'data-pipeline-pick-list', 'data-pipeline-pick-item',
       'data-pipeline-pick-selected', 'data-pipeline-pick-order', 'data-pipeline-matched',
@@ -41,7 +41,7 @@ describe('PipelineCard · 手动挑料已移出', () => {
       listTextModels: vi.fn(async () => ({ models: [] })),
       listSkills: vi.fn(async () => []),
     } as unknown as Parameters<typeof PipelineCard>[0]['api']
-    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" onStarted={() => {}} />)
+    const { container } = render(<PipelineCard api={api} t={t} projectId="prj-1" />)
     fireEvent.change(container.querySelector('[data-pipeline-script]') as HTMLTextAreaElement, {
       target: { value: '雨夜街头。林夏抬头。' },
     })

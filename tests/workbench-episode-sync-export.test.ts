@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { WorkbenchStore } from '../src/workbench/store.ts'
 import { buildEpisodeWorkflow, episodeWorkflowId } from '../src/workbench/storyboard-workflow.ts'
+import { validateWorkflow, WORKFLOW_SOURCE_HANDLE, WORKFLOW_TARGET_HANDLE } from '../src/workbench/workflow.ts'
 import { exportEpisode, EPISODE_EXPORT_VERSION } from '../src/workbench/episode-export.ts'
 
 const STAMP = '2026-11-09T00:00:00.000Z'
@@ -38,7 +39,7 @@ async function episodeWithShots(store: WorkbenchStore) {
 }
 
 describe('buildEpisodeWorkflow', () => {
-  it('maps every shot to image → video nodes chained into one preview', async () => {
+  it('maps every shot to an independent image → video branch converging on preview', async () => {
     const { store } = await makeStore()
     const { episode } = await episodeWithShots(store)
     const graph = buildEpisodeWorkflow(episode)
@@ -50,10 +51,54 @@ describe('buildEpisodeWorkflow', () => {
     expect(graph.nodes.filter(node => node.kind === 'image-generate')).toHaveLength(2)
     expect(graph.nodes.filter(node => node.kind === 'video-generate')).toHaveLength(2)
     expect(graph.nodes.at(-1)?.kind).toBe('preview')
-    // 镜头串成一条链：img1 → vid1 → img2 → vid2 → preview，共 4 条边
+    // B1：每镜独立一支，两镜共 4 条边（img→vid ×2 + vid→preview ×2），
+    // 不允许出现 vid1 → img2 这种 media → text 的跨镜连线。
     expect(graph.edges).toHaveLength(4)
+    expect(graph.edges.map(edge => [edge.source, edge.target])).toEqual([
+      [`img-${episode.storyboards[0]!.shots[0]!.id}`, `vid-${episode.storyboards[0]!.shots[0]!.id}`],
+      [`img-${episode.storyboards[0]!.shots[1]!.id}`, `vid-${episode.storyboards[0]!.shots[1]!.id}`],
+      [`vid-${episode.storyboards[0]!.shots[0]!.id}`, 'prv-episode'],
+      [`vid-${episode.storyboards[0]!.shots[1]!.id}`, 'prv-episode'],
+    ])
+    // 这张图必须能被画布校验通过，否则同步后运行按钮是禁用的
+    expect(validateWorkflow(graph.nodes, graph.edges).ok).toBe(true)
     const image = graph.nodes.find(node => node.kind === 'image-generate')!
     expect(image.params.prompt).toBe('雨夜街角')
+  })
+
+  it('rejects the old cross-shot edge so the B1 mistake cannot come back', async () => {
+    const { store } = await makeStore()
+    const { episode } = await episodeWithShots(store)
+    const graph = buildEpisodeWorkflow(episode)
+    const [first, second] = episode.storyboards[0]!.shots
+    // 反向证明：把上一镜的 video 输出（media）接回下一镜的 image 输入（text），必须报端口不匹配
+    const oldEdge = {
+      id: 'edg-b1-old',
+      source: `vid-${first!.id}`, target: `img-${second!.id}`,
+      sourceHandle: WORKFLOW_SOURCE_HANDLE, targetHandle: WORKFLOW_TARGET_HANDLE,
+    }
+    const validation = validateWorkflow(graph.nodes, [...graph.edges, oldEdge])
+    expect(validation.ok).toBe(false)
+    expect(validation.issues.some(issue => issue.code === 'port-mismatch')).toBe(true)
+  })
+
+  it('stays runnable for one shot and three shots', async () => {
+    const { store } = await makeStore()
+    const { episode } = await episodeWithShots(store)
+    const storyboard = episode.storyboards[0]!
+
+    for (const count of [1, 3]) {
+      const shots = storyboard.shots.slice(0, count).concat(
+        count === 3 ? [{ ...storyboard.shots[0]!, order: 3, imagePrompt: '远景', videoPrompt: '拉远' }] : [],
+      )
+      await store.upsertStoryboard({
+        id: storyboard.id, episodeId: episode.id, segmentId: storyboard.segmentId, shots,
+      })
+      const graph = buildEpisodeWorkflow(await store.getEpisode(episode.id))
+      const validation = validateWorkflow(graph.nodes, graph.edges)
+      expect(validation.ok, `${count} shots: ${validation.issues.map(issue => issue.message).join('; ')}`).toBe(true)
+      expect(graph.edges).toHaveLength(count * 2)
+    }
   })
 
   it('is idempotent for the same storyboard and reflects added shots', async () => {
@@ -63,6 +108,8 @@ describe('buildEpisodeWorkflow', () => {
     const second = await store.syncEpisodeWorkflow(episode.id)
     expect(second.id).toBe(first.id)
     expect(second.nodes.map(node => node.id)).toEqual(first.nodes.map(node => node.id))
+    // 存下来的那份也必须可运行——画布禁用运行按钮用的就是这份图
+    expect(validateWorkflow(second.nodes, second.edges).ok).toBe(true)
     expect((await store.listWorkflows(episode.projectId)).filter(item => item.id === first.id)).toHaveLength(1)
 
     // 再加一镜 → 同一个工作流文档变成 7 个节点

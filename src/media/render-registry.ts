@@ -6,7 +6,7 @@
  */
 import { MAX_AUTO_RETRIES, isTransientRenderFailure } from './retry-policy.ts'
 import { RenderError, type RenderResult, type RenderService } from './render.ts'
-import type { TimelineRecord } from '../workbench/timeline.ts'
+import type { TimelineExportFormat, TimelineRecord } from '../workbench/timeline.ts'
 import { normalizeExportFormat } from '../workbench/timeline.ts'
 import { buildRenderSummary, type RenderSummary } from './render-summary.ts'
 import { diagnoseRenderError, type Diagnosis } from './diagnose.ts'
@@ -349,6 +349,13 @@ export class RenderRegistry {
   private readonly thumbnailAt = new Map<string, number>()
   /** 每个任务的随片字幕格式（`A130`）。 */
   private readonly subtitleFormats = new Map<string, 'srt' | 'vtt'>()
+  /**
+   * 每个任务的导出规格（`B2`）。
+   *
+   * 保留到任务结束之后：`timelines/render-retry` 要按**原规格**重跑，
+   * 否则用户选 2K 导出失败后一重试就悄悄退回时间轴默认的 720p。
+   */
+  private readonly exportFormats = new Map<string, TimelineExportFormat>()
 
   constructor(private readonly deps: {
     readonly render: RenderService
@@ -423,6 +430,11 @@ export class RenderRegistry {
   /** 最近成功导出的样本（`A98`，给耗时预测用）。 */
   exportSamples(): readonly { renderMs: number; durationMs: number; width: number; height: number; frameRate: number }[] {
     return this.renderSamples
+  }
+
+  /** 某次任务用过的导出规格（`B2`；`render-retry` 按原规格重跑，不退回时间轴默认值）。 */
+  exportFormatOf(id: string): TimelineExportFormat | undefined {
+    return this.exportFormats.get(id)
   }
 
   private stamp(): string {
@@ -533,9 +545,26 @@ export class RenderRegistry {
     }
   }
 
-  start(timeline: TimelineRecord, options: { priority?: number; retryTransient?: boolean; thumbnailAtMs?: number; subtitleFormat?: 'srt' | 'vtt' } = {}): RenderJob {
+  start(timeline: TimelineRecord, options: {
+    priority?: number
+    retryTransient?: boolean
+    thumbnailAtMs?: number
+    subtitleFormat?: 'srt' | 'vtt'
+    /**
+     * 本次导出的规格覆盖（`B2`）。
+     *
+     * 渲染器只认 `timeline.exportFormat`，所以这里换成一个带新规格的**副本**，
+     * 不动存储里的时间轴——导出条上的分辨率/帧率/画幅是"这一次导出"的参数，
+     * 不该顺手改写用户的工程数据。
+     */
+    exportFormat?: TimelineExportFormat
+  } = {}): RenderJob {
     const id = `render-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
     const maxConcurrent = Math.max(1, this.deps.maxConcurrent ?? 1)
+    // 规格覆盖走副本：render / summarise / recordSample 读的都是同一个 exportFormat
+    const effective = options.exportFormat === undefined
+      ? timeline
+      : { ...timeline, exportFormat: options.exportFormat }
     const job: RenderJob = {
       id, timelineId: timeline.id, projectId: timeline.projectId,
       status: 'running', percent: 0, startedAt: this.stamp(),
@@ -545,17 +574,18 @@ export class RenderRegistry {
     if (options.retryTransient === true) this.retryFlags.set(id, true)
     if (options.thumbnailAtMs !== undefined) this.thumbnailAt.set(id, options.thumbnailAtMs)
     if (options.subtitleFormat !== undefined) this.subtitleFormats.set(id, options.subtitleFormat)
+    if (options.exportFormat !== undefined) this.exportFormats.set(id, options.exportFormat)
     // 优先级无条件记录（重试要复用它；早先只写在入队分支里 → 直接开跑的任务没有该字段）
     this.patch(id, { priority })
     if (this.controllers.size >= maxConcurrent) {
       // 槽位满了：按**优先级**有序插入（数值大的先跑；同优先级保持 FIFO，不插队到同伴前面）
       // `A108` 公平调度：先按优先级降序，同优先级内按「各项目自己的第几个」轮流
-      this.pending.push({ job, timeline, priority, seq: this.pendingSeq++ })
+      this.pending.push({ job, timeline: effective, priority, seq: this.pendingSeq++ })
       this.reorderPending()
       this.deps.log?.({ event: 'render-queued', renderId: id, timelineId: timeline.id, position: this.pending.length })
       return this.jobs.get(id) ?? job
     }
-    this.launch(job.id, timeline)
+    this.launch(job.id, effective)
     return this.jobs.get(id) ?? job
   }
 

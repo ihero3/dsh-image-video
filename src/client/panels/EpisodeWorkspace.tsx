@@ -49,6 +49,11 @@ export interface EpisodeWorkspaceProps {
   readonly textModelKey: string
   /** 当前选中的文本模型（规则模式为 undefined）。 */
   readonly textModel: { readonly provider: string; readonly model: string } | undefined
+  /**
+   * 剧本页「下一步」的步骤号（1 写剧本 / 2 分段 / 3 分镜 / 0 全部完成）。
+   * 只影响主按钮权重：轮到的步骤是主按钮，其余降为柔色。缺省保持原有主按钮。
+   */
+  readonly activeStep?: 0 | 1 | 2 | 3
   /** 新分段继承的默认值（仅保留导演 Skill；图像 / 视频模型由段级自己选）。 */
   readonly defaults: {
     readonly skillId?: string
@@ -359,7 +364,7 @@ function RefPicker(props: RefPickerProps) {
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
-  const { api, t, projectId, episode, resources, assets, episodePicker, options, skills, textModels, textModelKey, textModel, defaults, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
+  const { api, t, projectId, episode, resources, assets, episodePicker, options, skills, textModels, textModelKey, textModel, defaults, activeStep, onTextModelChange, onSkillChange, onEpisodeChanged, onEpisodeImported, onMediaGenerated, onPreviewAsset, onNotice } = props
 
   // 目录由宿主过滤成纯文本模型；旧持久化值不在目录里时一律按「默认规则」处理
   const activeTextModelKey = textModels.some(model => `${model.provider}::${model.id}` === textModelKey) ? textModelKey : 'rules'
@@ -373,6 +378,13 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
   const [scriptState, setScriptState] = useState<'saved' | 'dirty' | 'saving' | 'failed'>('saved')
   const [segments, setSegments] = useState<readonly SegmentRecord[]>(episode.segments)
   const [storyboards, setStoryboards] = useState<readonly StoryboardRecord[]>(episode.storyboards)
+  /**
+   * 主按钮权重：外层按剧本页三步进度传 `activeStep`。
+   * 分段 = 第 2 步、分镜 = 第 3 步，只有轮到的那一步是实心主色，避免三个同级主按钮。
+   * 不传时（单独渲染本组件）保持原来的 `primary`，不影响既有用法。
+   */
+  const splitEmphasis = activeStep === undefined || activeStep === 2 ? 'primary' : 'soft'
+  const planEmphasis = activeStep === undefined || activeStep === 3 ? 'primary' : 'soft'
   const [busy, setBusy] = useState(false)
   /** 自动拆段进行中：与单段保存互斥，避免模型跑着时用户又新建分段。 */
   const [splitting, setSplitting] = useState(false)
@@ -1247,7 +1259,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         <div className="iv-sb-actions">
           <button
             type="button"
-            className={`iv-btn iv-btn--action iv-btn--action--primary${planningId === segment.id ? ' iv-btn--busy' : ''}`}
+            className={`iv-btn iv-btn--action iv-btn--action--${planEmphasis}${planningId === segment.id ? ' iv-btn--busy' : ''}`}
             data-segment-plan={segment.id}
             aria-busy={planningId === segment.id ? 'true' : undefined}
             disabled={planningId === segment.id || busy || cleanPrompt.trim() === ''}
@@ -1741,7 +1753,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         </div>
       </details>
       {/* 分段模型与 Skill 都是分段设置：默认规则不调 AI，其余值走对应文本模型。 */}
-      <div className="iv-sb-row iv-sb-selector-row" data-script-selectors="true">
+      <div className="iv-sb-row iv-sb-selector-row" data-script-selectors="true" id="script-step-segments">
         <label className="iv-sb-field">
           <span className="iv-meta">{t('scriptTextModel')}</span>
           <select
@@ -1777,7 +1789,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
         <span className="iv-sb-count iv-sb-selector-actions">
           <button
             type="button"
-            className="iv-btn iv-btn--action iv-btn--action--primary"
+            className={`iv-btn iv-btn--action iv-btn--action--${splitEmphasis}`}
             data-segment-auto="true"
             disabled={busy || splitting || cleanScript.trim() === '' || (modelMode && activeTextModel === undefined)}
             title={modelMode && activeTextModel === undefined ? t('scriptSplitNeedsModel') : t('scriptSplitHint')}
@@ -1802,7 +1814,7 @@ export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
       {segments.length === 0
         ? <div className="iv-empty" data-segment-empty="true">{t('segmentEmpty')}</div>
         : (
-          <div className="iv-sb-list" data-segment-list="true">
+          <div className="iv-sb-list" data-segment-list="true" id="script-step-storyboard">
             {segments.map(segment => (
               <div className="iv-sb-shot" key={segment.id} data-segment={segment.id}>
                 <span className="iv-sb-shot-index">{segment.order}</span>

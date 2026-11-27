@@ -29,14 +29,15 @@ export interface PipelineCardProps {
   readonly t: (key: WorkbenchLocaleKey) => string
   /** 当前项目；未选项目时按钮禁用并给提示。 */
   readonly projectId?: string
-  /**
-   * 兼容既有调用方：本卡片已不再起跑 / 切画布，字段保留但不会触发。
-   */
-  readonly onStarted?: (workflowId: string) => void
   /** 外部注入的剧本（来自其它模块时覆盖卡片内剧本，用户随后可继续编辑）。 */
   readonly injectScript?: string
   /** 生成时把第一集写进这一集；缺省时整批新建。 */
   readonly episodeId?: string
+  /**
+   * 视觉权重。剧本页三个动作（写剧本 / 分段 / 分镜）里同时只有一个该是主按钮：
+   * 外层按「下一步」传 `primary`，其余传 `soft`。缺省 `primary`（单独渲染时保持原样）。
+   */
+  readonly emphasis?: 'primary' | 'soft'
   /** 生成后把受影响的集交回外层：刷新集列表并选中最先新建的一集。 */
   readonly onEpisodesGenerated?: (episodes: readonly EpisodeRecord[]) => void | Promise<void>
 }
@@ -45,7 +46,7 @@ export interface PipelineCardProps {
 type PlanCount = number | 'auto'
 
 export function PipelineCard(props: PipelineCardProps) {
-  const { api, t, projectId, injectScript } = props
+  const { api, t, projectId, injectScript, emphasis = 'primary' } = props
   const [script, setScript] = useWorkbenchField(api, 'pipelineScript')
   // 外部注入的剧本变化时覆盖（空串不覆盖，避免把用户正在写的内容清掉）
   useEffect(() => {
@@ -292,7 +293,7 @@ export function PipelineCard(props: PipelineCardProps) {
         <div className="iv-plan-row" data-pipeline-generate="true">
           <button
             type="button"
-            className="iv-btn iv-btn--action iv-btn--action--primary iv-sc-generate"
+            className={`iv-btn iv-btn--action iv-btn--action--${emphasis} iv-sc-generate`}
             data-pipeline-script-generate="true"
             disabled={!canGenerate}
             onClick={() => { void generateScript() }}

@@ -132,6 +132,17 @@ export type WorkbenchLocaleKey =
   | 'moduleEpisode'
   | 'moduleEpisodeDesc'
   | 'modulePipelineDesc'
+  | 'scriptStepPlan'
+  | 'scriptStepScript'
+  | 'scriptStepSplit'
+  | 'scriptStepStoryboard'
+  | 'scriptStepNow'
+  | 'scriptStepDone'
+  | 'scriptStepJump'
+  | 'scriptStepHintScript'
+  | 'scriptStepHintSplit'
+  | 'scriptStepHintStoryboard'
+  | 'scriptStepAllDone'
   | 'scriptTextModel'
   | 'scriptTextModelEmpty'
   | 'scriptImageModel'
@@ -192,6 +203,7 @@ export type WorkbenchLocaleKey =
   | 'statusCancelled'
   | 'cancelTask'
   | 'defaultsEditHint'
+  | 'defaultsStripHint'
   | 'defaultsGroupMode'
   | 'defaultsGroupImage'
   | 'defaultsGroupVideo'
@@ -235,6 +247,7 @@ export type WorkbenchLocaleKey =
   | 'exportRunning'
   | 'exportCancel'
   | 'exportStart'
+  | 'exportSpecHint'
   | 'ffmpegRecheck'
   | 'ffmpegOk'
   | 'stylePosition'
@@ -1223,6 +1236,17 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: 'Script → episode → segments → shots. Every level can be added to, edited or reordered below.',
   moduleEpisode: 'Episode workspace',
   moduleEpisodeDesc: 'Pick an episode to edit its script, segments, shots, generated images/clips and workflow.',
+  scriptStepPlan: 'Script steps',
+  scriptStepScript: 'Write script',
+  scriptStepSplit: 'Segments',
+  scriptStepStoryboard: 'Storyboard',
+  scriptStepNow: 'Next',
+  scriptStepDone: 'Done',
+  scriptStepJump: 'Jump to this step',
+  scriptStepHintScript: 'Write or paste the full text, then generate the script.',
+  scriptStepHintSplit: 'Split the script into segments — each segment becomes a group of shots.',
+  scriptStepHintStoryboard: 'Plan shots segment by segment, then batch-generate images and clips.',
+  scriptStepAllDone: 'All three steps are done — sync the storyboard to the canvas, or send clips to the timeline.',
   scriptTextModel: 'Text model',
   scriptTextModelEmpty: 'Not selected',
   scriptImageModel: 'Image model',
@@ -1326,6 +1350,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   statusCancelled: 'Cancelled',
   cancelTask: 'Cancel task',
   defaultsEditHint: 'Leave "Not set" to follow settings',
+  defaultsStripHint: 'Applied automatically on generation',
   defaultsGroupMode: 'Media type',
   defaultsGroupImage: 'Image',
   defaultsGroupVideo: 'Video',
@@ -1374,6 +1399,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   exportRunning: 'Exporting',
   exportCancel: 'Cancel export',
   exportStart: 'Export video',
+  exportSpecHint: 'Actual output size and frame rate; changing the presets above updates it immediately',
   ffmpegRecheck: 'Re-check ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: 'Position',
@@ -2418,6 +2444,17 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modulePipelineDesc: '剧本 → 集 → 分段 → 分镜；每一级都能在下面继续增删、修改。',
   moduleEpisode: '本集工作区',
   moduleEpisodeDesc: '选一集编辑剧本、分段、分镜、生图生视频与工作流；每一集的内容独立归属。',
+  scriptStepPlan: '剧本流程',
+  scriptStepScript: '写剧本',
+  scriptStepSplit: '分段',
+  scriptStepStoryboard: '生成分镜',
+  scriptStepNow: '下一步',
+  scriptStepDone: '已完成',
+  scriptStepJump: '跳到这一步',
+  scriptStepHintScript: '先写好或粘贴全文，再点「生成剧本」。',
+  scriptStepHintSplit: '点「开始分段」把剧本拆成段，每段对应一组镜头。',
+  scriptStepHintStoryboard: '逐段点「规划分镜」，再批量生图、生视频。',
+  scriptStepAllDone: '三步都已完成：分镜可同步到工作流，素材可加入时间轴。',
   scriptTextModel: '文本模型',
   scriptTextModelEmpty: '未选择',
   scriptImageModel: '图像模型',
@@ -2521,6 +2558,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   statusCancelled: '已取消',
   cancelTask: '取消任务',
   defaultsEditHint: '选「未设置」= 跟随设置',
+  defaultsStripHint: '生成时自动套用',
   defaultsGroupMode: '媒体类型',
   defaultsGroupImage: '图像',
   defaultsGroupVideo: '视频',
@@ -2569,6 +2607,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   exportRunning: '导出中',
   exportCancel: '取消导出',
   exportStart: '导出成片',
+  exportSpecHint: '成片的实际尺寸与帧率；改上面的参数会立刻更新',
   ffmpegRecheck: '重新检查 ffmpeg',
   ffmpegOk: 'ffmpeg',
   stylePosition: '位置',

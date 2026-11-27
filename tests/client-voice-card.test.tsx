@@ -62,6 +62,39 @@ describe('VoiceCard', () => {
     expect(api.voiceSynthesize).not.toHaveBeenCalled()
   })
 
+  it('TTS 可用时「生成配音」把计划台词送合成，并回传产物路径', async () => {
+    const ready = {
+      available: true, provider: 'threevideo', voices: [], defaultVoice: 'voice-1',
+    }
+    const api = makeApi({
+      voiceStatus: vi.fn(async () => ready),
+      voicePlan: vi.fn(async () => ({
+        plan: {
+          lines: [
+            { clipId: 'c1', text: '第一句', chars: 3, slotMs: 2000, estimatedMs: 900 },
+            { clipId: 'c2', text: '第二句', chars: 3, slotMs: 2000, estimatedMs: 900 },
+          ],
+          totalChars: 6, estimatedMs: 1800, warnings: [],
+        },
+        voice: ready,
+      })),
+      voiceSynthesize: vi.fn(async () => ({
+        audio: { audioPath: '/tmp/out/voice.wav', bytes: 1024, durationMs: 1800 },
+      })),
+    })
+    const onNotice = vi.fn()
+    const { container } = render(<VoiceCard api={api} t={t} timelineId="tml-1" onNotice={onNotice} />)
+    fireEvent.click(container.querySelector('[data-voice-plan]') as HTMLButtonElement)
+    await waitFor(() => {
+      expect((container.querySelector('[data-voice-generate]') as HTMLButtonElement).disabled).toBe(false)
+    })
+    fireEvent.click(container.querySelector('[data-voice-generate]') as HTMLButtonElement)
+    await waitFor(() => { expect(container.querySelector('[data-voice-generated]')).not.toBeNull() })
+    expect(api.voiceSynthesize).toHaveBeenCalledWith({ text: '第一句\n第二句', voiceId: 'voice-1' })
+    expect((container.querySelector('[data-voice-generated]') as HTMLElement).textContent).toContain('/tmp/out/voice.wav')
+    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('/tmp/out/voice.wav'), 'info')
+  })
+
   it('计划失败时显示可读错误', async () => {
     const api = makeApi({ voicePlan: vi.fn(async () => { throw new Error('unknown timeline: tml-x') }) as unknown as WorkbenchApi['voicePlan'] })
     const { container } = render(<VoiceCard api={api} t={t} timelineId="tml-x" />)

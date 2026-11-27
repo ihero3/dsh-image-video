@@ -15,6 +15,7 @@ import { RenderRegistry } from '../src/media/render-registry.ts'
 import { RenderService } from '../src/media/render.ts'
 import type { AssetRecord, ProjectRecord } from '../src/workbench/records.ts'
 import type { OutputFile } from '../src/workbench/outputs.ts'
+import type { TimelineRecord } from '../src/workbench/timeline.ts'
 
 function findFfmpeg(): string | null {
   if (process.env.DSH_FFMPEG_PATH) return process.env.DSH_FFMPEG_PATH
@@ -24,7 +25,7 @@ function findFfmpeg(): string | null {
 const FFMPEG = findFfmpeg()
 
 /** Handler over throwaway directories, plus a helper that unwraps the envelope. */
-async function makeHandler() {
+async function makeHandler(options: { render?: RenderService } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-rpc-'))
   const outputsDir = await mkdtemp(join(tmpdir(), 'dsh-image-video-out-'))
   await writeFile(join(outputsDir, 'shot.png'), 'png')
@@ -40,7 +41,7 @@ async function makeHandler() {
     generateVideo: { async execute() { return { videoPath: '/tmp/out/clip.mp4', bytes: 20 } } },
   })
   const renders = new RenderRegistry({
-    render: new RenderService({ outputsDir }),
+    render: options.render ?? new RenderService({ outputsDir }),
     registerAsset: async job => {
       if (job.outputPath === undefined) return
       await store.attachAsset({ projectId: job.projectId, path: job.outputPath, kind: 'video', bytes: job.bytes })
@@ -479,6 +480,47 @@ describe('workbench channel endpoints', () => {
     expect(unknown.ok).toBe(false)
   })
 
+  it('honours `only` for partial workflow runs and rejects malformed selections', async () => {
+    const { ok, handler } = await makeHandler()
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '部分运行' })
+    const saved = await ok<{ workflow: { id: string } }>('workflows/save', {
+      projectId: created.project.id, name: '三点链',
+      nodes: [
+        { id: 'i', kind: 'image-generate', position: { x: 0, y: 0 }, params: { prompt: '猫' } },
+        { id: 'v', kind: 'video-generate', position: { x: 200, y: 0 }, params: { prompt: '动起来' } },
+        { id: 'p', kind: 'preview', position: { x: 400, y: 0 }, params: {} },
+      ],
+      edges: [{ source: 'i', target: 'v' }, { source: 'v', target: 'p' }],
+    })
+
+    // 只点中间节点：它和下游进入本次运行；上游不执行，且如实标注原因
+    const started = await ok<{ run: { id: string; nodeRuns: Array<{ nodeId: string; status: string; error?: string }> } }>(
+      'workflows/run', { workflowId: saved.workflow.id, only: ['v'] },
+    )
+    expect(started.run.nodeRuns.find(node => node.nodeId === 'i')).toMatchObject({
+      status: 'skipped', error: 'not part of this run',
+    })
+    await vi.waitFor(async () => {
+      const runs = await ok<{ runs: Array<{ id: string; status: string; nodeRuns: Array<{ nodeId: string; status: string; error?: string; outputPath?: string }> }> }>(
+        'workflows/runs', { projectId: created.project.id },
+      )
+      const run = runs.runs.find(item => item.id === started.run.id)
+      expect(run?.status).toBe('succeeded')
+      const video = run?.nodeRuns.find(node => node.nodeId === 'v')
+      expect(video?.status).toBe('succeeded')
+      expect(video?.outputPath).toBe('/tmp/out/clip.mp4')
+      // 上游产物不存在；下游 preview 选中了但无执行器，不能伪装成"跑了"
+      expect(run?.nodeRuns.find(node => node.nodeId === 'i')?.outputPath).toBeUndefined()
+      expect(run?.nodeRuns.find(node => node.nodeId === 'p')?.error).toContain('no executor')
+    })
+
+    for (const only of [[], 'v', [3]]) {
+      const bad = await handler('workflows/run', { workflowId: saved.workflow.id, only }, new AbortController().signal, {} as never)
+      expect(bad.ok).toBe(false)
+      if (!bad.ok) expect(bad.error.code).toBe('workbench/invalid-payload')
+    }
+  })
+
   it('renames projects and manages resources through the channel', async () => {
     const { ok, handler } = await makeHandler()
     const created = await ok<{ project: ProjectRecord }>('projects/create', { name: '旧名' })
@@ -553,5 +595,54 @@ describe('workbench channel endpoints', () => {
     const unknown = await handler('nope/nope', {}, new AbortController().signal, {} as never)
     expect(unknown.ok).toBe(false)
     if (!unknown.ok) expect(unknown.error.code).toBe('workbench/unknown-endpoint')
+  })
+})
+
+/**
+ * `B2`：导出条的分辨率/帧率/画幅必须真的落到渲染请求上。
+ *
+ * 不跑 ffmpeg（用记录型假服务），所以本机编码器缺失时这条也照样能守：
+ * 断言的是"宿主把档位换算成了什么规格"，而不是"编码器能不能出片"。
+ */
+describe('export strip presets reach the renderer (B2)', () => {
+  async function capture() {
+    const seen: TimelineRecord[] = []
+    const fake = {
+      render: async (timeline: TimelineRecord) => {
+        seen.push(timeline)
+        return { outputPath: '/tmp/b2-out.mp4', bytes: 1024, durationMs: 1000 }
+      },
+    } as unknown as RenderService
+    const { ok } = await makeHandler({ render: fake })
+    const created = await ok<{ project: ProjectRecord }>('projects/create', { name: 'B2' })
+    const saved = await ok<{ timeline: { id: string } }>('timelines/save', {
+      projectId: created.project.id,
+      tracks: [{ id: 'v1', kind: 'video', clips: [{ id: 'c', assetPath: 'outputs/a.mp4', startMs: 0, durationMs: 1000 }] }],
+    })
+    return { ok, created, saved, seen }
+  }
+
+  it('maps 2K + 9:16 + 60fps into an exportFormat the renderer understands', async () => {
+    const { ok, saved, seen } = await capture()
+    await ok('timelines/render', {
+      timelineId: saved.timeline.id, resolution: '2k', fps: 60, aspect: 'vertical',
+    })
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    // 短边 1440 的竖屏 = 1440x2560
+    expect(seen[0]?.exportFormat).toEqual({ width: 1440, height: 2560, frameRate: 60 })
+  })
+
+  it('keeps the timeline format when the strip says "model default"', async () => {
+    const { ok, saved, seen } = await capture()
+    await ok('timelines/render', { timelineId: saved.timeline.id, resolution: 'default', fps: 30, aspect: 'landscape' })
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    // 没设置过 exportFormat → 存下来就是默认 720p30；档位与它等价，最终规格仍是 720p30
+    expect(seen[0]?.exportFormat).toEqual({ width: 1280, height: 720, frameRate: 30 })
+  })
+
+  it('refuses an unknown preset instead of silently exporting at the default size', async () => {
+    const { ok, saved, seen } = await capture()
+    await expect(ok('timelines/render', { timelineId: saved.timeline.id, resolution: '8k' })).rejects.toThrow(/分辨率档位/)
+    expect(seen).toHaveLength(0)
   })
 })

@@ -1,5 +1,66 @@
 ## [Unreleased]
 
+### R3：部分运行生效 + 三处死回调接活（2026-11-27）
+
+- **B3**：宿主 `workflows/run` 现在读取 `only`（非空字符串数组，否则按非法载荷拒绝）并传给 `runner.begin(workflow, {only})`。部分运行 = 指定节点 + 全部下游；上游/旁支在记录里如实标 `skipped / not part of this run`，不伪造成功。新增 rpc 端点用例：三点链只跑中间节点，断言上游无产物、视频节点成功、下游 preview 保留"无执行器"提示。
+- **B4**：`Workbench` 挂载画布时传 `onPreview={previewAsset}`，节点产物缩略图与检视器「产出预览」现在都会把产物送到右侧预览列；删除 `PipelineCard.onStarted` 死字段及工作台里"生成剧本后偷偷跳画布"的调用（生成成功后仍按 §3.3 滚到分段步骤，不打断分步流程）。
+- **F1（用户点名的"时间轴生成配音"）**：`VoiceCard` 的「生成配音」接上 `api.voiceSynthesize`，用配音计划里的逐句台词与宿主默认音色合成；成功路径回传 `onNotice`（工作台全局提示条），卡片内也显示产物路径，失败显示原因。TTS 未接入时按钮仍禁用并说明原因。
+- **溢出修复**：分段标题按钮以前没有收缩约束，长提示词把按钮和操作簇一起顶出卡片，截图里表现为灰底标题条越过右边界、文字被视口截断。现在按钮 `flex:1 1 0; min-width:0; max-width:100%; overflow:hidden`，提示词走省略号，右侧操作簇 `flex:none`；生效参数条的长参数值也加省略号。
+- 验证：`pnpm run typecheck` 通过；新增 rpc 1 例、VoiceCard 1 例、Workbench 预览回传 1 例、样式门禁 1 例；全量数字见评审清单 §四。
+
+### B2 修复：导出条的分辨率/帧率/画幅真正生效（2026-11-27）
+
+三个下拉此前是纯装饰：客户端把 `resolution/fps/aspect` 发出去，宿主 `timelines/render` 不读，`render-registry.start()` 也不接，真正编码只认 `timeline.exportFormat`（默认 720p30）。
+
+- 新增 `src/workbench/export-selection.ts`：`resolveExportFormat(base, selection)` 把档位换算成 `{width,height,frameRate}`，口径与多比例切片一致（**短边不变**、宽高偶数）。`portrait`(3:4) 由横版 `4:3` 转置得到。
+- `render-registry.start()` 增加 `exportFormat?`，用**副本**渲染——存储里的时间轴不被改写；副本同时供排队、完成摘要、耗时样本使用。新增 `exportFormatOf(id)`，`render-retry` 按原规格重跑。
+- `timelines/render` 解析三档并换算；`timelines/estimate` 同口径（显式 `width/height/frameRate` 优先）。未知档位直接报错，不静默降级。
+- 导出条新增实时规格标签 `[data-timeline-export-spec]`（如 `1440×2560 · 60fps`），与宿主共用同一换算函数；文案键 `exportSpecHint` 中英各一份，主题版本 `2026-11-27.4`。
+- 测试：新增 `export-selection`(10) + `render-export-format`(4)，rpc 端点 +3（不依赖 ffmpeg）、导出面板 +1。全量 19 失败 / 196 通过 / 3 跳过 文件，失败集合与 B1 修复后逐条一致。
+
+### B1 修复：剧本同步到画布不再必然校验失败（2026-11-27）
+
+`buildEpisodeWorkflow` 原来把镜头串成 `img1 → vid1 → img2 → vid2 → preview`，其中跨镜的 `video-generate`（output `media`）→ `image-generate`（input `text`）违反端口表，多镜头集同步后整图校验失败、画布运行按钮禁用。
+
+- 改为**每镜独立分支**：每镜只连 `image→video`，各镜 `video` 再汇聚到同一个 `preview`（`media→media`）；边数不变（n 镜 2n 条）、节点 id 与幂等不变，预览节点落在分支纵向中点。
+- `tests/workbench-episode-sync-export.test.ts` 新增两例：逐条断言两镜拓扑且 `validateWorkflow().ok === true`；反向证明旧的 `vid1→img2` 边仍会被判 `port-mismatch`。一镜/三镜规模与 store 存下来的图也都校验通过。
+- 遗留：`preview` 仍无执行器（B5），本次只解决"能不能跑"，不解决"跑完能不能出成片"。
+
+### 生效参数条：标题独立 + 图像/视频/文本分组（2026-11-27）
+
+顶栏下方那条「当前生效参数」原来把标题和六个参数平铺成一行：标题像第七个参数，来源徽章全部长得一样，「编辑」和「模型详情」分落两行且中间空一大片。
+
+- **标题独立**：图标 + 名称 + 一句用途（"生成时自动套用"），右侧竖线与参数隔开；文案键 `defaultsStripHint` 中英各一份。
+- **按模态分组**：图像 / 视频 / 文本三组，与编辑器弹层的 `DEFAULT_GROUPS` 同构；组名做成浅底胶囊，组内才用细分隔线。文本模型下拉保持原 `data-workbench-text-model` 契约。
+- **来源分级**：内置默认最轻、来自设置加边、工作台覆盖用强调色（`data-default-source-label` / `data-default-source` 不变）。
+- **入口成组**：「编辑」和「模型详情」收进 `.iv-defaults-actions` 一起靠右；`data-model-details-toggle` 仍保留 `marginLeft:'auto'` 的既有测试契约。
+- **窄档降级**：≤1180px 标题与入口占首行、参数整组落到第二行；≤700px 每组改成「组名一行、参数一行」，不会被拆成碎片。
+- 新增 `tests/client-defaults-strip.test.tsx`（1 例锁结构）与 `scripts/defaults-strip-preview.mjs`（`MODE=before|after`、`FRAME=xxx` 出真实样式表渲染对比图）。
+- 主题版本 `MODERN_THEME_STYLE` → 2026-11-27.3，`WORKBENCH_STYLE` → 2026-11-27.2。
+
+### 剧本页：三步进度条 + 主按钮跟着「下一步」走（2026-11-27）
+
+剧本页首屏原有三个同级实心主按钮（生成剧本 / 开始分段 / 每段的规划分镜），用户看不出「下一步」该点哪个；生成成功后也没有任何指向下一步的信号。
+
+- **新增步进条**（`data-script-steps`，位于「剧本分镜」分区顶部）：写剧本 → 分段 → 生成分镜。进度只由当前集真实数据判定——剧本正文非空**或**已有分段算第一步完成，`segments.length > 0` 算第二步，任一分镜有镜头算第三步；不记录点击历史。
+- **主按钮收敛**：「下一步」= 第一个未完成的步骤，只有它对应的按钮是 `iv-btn--action--primary`，其余降为 `iv-btn--action--soft`；三步完成后没有实心主按钮，提示改去画布 / 时间轴。任意时刻最多一个实心。
+- **有分段不倒退**：已有分段但剧本正文为空时仍停在第三步（否则会出现「明明分了段却提示去写剧本」）。
+- **点按可跳**：点任意步骤滚到对应区块并闪一下高亮（复用 `scrollToPane` 的 `iv-pane--flash`，同样用 `typeof scrollIntoView === 'function'` 防御 jsdom / 旧 WebView）；分镜锚点在无分段时不存在，退回分段区块，不会点了没反应。
+- **补上「生成后没有下一步」**：生成剧本成功后 `requestAnimationFrame` 一帧，把视口带到「开始分段」。
+- **契约保持**：`PipelineCard` 新增可选 `emphasis`（缺省 `primary`），`EpisodeWorkspace` 新增可选 `activeStep`（缺省时两个按钮仍是 `primary`），单独渲染的行为不变；`data-pipeline-script-generate` / `data-segment-auto` / `data-segment-plan` 均未改动。
+- 新增 `tests/client-script-steps.test.tsx`（7 例）与 `scripts/script-steps-preview.mjs`（真实样式表渲染四种进度，`MODE=before|after` 出前后对比图）。
+
+### 顶栏重排：对象行 + 视图标签栏两层（2026-11-27）
+
+前一版三 pane 改造只做了面板内部，顶栏仍是「一行塞 20 个控件」。实测 1440px 就已经内容溢出、被动换行，模式导航被挤到第二行最左边，而「创建剧集」的黑色主按钮成了整条顶栏最重的元素——用户既看不出「我在哪一页」，也看不出「下一步点哪」。
+
+- **拆成两层**：第一行是对象与状态（品牌 / 剧集 / 集 / 保存态 / 登录·帮助·工作台），第二行是视图标签栏（快速创作 / 剧本生成 / 专业工作流 / 时间轴精剪）。导航贴着内容，选中项用「文字加粗 + 图标实色 + 2px 下划线 + 轻底色」四重标记。
+- **主次收敛**：`创建` 按钮平时是普通描边按钮，输入框有内容才升为主色；剧集/集的重命名与删除降到 72% 不透明度，悬停分组才提亮；`新建集` 与「新建剧集」输入框之间加竖线分组，不再和当前剧集的删除按钮糊成一团。
+- **窄档降级**（按容器查询逐档压缩）：1400 收起品牌副标题 → 1320 收起「剧集/集」小标签 → 1180 收窄下拉与输入框 → 1060「新建集」转图标 → 560 只留品牌标记 → 460 标签栏转纯图标（`title` + `aria-label` 保留可读名）。实测顶栏高度：≥1024 为 80px，960–760 为 109–115px，700–520 为 119px，≤500 折到 149–210px。
+- **展示列浮层改用 `--iv-top-h`**：原先写死 `top:52px`，顶栏一变高就会压住内容。现在按上述实测值逐档覆盖，≤440px 改成贴底浮层（`height:min(58%,100% - 228px)`），结构上不可能压到顶栏。
+- **契约保持**：`.iv-modes` 前仍有 `.iv-top-sep`、`.iv-top-meta` 紧跟 `.iv-top-tools`（新增 `.iv-top-end` 包装但不改变相邻关系），`data-episode-*` / `data-workbench-*-toggle` 一律未动，68 个相关用例通过。
+- 新增 `scripts/topbar-preview.mjs`：用真实样式表渲染顶栏静态页，配合无头浏览器截图核对排版（`FRAME=420` 可固定容器宽度验证窄档，绕开无头视口 504px 下限）。
+
 ### 三 pane 重设计收尾：统一底座 + 剧本页 + 时间轴/画布补齐（2026-11-26）
 
 按 `REDESIGN-REVIEW-VERDICT.md` 的六项拍板把三批连续做完（同事先前已提交画布/时间轴主体）：
