@@ -136,6 +136,41 @@ describe('workflow canvas', () => {
     await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
   })
 
+  it('节点卡可用键盘 Enter/Space 激活并打开检视器（F18）', async () => {
+    const record: WorkflowRecord = {
+      ...makeRecord(),
+      nodes: [{ id: 'n1', kind: 'image-generate', position: { x: 0, y: 0 }, params: {} }],
+      edges: [],
+    }
+    const view = render(<WorkflowCanvas record={record} onChange={() => {}} t={t} />)
+    const card = (): HTMLElement => view.container.querySelector('[data-workflow-node="image-generate"]') as HTMLElement
+
+    // 未选中：卡片刻意带 role=button + tabIndex=0，但键盘以前按了什么都不发生
+    expect(card().getAttribute('role')).toBe('button')
+    expect(card().getAttribute('data-workflow-node-selected')).toBe('false')
+    expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeNull()
+
+    card().focus()
+    fireEvent.keyDown(card(), { key: 'Enter' })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeTruthy()
+    })
+    expect(card().getAttribute('data-workflow-node-selected')).toBe('true')
+    // 检视器一开就接管焦点（useDialogFocus），键盘用户不会被留在卡片上
+    const inspector = view.container.querySelector('[data-workflow-inspector]') as HTMLElement
+    await waitFor(() => { expect(inspector.contains(document.activeElement)).toBe(true) })
+
+    // 关掉再按空格：两个键都要能用
+    fireEvent.click(view.container.querySelector('[data-workflow-inspector-close="true"]') as HTMLElement)
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeNull()
+    })
+    fireEvent.keyDown(card(), { key: ' ' })
+    await waitFor(() => {
+      expect(view.container.querySelector('[data-workflow-inspector-open="true"]')).toBeTruthy()
+    })
+  })
+
   it('lets a planned node be placed but marks it as not runnable', async () => {
     const { view, current } = renderCanvas()
     fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))

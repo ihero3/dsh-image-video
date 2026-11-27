@@ -263,10 +263,12 @@ function nextNodeId(kind: WorkflowNodeKind): string {
  * 不被 `merge` 持久化——运行记录是宿主侧的事实，卡片只是它的镜子。
  */
 function WorkflowNodeCard({
-  data, selected, t, onPreview,
+  id, data, selected, t, onPreview, onActivate,
 }: NodeProps<CanvasNode> & {
   t: (key: WorkbenchLocaleKey) => string
   onPreview?: (path: string, kind: 'image' | 'video') => void
+  /** `F18`：键盘 Enter/Space 激活 = 单选该节点（与点选同一路，检视器由此出现）。 */
+  onActivate?: (nodeId: string) => void
 }): JSX.Element {
   const [bubbleOpen, setBubbleOpen] = useState(false)
   const spec = nodeSpec(data.kind)
@@ -296,6 +298,14 @@ function WorkflowNodeCard({
       data-workflow-node-run-status={runStatus ?? 'none'}
       role="button"
       tabIndex={0}
+      onKeyDown={event => {
+        // 卡片自称 button，就得像 button 一样能被键盘激活。
+        // 以前只靠 xyflow 默认 a11y（可聚焦、方向键移动），Enter/Space 什么都不发生。
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        event.stopPropagation()
+        onActivate?.(id)
+      }}
       aria-label={`${t(spec.labelKey as WorkbenchLocaleKey)}${runStatus === undefined ? '' : ` · ${t(nodeStatusKey(runStatus))}`}`}
     >
       <Handle
@@ -483,6 +493,16 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, rep
     () => nodes.filter(node => selectedIds.includes(node.id)),
     [nodes, selectedIds],
   )
+  /**
+   * `F18`：节点卡的键盘激活（Enter/Space）。
+   * 走与点选同一条路——改本地 `nodes` 的 `selected`，再由 `onSelectionChange`
+   * 同步 `selectedIds`，检视器因此和鼠标点选一样打开。多选被收成单选：键盘激活
+   * 一次只认一个节点，避免"按了回车却开了多选面板"。
+   */
+  const activateNode = useCallback((nodeId: string) => {
+    setNodes(current => current.map(node => ({ ...node, selected: node.id === nodeId })))
+    setEdges(current => current.map(edge => (edge.selected === true ? { ...edge, selected: false } : edge)))
+  }, [setNodes, setEdges])
   /** 关抽屉 = 清空选中（与点画布空白同语义），焦点管理由此统一入口驱动。 */
   const closeInspector = useCallback(() => {
     setNodes(current => current.map(node => (node.selected === true ? { ...node, selected: false } : node)))
@@ -604,8 +624,10 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, rep
   }, [run?.latest?.status])
 
   const nodeTypes = useMemo(() => ({
-    workbench: (nodeProps: NodeProps<CanvasNode>) => <WorkflowNodeCard {...nodeProps} t={t} onPreview={onPreview} />,
-  }), [t, onPreview])
+    workbench: (nodeProps: NodeProps<CanvasNode>) => (
+      <WorkflowNodeCard {...nodeProps} t={t} onPreview={onPreview} onActivate={activateNode} />
+    ),
+  }), [t, onPreview, activateNode])
 
   /**
    * 应用一张新图：改本地状态 + 推历史 + 回写事实源（回写由上面的 effect 完成）。

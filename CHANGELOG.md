@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### F18 · 节点卡键盘激活（2026-11-27）
+
+节点卡带着 `role="button" tabIndex={0}`，但只有 xyflow 默认 a11y（可聚焦、方向键移动），Enter/Space 不会选中，检视器也就永远出不来。补 `onKeyDown`：Enter/Space 走与点选同一条路——把本地 `nodes` 里该节点置 `selected`，`onSelectionChange` 同步 `selectedIds`，检视器随即打开并由 `useDialogFocus` 接管焦点；同时清掉边的选中，避免"回车开了多选面板"。
+
 ### F17 · 模板市场浮层接管焦点（2026-11-27）
 
 模板抽屉原先只处理 Esc 与外部点击，键盘用户 Tab 时焦点仍留在浮层背后的画布上。改为复用 `useDialogFocus`：打开焦点移入第一张模板卡、Tab 在抽屉内首尾循环、Esc 关闭、关闭后焦点归还「模板市场」开关（元素已卸载时按选择器兜底）。外部点击关闭的监听保留，Esc 不再由手写监听重复处理。根节点补 `role="dialog"` 与 `aria-label`。
