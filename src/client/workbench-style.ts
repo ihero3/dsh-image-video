@@ -906,6 +906,8 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-wf-status-flag{display:inline-flex;align-items:center;gap:var(--iv-sp-1)}
 .iv-wf-status-flag--ok{color:var(--iv-ok)}
 .iv-wf-status-flag--err{color:var(--iv-danger)}
+/* F10：planned 是预期状态，按状态色表用 warn（与工具条「N 个问题」胶囊同色），不染红 */
+.iv-wf-status-flag--warn{color:var(--iv-warn)}
 .iv-wf-status-run{display:inline-flex;align-items:center;gap:var(--iv-sp-2)}
 .iv-wf-status-note{margin-left:auto;font-size:var(--iv-fs-micro);color:var(--iv-tx3);opacity:.85;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}

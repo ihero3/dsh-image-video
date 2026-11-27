@@ -164,6 +164,61 @@ describe('B5 timeline interaction', () => {
     expect(clipLeftPercent(view)).not.toBe('0')
   })
 
+  it('图片素材拖到视频轨：不给落点高亮，松手时说明为什么吃不下（F7）', async () => {
+    // 用一个图片素材挂载（渲染真实素材行，dragStart 才会写对种类）
+    const host = fakeApi({
+      assets: [
+        { schemaVersion: 1, id: 'ast-v', projectId: 'prj-1', kind: 'video', path: '/tmp/outputs/clip.mp4', bytes: 1024, createdAt: '2026-10-16T00:00:00.000Z' },
+        { schemaVersion: 1, id: 'ast-i', projectId: 'prj-1', kind: 'image', path: '/tmp/outputs/still.png', bytes: 512, createdAt: '2026-10-16T00:00:00.000Z' },
+      ],
+    })
+    host.projects.push({ schemaVersion: 1, id: 'prj-1', name: '时间轴项目', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-lane="video"]')).toBeTruthy() })
+    stubLaneRect(view, 'video')
+
+    const lane = view.container.querySelector('[data-timeline-lane="video"]') as HTMLElement
+    const rows = [...view.container.querySelectorAll('li[data-asset-draggable]')]
+    const imageRow = rows.find(row => row.getAttribute('data-asset-kind') === 'image') as HTMLElement
+    expect(imageRow).toBeTruthy()
+    const transfer = fakeDataTransfer()
+    fireEvent.dragStart(imageRow, { dataTransfer: transfer })
+
+    // 拖拽经过：以前照样亮高亮，松手却什么都不发生
+    fireEvent.dragOver(lane, { dataTransfer: transfer })
+    expect(lane.className).not.toContain('iv-t-lane--drop')
+
+    fireDropWithClientX(lane, transfer, 200)
+    // 不静默：给出可读原因，且片段数不变
+    await waitFor(() => { expect(view.container.textContent).toContain(en.dropRejectImage) })
+    expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(0)
+    expect(lane.className).not.toContain('iv-t-lane--drop')
+  })
+
+  it('音频轨只接视频：拖图片同样给出原因，不静默丢弃（F7）', async () => {
+    const host = fakeApi({
+      assets: [
+        { schemaVersion: 1, id: 'ast-i', projectId: 'prj-1', kind: 'image', path: '/tmp/outputs/still.png', bytes: 512, createdAt: '2026-10-16T00:00:00.000Z' },
+      ],
+    })
+    host.projects.push({ schemaVersion: 1, id: 'prj-1', name: '时间轴项目', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' })
+    const view = render(<Workbench {...clientProps({ api: host.api })} />)
+    fireEvent.click(await screen.findByRole('button', { name: en.modeTimeline }))
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-lane="audio"]')).toBeTruthy() })
+    stubLaneRect(view, 'audio')
+
+    const lane = view.container.querySelector('[data-timeline-lane="audio"]') as HTMLElement
+    const row = view.container.querySelector('li[data-asset-draggable]') as HTMLElement
+    const transfer = fakeDataTransfer()
+    fireEvent.dragStart(row, { dataTransfer: transfer })
+    fireEvent.dragOver(lane, { dataTransfer: transfer })
+    expect(lane.className).not.toContain('iv-t-lane--drop')
+    fireDropWithClientX(lane, transfer, 100)
+    await waitFor(() => { expect(view.container.textContent).toContain(en.dropRejectAudio) })
+    expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(0)
+  })
+
   it('moves a clip to a new start when dragged inside the lane', async () => {
     const { view } = await renderTimeline()
     await addClipViaPicker(view)

@@ -1636,6 +1636,8 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     event.dataTransfer.setData(ASSET_DRAG_TYPE, payload)
     event.dataTransfer.setData('text/plain', payload)
     event.dataTransfer.effectAllowed = 'copy'
+    // 拖拽期间 `getData` 读不到（安全限制），种类记在这里给 dragOver 判断落点高亮
+    draggedAssetKind.current = asset.kind
   }
 
   /**
@@ -1660,6 +1662,25 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     event.dataTransfer.setData(CLIP_DRAG_TYPE, JSON.stringify({ trackId, clipId }))
     event.dataTransfer.effectAllowed = 'move'
     setSelectedClipId(clipId)
+  }
+
+  /** 当前拖拽中的素材种类（dragStart 写入、dragEnd 清空）：dragOver 用它判落点能否接受。 */
+  const draggedAssetKind = useRef<string | undefined>(undefined)
+  /**
+   * 某条轨道吃不下的素材为什么吃不下（`F7`）。
+   * 返回 `undefined` = 可以入轨；否则是可读原因。
+   *
+   * 以前 drop 里直接 `if (asset.kind !== 'video') return`——dragOver 照样亮高亮，
+   * 松手却什么都不发生，用户只会以为界面卡了。图片素材现在是**有意拒收**：
+   * 监视器能显示静帧，但导出（`media/render.ts`）与逐段预览都只吃视频，
+   * 放进来能看不能用，等于把问题推到导出那一刻才爆。
+   */
+  const laneRejects = (trackKind: TimelineTrack['kind'], assetKind: string | undefined): WorkbenchLocaleKey | undefined => {
+    if (trackKind === 'subtitle') return 'dropRejectSubtitle'
+    // 音频轨从视频里取音（宿主口径），图片没有音轨可抽
+    if (trackKind === 'audio') return assetKind === 'video' ? undefined : 'dropRejectAudio'
+    if (assetKind === 'video') return undefined
+    return assetKind === 'image' ? 'dropRejectImage' : 'dropRejectUnsupported'
   }
 
   /** 轨道接受放置：素材 → 入轨；片段 → 移动起点（同种类轨道间接驳）。 */
@@ -1716,8 +1737,13 @@ export function Workbench(props: WorkbenchProps): ReactNode {
     if (assetPayload === '') return
     let asset: { path?: string; kind?: string } = {}
     try { asset = JSON.parse(assetPayload) as { path?: string; kind?: string } } catch { return }
-    if (asset.path === undefined || track.kind === 'subtitle') return
-    if (asset.kind !== 'video') return
+    if (asset.path === undefined) return
+    // 2b) 吃不下的素材：出高亮、说明原因（`F7`）——不再"亮着高亮却静默丢弃"
+    const rejected = laneRejects(track.kind, asset.kind)
+    if (rejected !== undefined) {
+      setNotice({ text: t(rejected), tone: 'error' })
+      return
+    }
     patchTrack(track.id, current => ({
       ...current,
       clips: current.clips.concat({
@@ -4534,11 +4560,14 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                               else laneRefs.current.set(track.id, element)
                             }}
                             onDragOver={event => {
-                              // 只有本轨吃得下的载荷才给落点高亮
+                              // 只有本轨吃得下的载荷才给落点高亮（`F7`）：以前只要不是字幕轨就亮，
+                              // 图片素材拖到视频轨上同样亮，松手却什么都不发生。
                               const clipDrag = event.dataTransfer.types.includes(CLIP_DRAG_TYPE)
+                              // 素材种类来自 `draggedAssetKind`（拖拽中读不到 getData）；未知时按能吃处理，
+                              // 具体在 drop 里再拦并给原因
                               const assetDrag = event.dataTransfer.types.includes(ASSET_DRAG_TYPE)
                                 || event.dataTransfer.types.includes('text/plain')
-                              if (clipDrag || (assetDrag && track.kind !== 'subtitle')) {
+                              if (clipDrag || (assetDrag && laneRejects(track.kind, draggedAssetKind.current) === undefined)) {
                                 event.preventDefault()
                                 setDropTrackId(track.id)
                               }
@@ -5505,7 +5534,9 @@ export function Workbench(props: WorkbenchProps): ReactNode {
                     <li key={asset.id} className="iv-row" data-active={asset.id === selectedId ? 'true' : 'false'}
                       draggable
                       data-asset-draggable="true"
+                      data-asset-kind={asset.kind}
                       onDragStart={event => { onAssetDragStart(event, asset) }}
+                      onDragEnd={() => { draggedAssetKind.current = undefined }}
                       onClick={() => { setPreviewPath(undefined); setSelectedId(asset.id) }}>
                       {/* `B-7`：多选复选框（点行=选中预览，点框=加入批量集，两件事不互斥） */}
                       <label className="iv-check iv-row-check" onClick={event => { event.stopPropagation() }}>

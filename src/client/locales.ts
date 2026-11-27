@@ -271,6 +271,10 @@ export type WorkbenchLocaleKey =
   | 'clipStart'
   | 'timelineEmpty'
   | 'timelineEmptyAction'
+  | 'dropRejectSubtitle'
+  | 'dropRejectAudio'
+  | 'dropRejectImage'
+  | 'dropRejectUnsupported'
   | 'addSubtitle'
   | 'addClip'
   | 'trackSubtitle'
@@ -358,6 +362,7 @@ export type WorkbenchLocaleKey =
   | 'modelDefaultTag'
   | 'modelDefaultHint'
   | 'canvasStatusEmpty'
+  | 'canvasStatusPlannedOnly'
   | 'canvasAdd'
   | 'canvasParams'
   | 'canvasFit'
@@ -1471,6 +1476,10 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   clipStart: 'Start (ms)',
   timelineEmpty: 'No clips yet — add from the assets on the right',
   timelineEmptyAction: 'Add from assets',
+  dropRejectSubtitle: 'The subtitle track only takes subtitles',
+  dropRejectAudio: 'The audio track only takes video (its audio is extracted)',
+  dropRejectImage: 'Image assets cannot go on the video track yet — export and segment preview only handle video clips',
+  dropRejectUnsupported: 'This asset type is not supported on the timeline',
   addSubtitle: 'Add subtitle',
   addClip: 'Add to track',
   trackSubtitle: 'Subtitle track',
@@ -1558,6 +1567,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   modelDefaultTag: 'default',
   modelDefaultHint: 'Default model: ',
   canvasStatusEmpty: 'Empty canvas',
+  canvasStatusPlannedOnly: 'Only planned nodes — nothing is blocking a run, they are simply not wired yet',
   canvasAdd: 'Add to canvas',
   canvasParams: 'Node parameters',
   canvasFit: 'Fit view',
@@ -2716,6 +2726,10 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   clipStart: '起点(ms)',
   timelineEmpty: '还没有片段——从右侧素材里加入',
   timelineEmptyAction: '从素材添加',
+  dropRejectSubtitle: '字幕轨只能放字幕',
+  dropRejectAudio: '音频轨只接视频（宿主从视频取音）',
+  dropRejectImage: '图片素材暂不能放视频轨——导出与逐段预览只处理视频片段',
+  dropRejectUnsupported: '时间轴不支持这类素材',
   addSubtitle: '加入字幕',
   addClip: '加入轨道',
   trackSubtitle: '字幕轨',
@@ -2803,6 +2817,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   modelDefaultTag: '默认',
   modelDefaultHint: '默认模型：',
   canvasStatusEmpty: '空画布',
+  canvasStatusPlannedOnly: '只有规划中节点——没有阻塞项，只是它们还没有执行器',
   canvasAdd: '加入画布',
   canvasParams: '节点参数',
   canvasFit: '适配窗口',

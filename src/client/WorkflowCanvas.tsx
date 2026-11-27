@@ -1503,15 +1503,28 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api, rep
         </span>
         {nodes.length === 0
           ? <span className="iv-wf-status-flag" data-workflow-status-validation="empty">{t('canvasStatusEmpty')}</span>
-          : (
-            <span
-              className={`iv-wf-status-flag${validation.ok ? ' iv-wf-status-flag--ok' : ' iv-wf-status-flag--err'}`}
-              data-workflow-status-validation={validation.ok ? 'ok' : 'issues'}
-            >
-              <Icon name={validation.ok ? 'check' : 'alert'} size={11} />
-              {validation.ok ? t('validationOk') : `${validation.issues.length}`}
-            </span>
-          )}
+          : (() => {
+            // `F10`：planned 节点是**预期状态**，不是错误（设计文档 D5：胶囊用 `--warn` 不用 `--danger`）。
+            // 以前只要有 planned 节点就把整条校验染红，与工具条那颗 warn 胶囊自相矛盾。
+            const blockers = validation.issues.filter(issue => issue.code !== 'not-runnable')
+            const planned = validation.issues.length - blockers.length
+            const state = blockers.length > 0 ? 'issues' : planned > 0 ? 'planned' : 'ok'
+            const flagClass = state === 'issues'
+              ? ' iv-wf-status-flag--err'
+              : state === 'planned' ? ' iv-wf-status-flag--warn' : ' iv-wf-status-flag--ok'
+            return (
+              <span
+                className={`iv-wf-status-flag${flagClass}`}
+                data-workflow-status-validation={state}
+                data-workflow-status-blockers={blockers.length}
+                data-workflow-status-planned={planned}
+                title={state === 'planned' ? t('canvasStatusPlannedOnly') : undefined}
+              >
+                <Icon name={state === 'ok' ? 'check' : state === 'planned' ? 'sparkles' : 'alert'} size={11} />
+                {state === 'ok' ? t('validationOk') : `${blockers.length > 0 ? blockers.length : planned}`}
+              </span>
+            )
+          })()}
         {run?.latest === undefined
           ? <span className="iv-wf-status-run">{t('runNone')}</span>
           : (

@@ -136,6 +136,27 @@ describe('workflow canvas', () => {
     await waitFor(() => { expect(canvas(view).getAttribute('data-workflow-nodes')).toBe('1') })
   })
 
+  it('状态条区分「阻塞」与「只是规划中」：planned 走 warn 不染红（F10）', async () => {
+    const { view } = renderCanvas()
+    const flag = (): HTMLElement => view.container.querySelector('[data-workflow-status-validation]') as HTMLElement
+
+    // 只放一个 planned 节点（lip-sync 属 planned 组）：没有阻塞项，不该红色报警
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} lip-sync` }))
+    await waitFor(() => { expect(flag().getAttribute('data-workflow-status-validation')).toBe('planned') })
+    expect(flag().className).toContain('iv-wf-status-flag--warn')
+    expect(flag().className).not.toContain('iv-wf-status-flag--err')
+    expect(flag().getAttribute('data-workflow-status-blockers')).toBe('0')
+    expect(flag().getAttribute('data-workflow-status-planned')).toBe('1')
+    expect(flag().getAttribute('title')).toBe(en.canvasStatusPlannedOnly)
+
+    // 真阻塞（必填参数缺失）才用 danger，并且只数阻塞项、不把 planned 算进去
+    fireEvent.click(screen.getByRole('button', { name: `${en.canvasAdd} video-generate` }))
+    await waitFor(() => { expect(flag().getAttribute('data-workflow-status-validation')).toBe('issues') })
+    expect(flag().className).toContain('iv-wf-status-flag--err')
+    expect(Number(flag().getAttribute('data-workflow-status-blockers'))).toBeGreaterThan(0)
+    expect(flag().getAttribute('data-workflow-status-planned')).toBe('1')
+  })
+
   it('节点卡可用键盘 Enter/Space 激活并打开检视器（F18）', async () => {
     const record: WorkflowRecord = {
       ...makeRecord(),

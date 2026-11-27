@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### F7 · 拖不进去的素材要说明原因（2026-11-27）
+
+图片素材拖到视频轨时，`dragOver` 会亮落点高亮，松手却什么都不发生——`onLaneDrop` 里一句 `if (asset.kind !== 'video') return` 静默丢弃。现在：
+
+- 新增 `laneRejects(trackKind, assetKind)` 作为唯一判定：字幕轨不吃素材、音频轨只接视频（宿主从视频取音）、视频轨只接视频；
+- drop 时不接受就**给出可读原因**（`dropRejectImage` 等四条文案，中英各一份）并清掉高亮；
+- dragOver 不再对吃不下的素材亮高亮。拖拽期间浏览器禁止读 `getData`，所以种类记在 `draggedAssetKind` ref（`dragStart` 写入、`dragEnd` 清空），素材行同时补 `data-asset-kind` 便于定位。
+
+**没有放行图片**：导出链路（`media/render.ts` 用 `-i <png> -t N`）与逐段预览（`<video>`）都只处理视频，放进来是"能看不能导出"；本机无 ffmpeg，无法证明放行后能正确产出，按项目口径不假装能跑。
+
+### F10 · 状态条不再把「规划中」当错误（2026-11-27）
+
+画布状态条的校验旗标以前只有 ok / issues 两态：图里只要有一个 planned 节点（lip-sync / face-swap / voice-synthesize）就把整条染成 `--danger`，而工具条的「N 个问题」胶囊按设计文档 D5 用的是 `--warn`——同一个事实两种颜色。
+
+现在拆成三态：`ok` / `planned`（warn，`title` 说明"没有阻塞项，只是还没有执行器"）/ `issues`（danger）；计数只数**阻塞项**，planned 单独计数。属性同时暴露 `data-workflow-status-blockers` 与 `data-workflow-status-planned`。
+
 ## [1.0.7] - 2026-11-27
 
 ### 测试环境：Node 自带的 localStorage 壳不再顶掉 jsdom 的（2026-11-27）
