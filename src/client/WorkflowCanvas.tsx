@@ -1069,7 +1069,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
                   <i className="iv-dot" aria-hidden="true" />
                   {run.latest === undefined ? t('runNone') : t(runStatusKey(run.latest.status))}
                 </span>
-                <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-workflow-run-action="start"
+                <button type="button" className="iv-btn iv-btn--acc iv-btn--sm" data-workflow-run-action="start"
                   disabled={runBusy || !validation.ok || nodes.length === 0} onClick={run.onStart}>
                   <Icon name="play" size={12} />
                   {run.latest?.status === 'running'
@@ -1474,7 +1474,7 @@ function CanvasSurface({ record, onChange, t, run, onNotice, onPreview, api }: W
               {run.latest.nodeRuns.filter(node => node.status === 'succeeded').length}/{run.latest.nodeRuns.length}
             </span>
           )}
-        <span className="iv-wf-status-note" title={t('canvasTransient')}>{t('canvasTransient')}</span>
+        <span className="iv-wf-status-note" title={t('canvasAutoSave')}>{t('canvasAutoSave')}</span>
       </div>
 
       {/* 整图替换确认：图非空时先问一次，避免「点一下画了半小时的图就没了」 */}

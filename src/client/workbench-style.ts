@@ -913,7 +913,7 @@ textarea.iv-input{height:auto;padding:4px 8px;line-height:1.45;resize:vertical}
 .iv-run-item{border:1px solid var(--iv-line-2);background:var(--iv-panel);color:var(--iv-tx2);border-radius:var(--iv-r-pill);
   font:inherit;font-size:var(--iv-fs-meta);padding:1px 8px;cursor:pointer;white-space:nowrap}
 .iv-run-item:hover{border-color:color-mix(in srgb,currentColor 35%,transparent);color:var(--iv-tx)}
-.iv-run-item[data-active=true]{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
+.iv-run-item[data-workflow-run-item-selected=true]{border-color:var(--iv-acc);color:var(--iv-tx);background:var(--iv-acc-soft)}
 .iv-run-nodes{display:grid;gap:var(--iv-sp-1)}
 .iv-node-run{display:flex;align-items:center;gap:var(--iv-sp-3);font-size:var(--iv-fs-meta);color:var(--iv-tx2)}
 .iv-node-run .iv-dot{width:5px;height:5px}

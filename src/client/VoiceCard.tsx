@@ -119,7 +119,7 @@ export function VoiceCard(props: VoiceCardProps) {
           </button>
           <button
             type="button"
-            className="iv-btn iv-btn--primary iv-btn--sm"
+            className="iv-btn iv-btn--acc iv-btn--sm"
             data-voice-generate="true"
             disabled={!available || plan === undefined || synthesizing || busy}
             title={available ? undefined : (status?.reason ?? t('voiceNotReady'))}

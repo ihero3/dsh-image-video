@@ -373,4 +373,18 @@ describe('视觉层级契约（R7）', () => {
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-select{flex:none;width:76px;min-width:76px}')
     expect(MODERN_THEME_STYLE).toContain('.iv .iv-episode-refs .iv-row .iv-row-actions{flex:none}')
   })
+
+  it('运行历史选中态命中真实存在的属性（2026-11-27 修复 F9）', () => {
+    // 起因：JSX 写 data-workflow-run-item-selected，CSS 命的却是 [data-active]，
+    // 选中项有属性没样式；属性名统一到 JSX 一侧（测试也按它断言）。
+    expect(WORKBENCH_STYLE).toContain('.iv-run-item[data-workflow-run-item-selected=true]')
+    expect(WORKBENCH_STYLE).not.toContain('.iv-run-item[data-active=true]')
+  })
+
+  it('画布状态条不再声称工作流只存在本机（2026-11-27 修复 F11）', () => {
+    // 起因：文案写着"暂存在本机"，实际画布改动已去抖 saveWorkflow 落宿主，
+    // 提示与事实相反。改成自动保存口径。
+    expect(en.canvasAutoSave.toLowerCase()).toContain('automatic')
+    expect(en.canvasAutoSave.toLowerCase()).not.toContain('this machine')
+  })
 })

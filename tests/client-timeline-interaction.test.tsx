@@ -249,6 +249,10 @@ describe('B5 timeline interaction', () => {
     })
     fireEvent.keyDown(window, { key: 'Delete' })
     await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(1) })
+    // F4：键盘删除与垃圾桶同一撤销路径——删完必须给得出「撤销」
+    await waitFor(() => { expect(view.container.querySelector('[data-timeline-clip-undo]')).toBeTruthy() })
+    fireEvent.click(view.container.querySelector('[data-timeline-clip-undo-button]') as HTMLElement)
+    await waitFor(() => { expect(view.container.querySelectorAll('[data-timeline-clip]')).toHaveLength(2) })
   })
 
   it('splits a clip at the playhead through the domain rule (B17)', async () => {

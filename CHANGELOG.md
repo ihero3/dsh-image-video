@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### R4：四处单点修复（F2 / F4 / F9 / F11，2026-11-27）
+
+- **F2**：`iv-btn--primary` 全仓没有样式定义，画布「运行」实际是基础灰底、和 14 个工具按钮同级。`WorkflowCanvas` 运行、`VoiceCard` 生成配音、`VoicePanel` 卡片合成三处统一改 `iv-btn--acc`（保留 `--sm` 尺寸），不新增样式；尺寸三套（34/42/26px）仍留作后续打磨。
+- **F4**：时间轴键盘 Delete/Backspace 删除以前不写 `clipUndo`，与检视器垃圾桶的"可撤销"承诺不一致。`removeSelectedClip()` 改为先定位 `trackId/clip/index` 写撤销，再过滤；两条删除路径共用一个撤销条。
+- **F9**：运行历史选中态 JSX 写 `data-workflow-run-item-selected`、CSS 却命中 `[data-active=true]`，选中项没有任何视觉反馈。属性名统一到 JSX 一侧。
+- **F11**：画布状态条文案「工作流暂存在本机」早已过时（改动已去抖 `saveWorkflow` 落宿主）。键名 `canvasTransient` → `canvasAutoSave`，中英文案改为「改动自动保存到本集工作流」/「Edits save automatically to this episode's workflow」。
+- 测试：Delete 删除后必须出现撤销并能恢复；设计系统门禁 +2（选中态选择器与 JSX 同源、状态条不再声称只存本机）；画布起跑按钮断言 `iv-btn--acc`。
+- 验证：`typecheck` 通过；全量 19 失败 / 196 通过 / 3 跳过 文件，26 失败 / 1360 通过 / 8 跳过 用例（失败数仍为基线 26，通过数 1358→1360）；`tsdown` 通过。
+
 ### B5：能力边界诚实标注（2026-11-27）
 
 按产品已拍板的 `T3-2` 选方案②：不把 preview / publish-asset / subtitle / render 降为 `planned`（那会让 B1 修好的逐镜同步图整图校验失败），而是保留 `runnable` + 明确标注。

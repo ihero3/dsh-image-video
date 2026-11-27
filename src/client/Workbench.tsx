@@ -1775,11 +1775,20 @@ export function Workbench(props: WorkbenchProps): ReactNode {
   }
 
   /** 删除选中的片段（键盘 Delete 与垃圾桶按钮共用）。 */
+  /**
+   * 删除选中片段：键盘 Delete/Backspace 与检视器垃圾桶共用一条路径（`F4`）。
+   * 两条路径都必须写 `clipUndo`——否则键盘删了就再也找不回来，
+   * 与「删除后可撤销」的界面承诺不一致。
+   */
   const removeSelectedClip = (): void => {
-    if (selectedClipId === undefined) return
+    if (selectedClipId === undefined || timeline === undefined) return
+    const track = timeline.tracks.find(item => item.clips.some(clip => clip.id === selectedClipId))
+    const clip = track?.clips.find(item => item.id === selectedClipId)
+    if (track === undefined || clip === undefined) return
+    setClipUndo({ trackId: track.id, clip, index: track.clips.findIndex(item => item.id === clip.id) })
     setTimeline(current => current === undefined ? current : {
       ...current,
-      tracks: current.tracks.map(track => ({ ...track, clips: track.clips.filter(clip => clip.id !== selectedClipId) })),
+      tracks: current.tracks.map(item => ({ ...item, clips: item.clips.filter(entry => entry.id !== selectedClipId) })),
     })
     setTimelineState('dirty')
     setSelectedClipId(undefined)

@@ -356,7 +356,7 @@ export type WorkbenchLocaleKey =
   | 'canvasFit'
   | 'canvasEmpty'
   | 'canvasPlannedTag'
-  | 'canvasTransient'
+  | 'canvasAutoSave'
   | 'canvasLogs'
   | 'canvasMaximize'
   | 'canvasRestore'
@@ -1510,7 +1510,7 @@ export const en: Record<WorkbenchLocaleKey, string> = {
   canvasFit: 'Fit view',
   canvasEmpty: 'Add nodes from the library on the left',
   canvasPlannedTag: 'not available',
-  canvasTransient: 'Workflow is kept on this machine; series storage lands with the host endpoint',
+  canvasAutoSave: 'Edits save automatically to this episode\'s workflow',
   canvasLogs: 'Logs',
   canvasMaximize: 'Fullscreen canvas',
   canvasRestore: 'Exit fullscreen',
@@ -2720,7 +2720,7 @@ export const zh: Record<WorkbenchLocaleKey, string> = {
   canvasFit: '适配窗口',
   canvasEmpty: '从左侧节点库添加节点',
   canvasPlannedTag: '未提供',
-  canvasTransient: '工作流暂存在本机（剧集存储随宿主端点接入）',
+  canvasAutoSave: '改动自动保存到本集工作流',
   canvasLogs: '工作日志',
   canvasMaximize: '全屏画布',
   canvasRestore: '退出全屏',

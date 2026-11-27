@@ -680,6 +680,8 @@ describe('workbench project and asset flow', () => {
     await waitFor(() => {
       expect(view.container.querySelector('[data-workflow-run-action="start"]')).toBeTruthy()
     })
+    // F2：画布唯一 CTA 必须落在真实的主按钮类上（`iv-btn--primary` 全仓无定义）
+    expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLElement).classList.contains('iv-btn--acc')).toBe(true)
     // 图不合法（必填提示词为空）时不能起跑
     expect((view.container.querySelector('[data-workflow-run-action="start"]') as HTMLButtonElement).disabled).toBe(true)
 

@@ -372,7 +372,7 @@ export function VoicePanel(props: VoicePanelProps) {
                       onClick={() => { void saveCard(card) }}>
                       <Icon name="layers" size={12} />{t('voiceCardSave')}
                     </button>
-                    <button type="button" className="iv-btn iv-btn--primary iv-btn--sm" data-voice-card-synthesize={card.id}
+                    <button type="button" className="iv-btn iv-btn--acc iv-btn--sm" data-voice-card-synthesize={card.id}
                       disabled={!available || synthesizing === card.id}
                       title={available ? undefined : (status?.reason ?? t('voiceNotReady'))}
                       onClick={() => { void synthesize(card) }}>
